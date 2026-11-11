@@ -11,12 +11,15 @@
  * the two that forget in bulk, Forget kept reports and Forget everything,
  * ask first: they cannot be undone by changing them back.
  */
-import { useState } from 'react';
-import { hintsOf, keptSummary, memoryFrom, readMemory, writeMemory, type MemoryState } from '../lib/memory';
+import { useRef, useState } from 'react';
+import { exportMemory, hintsOf, importMemory, keptSummary, memoryFrom, readMemory, writeMemory, type MemoryState } from '../lib/memory';
 
 export default function MemorySettings() {
   const [state, setState] = useState<MemoryState>(() => readMemory());
   const [draft, setDraft] = useState('');
+  /** What Import last said, in a line under its button (CP-13). */
+  const [importNote, setImportNote] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
   /** Which forgetting is being confirmed: every kept report, or everything. */
   const [confirming, setConfirming] = useState<'kept' | 'all' | null>(null);
   const save = (next: MemoryState) => {
@@ -54,10 +57,12 @@ export default function MemorySettings() {
                 <input
                   className="wb-set-input"
                   type="text"
-                  aria-label="Memory"
+                  aria-label={m.projectId ? 'Memory for one project' : 'Memory'}
+                  title={m.projectId ? 'Used only in the project it was said in' : undefined}
                   value={m.text}
                   onChange={(e) => save({ ...state, memories: state.memories.map((x) => (x.id === m.id ? { ...x, text: e.target.value, hints: hintsOf(e.target.value) } : x)) })}
                 />
+                {m.projectId && <span className="wb-set-note">This project only</span>}
                 <button type="button" className="wb-set-quiet" onClick={() => save({ ...state, memories: state.memories.filter((x) => x.id !== m.id) })}>
                   Forget
                 </button>
@@ -95,6 +100,57 @@ export default function MemorySettings() {
           </p>
         </div>
         <input id="wb-set-learn" type="checkbox" role="switch" className="wb-set-switch" checked={state.learnFromKept} onChange={(e) => save({ ...state, learnFromKept: e.target.checked })} />
+      </div>
+
+      {/* One small file of the memories, to take to another browser or back them up (2026-11-11, CP-13). */}
+      <div className="wb-set-row is-stack">
+        <div className="wb-set-text">
+          <span className="wb-set-label">Move your memories</span>
+          <p>Save them as a file, or add the ones in a saved file to these. The style of your kept reports stays with this browser.</p>
+        </div>
+        <div className="wb-set-actions">
+          <button
+            type="button"
+            className="wb-pill wb-pill--outline"
+            disabled={state.memories.length === 0}
+            onClick={() => {
+              const url = URL.createObjectURL(new Blob([exportMemory(state)], { type: 'application/json' }));
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'forma-memory.json';
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              setTimeout(() => URL.revokeObjectURL(url), 60_000);
+            }}
+          >
+            Export
+          </button>
+          <button type="button" className="wb-pill wb-pill--outline" onClick={() => fileRef.current?.click()}>
+            Import
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            aria-label="A memory file to import"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (!file) return;
+              const next = file.size <= 1_000_000 ? importMemory(state, await file.text()) : null;
+              if (!next) {
+                setImportNote('That file is not a Forma memory file.');
+                return;
+              }
+              const added = next.memories.length - state.memories.length;
+              save(next);
+              setImportNote(added ? `Added ${added} ${added === 1 ? 'memory' : 'memories'}.` : 'Those memories are already here.');
+            }}
+          />
+        </div>
+        {importNote && <p className="wb-set-note" role="status">{importNote}</p>}
       </div>
 
       {(state.memories.length > 0 || state.kept.length > 0) && (

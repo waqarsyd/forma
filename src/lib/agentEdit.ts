@@ -157,6 +157,12 @@ export interface EditsOutcome {
   xml: string;
   /** What was done, in the words `repxEdit` gives. */
   applied: string[];
+  /**
+   * The edits made, as they were asked, in the order made (2026-11-11, the full
+   * audit's LM-13): what a learning event records. It recorded the edits the
+   * model asked for, declined ones with them, and not the second pass's.
+   */
+  appliedOps: { op: AgentEdit['op']; control?: string }[];
   /** What was not, each with why. */
   declined: string[];
   changed: boolean;
@@ -1089,6 +1095,7 @@ export function readReportOutcome(parsed: { reply?: string; action?: string; edi
 export function applyEdits(xml: string, edits: readonly AgentEdit[], hooks: EditHooks = {}): EditsOutcome {
   let current = xml;
   const applied: string[] = [];
+  const appliedOps: EditsOutcome['appliedOps'] = [];
   const declined: string[] = [];
   // What the report reads first (2026-11-09): a field the same answer binds may come with it.
   const ordered = [...edits.slice(0, MAX_EDITS)].sort((a, b) => Number(b?.op === 'data') - Number(a?.op === 'data'));
@@ -1101,12 +1108,13 @@ export function applyEdits(xml: string, edits: readonly AgentEdit[], hooks: Edit
     if (r.applied) {
       current = r.xml;
       applied.push(r.reason);
+      appliedOps.push(e.control ? { op: e.op, control: e.control } : { op: e.op });
     } else {
       declined.push(`${e.op}${e.control ? ` ${e.control}` : ''}: ${r.reason}`);
     }
   }
   if (edits.length > MAX_EDITS) declined.push(`${edits.length - MAX_EDITS} more edits were not made: more than ${MAX_EDITS} is a redesign`);
-  return { xml: current, applied, declined, changed: current !== xml };
+  return { xml: current, applied, appliedOps, declined, changed: current !== xml };
 }
 
 /* ------------------------------------------------------------------ *

@@ -7,6 +7,14 @@ import { describe, expect, it } from 'vitest';
 import type { ReportSkeleton } from './reportSkeleton';
 import {
   DEFAULT_LEARNING_SETTINGS,
+  MAX_FULL_BYTES,
+  MAX_REF_CHARS,
+  featureDistance,
+  projectKey,
+  recordLearning,
+  roundSkeleton,
+  settleWithAccount,
+  utf8Bytes,
   clearLearningEvents,
   effectiveLearningSettings,
   flushLearning,
@@ -114,6 +122,17 @@ describe('the settings', () => {
     expect(settleLearningSettings(device(false, false), null)).toEqual({ settings: { structure: false, full: false }, push: true });
   });
 
+  it('settle with the account: its copy stands, this browser\'s is written when it has none, and a failed read says false', async () => {
+    const storage = fakeStorage();
+    expect(await settleWithAccount('alice', async () => ({ structure: false, full: true }), async () => undefined, storage)).toBe(true);
+    expect(readLearningSettings('alice', storage)).toEqual({ structure: false, full: true });
+    const written: unknown[] = [];
+    writeLearningSettings({ structure: false, full: false }, 'bob', true, storage);
+    expect(await settleWithAccount('bob', async () => ({ structure: true, full: true }), async (s) => void written.push(s), storage)).toBe(true);
+    expect(written).toEqual([{ structure: false, full: false }]);
+    expect(await settleWithAccount('carol', async () => { throw new Error('offline'); }, async () => undefined, storage)).toBe(false);
+  });
+
   it('hold whole reports back, signed in, until the account\'s copy is known', () => {
     const on = { structure: true, full: true };
     expect(effectiveLearningSettings(on, true, false)).toEqual({ structure: true, full: false });
@@ -183,15 +202,78 @@ describe('an event', () => {
     expect(e.full).toBe('<x/>');
     expect(e.prompt).toHaveLength(4000);
     expect(sendable(e, { structure: false, full: true })).toBe(true);
-    const tooBig = learningEvent({ kind: 'edit', repx: 'x'.repeat(400_001), prompt: 'p' }, full);
+    // Capped by UTF-8 bytes (LM-25): 300,000 Chinese characters are 900,000 bytes, over a document.
+    const tooBig = learningEvent({ kind: 'edit', repx: '表'.repeat(300_000), prompt: 'p' }, full);
     expect(tooBig.full).toBe('');
     expect(tooBig.prompt).toBe('');
+    expect(tooBig.dropped).toBe('full');
+    expect(learningEvent({ kind: 'edit', repx: 'x'.repeat(MAX_FULL_BYTES), prompt: 'p' }, full).full).toHaveLength(MAX_FULL_BYTES);
+    expect(utf8Bytes('表')).toBe(3);
   });
 
   it('keeps every field present, with the defaults, so the rules can pin the shape', () => {
     const e = learningEvent({ kind: 'rating', rating: 'good' }, settings);
-    expect(Object.keys(e).sort()).toEqual(['ai', 'at', 'day', 'errors', 'full', 'id', 'kind', 'ops', 'prompt', 'rating', 'request', 'skeleton', 'source', 'userId', 'warnings'].filter((k) => k !== 'userId').sort());
-    expect(e).toMatchObject({ source: 'none', request: 'none', ai: 'none', skeleton: '', ops: [], errors: 0, warnings: 0, rating: 'good' });
+    expect(Object.keys(e).sort()).toEqual(['ai', 'at', 'day', 'distance', 'draft', 'dropped', 'errors', 'full', 'how', 'id', 'kind', 'ms', 'ops', 'project', 'prompt', 'rating', 'ref', 'request', 'roles', 'skeleton', 'source', 'warnings'].sort());
+    expect(e).toMatchObject({ source: 'none', request: 'none', ai: 'none', skeleton: '', ops: [], roles: [], errors: 0, warnings: 0, rating: 'good', ref: '', how: '', draft: '', ms: 0, project: '', distance: -1, dropped: '' });
+  });
+
+  /*
+   * Event v2 (2026-11-11, the full audit's LM-10a, LM-11, LM-12, LM-25).
+   */
+  it('carries the skeleton only on a report made or kept, and says when it had to leave it out', () => {
+    const s = { structure: true, full: true };
+    expect(learningEvent({ kind: 'generation', skeleton }, s).skeleton).not.toBe('');
+    expect(learningEvent({ kind: 'kept', skeleton, how: 'pdf' }, s).skeleton).not.toBe('');
+    for (const kind of ['edit', 'translate', 'rating', 'undo'] as const) expect(learningEvent({ kind, skeleton }, s).skeleton, kind).toBe('');
+    // A rating or an undo points at the event that has the report; it never carries one.
+    expect(learningEvent({ kind: 'rating', rating: 'bad', repx: '<x/>' }, s).full).toBe('');
+    expect(learningEvent({ kind: 'undo', repx: '<x/>' }, s).full).toBe('');
+    const huge = { ...skeleton, bands: Array.from({ length: 3000 }, () => skeleton.bands[1]) };
+    expect(learningEvent({ kind: 'generation', skeleton: huge }, s)).toMatchObject({ skeleton: '', dropped: 'skeleton' });
+  });
+
+  it('rounds the skeleton to one decimal before it is measured', () => {
+    const fine = JSON.parse(JSON.stringify(skeleton)) as ReportSkeleton;
+    fine.bands[0].controls[0].x = 12.3456;
+    fine.bands[0].controls[0].w = 299.96;
+    const out = JSON.parse(skeletonField(fine)) as ReportSkeleton;
+    expect(out.bands[0].controls[0]).toMatchObject({ x: 12.3, w: 300 });
+    expect(roundSkeleton({ a: [1.26, 'A4', null] })).toEqual({ a: [1.3, 'A4', null] });
+  });
+
+  it('names what a rating rates, takes a rating back as \'\', and says how a report was kept', () => {
+    const rating = learningEvent({ kind: 'rating', rating: '', ref: 'm3k9x1-abc123', ai: 'gemini' }, settings);
+    expect(rating).toMatchObject({ kind: 'rating', rating: '', ref: 'm3k9x1-abc123', ai: 'gemini', skeleton: '' });
+    expect(learningEvent({ kind: 'rating', ref: 'not an id!' }, settings).ref).toBe('');
+    expect(learningEvent({ kind: 'rating', ref: 'r'.repeat(MAX_REF_CHARS + 1) }, settings).ref).toBe('');
+    expect(learningEvent({ kind: 'kept', how: 'designer' }, settings).how).toBe('designer');
+    expect(learningEvent({ kind: 'kept', how: 'fax' }, settings).how).toBe('');
+    expect(learningEvent({ kind: 'edit', how: 'pdf', rating: 'good' }, settings)).toMatchObject({ how: '', rating: '' });
+    expect(learningEvent({ kind: 'generation', ai: 'forma', draft: 'reader', ms: 1234.6 }, settings)).toMatchObject({ draft: 'reader', ms: 1235 });
+    expect(learningEvent({ kind: 'generation', ai: 'gemini', draft: 'reader' }, settings).draft).toBe('');
+    expect(learningEvent({ kind: 'edit', ops: ['font', 'move'], roles: ['caption'] }, settings).roles).toEqual(['caption', '']);
+  });
+
+  it('names a project by a hash of the account and its id, never the id', async () => {
+    const key = await projectKey('alice', '1731300000000');
+    expect(key).toMatch(/^[0-9a-f]{12}$/);
+    expect(await projectKey('bob', '1731300000000')).not.toBe(key);
+    expect(await projectKey('alice', null)).toBe('');
+    expect(learningEvent({ kind: 'kept', project: key }, settings).project).toBe(key);
+    expect(learningEvent({ kind: 'kept', project: '1731300000000' }, settings).project).toBe('');
+  });
+
+  it('measures how far a kept report moved from the one made, without scale', () => {
+    expect(featureDistance([1, 2, 3], [1, 2, 3])).toBe(0);
+    expect(featureDistance([10, 0], [10, 10])).toBeGreaterThan(0.5);
+    expect(featureDistance([], [])).toBe(-1);
+  });
+
+  it('brings an event kept before v2 to the shape the rules take', () => {
+    const old = { id: 'old-1', at: '2026-11-10T10:00:00.000Z', day: '2026-11-10', kind: 'edit' as const, source: 'none' as const, request: 'edit' as const, ai: 'gemini' as const, skeleton: '{"paper":"A4"}', ops: ['font'], errors: 0, warnings: 0, rating: '' as const, full: '', prompt: '' };
+    const out = forSending(old, settings)!;
+    expect(out).toMatchObject({ skeleton: '', roles: [''], ref: '', how: '', draft: '', ms: 0, project: '', distance: -1, dropped: '' });
+    expect(Object.keys(out).sort()).toEqual(Object.keys(learningEvent({ kind: 'edit' }, settings)).sort());
   });
 
   it('caps the operations at forty short names', () => {
@@ -246,8 +328,8 @@ describe('the summary', () => {
       learningEvent({ kind: 'edit', ops: ['font'] }, s, new Date('2026-11-09T10:00:00Z')),
       learningEvent({ kind: 'rating', rating: 'bad' }, s, new Date('2026-11-11T10:00:00Z')),
     ];
-    expect(learningSummary(events)).toEqual({ total: 3, byKind: { generation: 1, edit: 1, translate: 0, rating: 1 }, full: 1, since: '2026-11-09T10:00:00.000Z' });
-    expect(learningSummary([])).toEqual({ total: 0, byKind: { generation: 0, edit: 0, translate: 0, rating: 0 }, full: 0, since: null });
+    expect(learningSummary(events)).toEqual({ total: 3, byKind: { generation: 1, edit: 1, translate: 0, rating: 1, kept: 0, undo: 0 }, full: 1, since: '2026-11-09T10:00:00.000Z' });
+    expect(learningSummary([])).toEqual({ total: 0, byKind: { generation: 0, edit: 0, translate: 0, rating: 0, kept: 0, undo: 0 }, full: 0, since: null });
   });
 });
 
@@ -299,6 +381,41 @@ describe.runIf(fakeIdb)('the store on the device', () => {
     expect(kept[0].id).toBe(events[MAX_LOCAL].id);
     expect(kept[MAX_LOCAL - 1].id).toBe(events[1].id);
   }, 60_000);
+
+  // Event v2 (2026-11-11, LM-12, LM-13, LM-16): what a turn records, read off the report, kept, sent, and thinned once sent.
+  it('records an edit by the kinds of part it touched, a kept report by how far it moved, and keeps no whole report once sent', async () => {
+    const idb = new fakeIdb!.IDBFactory();
+    const storage = fakeStorage();
+    writeLearningSettings({ structure: true, full: true }, 'alice', false, storage);
+    const repx =
+      '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1" Name="r" PageWidth="827" PageHeight="1169" PaperKind="A4"><Bands>' +
+      '<Item1 Ref="1" ControlType="ReportHeaderBand" HeightF="60"><Controls><Item1 Ref="2" ControlType="XRLabel" Name="lblTitle" Text="Acme Ltd" Font="Arial, 16pt" SizeF="300,30" LocationFloat="0,0" />' +
+      '<Item2 Ref="3" ControlType="XRLabel" Name="lblAmount" SizeF="100,30" LocationFloat="400,0"><ExpressionBindings><Item1 Ref="4" EventName="BeforePrint" PropertyName="Text" Expression="[Amount]" /></ExpressionBindings></Item2></Controls></Item1>' +
+      '<Item2 Ref="5" ControlType="DetailBand" HeightF="25" /></Bands></XtraReportsLayoutSerializer>';
+    const sent: LearningEvent[] = [];
+    const sink = { uid: 'alice', known: true, send: async (e: LearningEvent) => void sent.push(e), idb, storage };
+    const edit = await recordLearning({ kind: 'edit', request: 'edit', ai: 'gemini', repx, ops: ['font', 'move', 'paper'], controls: ['lblTitle', 'lblAmount', undefined], prompt: 'bigger title' }, sink);
+    expect(edit).toMatchObject({ kind: 'edit', ops: ['font', 'move', 'paper'], roles: ['caption', 'value', 'report'], skeleton: '', full: repx });
+    const kept = await recordLearning({ kind: 'kept', how: 'pdf', repx, madeRepx: repx, ref: edit!.id, projectId: 'p1' }, sink);
+    expect(kept).toMatchObject({ kind: 'kept', how: 'pdf', distance: 0, ref: edit!.id, project: expect.stringMatching(/^[0-9a-f]{12}$/) });
+    expect(kept!.skeleton).not.toContain('Acme');
+    expect(sent.map((e) => e.kind)).toEqual(['edit', 'kept']);
+    const local = await listLearningEvents(idb);
+    expect(local.every((e) => e.sent === true && e.full === '' && e.prompt === '')).toBe(true);
+    // Nobody to send to: kept here, whole, until it goes.
+    const waiting = await recordLearning({ kind: 'generation', repx }, { ...sink, send: null });
+    expect((await listLearningEvents(idb)).find((e) => e.id === waiting!.id)).toMatchObject({ sent: false, full: repx });
+    // A part the edit deleted is named for what it was, off the report before it (2026-11-11).
+    const without = repx.replace(/<Item2 Ref="3"[\s\S]*?<\/Item2>/, '');
+    expect(without).not.toContain('lblAmount');
+    const deleted = await recordLearning({ kind: 'edit', request: 'edit', repx: without, beforeRepx: repx, ops: ['delete'], controls: ['lblAmount'] }, { ...sink, send: null });
+    expect(deleted!.roles).toEqual(['value']);
+    // A first report whose reading throws leaves the distance unknown, and the kept report's
+    // skeleton stands. The parser forgives any string, so a value it cannot read stands in for one.
+    const unparsed = await recordLearning({ kind: 'kept', how: 'repx', repx, madeRepx: new Proxy({}, { get: () => { throw new Error('unreadable'); } }) as unknown as string, ref: edit!.id }, { ...sink, send: null });
+    expect(unparsed).toMatchObject({ distance: -1 });
+    expect(unparsed!.skeleton).not.toBe('');
+  });
 
   // The full audit (2026-11-11, LM-09): an event that could not be sent is sent at the next flush, and only its own account's.
   it('sends what the account lacks at the next flush, once, and never another account\'s or one made signed out', async () => {

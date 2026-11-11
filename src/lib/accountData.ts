@@ -29,13 +29,18 @@
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getCountFromServer,
   getDoc,
   getDocs,
+  increment,
   limit,
+  orderBy,
   query,
+  serverTimestamp,
   setDoc,
+  updateDoc,
   where,
   writeBatch,
   type CollectionReference,
@@ -45,6 +50,7 @@ import {
   type Query,
 } from 'firebase/firestore';
 import { MAX_SHARES, inviteesOf, splitShare, type LegacyShareFields, type StoredShare } from './shares';
+import type { VersionDocument, VersionIo } from './revisionStore';
 
 /** Everything for one account hangs off `users/{uid}`. */
 export const USERS_COLLECTION = 'users';
@@ -82,8 +88,51 @@ export async function countLearning(db: Firestore, uid: string): Promise<number>
 }
 
 /**
+ * What an account may write (2026-11-11, the full audit's SA-01, SE-08 and
+ * LM-15), at `users/{uid}/meta/usage`, moved in the same batch as each write
+ * it counts, as the share count moves (`quota`): `reports` and `report`, the
+ * projects held and the last one added or removed, at most `MAX_REPORTS`;
+ * `events`, `eventDay`, `eventAt` and `event`, the learning events sent on
+ * the server's day, at most `MAX_EVENTS_A_DAY` and `EVENT_SPACING_MS` apart.
+ * Until then one account could write without bound, on a free plan whose
+ * daily writes every visitor shares. `firestore.rules` holds every number.
+ */
+export const USAGE_DOC_ID = 'usage';
+export const MAX_REPORTS = 1000;
+export const MAX_EVENTS_A_DAY = 300;
+export const EVENT_SPACING_MS = 2000;
+
+export function usageDocRef(db: Firestore, uid: string): DocumentReference {
+  return doc(db, USERS_COLLECTION, uid, META_COLLECTION, USAGE_DOC_ID);
+}
+
+async function readUsage(db: Firestore, uid: string): Promise<DocumentData> {
+  const snap = await getDoc(usageDocRef(db, uid));
+  return snap.exists() ? snap.data() : {};
+}
+
+const count = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0);
+
+/** Thrown when an account has sent its day's learning events: the rest wait in the outbox for tomorrow. */
+export class LearningLimitError extends Error {
+  readonly code = 'forma/learning-limit';
+  constructor() {
+    super(`An account sends at most ${MAX_EVENTS_A_DAY} learning events a day; the rest go tomorrow.`);
+    this.name = 'LearningLimitError';
+  }
+}
+
+/** When each account last sent an event from this page, so the next waits out the spacing the rules hold. */
+const lastSent = new Map<string, number>();
+
+/**
  * One event into the account, with the `userId` the rules require beside the
- * event's own fields.
+ * event's own fields, and the day's count raised in the same batch.
+ *
+ * Stamped as it is sent (2026-11-11, the full audit's LM-26): the rules take
+ * an event only on the server's day, so a made-up time can no longer reach the
+ * owner's pull, and one that waited in the outbox goes with the time it went.
+ * The send waits out `EVENT_SPACING_MS` after this account's last one here.
  *
  * An event the account already holds counts as sent (2026-11-11, the PRIV
  * review). The rules allow `create` and never `update`, so a second write of
@@ -94,10 +143,37 @@ export async function countLearning(db: Firestore, uid: string): Promise<number>
  * back everything newer for good. So a refusal is answered by reading the
  * document: there, it went; absent, the refusal stands.
  */
-export async function writeLearning(db: Firestore, uid: string, event: DocumentData & { id: string }): Promise<void> {
+export function writeLearning(db: Firestore, uid: string, event: DocumentData & { id: string }, now: () => number = Date.now): Promise<void> {
+  // One send at a time from this page (2026-11-11, the LRN review): `lastSent`
+  // is read as a send starts, so two started together (a Save and an Export,
+  // or a record during a flush) waited the same and committed together, and
+  // the rules refused one for spacing. Each now starts once the last has settled.
+  const turn = sendings.then(() => sendLearning(db, uid, event, now));
+  sendings = turn.catch(() => undefined);
+  return turn;
+}
+
+let sendings: Promise<unknown> = Promise.resolve();
+
+async function sendLearning(db: Firestore, uid: string, event: DocumentData & { id: string }, now: () => number): Promise<void> {
   const ref = learningDocRef(db, uid, event.id);
+  const wait = (lastSent.get(uid) ?? 0) + EVENT_SPACING_MS + 100 - now();
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
   try {
-    await setDoc(ref, { ...event, userId: uid });
+    const usage = await readUsage(db, uid);
+    const at = new Date(now()).toISOString();
+    const day = at.slice(0, 10);
+    const sameDay = usage.eventDay === day;
+    if (sameDay && count(usage.events) >= MAX_EVENTS_A_DAY) throw new LearningLimitError();
+    const batch = writeBatch(db);
+    batch.set(ref, { ...event, at, day, userId: uid });
+    batch.set(
+      usageDocRef(db, uid),
+      sameDay ? { events: increment(1), eventAt: serverTimestamp(), event: event.id } : { events: 1, eventDay: day, eventAt: serverTimestamp(), event: event.id },
+      { merge: true },
+    );
+    lastSent.set(uid, now());
+    await batch.commit();
   } catch (err) {
     if ((err as { code?: unknown } | null)?.code === 'permission-denied') {
       const held = await getDoc(ref).catch(() => null);
@@ -116,9 +192,11 @@ export async function writeLearning(db: Firestore, uid: string, event: DocumentD
  *
  * 50 rather than the 300 first written: the web SDK cannot read a page's refs
  * without its documents, and on the opt-in tier an event may hold up to
- * 400,000 characters (firestore.rules), so 300 could be one read of about
- * 120 MB. 50 bounds it near 20 MB at the cost of more round trips, which only
- * an account with thousands of events will notice.
+ * 700,000 characters (firestore.rules, since LM-25), so 300 could be one read
+ * of about 200 MB. 50 bounds it near 35 MB at the cost of more round trips,
+ * which only an account with thousands of events will notice. (LM-16 asked for
+ * 300 with the whole report moved to a document of its own; it stays inline,
+ * where the owner's pull and Settings read it, so the page stays 50.)
  */
 export const LEARNING_PAGE = 50;
 
@@ -318,6 +396,49 @@ export function reportDocRef(db: Firestore, uid: string, reportId: string): Docu
   return doc(db, USERS_COLLECTION, uid, REPORTS_COLLECTION, reportId);
 }
 
+/** Thrown when an account already holds `MAX_REPORTS` projects. */
+export class ReportLimitError extends Error {
+  readonly code = 'forma/report-limit';
+  constructor() {
+    super(`An account can keep up to ${MAX_REPORTS.toLocaleString('en-US')} projects. Delete one to save another.`);
+    this.name = 'ReportLimitError';
+  }
+}
+
+/**
+ * One project saved (2026-11-11, the full audit's SA-01): a new one with the
+ * account's count raised in the same batch, as the rules require, an existing
+ * one as it is. `isNew` is the caller's best knowledge (whether its list holds
+ * the project); a refusal tries the other way once, so a list that was behind
+ * costs one more request rather than a failed save.
+ */
+export async function writeReport(db: Firestore, uid: string, reportId: string, payload: DocumentData, isNew: boolean): Promise<void> {
+  const ref = reportDocRef(db, uid, reportId);
+  const create = async () => {
+    if (count((await readUsage(db, uid)).reports) >= MAX_REPORTS) throw new ReportLimitError();
+    const batch = writeBatch(db);
+    batch.set(ref, payload);
+    batch.set(usageDocRef(db, uid), { reports: increment(1), report: reportId }, { merge: true });
+    await batch.commit();
+  };
+  const update = () => setDoc(ref, payload);
+  try {
+    await (isNew ? create() : update());
+  } catch (err) {
+    // At the limit, a project guessed new may be one the account holds (its
+    // index entry missing, or the list not loaded yet): the limit stops
+    // creating a project, never saving one that exists (2026-11-11).
+    if (isNew && err instanceof ReportLimitError) {
+      await update().catch(() => {
+        throw err;
+      });
+      return;
+    }
+    if ((err as { code?: unknown } | null)?.code !== 'permission-denied') throw err;
+    await (isNew ? update() : create());
+  }
+}
+
 /**
  * The account's index of its projects (2026-11-08, site audit item 63): one
  * small document per project, `lib/savedReport.ts`'s `StoredReportIndex`,
@@ -352,6 +473,28 @@ export function versionDocRef(
 }
 
 /**
+ * The four operations `lib/revisionStore.ts` persists a history through, for
+ * one report (moved here from App.tsx on 2026-11-11, batch LRN, so they load
+ * with the SDK rather than with the workspace). The `orderBy` is not
+ * decoration: `fromVersionDocuments` numbers downwards from the newest and
+ * trusts the caller to have ordered them.
+ */
+export function versionIoFor(db: Firestore, uid: string, reportId: string): VersionIo {
+  const collectionRef = versionsCollectionRef(db, uid, reportId);
+  const docRef = (id: string) => versionDocRef(db, uid, reportId, id);
+  return {
+    list: async () => (await getDocs(collectionRef)).docs.map((entry) => entry.id),
+    read: async () => (await getDocs(query(collectionRef, orderBy('timestamp', 'desc')))).docs.map((entry) => entry.data() as VersionDocument),
+    write: async (document) => {
+      await setDoc(docRef(document.id), document);
+    },
+    remove: async (id) => {
+      await deleteDoc(docRef(id));
+    },
+  };
+}
+
+/**
  * Delete one report AND its version history.
  *
  * Versions first, then the report. The order matters for the same reason the
@@ -375,7 +518,17 @@ export async function deleteReportAndVersions(
   await deleteShares(db, uid, shares.docs.map((entry) => entry.id));
   const versions = await getDocs(versionsCollectionRef(db, uid, reportId));
   await Promise.all(versions.docs.map((entry) => deleteDoc(entry.ref)));
-  await deleteDoc(reportDocRef(db, uid, reportId));
+  // The account's count lowered in the same batch while there is one to lower
+  // (2026-11-11, SA-01); a project saved before the count existed leaves it at
+  // zero, and goes without one, as a share does.
+  if (count((await readUsage(db, uid)).reports) > 0) {
+    const batch = writeBatch(db);
+    batch.delete(reportDocRef(db, uid, reportId));
+    batch.set(usageDocRef(db, uid), { reports: increment(-1), report: reportId }, { merge: true });
+    await batch.commit();
+  } else {
+    await deleteDoc(reportDocRef(db, uid, reportId));
+  }
   // Its index entry last (2026-11-08): a report gone and still listed opens
   // to nothing, which is better than one gone from the list and still stored.
   await deleteDoc(reportIndexDocRef(db, uid, reportId)).catch((error) => {
@@ -435,6 +588,15 @@ export async function deleteAccountData(db: Firestore, uid: string): Promise<voi
   // The count itself, at zero now (2026-11-08); tolerated like the vault.
   await deleteDoc(quotaDocRef(db, uid)).catch((error) => {
     console.warn('Could not remove the share count while deleting the account:', error);
+  });
+  // The write counts (2026-11-11, SA-01), at zero projects now; tolerated like
+  // the share count. The rules keep it on a day the account sent learning
+  // events, since deleting it would restart that day's count. So its two ids
+  // go first (the last project's, which is when it was made, and the last
+  // event's), and on such a day what stays is the counts and a time alone.
+  await updateDoc(usageDocRef(db, uid), { report: deleteField(), event: deleteField() }).catch(() => undefined);
+  await deleteDoc(usageDocRef(db, uid)).catch((error) => {
+    console.warn('Could not remove the write counts while deleting the account:', error);
   });
   // The learning switches (2026-11-11); tolerated like the count: two booleans, nothing of the person's work.
   await deleteDoc(learningPrefsDocRef(db, uid)).catch((error) => {

@@ -50,9 +50,11 @@ import {
   SHARE_ACL_DOC_ID,
   learningCollectionRef,
   writeLearning,
+  writeReport,
   deleteLearning,
   LEARNING_PAGE,
 } from '../src/lib/accountData';
+import { learningEvent as buildLearningEvent } from '../src/lib/learning';
 
 // A failure this file expects is also logged by the SDK as a warning, noise
 // that hid real ones across the rules run (2026-11-11, the full audit, TC-13).
@@ -435,14 +437,13 @@ describe('the account document layout', () => {
 
   /** The learning events (2026-11-10, the full audit): under the account, removed with it, and by Settings alone. */
   it("removes what the account let Forma learn from, and nobody else's (2026-11-10)", async () => {
-    const event = (id: string, uid: string) => ({
-      id, userId: uid, at: '2026-11-10T20:15:00.000Z', day: '2026-11-10', kind: 'edit', source: 'none', request: 'edit', ai: 'gemini',
-      skeleton: '', ops: ['font'], errors: 0, warnings: 0, rating: '', full: '', prompt: '',
-    });
+    // Event v2 as lib/learning.ts builds it, sent by a verified account (2026-11-11, SA-01).
+    const event = (id: string) => buildLearningEvent({ id, kind: 'edit', request: 'edit', ai: 'gemini', ops: ['font'], roles: ['caption'] }, { structure: true, full: false });
+    const verified = (uid: string) => testEnv.authenticatedContext(uid, { email: `${uid}@example.com`, email_verified: true }).firestore() as unknown as Firestore;
     expect(learningCollectionRef(asUser(ALICE), ALICE).path).toBe(`users/${ALICE}/learning`);
-    await writeLearning(asUser(ALICE), ALICE, event('ev-1', ALICE));
-    await writeLearning(asUser(ALICE), ALICE, event('ev-2', ALICE));
-    await writeLearning(asUser(BOB), BOB, event('ev-3', BOB));
+    await writeLearning(verified(ALICE), ALICE, event('ev-1'));
+    await writeLearning(verified(ALICE), ALICE, event('ev-2'));
+    await writeLearning(verified(BOB), BOB, event('ev-3'));
     const count = async (uid: string) => {
       let size = -1;
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
@@ -454,10 +455,44 @@ describe('the account document layout', () => {
     await deleteLearning(asUser(ALICE), ALICE);
     expect(await count(ALICE)).toBe(0);
     expect(await count(BOB)).toBe(1);
-    await writeLearning(asUser(ALICE), ALICE, event('ev-4', ALICE));
+    await writeLearning(verified(ALICE), ALICE, event('ev-4'));
     await deleteAccountData(asUser(ALICE), ALICE);
     expect(await count(ALICE)).toBe(0);
     expect(await count(BOB)).toBe(1);
+  });
+
+  /**
+   * The write counts (2026-11-11, SA-01): projects made through writeReport,
+   * deleted with the account, and the counts with them on a day with no
+   * learning event sent. On a day with one the rules keep the counts, so
+   * deleting them cannot restart the day's count; the account's deletion
+   * still succeeds around it.
+   */
+  it('removes the projects counted and their count, and keeps the day count a learning day needs', async () => {
+    await writeReport(asUser(ALICE), ALICE, 'r1', validReport('r1', ALICE), true);
+    await writeReport(asUser(ALICE), ALICE, 'r2', validReport('r2', ALICE), true);
+    const usageLeft = async () => {
+      let left: Record<string, unknown> | undefined;
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        left = (await getDoc(doc(ctx.firestore(), 'users', ALICE, 'meta', 'usage'))).data();
+      });
+      return left;
+    };
+    expect(await usageLeft()).toMatchObject({ reports: 2 });
+    await deleteAccountData(asUser(ALICE), ALICE);
+    expect(await countReports(ALICE)).toBe(0);
+    expect(await usageLeft()).toBeUndefined();
+
+    await writeReport(asUser(ALICE), ALICE, 'r3', validReport('r3', ALICE), true);
+    const verified = testEnv.authenticatedContext(ALICE, { email: 'alice@example.com', email_verified: true }).firestore() as unknown as Firestore;
+    await writeLearning(verified, ALICE, buildLearningEvent({ id: 'ev-today', kind: 'generation', ai: 'gemini' }, { structure: true, full: false }));
+    await deleteAccountData(asUser(ALICE), ALICE);
+    expect(await countReports(ALICE)).toBe(0);
+    // The counts stay; the two ids they carried do not.
+    const left = await usageLeft();
+    expect(left).toMatchObject({ reports: 0, events: 1 });
+    expect(left).not.toHaveProperty('report');
+    expect(left).not.toHaveProperty('event');
   });
 });
 

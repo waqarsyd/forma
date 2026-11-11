@@ -190,9 +190,14 @@ export function learnStyle(skeletons: ReportSkeleton[], minFontReports = 1, acco
   const fonts = tally(texts.flatMap((t) => (t.font && allowed(t.font.family) ? [t.font.family] : [])))
     .slice(0, 8)
     .map(({ key, share }) => ({ family: key, share }));
+  // A role's face is one of the house fonts listed (2026-11-11, a wave-4
+  // follow-up): a face allowed but ninth or later was named by a role and not
+  // by the list, and the leak check, which allows only the listed faces,
+  // refused the whole model over it.
+  const listed = new Set(fonts.map((f) => f.family));
   const roles: Partial<Record<SkeletonRole, RoleStyle>> = {};
   for (const role of ['title', 'caption', 'value', 'total', 'pageInfo'] as SkeletonRole[]) {
-    const own = texts.filter((t) => t.role === role && t.font && allowed(t.font.family));
+    const own = texts.filter((t) => t.role === role && t.font && listed.has(t.font.family));
     if (!own.length) continue;
     roles[role] = {
       family: tally(own.map((t) => t.font!.family))[0].key,
@@ -333,6 +338,9 @@ export function archetypeLabel(k: ReportSkeleton): string {
   return `Form${turned}`;
 }
 
+/** The face an archetype is written in when the set allows no house font: the one DevExpress itself defaults to. */
+export const DEFAULT_FACE = 'Arial';
+
 /** Learn the model from a set of reports: the house style and `k` archetypes. */
 export function learnModel(
   set: TrainingReport[],
@@ -345,7 +353,7 @@ export function learnModel(
   // A face the house style does not list (one few reports use) is written as
   // the house face, so the model names no font only one report had.
   const known = new Set(style.fonts.map((f) => f.family));
-  const houseFace = style.fonts[0]?.family ?? 'Arial';
+  const houseFace = style.fonts[0]?.family ?? DEFAULT_FACE;
   const face = <T extends { family: string } | null>(f: T): T => (f && !known.has(f.family) ? { ...f, family: houseFace } : f);
   const normalise = (k: ReportSkeleton): ReportSkeleton => ({
     ...k,
@@ -398,6 +406,9 @@ export function learnModel(
 export function unexpectedStrings(model: FormaModel): string[] {
   const allowed = new Set<string>([
     ...model.style.fonts.map((f) => f.family),
+    // The face written when the set allows none (a set under minFontReports):
+    // Forma's own default, learned from nobody (2026-11-11, a wave-4 follow-up).
+    DEFAULT_FACE,
     ...Object.keys(CATEGORY_WORDS),
     ...model.featureNames,
     'TopMargin', 'ReportHeader', 'PageHeader', 'GroupHeader', 'Detail', 'DetailReport', 'GroupFooter', 'ReportFooter', 'PageFooter', 'BottomMargin', 'Unknown',

@@ -123,12 +123,16 @@ service cloud.firestore {
       
       allow list: if isSignedIn() && userId == request.auth.uid;
       
-      allow create: if isSignedIn() 
+      // A new project raises the account's count in the same batch, up to
+      // 1,000 (2026-11-11, the full audit's SA-01; `usage` below).
+      allow create: if isSignedIn()
         && isValidId(userId)
         && isValidId(reportId)
         && userId == request.auth.uid
         && isValidSavedReport(incoming())
-        && incoming().id == reportId;
+        && incoming().id == reportId
+        && getAfter(usagePath(userId)).data.get('reports', 0) == reportsCounted(userId) + 1
+        && getAfter(usagePath(userId)).data.get('report', '') == reportId;
 
       allow update: if isSignedIn() 
         && isValidId(userId)
@@ -139,11 +143,17 @@ service cloud.firestore {
         && incoming().userId == existing().userId
         && incoming().id == existing().id;
 
+      // While the count is above zero the same batch lowers it by one; a
+      // project saved before the count existed leaves it at zero, and goes
+      // without one, as a share does.
       allow delete: if isSignedIn()
         && isValidId(userId)
         && isValidId(reportId)
         && userId == request.auth.uid
-        && existing().userId == request.auth.uid;
+        && existing().userId == request.auth.uid
+        && (reportsCounted(userId) == 0
+          || (getAfter(usagePath(userId)).data.get('reports', 0) == reportsCounted(userId) - 1
+            && getAfter(usagePath(userId)).data.get('report', '') == reportId));
     }
 
     // The account's index of its projects (2026-11-08, site audit item 63):
@@ -332,6 +342,76 @@ service cloud.firestore {
         && get(sharePath(data.last)).data.ownerId == request.auth.uid;
     }
 
+    // What an account may write (2026-11-11, the full audit's SA-01, SE-08 and
+    // LM-15), `users/{uid}/meta/usage`, moved in the same batch as each write
+    // it counts, as the share count is: `reports` and `report`, the projects
+    // held (at most 1,000) and the last one added or removed; `events`,
+    // `eventDay`, `eventAt` and `event`, the learning events of the server's
+    // day (at most 300, two seconds apart) and the last one. Until then one
+    // account could write without bound into a free plan every visitor shares.
+    function usagePath(uid) {
+      return /databases/$(database)/documents/users/$(uid)/meta/usage;
+    }
+    function reportPath(uid, id) {
+      return /databases/$(database)/documents/users/$(uid)/reports/$(id);
+    }
+    function learningPath(uid, id) {
+      return /databases/$(database)/documents/users/$(uid)/learning/$(id);
+    }
+    function reportsCounted(uid) {
+      return exists(usagePath(uid)) ? get(usagePath(uid)).data.get('reports', 0) : 0;
+    }
+    // The server's day as YYYY-MM-DD, what a learning event's `day` and the
+    // date of its `at` must be (LM-26): the client cannot choose its time.
+    function pad2(n) {
+      return n < 10 ? '0' + string(n) : string(n);
+    }
+    function serverDay() {
+      return string(request.time.year()) + '-' + pad2(request.time.month()) + '-' + pad2(request.time.day());
+    }
+    function isValidUsage(data) {
+      return data.keys().hasOnly(['reports', 'report', 'events', 'eventDay', 'eventAt', 'event']);
+    }
+    function reportAdded(before, after, uid) {
+      return after.diff(before).affectedKeys().hasOnly(['reports', 'report'])
+        && after.reports is int
+        && after.reports == before.get('reports', 0) + 1
+        && after.reports <= 1000
+        && isValidId(after.report)
+        && !exists(reportPath(uid, after.report))
+        && existsAfter(reportPath(uid, after.report));
+    }
+    function reportRemoved(before, after, uid) {
+      return after.diff(before).affectedKeys().hasOnly(['reports', 'report'])
+        && after.reports is int
+        && after.reports == before.get('reports', 0) - 1
+        && after.reports >= 0
+        && isValidId(after.report)
+        && exists(reportPath(uid, after.report))
+        && !existsAfter(reportPath(uid, after.report));
+    }
+    function eventAdded(before, after, uid) {
+      return after.diff(before).affectedKeys().hasOnly(['events', 'eventDay', 'eventAt', 'event'])
+        && after.eventAt == request.time
+        && after.eventDay == serverDay()
+        && after.events is int
+        && after.events <= 300
+        && (before.get('eventDay', '') == serverDay()
+          ? (after.events == before.events + 1 && request.time >= before.eventAt + duration.value(2, 's'))
+          : after.events == 1)
+        && isValidId(after.event)
+        && !exists(learningPath(uid, after.event))
+        && existsAfter(learningPath(uid, after.event));
+    }
+    // The two ids taken out at zero projects (2026-11-11), as deleting the
+    // account does before it deletes the counts: on a day an event was sent
+    // the counts must stay, and the ids need not.
+    function idsCleared(before, after) {
+      return before.get('reports', 0) == 0
+        && after.diff(before).affectedKeys().hasOnly(['report', 'event'])
+        && !after.keys().hasAny(['report', 'event']);
+    }
+
     match /users/{userId}/meta/{metaId} {
       allow get: if isSignedIn() && userId == request.auth.uid && metaId == 'quota';
 
@@ -361,6 +441,21 @@ service cloud.firestore {
         && incoming().keys().hasAll(['structure', 'full'])
         && incoming().structure is bool
         && incoming().full is bool;
+
+      // The write counts (SA-01): read by the owner, moved only by a write
+      // they count (or its two ids cleared at zero projects), and deleted only
+      // at zero projects on a day with no learning event sent, so deleting
+      // them cannot restart a day's count.
+      allow get: if isSignedIn() && userId == request.auth.uid && metaId == 'usage';
+      allow create, update: if isSignedIn() && userId == request.auth.uid && metaId == 'usage'
+        && isValidUsage(incoming())
+        && (reportAdded(resource == null ? {} : resource.data, incoming(), userId)
+          || reportRemoved(resource == null ? {} : resource.data, incoming(), userId)
+          || eventAdded(resource == null ? {} : resource.data, incoming(), userId)
+          || (resource != null && idsCleared(resource.data, incoming())));
+      allow delete: if isSignedIn() && userId == request.auth.uid && metaId == 'usage'
+        && (resource == null
+          || (resource.data.get('reports', 0) == 0 && resource.data.get('eventDay', '') != serverDay()));
     }
 
     // What a person lets Forma learn from (2026-11-10, the full audit;
@@ -371,33 +466,56 @@ service cloud.firestore {
     // reads every account's events with a service account, on their own PC.
     // Sizes keep a document well under Firestore's 1 MiB: a skeleton is JSON
     // of structure only, a full report is there only on the opt-in tier.
+    //
+    // Event v2 (2026-11-11, the full audit's LM-10a to LM-13, LM-25, LM-26 and
+    // LM-12): every list below is lib/learning.ts's, and learning.test.ts holds
+    // the two together. `day` is the server's day and `at` a time on it, so a
+    // made-up time cannot reach the owner's pull; a rating, a kept report and
+    // an undo name the event they are about in `ref`.
     function isValidLearning(data, id, uid) {
-      return data.keys().hasOnly(['id', 'userId', 'at', 'day', 'kind', 'source', 'request', 'ai', 'skeleton', 'ops', 'errors', 'warnings', 'rating', 'full', 'prompt'])
-        && data.keys().hasAll(['id', 'userId', 'at', 'day', 'kind', 'source', 'request', 'ai', 'skeleton', 'ops', 'errors', 'warnings', 'rating', 'full', 'prompt'])
+      return data.keys().hasOnly(['id', 'userId', 'at', 'day', 'kind', 'source', 'request', 'ai', 'skeleton', 'ops', 'roles', 'errors', 'warnings', 'rating', 'ref', 'how', 'draft', 'ms', 'project', 'distance', 'dropped', 'full', 'prompt'])
+        && data.keys().hasAll(['id', 'userId', 'at', 'day', 'kind', 'source', 'request', 'ai', 'skeleton', 'ops', 'roles', 'errors', 'warnings', 'rating', 'ref', 'how', 'draft', 'ms', 'project', 'distance', 'dropped', 'full', 'prompt'])
         && data.id == id
         && data.userId == uid
+        && data.day == serverDay()
         && data.at is string && data.at.size() <= 40
-        && data.day is string && data.day.size() == 10
-        && data.kind in ['generation', 'edit', 'translate', 'rating']
-        && data.source is string && data.source.size() <= 16
-        && data.request is string && data.request.size() <= 16
-        && data.ai is string && data.ai.size() <= 16
+        && data.at.matches(serverDay() + 'T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,3})?Z')
+        && data.kind in ['generation', 'edit', 'translate', 'rating', 'kept', 'undo']
+        && data.source in ['image', 'pdf', 'repx', 'words', 'database', 'mixed', 'none']
+        && data.request in ['new', 'redesign', 'edit', 'batch', 'none']
+        && data.ai in ['gemini', 'local', 'openrouter', 'forma', 'mock', 'none']
         && data.skeleton is string && data.skeleton.size() <= 80000
+        && (data.skeleton == '' || data.kind in ['generation', 'kept'])
         && data.ops is list && data.ops.size() <= 40
+        && data.roles is list && data.roles.size() == data.ops.size()
         && data.errors is int && data.errors >= 0
         && data.warnings is int && data.warnings >= 0
         && data.rating in ['', 'good', 'bad']
-        && data.full is string && data.full.size() <= 400000
+        && (data.rating == '' || data.kind == 'rating')
+        && data.ref is string && data.ref.size() <= 64
+        && (data.ref == '' || isValidId(data.ref))
+        && data.how in ['', 'repx', 'pdf', 'xlsx', 'csv', 'docx', 'rtf', 'html', 'png', 'designer', 'save']
+        && data.draft in ['', 'reader', 'ocr', 'offline']
+        && data.ms is int && data.ms >= 0
+        && data.project is string && (data.project == '' || data.project.matches('[0-9a-f]{12}'))
+        && data.distance is number && data.distance >= -1
+        && data.dropped in ['', 'skeleton', 'full']
+        && data.full is string && data.full.size() <= 700000
         && data.prompt is string && data.prompt.size() <= 4000;
     }
     match /users/{userId}/learning/{eventId} {
       allow get, list: if isSignedIn() && isValidId(userId) && userId == request.auth.uid;
 
+      // A verified address (SA-01: an unverified account is anyone's to
+      // make), and the day's count raised in the same batch (`usage`).
       allow create: if isSignedIn()
+        && request.auth.token.email_verified == true
         && isValidId(userId)
         && userId == request.auth.uid
         && isValidId(eventId)
-        && isValidLearning(incoming(), eventId, userId);
+        && isValidLearning(incoming(), eventId, userId)
+        && getAfter(usagePath(userId)).data.get('event', '') == eventId
+        && getAfter(usagePath(userId)).data.get('eventAt', null) == request.time;
 
       allow delete: if isSignedIn() && isValidId(userId) && userId == request.auth.uid;
     }

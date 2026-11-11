@@ -194,6 +194,24 @@ describe('learnModel', () => {
     expect(learnModel([...own, ...emptied], { k: 2 }).style.fonts.map((f) => f.family)).not.toContain('');
   });
 
+  /*
+   * 2026-11-11, a wave-4 follow-up: a set too small for any house font named
+   * none in its list but wrote the default face into its archetypes, and the
+   * leak check refused the model it had just made.
+   */
+  it('makes a model the leak check takes from a set under the font threshold, its roles in listed faces only', () => {
+    const small = learnModel(set.slice(0, 3).map((r) => ({ ...r, skeleton: (() => {
+      const k = JSON.parse(JSON.stringify(r.skeleton)) as ReportSkeleton;
+      for (const b of k.bands) for (const c of b.controls) if (c.font) c.font = { ...c.font, family: 'Tahoma' };
+      return k;
+    })() })), { k: 1, minFontReports: 5 });
+    expect(small.style.fonts).toEqual([]);
+    expect(Object.values(small.style.roles)).toEqual([]);
+    expect(unexpectedStrings(small)).toEqual([]);
+    const listed = new Set(model.style.fonts.map((f) => f.family));
+    for (const role of Object.values(model.style.roles)) expect(listed.has(role!.family)).toBe(true);
+  });
+
   it('carries an id the leak check accepts, made from the model without it', () => {
     const withId = { ...model, id: '0123456789ab', trainedFrom: { reports: 6, events: 0, accounts: 0 } };
     expect(unexpectedStrings(withId)).toEqual([]);

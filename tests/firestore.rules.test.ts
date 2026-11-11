@@ -17,9 +17,10 @@ import {
   assertSucceeds,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, deleteDoc, updateDoc, collection, getDocs, query, where, writeBatch, setLogLevel, type Firestore } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, deleteField, updateDoc, collection, getDocs, query, where, writeBatch, setLogLevel, increment, serverTimestamp, Timestamp, type Firestore } from 'firebase/firestore';
 import fs from 'node:fs';
-import { writeLearning } from '../src/lib/accountData';
+import { deleteReportAndVersions, writeLearning, writeReport } from '../src/lib/accountData';
+import { learningEvent, LEARNING_AIS, LEARNING_DRAFTS, LEARNING_DROPPED, LEARNING_HOWS, LEARNING_KINDS, LEARNING_REQUESTS, LEARNING_SOURCES } from '../src/lib/learning';
 
 // Every denial this file expects is also logged by the SDK as a
 // PERMISSION_DENIED warning, which buried a real one under dozens of expected
@@ -344,75 +345,48 @@ describe('reports — isolation between accounts', () => {
 });
 
 describe('reports — document shape', () => {
+  /** A new project as writeReport saves it: the count raised in the same batch (SA-01), so a refusal here is the shape's. */
+  const createReport = (data: unknown) => {
+    const db = aliceDb();
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'users', ALICE, 'reports', 'r1'), data as any);
+    batch.set(doc(db, 'users', ALICE, 'meta', 'usage'), { reports: increment(1), report: 'r1' }, { merge: true });
+    return batch.commit();
+  };
+
   it('accepts the exact shape handleSaveReport writes', async () => {
-    await assertSucceeds(
-      setDoc(doc(aliceDb(), 'users', ALICE, 'reports', 'r1'), validReport('r1', ALICE))
-    );
+    await assertSucceeds(createReport(validReport('r1', ALICE)));
   });
 
   it('rejects extra fields — the reason hasOnly replaced size() >= 6', async () => {
-    await assertFails(
-      setDoc(doc(aliceDb(), 'users', ALICE, 'reports', 'r1'), {
-        ...validReport('r1', ALICE),
-        smuggled: 'x'.repeat(1000),
-      })
-    );
+    await assertFails(createReport({ ...validReport('r1', ALICE), smuggled: 'x'.repeat(1000) }));
   });
 
   it('rejects a missing required field', async () => {
     const { result, ...withoutResult } = validReport('r1', ALICE);
-    await assertFails(setDoc(doc(aliceDb(), 'users', ALICE, 'reports', 'r1'), withoutResult));
+    await assertFails(createReport(withoutResult));
   });
 
   it('rejects a userId that is not the caller — no writing reports as someone else', async () => {
-    await assertFails(
-      setDoc(doc(aliceDb(), 'users', ALICE, 'reports', 'r1'), validReport('r1', BOB))
-    );
+    await assertFails(createReport(validReport('r1', BOB)));
   });
 
   it('rejects a document id that disagrees with its path', async () => {
-    await assertFails(
-      setDoc(doc(aliceDb(), 'users', ALICE, 'reports', 'r1'), validReport('different', ALICE))
-    );
+    await assertFails(createReport(validReport('different', ALICE)));
   });
 
   it('rejects wrong field types', async () => {
-    await assertFails(
-      setDoc(doc(aliceDb(), 'users', ALICE, 'reports', 'r1'), {
-        ...validReport('r1', ALICE),
-        timestamp: 'not-a-number',
-      })
-    );
-    await assertFails(
-      setDoc(doc(aliceDb(), 'users', ALICE, 'reports', 'r1'), {
-        ...validReport('r1', ALICE),
-        messages: [],
-      })
-    );
+    await assertFails(createReport({ ...validReport('r1', ALICE), timestamp: 'not-a-number' }));
+    await assertFails(createReport({ ...validReport('r1', ALICE), messages: [] }));
   });
 
   it('rejects an implausible timestamp', async () => {
-    await assertFails(
-      setDoc(doc(aliceDb(), 'users', ALICE, 'reports', 'r1'), {
-        ...validReport('r1', ALICE),
-        timestamp: -1,
-      })
-    );
-    await assertFails(
-      setDoc(doc(aliceDb(), 'users', ALICE, 'reports', 'r1'), {
-        ...validReport('r1', ALICE),
-        timestamp: 99999999999999,
-      })
-    );
+    await assertFails(createReport({ ...validReport('r1', ALICE), timestamp: -1 }));
+    await assertFails(createReport({ ...validReport('r1', ALICE), timestamp: 99999999999999 }));
   });
 
   it('rejects an over-long name', async () => {
-    await assertFails(
-      setDoc(doc(aliceDb(), 'users', ALICE, 'reports', 'r1'), {
-        ...validReport('r1', ALICE),
-        name: 'x'.repeat(257),
-      })
-    );
+    await assertFails(createReport({ ...validReport('r1', ALICE), name: 'x'.repeat(257) }));
   });
 });
 
@@ -642,54 +616,95 @@ describe('key vault', () => {
   });
 });
 
-/** Exactly what lib/learning.ts's learningEvent builds and accountData's writeLearning adds userId to (2026-11-10). */
+/**
+ * What lib/learning.ts's learningEvent builds, with the userId writeLearning
+ * adds (LM-27a, 2026-11-11): built by the code rather than by hand, so a
+ * field the code adds and the rules do not take fails here. Stamped now, on
+ * the server's day, which the rules require (LM-26).
+ */
 const validLearning = (id: string, uid: string, extra: Record<string, unknown> = {}) => ({
-  id,
+  ...learningEvent(
+    { id, kind: 'generation', source: 'image', request: 'new', ai: 'gemini', skeleton: { paper: 'A4', landscape: false, width: 827, height: 1169, margins: { top: 50, bottom: 50, left: 50, right: 50 }, bands: [] }, findings: [{ severity: 'warning' }, { severity: 'warning' }] },
+    { structure: true, full: false },
+  ),
   userId: uid,
-  at: '2026-11-10T20:15:00.000Z',
-  day: '2026-11-10',
-  kind: 'generation',
-  source: 'image',
-  request: 'new',
-  ai: 'gemini',
-  skeleton: '{"paper":"A4","bands":[]}',
-  ops: ['font', 'move'],
-  errors: 0,
-  warnings: 2,
-  rating: '',
-  full: '',
-  prompt: '',
   ...extra,
 });
 const EVENT = 'm3k9x1-abc123';
+/** Alice and Bob with verified addresses, which a learning event needs (SA-01). */
+const aliceMail = () => testEnv.authenticatedContext(ALICE, { email: 'alice@example.com', email_verified: true }).firestore();
+const bobMail = () => testEnv.authenticatedContext(BOB, { email: 'bob@example.com', email_verified: true }).firestore();
+const usageOf = (db: ReturnType<typeof aliceDb>, uid = ALICE) => doc(db, 'users', uid, 'meta', 'usage');
+const today = () => new Date().toISOString().slice(0, 10);
+/** An event and the day's count in one batch, as writeLearning writes them; `count` is what the batch sets. */
+const sendEvent = (db: ReturnType<typeof aliceDb>, data: Record<string, unknown>, uid = ALICE, count: Record<string, unknown> = { events: 1, eventDay: today() }, filedAs = String(data.id)) => {
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'users', uid, 'learning', filedAs), data as any);
+  batch.set(usageOf(db, uid), { ...count, eventAt: serverTimestamp(), event: filedAs }, { merge: true });
+  return batch.commit();
+};
 
 describe('learning events (2026-11-10, the full audit)', () => {
   it('lets a user keep an event under their own account, and nobody else under it', async () => {
-    await assertSucceeds(setDoc(doc(aliceDb(), 'users', ALICE, 'learning', EVENT), validLearning(EVENT, ALICE)));
-    await assertFails(setDoc(doc(bobDb(), 'users', ALICE, 'learning', 'other-1'), validLearning('other-1', ALICE)));
-    await assertFails(setDoc(doc(bobDb(), 'users', ALICE, 'learning', 'other-2'), validLearning('other-2', BOB)));
-    await assertFails(setDoc(doc(anonDb(), 'users', ALICE, 'learning', 'other-3'), validLearning('other-3', ALICE)));
+    await assertSucceeds(sendEvent(aliceMail(), validLearning(EVENT, ALICE)));
+    await assertFails(sendEvent(bobMail(), validLearning('other-1', ALICE)));
+    await assertFails(sendEvent(bobMail(), validLearning('other-2', BOB)));
+    await assertFails(sendEvent(anonDb(), validLearning('other-3', ALICE)));
   });
 
-  it('pins the shape: every field, no extra one, the id it is filed under, a known kind, sizes', async () => {
-    const write = (data: unknown, id = EVENT) => setDoc(doc(aliceDb(), 'users', ALICE, 'learning', id), data as any);
+  it('pins the shape: every field, no extra one, the id it is filed under, the lists the code has, sizes', async () => {
+    const write = (data: Record<string, unknown>) => sendEvent(aliceMail(), data);
     await assertFails(write(validLearning(EVENT, ALICE, { extra: 1 })));
     const { prompt: _dropped, ...missing } = validLearning(EVENT, ALICE);
     await assertFails(write(missing));
-    await assertFails(write(validLearning('some-other-id', ALICE)));
+    await assertFails(sendEvent(aliceMail(), validLearning(EVENT, ALICE, { id: 'some-other-id' }), ALICE, undefined, EVENT));
     await assertFails(write(validLearning(EVENT, ALICE, { kind: 'telemetry' })));
+    await assertFails(write(validLearning(EVENT, ALICE, { source: 'camera' })));
+    await assertFails(write(validLearning(EVENT, ALICE, { ai: 'gpt' })));
     await assertFails(write(validLearning(EVENT, ALICE, { rating: 'great' })));
     await assertFails(write(validLearning(EVENT, ALICE, { ops: 'font' })));
+    await assertFails(write(validLearning(EVENT, ALICE, { ops: ['font'], roles: [] })));
     await assertFails(write(validLearning(EVENT, ALICE, { errors: -1 })));
     await assertFails(write(validLearning(EVENT, ALICE, { prompt: 'p'.repeat(4001) })));
-    await assertSucceeds(write(validLearning(EVENT, ALICE, { kind: 'rating', rating: 'good', full: '<x/>', prompt: 'make it bold' })));
+    await assertFails(write(validLearning(EVENT, ALICE, { ref: 'r'.repeat(65) })));
+    await assertFails(write(validLearning(EVENT, ALICE, { how: 'fax' })));
+    await assertFails(write(validLearning(EVENT, ALICE, { project: 'not-a-hash' })));
+    // A rating carries no skeleton (LM-10a), and only a rating carries a rating.
+    await assertFails(write(validLearning(EVENT, ALICE, { kind: 'rating', rating: 'good' })));
+    await assertFails(write(validLearning(EVENT, ALICE, { rating: 'good' })));
+    await assertSucceeds(write(validLearning(EVENT, ALICE, { kind: 'rating', rating: 'good', skeleton: '', ref: 'm3k9x0-rated1' })));
+  });
+
+  it('takes the server day only, so a made-up time never reaches the pull (LM-26)', async () => {
+    await assertFails(sendEvent(aliceMail(), validLearning(EVENT, ALICE, { at: '9999-01-01T00:00:00.000Z', day: '9999-01-01' })));
+    await assertFails(sendEvent(aliceMail(), validLearning(EVENT, ALICE, { at: '2020-01-01T00:00:00.000Z' })));
+    await assertFails(sendEvent(aliceMail(), validLearning(EVENT, ALICE, { at: `${today()}T00:00:00.000Z+junk` })));
+  });
+
+  it('needs a verified address, and the day counted in the same batch', async () => {
+    await assertFails(sendEvent(aliceDb(), validLearning(EVENT, ALICE)));
+    await assertFails(setDoc(doc(aliceMail(), 'users', ALICE, 'learning', EVENT), validLearning(EVENT, ALICE)));
+    await assertFails(sendEvent(aliceMail(), validLearning(EVENT, ALICE), ALICE, { events: 5, eventDay: today() }));
+  });
+
+  it('takes at most 300 a day, two seconds apart, and starts again the next day', async () => {
+    const recent = Timestamp.fromMillis(Date.now() - 500);
+    const earlier = Timestamp.fromMillis(Date.now() - 60_000);
+    await seed(['users', ALICE, 'meta', 'usage'], { events: 300, eventDay: today(), eventAt: earlier, event: 'before' });
+    await assertFails(sendEvent(aliceMail(), validLearning(EVENT, ALICE), ALICE, { events: 301 }));
+    await seed(['users', ALICE, 'meta', 'usage'], { events: 3, eventDay: today(), eventAt: recent, event: 'before' });
+    await assertFails(sendEvent(aliceMail(), validLearning(EVENT, ALICE), ALICE, { events: 4 }));
+    await seed(['users', ALICE, 'meta', 'usage'], { events: 3, eventDay: today(), eventAt: earlier, event: 'before' });
+    await assertSucceeds(sendEvent(aliceMail(), validLearning(EVENT, ALICE), ALICE, { events: 4 }));
+    await seed(['users', ALICE, 'meta', 'usage'], { events: 300, eventDay: '2020-01-01', eventAt: earlier, event: 'before' });
+    await assertSucceeds(sendEvent(aliceMail(), validLearning('next-day-1', ALICE)));
   });
 
   it('is listed and deleted by its owner only, and never changed', async () => {
     await seed(['users', ALICE, 'learning', EVENT], validLearning(EVENT, ALICE));
     await assertSucceeds(getDocs(collection(aliceDb(), 'users', ALICE, 'learning')));
     await assertFails(getDocs(collection(bobDb(), 'users', ALICE, 'learning')));
-    await assertFails(updateDoc(doc(aliceDb(), 'users', ALICE, 'learning', EVENT), { rating: 'bad' }));
+    await assertFails(updateDoc(doc(aliceMail(), 'users', ALICE, 'learning', EVENT), { rating: 'bad' }));
     await assertFails(deleteDoc(doc(bobDb(), 'users', ALICE, 'learning', EVENT)));
     await assertSucceeds(deleteDoc(doc(aliceDb(), 'users', ALICE, 'learning', EVENT)));
   });
@@ -698,10 +713,76 @@ describe('learning events (2026-11-10, the full audit)', () => {
   // next flush. The rules refuse it as an update; writeLearning reads it back and answers it as sent.
   it('takes an event the account already holds as sent, and still refuses one it does not', async () => {
     const { userId: _added, ...event } = validLearning(EVENT, ALICE);
-    const db = aliceDb() as unknown as Firestore;
+    const db = aliceMail() as unknown as Firestore;
     await writeLearning(db, ALICE, event);
     await expect(writeLearning(db, ALICE, event)).resolves.toBeUndefined();
     await expect(writeLearning(db, ALICE, { ...event, id: 'other-4', kind: 'telemetry' })).rejects.toMatchObject({ code: 'permission-denied' });
+  });
+
+  it('takes every value of every list lib/learning.ts has, and the rules name each', () => {
+    const rules = fs.readFileSync('firestore.rules', 'utf8');
+    for (const list of [LEARNING_KINDS, LEARNING_SOURCES, LEARNING_REQUESTS, LEARNING_AIS, LEARNING_HOWS, LEARNING_DRAFTS, LEARNING_DROPPED]) {
+      const quoted = list.map((v) => `'${v}'`).join(', ');
+      expect(rules, `firestore.rules must list [${quoted}]`).toContain(`[${quoted}]`);
+    }
+  });
+});
+
+/* The write counts (2026-11-11, the full audit's SA-01): projects capped, moved only with what they count. */
+describe('the write counts', () => {
+  it('lets a project be added through writeReport and removed through deleteReportAndVersions, the count moving with it', async () => {
+    const db = aliceDb() as unknown as Firestore;
+    await writeReport(db, ALICE, 'r1', validReport('r1', ALICE), true);
+    await writeReport(db, ALICE, 'r2', validReport('r2', ALICE), false);
+    await writeReport(db, ALICE, 'r1', { ...validReport('r1', ALICE), name: 'Renamed' }, true);
+    expect((await getDoc(usageOf(aliceDb()))).data()).toMatchObject({ reports: 2 });
+    await deleteReportAndVersions(db, ALICE, 'r1');
+    expect((await getDoc(usageOf(aliceDb()))).data()).toMatchObject({ reports: 1, report: 'r1' });
+  });
+
+  it('refuses a new project without the count, or past 1,000', async () => {
+    await assertFails(setDoc(doc(aliceDb(), 'users', ALICE, 'reports', 'r1'), validReport('r1', ALICE)));
+    await seed(['users', ALICE, 'meta', 'usage'], { reports: 1000, report: 'last' });
+    const db = aliceDb();
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'users', ALICE, 'reports', 'r1'), validReport('r1', ALICE));
+    batch.set(usageOf(db), { reports: increment(1), report: 'r1' }, { merge: true });
+    await assertFails(batch.commit());
+    await expect(writeReport(aliceDb() as unknown as Firestore, ALICE, 'r1', validReport('r1', ALICE), true)).rejects.toMatchObject({ name: 'ReportLimitError' });
+    // A project the account holds still saves at the limit, though guessed new.
+    await seed(['users', ALICE, 'reports', 'held'], validReport('held', ALICE));
+    await writeReport(aliceDb() as unknown as Firestore, ALICE, 'held', { ...validReport('held', ALICE), name: 'Renamed' }, true);
+    expect((await getDoc(doc(aliceDb(), 'users', ALICE, 'reports', 'held'))).data()).toMatchObject({ name: 'Renamed' });
+  });
+
+  it('cannot be moved without what it counts, nor lowered to make room, nor read by anyone else', async () => {
+    await seed(['users', ALICE, 'meta', 'usage'], { reports: 5, report: 'r5' });
+    await assertFails(setDoc(usageOf(aliceDb()), { reports: 0, report: 'r5' }));
+    await assertFails(setDoc(usageOf(aliceDb()), { reports: 6, report: 'r6' }));
+    await assertFails(setDoc(usageOf(aliceDb()), { reports: 5, report: 'r5', smuggled: 1 }));
+    await assertFails(deleteDoc(usageOf(aliceDb())));
+    await assertFails(getDoc(usageOf(bobDb(), ALICE)));
+    await assertSucceeds(getDoc(usageOf(aliceDb())));
+    // A project deleted while the count stands lowers it in the same batch.
+    await seed(['users', ALICE, 'reports', 'r5'], validReport('r5', ALICE));
+    await assertFails(deleteDoc(doc(aliceDb(), 'users', ALICE, 'reports', 'r5')));
+  });
+
+  it('is deleted at zero projects on a day with no event sent, and kept on one with', async () => {
+    await seed(['users', ALICE, 'meta', 'usage'], { reports: 0, report: 'r1', events: 2, eventDay: today(), eventAt: Timestamp.now(), event: 'e' });
+    await assertFails(deleteDoc(usageOf(aliceDb())));
+    await seed(['users', ALICE, 'meta', 'usage'], { reports: 0, report: 'r1', events: 2, eventDay: '2020-01-01', eventAt: Timestamp.now(), event: 'e' });
+    await assertSucceeds(deleteDoc(usageOf(aliceDb())));
+  });
+
+  it('gives up its two ids at zero projects, and nothing else with them', async () => {
+    const counted = { events: 2, eventDay: today(), eventAt: Timestamp.now(), event: 'e' };
+    await seed(['users', ALICE, 'meta', 'usage'], { reports: 1, report: 'r1', ...counted });
+    await assertFails(updateDoc(usageOf(aliceDb()), { report: deleteField(), event: deleteField() }));
+    await seed(['users', ALICE, 'meta', 'usage'], { reports: 0, report: 'r1', ...counted });
+    await assertFails(updateDoc(usageOf(aliceDb()), { report: deleteField(), event: deleteField(), events: 0 }));
+    await assertFails(updateDoc(usageOf(aliceDb()), { report: 'other' }));
+    await assertSucceeds(updateDoc(usageOf(aliceDb()), { report: deleteField(), event: deleteField() }));
   });
 });
 

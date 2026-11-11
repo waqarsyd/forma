@@ -54,6 +54,20 @@ describe('one parse per version of the file', () => {
   });
 });
 
+// The full audit (2026-11-11, LM-13): what a learning event records is the edits made, not the edits asked for.
+describe('the edits made', () => {
+  it('lists each edit made with its control, in order, and leaves out what was declined', () => {
+    const out = edit(
+      { op: 'font', control: 'title', bold: true },
+      { op: 'align', control: 'nothing-by-this-name', align: 'center' },
+      { op: 'align', control: 'subtitle', align: 'center' },
+    );
+    expect(out.appliedOps).toEqual([{ op: 'font', control: 'title' }, { op: 'align', control: 'subtitle' }]);
+    expect(out.appliedOps).toHaveLength(out.applied.length);
+    expect(out.declined).toHaveLength(1);
+  });
+});
+
 // The selection toolbar's Format menu (2026-11-05), made with the chat's own edits.
 describe('formatEdits', () => {
   it('toggles bold over the selection, steps the size by two points, and aligns', () => {

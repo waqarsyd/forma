@@ -28,9 +28,10 @@
  * cannot be known.
  */
 import { parseReportStructure } from './reportPreview';
-import { skeletonOf } from './reportSkeleton';
-import { learnStyle } from './formaModel';
+import { skeletonOf, skeletonTexts, type ReportSkeleton } from './reportSkeleton';
+import { learnStyle, type HouseStyle } from './formaModel';
 import { REMEMBER } from './chatTurn';
+import { roundSkeleton, scrubSkeleton } from './learning';
 
 /** What Forma's own model can apply from a memory. */
 export interface MemoryHints {
@@ -39,6 +40,12 @@ export interface MemoryHints {
   fontFamily?: string;
   /** Points, by the role a text plays. */
   sizes?: Partial<Record<'title' | 'caption' | 'value' | 'total', number>>;
+  /** The page's margins, in the report's own units, from the kept reports (D1). */
+  margins?: { top: number; bottom: number; left: number; right: number };
+  /** Whether each role is bold, from the kept reports (D1). */
+  bold?: Partial<Record<'title' | 'caption' | 'value' | 'total', boolean>>;
+  /** The height of a record's row, from the kept reports (D1). */
+  rowHeight?: number;
 }
 
 export interface Memory {
@@ -49,6 +56,12 @@ export interface Memory {
   created: string;
   enabled: boolean;
   hints: MemoryHints;
+  /**
+   * The project it was said for (2026-11-11, the full audit's CP-13), when the
+   * words said "for this client" or "for this project": it applies there and
+   * nowhere else. Absent: everywhere, as every memory did until then.
+   */
+  projectId?: string;
 }
 
 /** The style one kept report leaves: no word of it. */
@@ -60,11 +73,24 @@ export interface KeptStyle {
    * Absent on a style kept before the key.
    */
   key?: string;
+  /**
+   * Its skeleton's hash whatever `key` is (2026-11-11, a wave-4 follow-up to
+   * LM-28): a report downloaded before it was ever saved was kept under that
+   * hash, and kept again under its project's id once saved, so it counted
+   * twice. A style kept under a project replaces one kept under its shape.
+   */
+  shape?: string;
   at: string;
   paper: string;
   landscape: boolean;
   fontFamily: string;
   sizes: Partial<Record<'title' | 'caption' | 'value' | 'total', number>>;
+  /**
+   * The report's skeleton, scrubbed as a learning event's is and rounded
+   * (2026-11-11, the full audit's D1 and LM-22): what a personal house style
+   * is learned from. Absent on a style kept before, or one too large to keep.
+   */
+  skeleton?: ReportSkeleton;
 }
 
 export interface MemoryState {
@@ -77,6 +103,11 @@ export interface MemoryState {
 const STORAGE_KEY = 'forma.memory';
 /** Enough reports to know a house style, few enough to follow it as it changes. */
 export const MAX_KEPT = 30;
+/**
+ * The longest skeleton kept with a style: thirty of them stay under about
+ * 600 kB of this browser's storage, which signed out also holds the projects.
+ */
+export const MAX_KEPT_SKELETON_CHARS = 20_000;
 
 const EMPTY: MemoryState = { memories: [], kept: [], learnFromKept: true };
 
@@ -195,8 +226,15 @@ export function hintsOf(text: string): MemoryHints {
   return hints;
 }
 
-/** A memory from a message: the words after "remember", capitalised. */
-export function memoryFrom(message: string, source: Memory['source'] = 'chat', now = new Date()): Memory {
+/** Words that say a memory is for the open project alone (CP-13). */
+export const FOR_THIS_PROJECT = /\bfor\s+(this|the\s+current)\s+(client|customer|project|report)\b/i;
+
+/**
+ * A memory from a message: the words after "remember", capitalised. Said
+ * "for this client" or "for this project" with a project open, it is that
+ * project's alone (2026-11-11, CP-13).
+ */
+export function memoryFrom(message: string, source: Memory['source'] = 'chat', now = new Date(), projectId?: string | null): Memory {
   const text = message.replace(REMEMBER, '').trim().replace(/[.!]+$/, '') || message.trim();
   return {
     id: `m${now.getTime().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`,
@@ -205,7 +243,51 @@ export function memoryFrom(message: string, source: Memory['source'] = 'chat', n
     created: now.toISOString(),
     enabled: true,
     hints: hintsOf(message),
+    ...(projectId && FOR_THIS_PROJECT.test(message) ? { projectId } : {}),
   };
+}
+
+/** The memory as one small file (CP-13): what Settings' Export writes and Import reads back. */
+export function exportMemory(state: MemoryState): string {
+  return JSON.stringify({ forma: 'memory', version: 1, memories: state.memories, learnFromKept: state.learnFromKept }, null, 1);
+}
+
+/**
+ * A memory file read back: its memories added to these, one already here (by
+ * id) not twice, each checked to the shape a memory has. Null when the file
+ * is not one. The kept reports' styles are not in the file: they are learned
+ * from this browser's own reports.
+ */
+export function importMemory(state: MemoryState, file: string): MemoryState | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(file);
+  } catch {
+    return null;
+  }
+  const p = parsed as { forma?: unknown; memories?: unknown };
+  if (!p || p.forma !== 'memory' || !Array.isArray(p.memories)) return null;
+  const have = new Set(state.memories.map((m) => m.id));
+  const added = (p.memories as Partial<Memory>[]).flatMap((m): Memory[] => {
+    if (!m || typeof m.text !== 'string' || !m.text.trim() || typeof m.id !== 'string') return [];
+    // By the id as kept, and each one taken added to `have` (2026-11-11): a
+    // file holding one id twice added it twice, and Settings then listed two
+    // rows under one key and Forget removed both.
+    const id = m.id.slice(0, 40);
+    if (have.has(id)) return [];
+    have.add(id);
+    const text = m.text.slice(0, 500);
+    return [{
+      id,
+      text,
+      source: m.source === 'chat' ? 'chat' : 'settings',
+      created: typeof m.created === 'string' ? m.created : new Date().toISOString(),
+      enabled: m.enabled !== false,
+      hints: hintsOf(text),
+      ...(typeof m.projectId === 'string' && m.projectId ? { projectId: m.projectId.slice(0, 128) } : {}),
+    }];
+  });
+  return { ...state, memories: [...state.memories, ...added] };
 }
 
 /**
@@ -248,15 +330,23 @@ export function keptStyleOf(repx: string, now = new Date(), key?: string): KeptS
     const style = learnStyle([skeleton]);
     const sizes: KeptStyle['sizes'] = {};
     for (const role of ['title', 'caption', 'value', 'total'] as const) if (style.roles[role]) sizes[role] = style.roles[role]!.size;
-    return { key: key || `s${hashOf(JSON.stringify(skeleton))}`, at: now.toISOString(), paper: skeleton.paper, landscape: skeleton.landscape, fontFamily: style.fonts[0]?.family ?? 'Arial', sizes };
+    const shape = `s${hashOf(JSON.stringify(skeleton))}`;
+    const clean = roundSkeleton(scrubSkeleton(skeleton));
+    const keep = JSON.stringify(clean).length <= MAX_KEPT_SKELETON_CHARS;
+    return { key: key || shape, shape, at: now.toISOString(), paper: skeleton.paper, landscape: skeleton.landscape, fontFamily: style.fonts[0]?.family ?? 'Arial', sizes, ...(keep ? { skeleton: clean } : {}) };
   } catch {
     return null;
   }
 }
 
-/** Keep a report's style, the newest MAX_KEPT; a report kept again replaces what it left before. */
+/**
+ * Keep a report's style, the newest MAX_KEPT; a report kept again replaces
+ * what it left before, by its key, and by its shape when it was kept before
+ * it had a project (LM-28's remainder).
+ */
 export function rememberKept(state: MemoryState, style: KeptStyle): MemoryState {
-  const others = style.key ? state.kept.filter((k) => k.key !== style.key) : state.kept;
+  const same = (k: KeptStyle) => (style.key !== undefined && k.key === style.key) || (style.shape !== undefined && k.key === style.shape);
+  const others = state.kept.filter((k) => !same(k));
   return { ...state, kept: [...others, style].slice(-MAX_KEPT) };
 }
 
@@ -279,11 +369,32 @@ export function keptSummary(state: MemoryState): (MemoryHints & { reports: numbe
 }
 
 /**
+ * The person's own house style (2026-11-11, the full audit's D1 and LM-22):
+ * the style Forma's model learns, learned from the skeletons of the reports
+ * they kept rather than from the owner's set, once two are kept and the
+ * memory may learn from them. It stands in for Forma's own house style in the
+ * brief a described report is given (App, `houseStyleBrief`), so a person
+ * who keeps A4 reports in Tahoma 9pt gets the next one that way. Null until
+ * then. Nothing of it leaves this browser but that brief.
+ */
+export function personalStyle(state: MemoryState): { style: HouseStyle; reports: number } | null {
+  if (!state.learnFromKept) return null;
+  const skeletons = state.kept.flatMap((k) => (k.skeleton && Array.isArray(k.skeleton.bands) ? [k.skeleton] : []));
+  if (skeletons.length < 2) return null;
+  return { style: learnStyle(skeletons), reports: skeletons.length };
+}
+
+/**
  * What Forma's own model applies: what the kept reports show, then every
  * memory switched on, the newest last, so what the user said wins over what
- * their reports show and a later word over an earlier one.
+ * their reports show and a later word over an earlier one. Since 2026-11-11
+ * (D1) the kept reports also give their margins, how bold each role is and
+ * the height of a record's row, from `personalStyle`.
+ *
+ * `projectId` (CP-13): a memory said for one project applies there and
+ * nowhere else; one said for none applies everywhere.
  */
-export function preferencesOf(state: MemoryState): MemoryHints {
+export function preferencesOf(state: MemoryState, projectId?: string | null): MemoryHints {
   const out: MemoryHints = {};
   const apply = (h: MemoryHints) => {
     if (h.paper && h.paper !== 'Custom') out.paper = h.paper;
@@ -293,13 +404,33 @@ export function preferencesOf(state: MemoryState): MemoryHints {
   };
   const kept = keptSummary(state);
   if (kept) apply(kept);
-  for (const m of state.memories) if (m.enabled) apply(m.hints);
+  const mine = personalStyle(state);
+  if (mine) {
+    const paper = out.paper ?? mine.style.papers[0]?.paper;
+    if (paper && mine.style.margins[paper]) out.margins = mine.style.margins[paper];
+    const bold: NonNullable<MemoryHints['bold']> = {};
+    for (const role of ['title', 'caption', 'value', 'total'] as const) {
+      const r = mine.style.roles[role];
+      if (r) bold[role] = r.bold >= 0.5;
+    }
+    if (Object.keys(bold).length) out.bold = bold;
+    // Only when a kept report has a record's row to measure (2026-11-11):
+    // learnStyle answers 20 when none has, which is its default, not theirs.
+    const measured = state.kept.some((k) => k.skeleton && Array.isArray(k.skeleton.bands) && skeletonTexts(k.skeleton).some((t) => t.band === 'Detail' && t.h > 0));
+    if (measured) out.rowHeight = mine.style.rowHeight;
+  }
+  for (const m of appliesTo(state, projectId)) apply(m.hints);
   return out;
 }
 
-/** What an AI provider is told: the user's standing preferences, or '' when there are none. */
-export function instructionsOf(state: MemoryState): string {
-  const lines = state.memories.filter((m) => m.enabled).map((m) => `- ${m.text}`);
+/** The memories switched on that apply in a project: those said for it, and those said for none. */
+function appliesTo(state: MemoryState, projectId?: string | null): Memory[] {
+  return state.memories.filter((m) => m.enabled && (!m.projectId || m.projectId === projectId));
+}
+
+/** What an AI provider is told: the user's standing preferences, or '' when there are none. In a project, its own memories too (CP-13). */
+export function instructionsOf(state: MemoryState, projectId?: string | null): string {
+  const lines = appliesTo(state, projectId).map((m) => `- ${m.text}`);
   const kept = keptSummary(state);
   if (kept) {
     const sizes = Object.entries(kept.sizes ?? {}).map(([role, pt]) => `${role}s ${pt}pt`).join(', ');

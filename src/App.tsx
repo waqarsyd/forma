@@ -227,7 +227,6 @@ import {
   saveRevisions,
   loadRevisions,
   type VersionIo,
-  type VersionDocument,
 } from './lib/revisionStore';
 // Pure helpers live in src/lib so they can be unit-tested without importing the
 // whole app (and pdf.js, and Firebase) into a test run.
@@ -364,7 +363,8 @@ interface DesignResult {
  * component layer — the same arrangement `savedReport.ts` uses. This alias is
  * what keeps every use site below reading as plain `ChatMessage`.
  */
-type ChatMessage = ChatSessionMessage<DesignResult, PreviewMeta>;
+/** `learning`: the learning event a reply made, so a rating names what it rates (2026-11-11, LM-11). */
+type ChatMessage = ChatSessionMessage<DesignResult, PreviewMeta> & { learning?: { id: string; ai: 'gemini' | 'local' | 'openrouter' | 'forma' | 'mock' } };
 
 
 /* ------------------------------------------------------------------ *
@@ -1389,24 +1389,14 @@ export default function App() {
   const learningSettled = useRef<{ uid: string; known: Promise<boolean> } | null>(null);
   const settleLearning = (uid: string): Promise<boolean> => {
     if (learningSettled.current?.uid === uid) return learningSettled.current.known;
-    const known = (async () => {
-      try {
-        const [learning, { paths, db }] = await Promise.all([import('./lib/learning'), loadFirebase()]);
-        const before = learning.readDeviceLearning(uid);
-        const settled = learning.settleLearningSettings(before, await paths.readLearningPrefs(db, uid));
-        if (settled.push) await paths.writeLearningPrefs(db, uid, settled.settings);
-        // A switch changed in Settings while this ran has written its own copy, and it
-        // stands: writing what was settled over it would undo the change unseen.
-        const now = learning.readDeviceLearning(uid);
-        const untouched = now.pending === before.pending && now.settings.structure === before.settings.structure && now.settings.full === before.settings.full;
-        if (untouched) learning.writeLearningSettings(settled.settings, uid);
-        return true;
-      } catch (err) {
-        console.warn('The learning switches could not be read from the account; whole reports wait until they are.', err);
-        if (learningSettled.current?.uid === uid) learningSettled.current = null;
-        return false;
-      }
-    })();
+    // The work is lib/learning.ts's `settleWithAccount` since 2026-11-11 (LRN), in that lazy module.
+    const known = Promise.all([import('./lib/learning'), loadFirebase()])
+      .then(([learning, { paths, db }]) => learning.settleWithAccount(uid, () => paths.readLearningPrefs(db, uid), (s) => paths.writeLearningPrefs(db, uid, s)))
+      .catch(() => false)
+      .then((ok) => {
+        if (!ok && learningSettled.current?.uid === uid) learningSettled.current = null;
+        return ok;
+      });
     learningSettled.current = { uid, known };
     return known;
   };
@@ -1415,7 +1405,8 @@ export default function App() {
     const uid = user.uid;
     void (async () => {
       const known = await settleLearning(uid);
-      if (!known || previousUidRef.current !== uid) return;
+      // An unverified address's events wait here: the rules take none (SA-01).
+      if (!known || previousUidRef.current !== uid || !user.emailVerified) return;
       try {
         const learning = await import('./lib/learning');
         const { paths, db } = firebase;
@@ -1424,8 +1415,8 @@ export default function App() {
         console.warn('Learning events kept here could not be sent yet.', err);
       }
     })();
-    // settleLearning is keyed by uid through its ref; the account and the SDK are what start it.
-  }, [user?.uid, firebase]);
+    // settleLearning is keyed by uid through its ref; the account, its verification and the SDK are what start it.
+  }, [user?.uid, user?.emailVerified, firebase]);
 
   /*
    * The account's projects, from its index (2026-11-08, site audit item 63).
@@ -1595,7 +1586,7 @@ export default function App() {
       const { copied, left } = await copyProjectsToAccount(local, inAccount, async (report) => {
         const fitted = cloudPayload(report, uid);
         if (!fitted) return false;
-        await sdk.setDoc(paths.reportDocRef(db, uid, report.id), fitted.payload);
+        await paths.writeReport(db, uid, report.id, fitted.payload, !inAccount.has(report.id));
         // Its entry in the index, as a save writes it; tolerated as there, since the weekly check writes a missing one.
         await sdk.setDoc(paths.reportIndexDocRef(db, uid, report.id), toIndexDocument(report, uid)).catch(() => undefined);
         return true;
@@ -2813,12 +2804,15 @@ export default function App() {
     const unsure = built.flagged
       ? ' A few words were hard to make out; they are marked in the report, so check them against your page.'
       : '';
+    // Forma's own builds are learning events too, by what built them (2026-11-11, LM-12).
+    const learning = formaLearned('ocr', newResult.repxContent);
     setMessages(prev => [...prev, {
       id: nextMessageId(),
       role: 'assistant',
       text: `Here is "${built.title}", built from the text of your page, every line where it was printed.${unsure}`,
       result: newResult,
       standalone: true,
+      learning,
     }]);
     setOcrReview(null);
   };
@@ -2837,7 +2831,9 @@ export default function App() {
     setResult(newResult);
     recordRevision('From your page', newResult);
     if (!result) setActiveTab('print');
+    const learning = formaLearned('reader', newResult.repxContent);
     setMessages(prev => [...prev, {
+      learning,
       id: nextMessageId(),
       role: 'assistant',
       text:
@@ -3015,28 +3011,20 @@ export default function App() {
    *
    * Everything above this — planning, budgeting, the numbering — lives in
    * `lib/revisionStore.ts` and is exercised against the emulator through this
-   * same interface by `tests/revisionRoundTrip.test.ts`. What is left here is
-   * four SDK calls, which is the part a test cannot reach without a browser and
-   * the part least likely to be wrong.
+   * same interface by `tests/revisionRoundTrip.test.ts`. What is left is four
+   * SDK calls, `versionIoFor` in lib/accountData.ts since 2026-11-11, which is
+   * the part a test cannot reach without a browser and the least likely to be
+   * wrong.
    *
    * The `orderBy` is not decoration: `fromVersionDocuments` numbers downwards
    * from the newest and trusts the caller to have ordered them, so reading this
    * collection unordered would hand the highest id to whichever document
    * Firestore returned first.
    */
+  // The four calls live in lib/accountData.ts's `versionIoFor` since 2026-11-11 (LRN), in that lazy module.
   const versionIo = async (uid: string, reportId: string): Promise<VersionIo> => {
-    const { sdk, paths, db } = await loadFirebase();
-    const collectionRef = paths.versionsCollectionRef(db, uid, reportId);
-    const docRef = (id: string) => paths.versionDocRef(db, uid, reportId, id);
-    return {
-      list: async () => (await sdk.getDocs(collectionRef)).docs.map((entry) => entry.id),
-      read: async () =>
-        (await sdk.getDocs(sdk.query(collectionRef, sdk.orderBy('timestamp', 'desc')))).docs.map(
-          (entry) => entry.data() as VersionDocument,
-        ),
-      write: async (document) => { await sdk.setDoc(docRef(document.id), document); },
-      remove: async (id) => { await sdk.deleteDoc(docRef(id)); },
-    };
+    const { paths, db } = await loadFirebase();
+    return paths.versionIoFor(db, uid, reportId);
   };
 
   /**
@@ -3116,6 +3104,9 @@ export default function App() {
     if (!report && kept.length === 0) return false;
     const reportId = openReportId.current ?? Date.now().toString();
     if (!quiet) rememberKept(report?.repxContent, reportId);
+    // Only once the save has succeeded (2026-11-11): a refused save, at the
+    // projects limit or offline, kept nothing and is no sign the report was right.
+    const keptBySave = () => { if (!quiet) recordKept('save', report?.repxContent); };
     const ts = Date.now();
     const signature = sessionSignature(kept, report);
     // A report's first save takes the words in its box with it to its id (agent audit item 69).
@@ -3156,7 +3147,6 @@ export default function App() {
     if (user) {
       try {
         const { sdk, paths, db } = await loadFirebase();
-        const docRef = paths.reportDocRef(db, user.uid, reportId);
 
         // The transcript carries the user's uploads inline as base64 data URLs,
         // and one of those alone can be several times the size of an entire
@@ -3175,7 +3165,8 @@ export default function App() {
         }
         const { payload, imagesDropped } = fitted;
 
-        await sdk.setDoc(docRef, payload);
+        // Through writeReport (2026-11-11, SA-01): a new project raises the account's count in the same batch.
+        await paths.writeReport(db, user.uid, reportId, payload, !savedReportsRef.current.some((r) => r.id === reportId));
         // Its index entry after it (site audit item 63), which is what the
         // list listens to; tolerated, since the weekly reconciliation writes
         // a missing one and the save itself has already succeeded.
@@ -3183,6 +3174,7 @@ export default function App() {
           console.warn('The project was saved; its entry in the projects index was not.', error);
         });
         saved();
+        keptBySave();
 
         // After the report, and only after: a version filed under a report that
         // failed to save would be history for something nobody can open.
@@ -3205,7 +3197,7 @@ export default function App() {
         if (quiet && autosaveFailedFor.current === reportId) return false;
         autosaveFailedFor.current = reportId;
         reportFirestoreFailure(err, OperationType.WRITE, `users/${user.uid}/reports/${reportId}`,
-          'That project could not be saved to your account. It is still open here — try again in a moment.', { saving: true });
+          (err as Error)?.name === 'ReportLimitError' ? (err as Error).message : 'That project could not be saved to your account. It is still open here — try again in a moment.', { saving: true });
         return false;
       }
     } else {
@@ -3224,6 +3216,7 @@ export default function App() {
 
       setSavedReports(updated);
       saved();
+      keptBySave();
       // Ask the browser to keep it (site audit item 60, lib/storagePersist.ts),
       // once a session, now that there is something on this device to keep.
       void askToKeepStorage();
@@ -3645,7 +3638,7 @@ export default function App() {
           return;
         }
         const { sdk, paths, db } = await loadFirebase();
-        await sdk.setDoc(paths.reportDocRef(db, user.uid, copy.id), fitted.payload);
+        await paths.writeReport(db, user.uid, copy.id, fitted.payload, true);
         await sdk.setDoc(paths.reportIndexDocRef(db, user.uid, copy.id), toIndexDocument(copy, user.uid)).catch((error) => {
           console.warn('The copy was saved; its entry in the projects index was not.', error);
         });
@@ -3940,7 +3933,7 @@ export default function App() {
     const fields = request.dataSchema
       ? parseDataSource(request.dataSchema).fields.map(f => ({ name: f.name, type: f.type === 'string' ? ('text' as const) : f.type }))
       : undefined;
-    const design = offline.generateOffline(await loadFormaModel(), { description: request.description || message, fields, preferences: preferencesOf(readMemory(previousUidRef.current)) });
+    const design = offline.generateOffline(await loadFormaModel(), { description: request.description || message, fields, preferences: preferencesOf(readMemory(previousUidRef.current), openReportId.current) });
     const newResult: DesignResult = {
       content: design.markdown,
       timestamp: new Date(),
@@ -3949,6 +3942,7 @@ export default function App() {
       repxContent: design.repx,
       usage: null,
     };
+    recordLearning({ kind: 'generation', source: 'words', request: 'new', ai: 'forma', draft: 'offline', repx: design.repx });
     return { design, result: newResult, reply: offline.designedReply(design) };
   };
 
@@ -4042,10 +4036,11 @@ export default function App() {
 
     const described = input.described;
     if (described) {
-      // Forma's own style, unless the box's switch is off (2026-11-08).
+      // Forma's own style, unless the box's switch is off (2026-11-08); the
+      // person's own once two reports they kept show it (2026-11-11, D1).
       if (houseStyleOn) try {
-        const [{ loadFormaModel }, { houseStyleBrief }] = await Promise.all([import('./lib/formaModel'), import('./lib/formaTeam')]);
-        const model = await loadFormaModel();
+        const [{ loadFormaModel }, { houseStyleBrief }, memory] = await Promise.all([import('./lib/formaModel'), import('./lib/formaTeam'), import('./lib/memory')]);
+        const model = memory.personalStyle(memory.readMemory(previousUidRef.current)) ?? await loadFormaModel();
         brief = houseStyleBrief(model.style, model.reports, config.unit);
       } catch (err) {
         console.warn("Forma's own model could not be loaded; the AI designs without its house style.", err);
@@ -4075,6 +4070,8 @@ export default function App() {
     // The settings worked out for this request, not the stored ones (lib/autoConfig.ts).
     const config = effectiveConfig();
     const open = turnOf?.base !== undefined ? turnOf.base : result;
+    // From the message sent to the report shown, which the learning event records (LM-12).
+    const turnStartedAt = Date.now();
     loadingIntervalRef.current = setInterval(() => setProgress(tickSimulated), STEP_INTERVAL_MS);
 
     console.log(`${copy.start} Prompt: "${currentPrompt}"`);
@@ -4154,7 +4151,7 @@ export default function App() {
 
       // The user's remembered preferences (lib/memory.ts), as their own block
       // ahead of the request, never mixed into the words they typed.
-      const remembered = await import('./lib/memory').then(m => m.instructionsOf(m.readMemory(previousUidRef.current))).catch(() => '');
+      const remembered = await import('./lib/memory').then(m => m.instructionsOf(m.readMemory(previousUidRef.current), openReportId.current)).catch(() => '');
       // A shared database's likeliest objects and sample values, in place of "assume the procedure" (batch DE).
       const db = databaseShared && activeDatabase ? await import('./lib/databaseAi') : null;
       const database = db ? db.designSection(activeDatabase!, { query: activeQuery, words: [currentPrompt, team.brief, ...currentTexts.map((t) => t.text)].join('\n') }) : undefined;
@@ -4353,11 +4350,13 @@ export default function App() {
         : currentTexts.some((t) => /\.pdf$/i.test(t.file ?? '')) ? 'pdf'
         : currentPreviews.length ? 'picture' : 'description';
       const said = firstReply(kind, Boolean(currentPrompt.trim()), translated?.language);
+      const learnedAs = { id: recordLearning(null), ai: aiKindOf(chained.by) };
       const newAssistantMsg: ChatMessage = {
         id: nextMessageId(),
         role: 'assistant',
         text: [switched, credits ? `${said} ${credits}` : said, dataNote, changed, checked, compared].filter(Boolean).join('\n\n'),
-        result: newResult
+        result: newResult,
+        learning: learnedAs,
       };
       // The two imports above are a wait: a session left meanwhile is not this one.
       if (signal.aborted) return;
@@ -4370,6 +4369,7 @@ export default function App() {
       // module here put it inside this try, so a chunk gone after a deploy
       // turned a finished report into a failure and Forma's own draft.
       recordLearning({
+        id: learnedAs.id,
         kind: 'generation',
         sourceCounts: {
           images: currentPreviews.length,
@@ -4379,9 +4379,10 @@ export default function App() {
           database: Boolean(databaseShared && activeDatabase),
         },
         request: describeRequest || !open ? 'new' : 'redesign',
-        ai: aiKindOf(chained.by),
+        ai: learnedAs.ai,
         repx: newResult.repxContent,
         prompt: currentPrompt,
+        ms: Date.now() - turnStartedAt,
       });
 
     } catch (err: any) {
@@ -4623,6 +4624,9 @@ export default function App() {
     else setResult(change.before);
     recordRevision('Undone in the chat', change.before);
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, undone: true } : m)));
+    // An edit undone is the clearest "not that" there is (2026-11-11, LM-12): it names the edit's event.
+    const undone = messages.find((m) => m.id === id)?.learning;
+    if (undone) recordLearning({ kind: 'undo', request: 'edit', ref: undone.id, ai: undone.ai });
   };
   const handleRedo = (id: string) => {
     const change = chatChanges[id];
@@ -4770,70 +4774,73 @@ export default function App() {
    * `settleLearning` (LM-01); and keeping and sending are apart, an event
    * kept as not yet sent until the account has it, so one that could not go
    * goes at the next sign-in or load (`flushLearning`, LM-09).
+   *
+   * Since event v2 (LM-10a to LM-13) the work is `recordLearning` in
+   * lib/learning.ts, run in that lazy module; App names the event's id here so
+   * the reply can carry it (LM-11), and sends only from a verified address,
+   * which the rules require (SA-01): an unverified account's events wait.
    */
-  const recordLearning = (input: {
-    kind: 'generation' | 'edit' | 'translate' | 'rating';
-    source?: 'image' | 'pdf' | 'repx' | 'words' | 'database' | 'mixed' | 'none';
-    /** What the request brought, counted; named by `sourceOf` inside, when `source` is not given. */
-    sourceCounts?: { images: number; pdfs: number; repx: number; words: boolean; database: boolean };
-    request?: 'new' | 'redesign' | 'edit' | 'batch' | 'none';
-    ai?: 'gemini' | 'local' | 'openrouter' | 'forma' | 'mock' | 'none';
-    repx?: string | null;
-    ops?: readonly string[];
-    rating?: 'good' | 'bad';
-    prompt?: string | null;
-  }) => {
-    if (MOCK_MODE) return;
+  // `null` names an event's id without recording one, for a reply posted before its event is built.
+  const recordLearning = (input: import('./lib/learning').LearningRecord | null): string => {
+    const id = input?.id ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const owner = user;
-    void (async () => {
-      try {
-        const learning = await import('./lib/learning');
-        const known = owner ? await settleLearning(owner.uid) : true;
-        const settings = learning.effectiveLearningSettings(learning.readLearningSettings(owner?.uid ?? null), Boolean(owner), known);
-        if (!learning.keepable(settings)) return;
-        let skeleton = null;
-        let findings: { severity: string }[] = [];
-        if (input.repx) {
-          const [{ parseReportStructure }, { skeletonOf }, { auditRepx }] = await Promise.all([import('./lib/reportPreview'), import('./lib/reportSkeleton'), import('./lib/repxAudit')]);
-          try {
-            skeleton = skeletonOf(parseReportStructure(input.repx));
-            findings = auditRepx(input.repx, null).findings;
-          } catch {
-            skeleton = null;
-          }
-        }
-        const { sourceCounts, ...rest } = input;
-        const source = rest.source ?? (sourceCounts ? learning.sourceOf(sourceCounts) : undefined);
-        const event = learning.learningEvent({ ...rest, source, skeleton, findings }, settings);
-        try {
-          await learning.keepLearningEvent({ ...event, uid: owner?.uid ?? null, sent: false });
-        } catch (err) {
-          console.warn('A learning event could not be kept on this device.', err);
-        }
-        const outgoing = owner ? learning.forSending(event, settings) : null;
-        if (!owner || !outgoing) return;
-        try {
-          const { paths, db } = await loadFirebase();
-          await paths.writeLearning(db, owner.uid, outgoing);
-        } catch (err) {
-          console.warn('A learning event could not be sent; it goes next time.', err);
-          return;
-        }
-        await learning.markLearningSent(event.id).catch(() => undefined);
-      } catch (err) {
-        console.warn('A learning event could not be kept.', err);
-      }
-    })();
+    if (input && !MOCK_MODE) {
+      void import('./lib/learning')
+        .then((learning) =>
+          learning.recordLearning(
+            { projectId: openReportId.current, ...input, id },
+            {
+              uid: owner?.uid ?? null,
+              known: owner ? settleLearning(owner.uid) : true,
+              send: owner?.emailVerified ? async (event) => { const { paths, db } = await loadFirebase(); await paths.writeLearning(db, owner.uid, event); } : null,
+            },
+          ),
+        )
+        .catch(() => undefined);
+    }
+    return id;
   };
+  /** A report Forma built from a picture on its own, as a learning event, by what built it (LM-12). */
+  const formaLearned = (draft: 'reader' | 'ocr', repx: string | undefined) =>
+    ({ id: recordLearning({ kind: 'generation', source: 'image', request: 'new', ai: 'forma', draft, repx }), ai: 'forma' as const });
   /** The AI's kind for a learning event, from who answered. */
-  const aiKindOf = (by: 'gemini' | 'local' | 'openrouter'): 'gemini' | 'local' | 'openrouter' | 'mock' => (MOCK_MODE ? 'mock' : by);
+  const aiKindOf =(by: 'gemini' | 'local' | 'openrouter'): 'gemini' | 'local' | 'openrouter' | 'mock' => (MOCK_MODE ? 'mock' : by);
 
-  /** A reply rated, or its rating taken back (2026-11-05). It stays with the message, and with the learning events when it is given. */
+  /**
+   * A reply rated, or its rating taken back (2026-11-05). It stays with the
+   * message, and with the learning events: naming the event it rates and the
+   * AI that answered, with no skeleton, and a retraction as a rating of ''
+   * (2026-11-11, LM-11), since a bad rating taken back still unkept a report.
+   */
   const handleRate = (id: string, rating: 'good' | 'bad' | undefined) => {
     setMessages((prev) => prev.map((m) => (m.id === id && m.role === 'assistant' ? { ...m, rating } : m)));
-    if (!rating) return;
     const rated = messages.find((m) => m.id === id);
-    recordLearning({ kind: 'rating', rating, request: rated?.result ? 'new' : 'edit', repx: (rated?.result as DesignResult | undefined)?.repxContent ?? result?.repxContent ?? null });
+    recordLearning({ kind: 'rating', rating: rating ?? '', ref: rated?.learning?.id, ai: rated?.learning?.ai, request: rated?.result ? 'new' : 'edit' });
+  };
+
+  /**
+   * A report kept (2026-11-11, LM-12 and D6): exported, opened in the designer
+   * or saved, the strongest sign a report was right. With the report Forma
+   * made first in this conversation, so the event says how far it moved.
+   */
+  const recordKept = (how: string, repx: string | undefined) => {
+    if (!repx) return;
+    const made = messages.find((m) => m.role === 'assistant' && m.result?.repxContent);
+    recordLearning({ kind: 'kept', how, repx, madeRepx: made?.result?.repxContent, ref: made?.learning?.id, ai: made?.learning?.ai });
+  };
+
+  /**
+   * An export through the Preview, kept as one (2026-11-11, LM-12): the
+   * Export panel, the command menu and the chat's export all come here, so no
+   * way of exporting is missed by the learning. `after` spaces the chat's
+   * several exports, since the Preview holds one request at a time.
+   */
+  const exportThroughPreview = (format: NonNullable<typeof exportRequest>['format'], after = 0, nonce = Date.now()) => {
+    recordKept(format.replace('-outline', ''), result?.repxContent);
+    showPlate('print');
+    const request = { format, nonce };
+    if (after > 0) window.setTimeout(() => setExportRequest(request), after);
+    else setExportRequest(request);
   };
 
   /**
@@ -5179,7 +5186,7 @@ export default function App() {
       setMessages(prev => [...prev, { id: nextMessageId(), role: 'user', text: promptText }]);
       clearComposer();
       const memory = await import('./lib/memory');
-      const kept = memory.memoryFrom(promptText);
+      const kept = memory.memoryFrom(promptText, 'chat', undefined, openReportId.current);
       const owner = previousUidRef.current;
       const state = memory.readMemory(owner);
       // Once (2026-11-05): Try again or an edit sends the same words again,
@@ -5453,7 +5460,7 @@ export default function App() {
         const { chatReply } = await loadGemini();
         // What the user asked Forma to remember, told to the chat as well (agent audit item 13).
         const memory = await import('./lib/memory').catch(() => null);
-        const remembered = memory ? memory.instructionsOf(memory.readMemory(previousUidRef.current)) : '';
+        const remembered = memory ? memory.instructionsOf(memory.readMemory(previousUidRef.current), openReportId.current) : '';
         /*
          * With a report open, the turn sees it and may change it in place
          * (2026-11-05, lib/agentEdit.ts): its outline goes with the
@@ -5600,7 +5607,7 @@ export default function App() {
           return;
         }
         // Edits that add a label take the remembered font, unless they name one (agent audit item 13).
-        const houseFont = memory && outcome.edits?.some((e) => e.op === 'add' && !e.family) ? memory.preferencesOf(memory.readMemory(previousUidRef.current)).fontFamily : undefined;
+        const houseFont = memory && outcome.edits?.some((e) => e.op === 'add' && !e.family) ? memory.preferencesOf(memory.readMemory(previousUidRef.current), openReportId.current).fontFamily : undefined;
         if (houseFont && outcome.edits) outcome.edits = outcome.edits.map((e) => (e.op === 'add' && !e.family ? { ...e, family: houseFont } : e));
         /*
          * Forma's own actions the answer asked for (2026-11-05): queued, and
@@ -5702,7 +5709,7 @@ export default function App() {
               const second = agent.readReportOutcome(again);
               const more = second.action === 'edit' && second.edits.length ? agent.applyEdits(done.xml, second.edits, hooks) : null;
               if (more?.changed) {
-                done = { xml: more.xml, applied: [...done.applied, ...more.applied], declined: more.declined, changed: true };
+                done = { xml: more.xml, applied: [...done.applied, ...more.applied], appliedOps: [...done.appliedOps, ...more.appliedOps], declined: more.declined, changed: true };
               }
             } catch (err) {
               if (turn.signal.aborted) return;
@@ -5728,8 +5735,10 @@ export default function App() {
             setResult(next);
             recordRevision('Changed in the chat', next);
             rememberChange(id, now, next);
-            // What Forma may learn from this edit (2026-11-10, lib/learning.ts): the operations by name.
-            recordLearning({ kind: 'edit', request: 'edit', ai: aiKindOf(chained.by), repx: done.xml, ops: (outcome.edits ?? []).map((e) => e.op), prompt: currentPrompt });
+            // What Forma may learn from this edit (2026-11-10, lib/learning.ts): the operations
+            // made, both passes', and the kind of part each was made on (2026-11-11, LM-13).
+            const ai = aiKindOf(chained.by);
+            const learning = { id: recordLearning({ kind: 'edit', request: 'edit', ai, repx: done.xml, beforeRepx: now.repxContent, ops: done.appliedOps.map((e) => e.op), controls: done.appliedOps.map((e) => e.control), prompt: currentPrompt }), ai };
             // The tools run once the edits are made (agent audit item 38).
             toolReply(id);
             const changes = agent.describeChanges(now.repxContent!, done.xml);
@@ -5745,6 +5754,7 @@ export default function App() {
                 agent.changesMarkdown(changes, [...done.declined, ...toolsRefused], toolsDone),
                 brought,
               ].filter(Boolean).join('\n\n'),
+              learning,
             })]);
             return;
           }
@@ -5918,7 +5928,7 @@ export default function App() {
     try {
       const { clarifyReportRequest } = await loadGemini();
       // Nothing the memory already answers is asked (agent audit item 13).
-      const remembered = await import('./lib/memory').then((m) => m.instructionsOf(m.readMemory(previousUidRef.current))).catch(() => '');
+      const remembered = await import('./lib/memory').then((m) => m.instructionsOf(m.readMemory(previousUidRef.current), openReportId.current)).catch(() => '');
       const outcome = await clarifyReportRequest(request, config, signal, remembered);
       if (signal?.aborted) return;
       // Not ready with no question to ask is designed from the words as they stand (the review, 2026-11-11: it said "0 questions first:").
@@ -6268,6 +6278,7 @@ export default function App() {
     if (!result) return;
     if (blockedByInvalidRepx()) return;
     rememberKept(result.repxContent, openReportId.current);
+    recordKept('repx', result.repxContent);
     const element = document.createElement("a");
     const file = new Blob([result.repxContent || result.content], { type: result.repxContent ? 'application/xml' : 'text/plain' });
     element.href = URL.createObjectURL(file);
@@ -6343,6 +6354,7 @@ export default function App() {
   const openInDesigner = () => {
     if (!result?.repxContent) return;
     if (blockedByInvalidRepx()) return;
+    recordKept('designer', result.repxContent);
     setError(null);
     setDesignerOpen(true);
   };
@@ -6624,7 +6636,7 @@ export default function App() {
       /* What has a button and had no command (2026-11-06, the workspace
          audit): every format, Share, the project's menu, the pin, Test data. */
       for (const [format, name] of [['pdf', 'PDF'], ['pdf-outline', 'PDF with outline'], ['xlsx', 'Excel workbook'], ['csv', 'CSV'], ['docx', 'Word document'], ['rtf', 'RTF'], ['html', 'HTML page'], ['png', 'image']] as const) {
-        list.push({ id: `export-${format}`, label: `Export as ${name}`, run: () => { showPlate('print'); setExportRequest({ format, nonce: Date.now() }); } });
+        list.push({ id: `export-${format}`, label: `Export as ${name}`, run: () => exportThroughPreview(format) });
       }
       if (result.repxContent) list.push({ id: 'share', label: 'Share the report', run: () => setIsShareOpen(true) });
       if (boundFields.length) list.push({ id: 'testdata', label: 'Fill the Preview with test data', run: () => { showPlate('print'); void handleTestData(); } });
@@ -6689,11 +6701,9 @@ export default function App() {
       } else if (tool.name === 'export') {
         if (tool.format === 'repx') downloadDesign();
         else if (tool.format) {
-          showPlate('print');
           // One at a time (agent audit item 38): the Preview holds one
           // request, and two set in one go made one export.
-          const request = { format: tool.format, nonce: Date.now() + i };
-          window.setTimeout(() => setExportRequest(request), exports++ * 1500);
+          exportThroughPreview(tool.format, exports++ * 1500, Date.now() + i);
         }
       } else if (tool.name === 'designer') void openInDesigner();
       // "Undo that" (agent audit item 85): the reply's own Undo when the last
@@ -7265,10 +7275,7 @@ export default function App() {
                   <ExportPanel
                     onRepx={downloadDesign}
                     onDesigner={result.repxContent && !designerOpen ? () => openInDesigner() : undefined}
-                    onPrint={(format) => {
-                      showPlate('print');
-                      setExportRequest({ format, nonce: Date.now() });
-                    }}
+                    onPrint={(format) => exportThroughPreview(format)}
                     onClose={() => setIsExportOpen(false)}
                   />
                 </Suspense>

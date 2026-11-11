@@ -6,7 +6,10 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  exportMemory,
+  importMemory,
   instructionsOf,
+  personalStyle,
   keptStyleOf,
   keptSummary,
   MAX_KEPT,
@@ -77,7 +80,7 @@ describe('what a message asks Forma to remember', () => {
 describe('what a kept report teaches', () => {
   it('its style, and none of its words', () => {
     const kept = keptStyleOf(REPORT, new Date('2026-11-02T10:00:00Z'))!;
-    expect(kept).toEqual({ key: expect.stringMatching(/^s[0-9a-z]+$/), at: '2026-11-02T10:00:00.000Z', paper: 'A4', landscape: false, fontFamily: 'Tahoma', sizes: { title: 15, caption: 9, value: 8 } });
+    expect(kept).toEqual({ skeleton: expect.objectContaining({ paper: 'A4' }), key: expect.stringMatching(/^s[0-9a-z]+$/), shape: kept!.key, at: '2026-11-02T10:00:00.000Z', paper: 'A4', landscape: false, fontFamily: 'Tahoma', sizes: { title: 15, caption: 9, value: 8 } });
     expect(JSON.stringify(kept)).not.toMatch(/Acme|Private|SecretField|ClientSecret|Account/);
     expect(keptStyleOf('not a report')).toBeNull();
   });
@@ -107,6 +110,64 @@ describe('what a kept report teaches', () => {
     // The same report kept again without a project is known by its skeleton.
     expect(keptStyleOf(REPORT)!.key).toBe(keptStyleOf(REPORT, new Date(0))!.key);
     expect(keptStyleOf(REPORT, new Date(), 'project-9')!.key).toBe('project-9');
+  });
+
+  // D1 (2026-11-11): the person's own house style, from the skeletons of two or more kept reports.
+  it('learns a personal house style from two kept reports, with margins, bold and row height', () => {
+    const one = keptStyleOf(REPORT, new Date(), 'p1')!;
+    let state: MemoryState = { memories: [], kept: [one], learnFromKept: true };
+    expect(personalStyle(state)).toBeNull();
+    state = rememberKept(state, keptStyleOf(REPORT, new Date(), 'p2')!);
+    const mine = personalStyle(state)!;
+    expect(mine.reports).toBe(2);
+    expect(mine.style.fonts[0].family).toBe('Tahoma');
+    expect(JSON.stringify(mine)).not.toMatch(/Acme|Private|SecretField|ClientSecret/);
+    const prefs = preferencesOf(state);
+    expect(prefs.margins).toBeDefined();
+    expect(prefs.rowHeight).toBeGreaterThan(0);
+    expect(prefs.bold?.title).toBeDefined();
+    // No record's row in any kept report: no row height, rather than learnStyle's default.
+    const noRows = { ...state, kept: state.kept.map((k) => ({ ...k, skeleton: { ...k.skeleton!, bands: k.skeleton!.bands.filter((b) => b.kind !== 'Detail') } })) };
+    expect(preferencesOf(noRows).rowHeight).toBeUndefined();
+    expect(personalStyle({ ...state, learnFromKept: false })).toBeNull();
+    // A style kept before skeletons were (no `skeleton`) counts for nothing here.
+    expect(personalStyle({ ...state, kept: state.kept.map(({ skeleton: _s, ...k }) => k) })).toBeNull();
+  });
+
+  // CP-13 (2026-11-11): a memory said for this client applies in its project alone.
+  it('keeps a memory said for this client to its project, and moves memories as one file', () => {
+    const forClient = memoryFrom('remember: for this client use Letter', 'chat', new Date(), 'project-1');
+    const everywhere = memoryFrom('remember: always use Tahoma', 'chat', new Date(), 'project-1');
+    expect(forClient.projectId).toBe('project-1');
+    expect(everywhere.projectId).toBeUndefined();
+    expect(memoryFrom('remember: for this client use Letter').projectId).toBeUndefined();
+    const state: MemoryState = { memories: [forClient, everywhere], kept: [], learnFromKept: true };
+    expect(instructionsOf(state, 'project-1')).toMatch(/Letter/);
+    expect(instructionsOf(state, 'project-2')).not.toMatch(/Letter/);
+    expect(instructionsOf(state, 'project-2')).toMatch(/Tahoma/);
+    expect(preferencesOf(state, 'project-1').paper).toBe('Letter');
+    expect(preferencesOf(state, null).paper).toBeUndefined();
+
+    const file = exportMemory(state);
+    const empty: MemoryState = { memories: [], kept: [], learnFromKept: true };
+    const back = importMemory(empty, file)!;
+    expect(back.memories.map((m) => [m.text, m.projectId])).toEqual([[forClient.text, 'project-1'], [everywhere.text, undefined]]);
+    expect(importMemory(back, file)!.memories).toHaveLength(2);
+    // One id twice in a file is one memory, not two rows under one key.
+    const twice = JSON.stringify({ forma: 'memory', memories: [forClient, { ...forClient, text: 'again' }] });
+    expect(importMemory(empty, twice)!.memories).toHaveLength(1);
+    expect(importMemory(empty, '{"forma":"other"}')).toBeNull();
+    expect(importMemory(empty, 'not json')).toBeNull();
+  });
+
+  // A wave-4 follow-up (2026-11-11): downloaded before it was saved, then saved, is still one report.
+  it('counts a report kept before it had a project and after once', () => {
+    const before = keptStyleOf(REPORT, new Date('2026-11-11T09:00:00Z'))!;
+    const after = keptStyleOf(REPORT, new Date('2026-11-11T10:00:00Z'), 'project-7')!;
+    expect(after.shape).toBe(before.key);
+    let state: MemoryState = { memories: [], kept: [], learnFromKept: true };
+    state = rememberKept(rememberKept(state, before), after);
+    expect(state.kept.map((k) => k.key)).toEqual(['project-7']);
   });
 });
 
