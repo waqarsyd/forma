@@ -2735,8 +2735,8 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
         /* Where a link on a shared report goes (2026-11-11, SE-14), under it on
            hover and on keyboard focus; never printed. The frame clips what it
            holds, so it lets the note out while it shows. */
-        .rp-link[data-goes]:hover, .rp-link[data-goes]:focus-visible { overflow: visible !important; z-index: 5; }
-        .rp-link[data-goes]:hover::after, .rp-link[data-goes]:focus-visible::after {
+        .rp-link[data-goes]:hover, html:not([data-modality='pointer']) .rp-link[data-goes]:focus-visible { overflow: visible !important; z-index: 5; }
+        .rp-link[data-goes]:hover::after, html:not([data-modality='pointer']) .rp-link[data-goes]:focus-visible::after {
           content: attr(data-goes); position: absolute; left: 0; top: 100%; margin-top: 2px;
           padding: 1px 6px; background: #fff; color: #111418; border: 1px solid #c9d1dc; border-radius: 3px;
           font: 400 11px/1.4 system-ui, sans-serif; font-style: normal; white-space: nowrap; text-decoration: none;
