@@ -9,11 +9,20 @@ served publicly. These files are for people reading the repository, not for the 
 | File | What it shows |
 |---|---|
 | `screenshot.png` | The home page at `/`, 2400×1500. The README's lead image. |
-| `workspace.png` | The workspace at `/workspace` with no key supplied, 3200×2000. The real shell — five-panel rail, review pane, canvas, status bar — and the banner stating that Forma ships no key of its own. |
+| `workspace.png` | The workspace at `/workspace` with no key supplied, 3200×2000, **as it was in September 2026**: five-panel rail, review pane, canvas, a status bar, and the banner stating that Forma ships no key of its own. |
+
+**Both are stale, and known to be (2026-11-11).** The workspace has had no status bar
+since 2026-11-04 and its conversation has been a thread in a panel since 2026-11-08, and
+the capture's banner carries an orange edge the workspace no longer draws anywhere; the
+home page has changed too. They are kept until the owner recaptures them, in the owner's
+own Chrome against the mock server on port 3001 (the extension's screenshots stall in the
+unpainted Remote Desktop window this repository is worked on from), at the sizes above,
+following *Recapturing* below; this paragraph goes in the same commit.
 
 Both were captured from `localhost:3000` over CDP against a headless Edge, at a device
-scale factor of 1.5 and 2 respectively. A placeholder SVG stood here until they were
-taken; it was deleted in the same commit, per step 7 below.
+scale factor of 1.5 and 2 respectively, before the owner asked for browser work to go
+through their own Chrome or Edge instead. A placeholder SVG stood here until they were
+taken, and was deleted in the same commit as the first capture.
 
 **`workspace.png` was recaptured on 2026-09-05**, because the rail had grown two buttons
 it did not show: Revisions and Batch. **`screenshot.png` was recaptured on 2026-09-08**,
@@ -44,10 +53,12 @@ yourself with your own key and follow the checklist below.
 
 The README's Demo section points here. Swap an image in one commit:
 
-1. `npm run dev`, then open <http://localhost:3000>.
-2. Supply a Gemini key, generate a report from a sample document, and wait for the
-   mockup to finish drawing. **Capture a real generation, not an empty workspace** —
-   the point of the image is to show the three artifacts side by side.
+1. For the two images above, start the mock server
+   (`$env:VITE_FORMA_MOCK='true'; $env:PORT='3001'; npm run dev`) and open
+   <http://localhost:3001> in your own browser; neither image needs a key or a report.
+2. For a capture of real output instead, run `npm run dev`, supply a Gemini key, generate
+   a report from a sample document, and wait for it to finish drawing — the mock's report
+   is marked as canned (above), so it cannot stand in.
 3. Capture the viewport at roughly 1280×720 or 1600×900. Keep the browser chrome out
    of it unless the URL bar is adding something.
 4. **Check the frame for anything of yours before saving it.** An API key is masked in
@@ -59,13 +70,12 @@ The README's Demo section points here. Swap an image in one commit:
 6. Re-check the size. Anything approaching 500 KB wants a lower device scale factor
    rather than a JPEG; the two images here were taken at 1.5 and 2.
 
-**On automating it.** These were captured headlessly over the Chrome DevTools Protocol,
-which is the only reliable route on a machine where the browser extension cannot reach
-`localhost`. A page can be driven to a chosen state — planting a session key, attaching a
-file, clicking through — with nothing but Node's global `fetch` and `WebSocket` against
-`msedge.exe --headless=new --remote-debugging-port=9222`, no Puppeteer and no dependency
-added to this project. Launch it with `--user-data-dir` pointing somewhere temporary: on
-a shared machine, the default profile is somebody's real browser.
+**On automating it.** The first captures were taken headlessly over the Chrome DevTools
+Protocol, when the browser extension could not reach `localhost` on the machine this is
+worked on from. It can since 2026-10-31, and the owner asked for browser work to go
+through their own Chrome or Edge rather than a headless browser started from a shell, so
+capture in your own browser. `.claude/skills/run-forma/` records how a page is driven to
+a chosen state (planting a session key, attaching a file) if you need one.
 
 ## Rules for this directory
 

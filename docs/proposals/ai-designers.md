@@ -64,6 +64,42 @@ item with its own measurement):
    edit writing `AccessibleDescription`, and the outline showing it, so
    "the tax line" finds the control described as the tax line.
 
+## Addendum, 2026-11-11: four rows were wrong, and so was "ahead"
+
+The next day's full audit read each vendor's own pages again (its competitors part, CP-10)
+and found this record wrong in four places, each in Forma's favour. The table above is left
+as written, so the record shows what was believed; these are the corrections:
+
+- **DevExpress, a report from a description** (the first row): on the 26.1 WinForms and Web
+  pages Prompt-to-Report is no longer labelled a preview (CTP); it runs as "a structured
+  agentic workflow composed of specialized agents" and asks clarifying questions.
+- **DevExpress, a chat that edits the open report** (the third row): not planned but
+  shipping, in the WinForms designer, as "Modify Reports" (CTP since 25.1, .NET 8 and
+  later): bands and controls added and removed, properties changed, binding, grouping,
+  sorting and filtering, margins and paper, with `FixLayoutErrors` and three retries. The
+  Web and WPF chat assistant was postponed to v26.2 (December 2026).
+- **Telerik, the same row**: the 2026 Q3 AI Report Generator creates and edits tables,
+  crosstabs and lists (groups and aggregates included) besides charts and gauges, with an
+  inline "Undo Changes".
+- **Stimulsoft, both rows**: reports, not only dashboards, from a single text request since
+  2025 (lists, grouped, master-detail), and since 2026.3 a built-in assistant that edits
+  reports in the Standalone Designer and checks expressions.
+
+**Where Forma is ahead, restated.** Not "a chat that edits in place", which DevExpress ships
+in one designer and Telerik and Stimulsoft in theirs. What no vendor offers together:
+**in a browser**, with nothing to install; **free**, on the user's own free key, a local AI
+or OpenRouter's free models, with the next one taking over at a limit; **from a picture**
+of the old report, a scan or a PDF (ActiveReports' "Image to Report" alone comes close, and
+it needs Azure Document Intelligence credentials); **for older versions**, DevExpress 20.1
+included, where DevExpress's own AI features begin at 24.2 and need a subscription; and
+**with Undo** on every change the chat makes, as one history with the Preview's own edits.
+
+**One more candidate, recorded rather than built** (CP-16): a shared report is a read-only
+copy, while Google Stitch and Claude now share for working together. The free first step
+would be letting a viewer duplicate a shared report into their own projects. The audit
+recommends it for later, starting there; it is the owner's to choose (decision 23 of that
+audit).
+
 ## Sources
 
 DevExpress: the captured demo; [Prompt-to-Report in the Web Report Designer](https://docs.devexpress.com/XtraReports/405485/ai-powered-functionality/web-reporting/prompt-to-report-in-web-report-designer);

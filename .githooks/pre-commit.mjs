@@ -84,9 +84,12 @@ for (const file of staged) {
 /*
  * Deliberately narrow. An application-owned Gemini key was once inlined into a
  * shipped bundle here and revoked by Google's secret scanner. Matching `AIzaSy`
- * alone would fire on three legitimate places -- the public Firebase config, the
- * illustrative fake in VaultFigure.tsx, and an input placeholder -- so the
- * signal is an *assignment* to a key-shaped name, not the prefix on its own.
+ * alone would fire on several legitimate places -- the public Firebase config,
+ * the illustrative fake in VaultFigure.tsx, the run-forma driver's seeded
+ * session, test fixtures, and the docs that explain all of these (`git grep -l
+ * AIzaSy` lists them today) -- so the signal is an *assignment* to a key-shaped
+ * name, not the prefix on its own. (This said "three legitimate places" until
+ * 2026-11-11, and the list had grown past it unnoticed.)
  *
  * Two formats since 2026-11-05: Google AI Studio now also issues Gemini keys
  * that start `AQ.` and run to about 53 characters. The owner's new key was one,

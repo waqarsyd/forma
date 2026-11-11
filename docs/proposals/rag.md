@@ -1,10 +1,14 @@
 # Retrieval over the user's own report library
 
-**Status: built and wired, not yet evaluated.** Written 2026-09-23 as a proposal, and
-every milestone in *Build order* was built by 2026-09-24. The comparison under *How we
-would know it worked* has not been run, so whether retrieval brings a refine closer to
-house style is still unmeasured — and that result, not the code existing, is what
-decides the move into `../notes/` described below.
+**Status: built, wired and evaluated; graduation is the step left.** Written 2026-09-23
+as a proposal, and every milestone in *Build order* was built by 2026-09-24. The
+comparison under *How we would know it worked* ran on made-up reports on 2026-11-04 and
+2026-11-06 and on a real report, with the owner's yes, on 2026-11-09: a restyle that names the house
+moved a held-back report from 0% to 100% of the house's face, and a request that does not
+name it changed nothing (the table at the end of that section). That result, not the code
+existing, was what this said would decide the move into `../notes/`; moving the reasoning
+there is what remains. (This said "not yet evaluated" until 2026-11-11, two days after
+the evaluation it was waiting for had run.)
 
 This file is in `docs/proposals/` rather than `docs/notes/` deliberately. The five
 notes are current and maintained against the code, so a session greps them for what

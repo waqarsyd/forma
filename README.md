@@ -31,7 +31,7 @@ It is built around one constraint that shaped everything else: **the application
 
 ## Demo
 
-**Live at [openforma.web.app](https://openforma.web.app)** — built from `main` and deployed by hand, so it can trail the newest commits: the page names the commit it was built from in `<meta name="forma-version">`, and a daily check ([`live.yml`](.github/workflows/live.yml)) says when it is behind `main`. What changed, and when, is on the [changelog](https://openforma.web.app/changelog). It runs signed out with no account, and generating a report needs a Gemini API key of your own, which you paste into Settings and which never leaves your browser.
+**Live at [openforma.web.app](https://openforma.web.app)** — built from `main` and deployed by hand, so it can trail the newest commits: the page names the commit it was built from in `<meta name="forma-version">`, and a check every three hours ([`live.yml`](.github/workflows/live.yml)) says when it is behind `main`. What changed, and when, is on the [changelog](https://openforma.web.app/changelog). It runs signed out with no account, and generating a report needs a Gemini API key of your own, which you paste into Settings and which never leaves your browser.
 
 ![Forma's home page: upload a report design and get a specification, a live mockup and valid DevExpress XML](docs/media/screenshot.png)
 
@@ -39,7 +39,7 @@ The workspace itself — the uploaded design and the conversation on the left, t
 
 ![The Forma workspace, showing the review pane, the report canvas and the export controls](docs/media/workspace.png)
 
-Both are real captures of the app at `localhost:3000`, not mockups. See [`docs/media/README.md`](docs/media/README.md) for how they were taken.
+Both are real captures of the app at `localhost:3000`, not mockups, but from September 2026: the workspace has changed since (the conversation is a thread down the left, and there is no status bar), and they will be recaptured. See [`docs/media/README.md`](docs/media/README.md) for how they were taken.
 
 ---
 
@@ -84,7 +84,7 @@ The optional cloud copy is zero-knowledge: your key is encrypted in your browser
 
 That also means **a forgotten passphrase is unrecoverable by design.** There is no reset, because a reset would imply the operator could decrypt it.
 
-The claim is enforced, not just intended: the server sends a Content-Security-Policy whose `connect-src` allowlists the handful of origins this app legitimately talks to. A key sitting in `sessionStorage` a few components away from model-generated markdown is worth stealing, and `connect-src` is what makes a stolen one useless — injected script that cannot reach an attacker's server cannot exfiltrate anything. Adding an origin to that list is a change to this guarantee; see [`src/server/securityHeaders.ts`](src/server/securityHeaders.ts), which carries the full reasoning.
+Every page carries a Content-Security-Policy whose `connect-src` allowlists the handful of origins this app legitimately talks to, and scripts load only from this site, Google's sign-in helper and reCAPTCHA. A key sitting in `sessionStorage` a few components away from model-generated markdown is worth stealing, and the policy narrows what injected script could do with it — **it is not a promise that nothing could leave.** A policy does not govern navigation; Firestore, Gemini and OpenRouter are shared services a script could reach with an attacker's own account; and the contact form's FormSubmit relays to any inbox until it is narrowed to Forma's own alias. The defence that matters is that no script gets in, which React's escaping provides. Adding an origin to that list is a change to what the policy can narrow; see [`src/server/securityHeaders.ts`](src/server/securityHeaders.ts), which carries the full reasoning.
 
 ---
 
@@ -294,44 +294,62 @@ src/
                        OCR read, its detected layout drawn over the source,
                        and Build .repx with no model),
                        SettingsDialog (Settings as ChatGPT's: General, AI,
-                       Gemini key and Memory, a change taking effect as it is
-                       made), in the frame SectionedDialog draws for it and
-                       for AccountDialog, whose sections are
+                       Gemini key, Memory and Learning, a change taking effect
+                       as it is made), in the frame SectionedDialog draws for
+                       it and for AccountDialog, whose sections are
                        ProviderSettings (which AI answers:
                        Automatic, which is Gemini, a local AI or OpenRouter's
                        free models; Forma Offline went into Automatic on
                        2026-11-05),
                        MemorySettings (what Forma remembers, to switch off,
-                       change or forget) and UsageSettings (the day's
+                       change or forget), LearningSettings (what Forma may
+                       learn from use, its two switches and the button that
+                       deletes what was kept) and UsageSettings (the day's
                        requests),
-                       ChatThread
-                       (the review column's transcript, lifted out of App.tsx
+                       ConversationPanel (the thread down the left: every
+                       request with its ask pinned, the box at its foot,
+                       search and download), ChatThread
+                       (the transcript inside it, lifted out of App.tsx
                        once chatSession.ts held its rules — Forma's working
                        dots pass through as children, because that is generation
                        state and not conversation), Composer (staged
                        attachments, the notice lines and the box you type in;
                        one composer does both jobs, and which one is App.tsx's
-                       decision, not this component's), and Markdown — which
+                       decision, not this component's), BoxMenus (the box's
+                       "/" Tools menu), PlanCard (the plan a heavy job is
+                       told, which starts at once), and Markdown — which
                        is its own module so react-markdown can be lazy-loaded.
                        The workspace's panes and menus are here too, each
                        loaded on demand: ReportPreview, ReportMockup,
-                       RepxViewer, DataBinding, the request card and log, the
-                       selection toolbar, the command menu, the shortcuts
-                       list, the right-click menu (ControlMenu), the zoom
-                       field, the corner's help (HelpMenu), the Export
-                       panel (ExportPanel), the title's project menu
+                       RepxViewer, DataBinding with DatabasePanel (the Data
+                       tab's SQL Server database), the selection toolbar
+                       (SelectionToolbar), the command menu (CommandMenu),
+                       the shortcuts list (ShortcutsDialog), the right-click
+                       menu (ControlMenu), the zoom field (ZoomField), the
+                       corner's help (HelpMenu), the Export
+                       panel (ExportPanel), the project menu at the top left
                        (ProjectMenu), the pin beside it (PinProject), the
                        empty workspace's home
                        (HomeStart), the Share dialog (ShareDialog) and the
-                       page a shared link opens (SharedReportPage), with
+                       page a shared link opens (SharedReportPage), the side
+                       panels (BatchPanel, RevisionsPanel, LibraryPanel),
+                       Open in designer's dialog (OpenInDesigner), with
                        overlays.css holding those menus' styles.
+                       Around both the site and the workspace: ErrorBoundary
+                       (one per area, so a fault in one leaves the rest
+                       working), OfflineBanner (the network lost and back)
+                       and UpdateBanner (a newer Forma has taken over the
+                       tab). docsCorpus draws the Docs page's articles as
+                       text for the chat.
                        The files that are not components are the shared
                        hooks (useFocusTrap; useLayer, which puts a menu or
                        dialog on the Escape stack; useMenuKeys, a menu's
                        arrow keys and focus return; useFitScale, the zoom
-                       that fits a page to its pane), overlays.css,
-                       dialogs.css (the three dialogs' shared look), ocr.css
-                       and the tests:
+                       that fits a page to its pane; useTheme, the theme the
+                       site and the workspace share; useLinkNavigation, an
+                       in-app link as a client-side navigation), overlays.css,
+                       dialogs.css (the three dialogs' shared look), ocr.css,
+                       markdown.css and the tests:
                        legalDisclosure, which reads ContactPage and
                        index.html off disk, and the component render tests,
                        the only ones outside lib/, services/ and server/.
@@ -389,6 +407,20 @@ src/
                        report after every repair has run — errors mean content
                        will be lost, warnings mean it opens and is a worse
                        report than it should be),
+                       repairChain (every repair a generated report goes
+                       through, in one function and in its load-bearing
+                       order, for the AI's answer and Forma's own drafts
+                       alike), repxBlobs (pictures, rich text and embedded
+                       data set aside while a report goes to the AI and put
+                       back after, byte for byte),
+                       repxCalculatedFields (a group on a field nothing has,
+                       made into the calculated field its header prints),
+                       pageRows, printCheck, totalsCheck and formatFromText
+                       (the report printed with the records the page shows
+                       before it is answered: extra pages, clipped text,
+                       blank cells and collapsed groups found; a total checked
+                       against the figure the page prints; a value's format
+                       kept only when it prints the page's text back exactly),
                        repxAccessibility (the contrast, text-size and
                        alternative-text checks DevExpress's own designer runs on
                        every edit, measured from its analyzer's output and
@@ -433,7 +465,10 @@ src/
                        exportItems with docxExport, rtfExport and htmlExport
                        (Word and RTF page by page as positioned frames, HTML
                        as one continuous table, each frame and cell where
-                       DevExpress's own export put it),
+                       DevExpress's own export put it), pdfFromDom and
+                       exportFromDom (what those exports read off the pages
+                       the Preview has drawn, loaded only when one is asked
+                       for),
                        paddleOcr, paddle and paddleWorker (PaddleOCR's
                        PP-OCRv5 reading an English page in browser workers:
                        one finds the text, up to four read it),
@@ -441,6 +476,9 @@ src/
                        in the browser, by PaddleOCR or Tesseract.js: every word with its
                        box and confidence, aligned rows as an XRTable and the
                        rest as XRLabels, low-confidence text flagged),
+                       ocrAttach (a picture read once it is attached, its
+                       text going with the message as a PDF's text layer
+                       does),
                        ocrScript (the language of a picture worked out from its
                        reading: Arabic, Hindi, Urdu, French, German or Spanish
                        beside English, and when to try handwriting),
@@ -540,14 +578,18 @@ src/
                        consent asked in the thread), learning (what Forma may
                        learn from each use: structure by default, whole
                        reports on an opt-in switch, kept on the device and
-                       under the account), inputModality (pointer or keyboard
+                       under the account), learningPipeline (the owner's
+                       side of it, the parts that can be tested: the pull,
+                       the gate a new model passes before it ships, the
+                       weekly run), inputModality (pointer or keyboard
                        on the root, so a click shows no focus ring), chatJudge (the twenty
                        chat requests the benchmark scores, the checks code makes
                        and the judge's rubric),
                        formaTeam (one request with every part in its role:
-                       the vision model's draft and the house style told to
-                       the AI as hints, who took part named in the reply, and
-                       Forma's own draft standing in when the AI fails),
+                       Forma's draft of the page and the house style told to
+                       the AI as hints, and Forma's own draft standing in when
+                       the AI fails; the reply is the result and does not say
+                       which parts took part),
                        memory (what the user asked Forma to remember and the
                        style of the reports they keep, never their words,
                        applied to the next report),
@@ -585,6 +627,9 @@ src/
                        every other byte the model wrote survives; its XML
                        escaping is xmlEscape, a module of its own so the
                        Preview engine stays out of the entry chunk),
+                       plainKind (a part of a report and a band named in the
+                       words a person uses, for every edit that says what it
+                       did),
                        dataSource (reads the fields out of whatever the user
                        pastes — a JSON row, a CSV export, a CREATE TABLE or a
                        list of names — and suggests which column each belongs
@@ -648,7 +693,10 @@ src/
                        (what the chat box keeps as a memory, sends straight
                        to a design, or reads as an answer), composerStore
                        (an unsent draft per project, and the queue, kept in
-                       the tab over a reload), buildInfo (which build runs,
+                       the tab over a reload), boxTools (what the box's "/"
+                       Tools menu offers, each a sentence to finish and
+                       send), repxIntake (what a dropped or picked file
+                       brings in, loaded only when one arrives), buildInfo (which build runs,
                        for Settings and a problem report), problemReport (a
                        GitHub issue prefilled when an area fails),
                        projectExport (every saved project in one .zip),
@@ -679,6 +727,9 @@ src/
                        draftText (Forma's draft of a picture as the AI
                        corrects it, one short line per control, and the
                        corrected draft read back for Forma to build),
+                       readCoverage (did the report keep the captions and
+                       titles the page shows; asked once more, capped, when
+                       too many are missing),
                        agentEdit (the open report as the chat's model sees
                        it, the edits it asks for made in place, and what
                        changed, read off the file), shortcuts (ChatGPT's
@@ -711,7 +762,7 @@ src/
                        rows, typed as DevExpress prints each SQL type),
                        sqlDrift (a report's own data source read back, kept
                        through a redesign and checked against a newer layout),
-                       sqlCompanion (the companion on your PC reading your SQL
+                       sqlCompanion (Forma Designer on your PC reading your SQL
                        Server for the Data tab and the Preview, by connection name),
                        designerRelease (the Forma Designer download's version,
                        size, SHA-256 and release, written by its packing script),
@@ -757,7 +808,9 @@ src/
                        (+ tests) — what server.ts sends, where it listens,
                        how long dist/ is cached for, and which paths are
                        the app's rather than a 404. Under src/ but never bundled
-                       into the client; server.ts is the only importer
+                       into the client; server.ts is the only importer outside
+                       the tests (hostingConfig.test.ts holds firebase.json's
+                       headers to them)
   fonts/               the three self-hosted typefaces as variable woff2, their
                        SIL OFL licences, and a README — referenced from
                        index.css so Vite fingerprints them; see the typefaces
@@ -772,49 +825,80 @@ tools/RepxProbe/       console tool that asks DevExpress what a .repx really
                        `inspect` reports what the loader sees and fails when a
                        file silently lost content; its own README too
 public/                static assets served at / — the logo pair (PNG + WebP,
-                       light and dark), favicon.png, and the pre-rendered
-                       og-card.png
+                       light and dark), favicon.png and favicon.ico, icons/
+                       (the installed app's icons, maskable among them),
+                       manifest.webmanifest, security.txt, and the
+                       pre-rendered og-card.png
 assets/source/         og-card.html, the page public/og-card.png is rendered
                        from (not deployed). The full-resolution logo masters
                        lived here until 2026-08-29; they are gitignored now —
                        2.8 MB backing 256px files already in public/
 assets/model/          formaModel.json, Forma's own model, learned by
                        scripts/model/train.ts from the structure of the
-                       owner's reports (never their words); served at /model/
+                       owner's reports (never their words), and
+                       boxReader.json, the box reader's two small networks;
+                       both served at /model/
 assets/pdf-fonts/      the twelve Liberation 2.1.5 faces a PDF/A file embeds
                        and their SIL OFL licence, unmodified; served at
                        /pdf-fonts/ and copied into dist/ at build (README
                        there: provenance and checksums)
 docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident
-                       history) and audit/README.md (a one-line index of the
+                       history), proposals/ (designs still being proven, and
+                       the measured DevExpress parity table) and audit/README.md (a one-line index of the
                        2026-08-27 findings, whose IDs are cited throughout the
                        code — a dated record; read notes/ for what is current)
   media/               images the documentation links to, and the only place a
                        committed screenshot belongs; nothing here is read by the
                        build. Has its own README with the capture rules
 .github/               workflows (checks.yml, which runs the seven checks plus
-                       `npm ci`; codeql.yml; live.yml, which checks the live
-                       site), three issue templates, a PR template,
+                       `npm ci` and check-dist.mjs, the first job on Node 22
+                       and 24 and the rules job on 24;
+                       codeql.yml; live.yml, which checks the live site every
+                       three hours), three issue templates, a PR template,
                        dependabot.yml, CODEOWNERS, SUPPORT.md and the main
                        branch's ruleset (rulesets/main.json)
 .githooks/             opt-in pre-commit guard; enable with
                        `git config core.hooksPath .githooks`
 .claude/               settings.json — the committed permission allowlist, so
-                       the documented checks run without prompting
-scripts/               dev + build; the encoding, doc-pointer and bundle-size
-                       checks that three of the seven checks call; the owner's
-                       deploy.mjs (release-notes.ts writes each release's
-                       notes), smoke.mjs, backup.mjs and github-setup.mjs (the
-                       repository's settings, labels, milestones and roadmap);
-                       make-icons.mjs and fetch-handwriting.mjs; fidelity/, the benchmark's runner and cases; and
+                       the documented checks run without prompting — and
+                       skills/run-forma (how a session launches and drives
+                       the app, with its dependency-free driver drive.mjs)
+scripts/               dev.mjs (npm run dev:log) and build-server.mjs; the
+                       encoding, doc-pointer and bundle-size checks that three
+                       of the seven checks call, and check-dist.mjs (the built
+                       pages held to the policy that serves them, run by CI
+                       only); the owner's deploy.mjs (release-notes.ts writes
+                       each release's notes, designer-asset.mjs checks the
+                       Forma Designer zip on its release), smoke.mjs,
+                       backup.mjs and github-setup.mjs (the repository's
+                       settings, labels, milestones and roadmap); admin/
+                       (the owner's, on the owner's own PC: google.mjs, how
+                       those scripts reach Firebase with no dependency;
+                       orphans.mjs, data an account left behind; stats.mjs,
+                       usage as counts only); make-icons.mjs,
+                       fetch-handwriting.mjs and fetch-paddle.mjs (the
+                       picture reader's models, SHA-256 pinned);
+                       package-designer.ts and companion-scripts.ts (Forma
+                       Designer's zip, and the layout script it runs);
+                       fidelity/, the benchmark's runner and cases; and
                        model/, which learns Forma's own model and packs and
                        draws the vision model's training set (render.py needs
                        Python 3 and Pillow), with kaggle/train_vision.py, the
-                       fine-tune that runs on Kaggle's free GPU, and
-                       evaluate.ts, which scores its answers
-server.ts              Express server, used in development and production
+                       fine-tune that runs on Kaggle's free GPU,
+                       evaluate.ts, which scores its answers, and the
+                       learning loop that runs on the owner's PC:
+                       pull-learning.ts, gate.ts (whether a new model may
+                       ship) and learn-week.ts (the three in a row, weekly)
+server.ts              Express server: the development server (Vite in
+                       middleware mode) and the self-hosted `npm start`; the
+                       deployed site is Firebase Hosting serving dist/
+                       statically, so it never runs this file
 firestore.rules        the actual security boundary
-firebase.json          the rules path, databaseId, and the emulator port
+firestore.indexes.json the composite indexes the owner's learning pull needs,
+                       deployed with the rules
+firebase.json          the rules and indexes paths, databaseId, the two
+                       hosting sites (their headers restated from
+                       src/server/), and the emulator port
 firebase-applet-config.json
                        your Firebase web config — see the Firebase section
                        above, including the databaseId that must match
@@ -839,12 +923,12 @@ firebase-applet-config.json
 | `npm run lint:encoding` | Fails if any source file contains mojibake |
 | `npm run lint:links` | Fails if a relative link or a cited section heading in the docs does not resolve |
 | `npm run check:size` | Artifact size budgets — run `build` first |
-| `npm run smoke` | Checks the deployed site over the network: every route, the entry chunk, the headers, the feed, and once it runs `main`'s build, a 404 for an unknown path and a missing chunk. Read-only; `.github/workflows/live.yml` runs it daily |
+| `npm run smoke` | Checks the deployed site over the network: every route, the entry chunk, the headers, the feed, and once it runs `main`'s build, a 404 for an unknown path and a missing chunk. Read-only; `.github/workflows/live.yml` runs it every three hours |
 | `npm run fetch:paddle` | Download PaddleOCR's text detector and English recogniser (12.7 MB, pinned by SHA-256) into `vendor/paddle/` for the next build; `scripts/deploy.mjs` runs it, and a build without it reads pictures with Tesseract alone |
 | `npm run fetch:handwriting` | Download the handwriting model (about 64 MB, pinned by SHA-256) into `vendor/handwriting/` for the next build — see *Handwriting is a deploy-time decision* |
 | `npm test` | Unit tests (Vitest; `node` by default, jsdom per file where needed) |
 | `npm run test:watch` | The same suite in watch mode |
-| `npm run test:coverage` | Coverage over `lib/` and `services/` — see the note in `vitest.config.ts` about what is deliberately excluded |
+| `npm run test:coverage` | Coverage over `lib/`, `services/` and `server/`, held to the thresholds in `vitest.config.ts` — see the note there about what is deliberately excluded |
 | `npm run test:rules` | Firestore security-rule tests — **needs Java** |
 | `npm run bench:fidelity` | The fidelity benchmark: generates every case under `scripts/fidelity/cases` through the real pipeline with your own key (`FORMA_BENCH_KEY`) and scores the result. A benchmark, not a check — it spends quota, so it is not in CI |
 | `npm run model:train` | Learns Forma's own model (`assets/model/formaModel.json`) from a folder of `.repx` reports, from their structure only, and refuses to write it if any word of theirs would reach it. Takes `--reports` and `--data` (a folder outside the repository); see `docs/proposals/own-model.md` |
@@ -862,13 +946,13 @@ npm test           # pure helpers: REPX validation, crop geometry, stream parsin
 npm run test:rules # security rules, against the Firestore emulator
 ```
 
-Run one file with `npx vitest run src/lib/repx.test.ts`, or one case with `-t "<name>"`. Neither is meaningfully faster than the whole thing: warm, a single file and the entire suite both land around 5 seconds. Narrow for focused output, not for speed.
+Run one file with `npx vitest run src/lib/repx.test.ts`, or one case with `-t "<name>"`. Now that the suite has grown, one file is much faster than the whole of it (measured warm on 2026-11-11: about 2.6 seconds against about 22), so narrow for speed as well as for focused output.
 
 The unit suite deliberately targets functions whose invariants **fail plausibly rather than loudly** — a transposed crop box puts a logo somewhere believable but wrong; a mis-scanned stream shows a stray character in a chat bubble. Those are the failures that survive manual testing.
 
 The rules suite covers account isolation, document shape, and the encrypted key vault. It needs a JVM because the Firestore emulator is a Java process; a **runtime is enough — no JDK required.** This project was developed against a Temurin **JRE 21**, installed per-user with `JAVA_HOME` and `PATH` set at user scope, so nothing had to go in system-wide and no admin rights were needed.
 
-Coverage of React components is five files deep — `DataBinding` and `BatchPanel`, added after a state bug shipped that a render test would have caught, then `ChatThread`, `Composer` and `AccountDialog` — and `App.tsx`'s own stateful logic is covered only where pieces of it have been extracted into `src/lib`. **This is a floor, not a net.** [`docs/notes/testing.md`](docs/notes/testing.md) says exactly what is and is not covered.
+Coverage of React components is a handful of render tests — the first, `DataBinding` and `BatchPanel`, added after a state bug shipped that a render test would have caught; the note linked below lists the rest — and `App.tsx`'s own stateful logic is covered only where pieces of it have been extracted into `src/lib`. **This is a floor, not a net.** [`docs/notes/testing.md`](docs/notes/testing.md) says exactly what is and is not covered.
 
 <details>
 <summary>If a run is slow, or every file fails at once</summary>
@@ -906,7 +990,7 @@ Set `HTTPS="true"` **only where TLS actually terminates**, so HSTS is sent. Set 
 
 ### Firebase Hosting
 
-**The target is Firebase Hosting, on the free Spark plan**, chosen on 2026-09-08. The app has no server state — Firestore and Gemini are both called from the browser with the user's own key — so everything `server.ts` does in production is static-host territory, and running a Node process to serve five megabytes of files buys nothing. Two things decided it over Cloudflare Pages: the *default* domain is already in the API key's referrer allowlist and Firebase Auth's authorised domains, so sign-in works there with no reconfiguration; and it is one vendor rather than two. Measured, a cold visit transfers about 490 kB, so the free tier's 360 MB/day is roughly 730 visits a day.
+**The target is Firebase Hosting, on the free Spark plan**, chosen on 2026-09-08. The app has no server state — Firestore and Gemini are both called from the browser with the user's own key — so everything `server.ts` does in production is static-host territory, and running a Node process to serve five megabytes of files buys nothing. Two things decided it over Cloudflare Pages: the *default* domain is already in the API key's referrer allowlist and Firebase Auth's authorised domains, so sign-in works there with no reconfiguration; and it is one vendor rather than two. Measured, a cold visit transfers about 490 kB, so the free tier's 360 MB/day is roughly 730 visits a day — **but that is not the number that binds.** The first time someone attaches a picture, the browser downloads the picture reader's models, about 18.6 MB (measured on the live site on 2026-11-11); they are cached after that, but 360 MB/day is then only about **19 new picture readers a day**, and past the cap both sites stop serving until midnight Pacific time. Check usage in the Firebase console's Hosting tab once a week; if it nears the cap, the two free options are to load PaddleOCR only when Tesseract is unsure of a page (which changes reading quality, so measure it with `scripts/model/ocrCompare.ts` first), or to serve the versioned model folders from a second free static host (which adds an origin to the CSP and ends "never a CDN").
 
 ```bash
 node scripts/deploy.mjs              # main as pushed: every check, the build, hosting AND the rules, then the live checks
@@ -933,7 +1017,7 @@ node scripts/deploy.mjs --dry-run    # everything but the deploy
 
 Skip either and the site renders perfectly with an empty console, because Firebase is not called until someone signs in — so a smoke test passes and the first real user finds sign-in dead. Verify by sending a request with the new origin as `Referer` and an unrelated domain as a control; a pass only means something if the control is refused.
 
-**The headers in `firebase.json` are derived, not written by hand.** A static host cannot run `server.ts`, so the whole security header set has to be restated there — including `connect-src`, which is what makes a stolen Gemini key worthless to injected script. That copy is pinned by [`src/server/hostingConfig.test.ts`](src/server/hostingConfig.test.ts), which builds the headers from `securityHeaders.ts` and `staticCache.ts` and fails if `firebase.json` disagrees, printing the JSON to paste back. **Change the policy in `securityHeaders.ts` and let the test tell you what `firebase.json` should say** — never the other way round.
+**The headers in `firebase.json` are derived, not written by hand.** A static host cannot run `server.ts`, so the whole security header set has to be restated there — including `connect-src`, which narrows where injected script could send a stolen Gemini key. That copy is pinned by [`src/server/hostingConfig.test.ts`](src/server/hostingConfig.test.ts), which builds the headers from `securityHeaders.ts` and `staticCache.ts` and fails if `firebase.json` disagrees, printing the JSON to paste back. **Change the policy in `securityHeaders.ts` and let the test tell you what `firebase.json` should say** — never the other way round.
 
 One difference from `npm start` worth knowing: Firebase terminates TLS itself, so HSTS is set unconditionally in `firebase.json` rather than gated on `HTTPS`. **Both now answer a path that is not the app with a 404** (2026-11-07): `firebase.json` rewrites only the router's routes and a shared report's `/s/*` (derived from `src/server/appRoutes.ts`, and asserted), so an unknown address and a chunk from an earlier deploy fall through to Firebase's own 404, which serves the built `dist/404.html` (`noindex`; the app draws Not found). Until then every path was the home page with a 200, a stale chunk included, which broke a tab left open across a deploy; such a tab now reloads once for the new build (`src/lib/staleChunks.ts`). OCR's engine, the PDF/A fonts and the models are served from folders named for their contents (`/ocr/<hash>/…`) and cached for good, like the hashed bundle.
 
@@ -985,8 +1069,8 @@ Forma is usable but young, and some things are worth knowing before you rely on 
 - **Gauges and barcodes in the mockup are decorative placeholders**; charts follow the supplied values but are stylised rather than a real charting library. The exported `.repx` still carries the correct DevExpress control types.
 - **Models are detected at runtime, never hardcoded.** Google retires models "for new users", so a pinned id works for existing projects and 404s for every new key. Forma probes a preference list on first use and caches the winner for the session.
 - **Reports with large images may not sync to the cloud.** A single detailed 2048px upload can exceed Firestore's 1 MiB document limit on its own; Forma saves the spec and REPX without the images in that case, and says so.
-- **PDFs are read to 8 pages.** Beyond that, later pages are ignored. A single upload is capped at **20 MB** and a request at **12 attachments**; anything over either is reported on screen rather than dropped silently.
-- **Component coverage is partial.** Twenty-five components have render tests (among them `ChatThread`, `Composer`, `ReportPreview`, `SettingsDialog` and `ShareDialog`; [`docs/notes/testing.md`](docs/notes/testing.md) lists them all), the public pages' claims, numbers, contrast and routes are held by tests that read their source, and every page's links and ids by one that renders it as the build does ([`src/prerender.test.ts`](src/prerender.test.ts)); the rest have none, and `App.tsx` is still several thousand lines of which only the pieces extracted into `src/lib` are tested. The rest of its stateful logic is still checked by hand, or by driving the real app — see `.claude/skills/run-forma/`. (No line count here on purpose: it was written down as "4,500" and was wrong within a week. Measure it if you need it.)
+- **PDFs are read to 8 pages.** For a longer one, the first seven and the last page are read; the pages between are skipped, and the notice says so. A single upload is capped at **20 MB** and a request at **12 attachments**; anything over either is reported on screen rather than dropped silently.
+- **Component coverage is partial.** Some components have render tests (among them `ChatThread`, `Composer`, `ReportPreview`, `SettingsDialog` and `ShareDialog`; [`docs/notes/testing.md`](docs/notes/testing.md) lists them all), the public pages' claims, numbers, contrast and routes are held by tests that read their source, and every page's links and ids by one that renders it as the build does ([`src/prerender.test.ts`](src/prerender.test.ts)); the rest have none, and `App.tsx` is still several thousand lines of which only the pieces extracted into `src/lib` are tested. The rest of its stateful logic is still checked by hand, or by driving the real app — see `.claude/skills/run-forma/`. (No line count here on purpose: it was written down as "4,500" and was wrong within a week. Measure it if you need it.)
 
 ---
 

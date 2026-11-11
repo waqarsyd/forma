@@ -49,19 +49,23 @@ git config core.hooksPath .githooks
 Git will not run hooks out of a tracked directory on its own, and this project
 deliberately does not install them for you — the alternative is a dependency plus a
 postinstall step, and a codebase whose entire dependency list is justified should not add
-one to lint filenames. The hook blocks files over 1 MB, backup and archive extensions, OS
-droppings, and what looks like a real API key assignment. Bypass a single commit with
+one to lint filenames. The hook blocks files over 1 MB, backup and archive extensions, log
+files, OS droppings, names that look like a manual copy (`copy`, `-final`, `_backup`,
+`_deprecated`), and what looks like a real API key assignment. Bypass a single commit with
 `git commit --no-verify`.
 
 ---
 
 ## The checks
 
-All seven, in the order CI runs them. (CI runs an eighth thing this table cannot:
-`npm ci`, which fails when `package.json` and `package-lock.json` disagree. Nothing
-you can run locally checks that, which is why the count here is seven and the count in
-`.github/workflows/checks.yml` is eight — the *Definition of done* below says seven for
-the same reason.)
+All seven, in the order CI runs them. (CI runs two more things this table does not:
+`npm ci`, which fails when `package.json` and `package-lock.json` disagree and which
+nothing you can run locally performs, and `scripts/check-dist.mjs`, which holds the built
+pages to the policy that will serve them. That second one can be run by hand after
+`npm run build` and `npm start` (`node scripts/check-dist.mjs --server
+http://127.0.0.1:3000/`), but it is not in this table, which is why
+`.github/workflows/checks.yml` runs more than this table lists — the *Definition of done*
+below says seven for the same reason.)
 
 | Command | What it catches |
 |---|---|
@@ -76,7 +80,7 @@ the same reason.)
 **Every baseline is clean**, so anything any of them prints is yours.
 
 Two more are deliberately not in that table. `npm run smoke` checks the *deployed* site
-over the network, read-only, and `.github/workflows/live.yml` runs it every day; it says
+over the network, read-only, and `.github/workflows/live.yml` runs it every three hours; it says
 nothing about your change, which is not deployed. And `npm run bench:fidelity` generates the
 cases under `scripts/fidelity/cases` through the real pipeline with your own Gemini key
 and scores what comes back; it spends quota and takes minutes, so it is a benchmark
@@ -147,11 +151,12 @@ dependency covers the job, use that one.
 
 The bar is real. A 2026-08-28 audit of all 26 dependencies declared at the time found
 **nothing to remove** — one library per job, no date library, no HTTP client (native `fetch`), no icon
-package (the icons are inline SVG). There are **28** now (11 runtime, 17 dev), and the
-two arrived together: `7d1984a` added `compression` and its `@types/` package to stop
-serving responses at three and a half times their size. Adding the 29th should feel like a
-decision. Count them rather than trusting this sentence — it is a number nothing in the
-toolchain checks, and `git show <commit>:package.json` settles when one appeared.
+package (the icons are inline SVG). More have arrived since, each for a job nothing here
+did (the first two together: `7d1984a` added `compression` and its `@types/` package to
+stop serving responses at three and a half times their size). Adding the next should feel
+like a decision. Count them (`npm pkg get dependencies devDependencies`) rather than
+trusting a number written here — nothing in the toolchain checks one, and
+`git show <commit>:package.json` settles when one appeared.
 
 ---
 
@@ -218,12 +223,14 @@ Not automated, because most of it needs judgement. Roughly every three months:
    been kept, or kept that should have been deleted. This replaced a quarantine manifest
    with retention dates; the log is the same information without a folder to maintain.
 3. **`npx knip`** for unused files and exports. **Read its output, do not act on it**: it
-   has no configuration for this project's second Vitest project, so it reports both rules
-   test files and `@firebase/rules-unit-testing` as unused. They are not; removing them
-   breaks 41 passing tests.
-4. **`npm audit`.** Currently 5 moderate, all dev-only and unreachable. **Do not run
-   `npm audit fix --force`** — npm's offered fix is a *major-version downgrade* of
-   `firebase-tools`.
+   has no configuration for this project's second Vitest project, so it reports the
+   rules test files under `tests/` and `@firebase/rules-unit-testing` as unused. They are
+   not; removing them breaks the whole rules suite.
+4. **`npm audit`**, read beside `comment:not-overridden` in `package.json`, which names
+   what it still reports and why none of it ships (Firestore's Node.js transport and parts
+   of `firebase-tools`, neither of which is in `dist/`). A finding that comment does not
+   name is new and is yours to read. **Do not run `npm audit fix --force`** — npm's offered
+   fix is a *major-version downgrade* of `firebase-tools`.
 5. **`npm outdated`.** Upgrade deliberately, one major at a time, never as a side effect.
 6. **Re-measure the bundle** with `npm run check:size` and tighten the budgets if the
    build shrank. A budget with slack in it is a budget that never fires.

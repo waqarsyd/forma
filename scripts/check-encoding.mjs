@@ -45,7 +45,11 @@ const ROOT = process.cwd();
  * and `skills/run-forma/` is prose plus a driver script that a session reads
  * and follows. The extra reason is that the skill's own instructions tell the
  * next editor to keep the driver pure ASCII *because* nothing checked it --
- * a rule enforced only by a sentence asking nicely. Now it is checked.
+ * a rule enforced only by a sentence asking nicely. Now a driver already
+ * corrupted into mojibake fails this sweep. Pure ASCII itself is still a
+ * manual rule: a correctly encoded em dash passes here, and only reading the
+ * file keeps it out (2026-11-11; this said "Now it is checked" until then,
+ * which claimed more than the sweep does).
  */
 const DIRS = ['src', 'docs', 'tests', 'scripts', 'tools', '.github', '.claude'];
 
