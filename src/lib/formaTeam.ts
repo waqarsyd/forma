@@ -36,8 +36,10 @@
  * (docs/proposals/own-model.md), and a model told to obey that would copy
  * its mistakes; one told that the picture wins can take what is right.
  */
+import { draftToText } from './draftText';
 import type { HouseStyle } from './formaModel';
 import type { ReportSkeleton, SkeletonRole } from './reportSkeleton';
+import type { DraftGiven, PageText } from './skeletonRepx';
 import type { ReportElement, ReportLayout } from './reportTypes';
 import { unitsPerInch } from './reportGeometry';
 
@@ -54,6 +56,17 @@ const READ_BY: Record<LayoutReader, string> = {
   vision: "Forma's vision model read its layout and OCR read the words placed in it",
   reader: "OCR read its words and Forma's box reader put each in its band and gave it its role",
 };
+
+/**
+ * What the AI is given to correct of a page the box reader built (2026-11-11,
+ * moved here from App with the wave 6b follow-up to CC-07): the draft in
+ * lib/draftText.ts's format, the page's texts as read, the report's name,
+ * and the picture's dpi, which sets how close the fit to the page's
+ * positions holds each text (lib/sourceAgreement.ts).
+ */
+export function readerCorrection(built: { skeleton: ReportSkeleton; used: DraftGiven; texts: PageText[]; title: string; dpi: number }) {
+  return { text: draftToText(built.skeleton, built.used), texts: built.texts, title: built.title, dpi: built.dpi };
+}
 
 /** The most boxes a draft brief lists, and the longest text it quotes. */
 export const BRIEF_MAX_ELEMENTS = 150;

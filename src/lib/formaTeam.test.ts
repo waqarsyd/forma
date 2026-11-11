@@ -5,7 +5,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { BRIEF_MAX_ELEMENTS, draftBrief, failureReason, fallbackReply, houseStyleBrief, teamLine } from './formaTeam';
+import { BRIEF_MAX_ELEMENTS, draftBrief, failureReason, fallbackReply, houseStyleBrief, readerCorrection, teamLine } from './formaTeam';
+import { draftToText } from './draftText';
+import { noneGiven } from './skeletonRepx';
 import type { FormaModel, HouseStyle } from './formaModel';
 import type { ReportSkeleton } from './reportSkeleton';
 import type { ReportElement, ReportLayout } from './reportTypes';
@@ -166,5 +168,15 @@ describe('the replies', () => {
         expect(fallbackReply('Gemini', e, described)).not.toMatch(/own draft|OCR|box reader|vision model|context window|reasoning|the model/i);
       }
     }
+  });
+});
+
+// The wave 6b follow-up to CC-07: the picture's dpi travels with the draft to the fit.
+describe('readerCorrection', () => {
+  it("carries the draft, the texts, the name and the picture's dpi", () => {
+    const texts = [{ text: 'INVOICE', x: 50, y: 40, w: 120, h: 20 }];
+    const out = readerCorrection({ skeleton, used: noneGiven(), texts, title: 'Invoice', dpi: 300 });
+    expect(out).toMatchObject({ texts, title: 'Invoice', dpi: 300 });
+    expect(out.text).toBe(draftToText(skeleton, noneGiven()));
   });
 });

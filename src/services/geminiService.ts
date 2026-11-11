@@ -2550,6 +2550,8 @@ export interface DraftRequest {
   texts: PageText[];
   /** The report's name when no title is read. */
   title: string;
+  /** The page's pixels per inch, which sets how close a text must print to where it was read (lib/sourceAgreement.ts); 150 when absent. */
+  dpi?: number;
   /* `readBy`, naming the part of Forma that read the layout for the Spec, went
      on 2026-11-11 (the full audit's PL-07 follow-up): the Spec stopped saying
      it, so nothing read it. */
@@ -3495,7 +3497,8 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
         ]);
         const scale = unitsPerInch(reportUnit) / 100;
         const texts = pageTexts.map((t) => ({ ...t, x: t.x * scale, y: t.y * scale, w: t.w * scale, h: t.h * scale }));
-        const fit = fitGeometry(parsed.repxContent, texts, { rows: page?.rows ?? null, ...(measure === undefined ? {} : { measure }) });
+        // At the picture's own dpi (wave 6b follow-up): a 300 dpi scan is held closer than a screenshot.
+        const fit = fitGeometry(parsed.repxContent, texts, { rows: page?.rows ?? null, dpi: options?.draft?.dpi, ...(measure === undefined ? {} : { measure }) });
         if (fit.applied) {
           parsed.repxContent = fit.xml;
           console.warn(`Repair: ${fit.reason}.`);

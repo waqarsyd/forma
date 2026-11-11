@@ -47,6 +47,7 @@ static class Program {
             Console.WriteLine("    emit-chart-titles  a chart's title, axis titles and legend, read back after loading");
             Console.WriteLine("    emit-gauge     XRGauge");
             Console.WriteLine("    emit-comb      checkbox and comb");
+            Console.WriteLine("    emit-localize  a report in two languages (LocalizationItems), read back per culture");
             Console.WriteLine("    emit-container panel, subreport, shapes");
             Console.WriteLine("    emit-styles    StyleSheet and StyleName");
             Console.WriteLine("    emit-rules     FormattingRuleSheet");
@@ -93,6 +94,7 @@ static class Program {
             case "emit-gauge": EmitGauge(args[1]); return 0;
             case "emit-toc":   EmitToc(args[1]);   return 0;
             case "emit-comb":  EmitComb(args[1]);  return 0;
+            case "emit-localize": EmitLocalize(args[1]); return 0;
             case "render-cols": return RenderColumns();
             case "render":     return Render.Run(args[1], args.Length > 2 ? args[2] : Path.Combine(args[1], "out"));
             case "text-lines": return TextLines.Run(args);
@@ -1157,6 +1159,161 @@ static class Program {
         Console.WriteLine("written: " + Path.GetFullPath(outPath));
         Console.WriteLine();
         Console.WriteLine(File.ReadAllText(outPath));
+    }
+
+    /// Writes a report in two languages (2026-11-11, the full audit's CP-06):
+    /// what the serializer writes for LocalizationItems, and what the loader
+    /// prints for each culture after a round trip -- the exact culture, its
+    /// neutral parent, and a culture with no items at all.
+    static void EmitLocalize(string outPath) {
+        XtraReport report = new XtraReport();
+        report.Name = "RepxProbeLocalize";
+        report.ReportUnit = ReportUnit.HundredthsOfAnInch;
+        report.PageWidth = 850;
+        report.PageHeight = 1100;
+
+        XRLabel title = new XRLabel();
+        title.Name = "labelTitle";
+        title.Text = "Invoice";
+        title.LocationF = new PointF(0, 0);
+        title.SizeF = new SizeF(300, 30);
+
+        XRTable head = Table("tableHead", new XRTableCell[] {
+            Cell("cellHeadDesc", "Description", 3),
+            Cell("cellHeadAmount", "Amount", 1)
+        });
+        head.LocationF = new PointF(0, 40);
+
+        ReportHeaderBand header = new ReportHeaderBand();
+        header.Name = "ReportHeader";
+        header.HeightF = 70;
+        header.Controls.Add(title);
+        header.Controls.Add(head);
+        report.Bands.AddRange(new Band[] { new TopMarginBand(), header, new DetailBand(), new BottomMarginBand() });
+
+        // Added by hand, one Text per control, as Forma would write them.
+        XRTableCell desc = (XRTableCell)head.Rows[0].Cells[0];
+        XRTableCell amount = (XRTableCell)head.Rows[0].Cells[1];
+        report.LocalizationItems.Add(new DevExpress.XtraReports.Localization.LocalizationItem(title, "de-DE", "Text", "Rechnung"));
+        report.LocalizationItems.Add(new DevExpress.XtraReports.Localization.LocalizationItem(desc, "de-DE", "Text", "Beschreibung"));
+        report.LocalizationItems.Add(new DevExpress.XtraReports.Localization.LocalizationItem(amount, "de-DE", "Text", "Betrag"));
+
+        report.SaveLayoutToXml(outPath);
+        Console.WriteLine("written: " + Path.GetFullPath(outPath));
+        Console.WriteLine();
+        Console.WriteLine(File.ReadAllText(outPath));
+        Console.WriteLine();
+
+        foreach (string culture in new string[] { "de-DE", "de", "fr-FR", "" }) {
+            XtraReport back = new XtraReport();
+            back.LoadLayoutFromXml(outPath);
+            back.ApplyLocalization(culture);
+            XRLabel t = (XRLabel)back.FindControl("labelTitle", true);
+            XRTableCell d = (XRTableCell)back.FindControl("cellHeadDesc", true);
+            Console.WriteLine("culture '" + culture + "': items=" + back.LocalizationItems.Count + " title=" + t.Text + " desc=" + d.Text);
+        }
+
+        // What the designer's own call writes: a control's current state saved for a culture.
+        XtraReport saved = new XtraReport();
+        saved.LoadLayoutFromXml(outPath);
+        XRLabel st = (XRLabel)saved.FindControl("labelTitle", true);
+        st.Text = "Facture";
+        saved.LocalizationItems.SaveLocalization(st, "fr-FR");
+        st.Text = "Invoice";
+        string savedPath = Path.ChangeExtension(outPath, ".saved.repx");
+        saved.SaveLayoutToXml(savedPath);
+        Console.WriteLine();
+        Console.WriteLine("SaveLocalization(labelTitle, fr-FR):");
+        foreach (string line in File.ReadAllLines(savedPath)) if (line.Contains("Localization") || line.Contains("Culture")) Console.WriteLine(line.Trim());
+
+        // The first run showed that items for one culture alone make the
+        // serializer drop every localizable property from the controls (Text,
+        // LocationFloat, SizeF, Weight): the default language is lost. So the
+        // second question is what the file has to hold for the default, and
+        // the third how the LOADER reads the file Forma writes by hand: the
+        // controls with their own Text and items for the second language.
+        XtraReport fresh = new XtraReport();
+        fresh.Name = "RepxProbeLocalizeDefault";
+        XRLabel ft = new XRLabel(); ft.Name = "labelTitle"; ft.Text = "Invoice"; ft.LocationF = new PointF(0, 0); ft.SizeF = new SizeF(300, 30);
+        // Set beyond their defaults, so the Default items list every
+        // property the designer treats as one a language may change.
+        ft.Font = new Font("Arial", 14f, FontStyle.Bold);
+        ft.TextAlignment = DevExpress.XtraPrinting.TextAlignment.MiddleRight;
+        ft.Padding = new DevExpress.XtraPrinting.PaddingInfo(4, 4, 0, 0, 100f);
+        ft.ForeColor = Color.Navy;
+        ReportHeaderBand fh = new ReportHeaderBand(); fh.Name = "ReportHeader"; fh.HeightF = 70; fh.Controls.Add(ft);
+        fresh.Bands.AddRange(new Band[] { new TopMarginBand(), fh, new DetailBand(), new BottomMarginBand() });
+        fresh.LocalizationItems.SaveLocalization(new object[] { fresh, ft }, "", true);
+        fresh.LocalizationItems.Add(new DevExpress.XtraReports.Localization.LocalizationItem(ft, "de-DE", "Text", "Rechnung"));
+        string defaultPath = Path.ChangeExtension(outPath, ".default.repx");
+        fresh.SaveLayoutToXml(defaultPath);
+        Console.WriteLine();
+        Console.WriteLine("SaveLocalization(all, \"\") then de-DE Text:");
+        Console.WriteLine(File.ReadAllText(defaultPath));
+        foreach (string culture in new string[] { "de-DE", "de", "fr-FR", "" }) {
+            XtraReport back = new XtraReport();
+            back.LoadLayoutFromXml(defaultPath);
+            back.ApplyLocalization(culture);
+            XRLabel t = (XRLabel)back.FindControl("labelTitle", true);
+            Console.WriteLine("culture '" + culture + "': title=" + t.Text + " size=" + t.SizeF);
+        }
+
+        string hand =
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
+            "<XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"1\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1\" Name=\"Hand\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\">" +
+            "<Bands><Item1 Ref=\"2\" ControlType=\"TopMarginBand\" /><Item2 Ref=\"3\" ControlType=\"ReportHeaderBand\" Name=\"ReportHeader\" HeightF=\"70\"><Controls>" +
+            "<Item1 Ref=\"4\" ControlType=\"XRLabel\" Name=\"labelTitle\" Text=\"Invoice\" LocationFloat=\"0, 0\" SizeF=\"300, 30\" />" +
+            "</Controls></Item2><Item3 Ref=\"5\" ControlType=\"DetailBand\" /><Item4 Ref=\"6\" ControlType=\"BottomMarginBand\" /></Bands>" +
+            "<LocalizationItems><Item1 Ref=\"7\" Component=\"#Ref-4\" Culture=\"de-DE\" Path=\"Text\" Data=\"Rechnung\" /></LocalizationItems>" +
+            "</XtraReportsLayoutSerializer>";
+        string handPath = Path.ChangeExtension(outPath, ".hand.repx");
+        File.WriteAllText(handPath, hand);
+        Console.WriteLine();
+        Console.WriteLine("hand-written: control Text plus de-DE items only");
+        foreach (string culture in new string[] { null, "de-DE", "de", "fr-FR", "" }) {
+            XtraReport back = new XtraReport();
+            back.LoadLayoutFromXml(handPath);
+            if (culture != null) back.ApplyLocalization(culture);
+            XRLabel t = (XRLabel)back.FindControl("labelTitle", true);
+            Console.WriteLine("culture " + (culture == null ? "(none applied)" : "'" + culture + "'") + ": title=" + t.Text + " size=" + t.SizeF);
+        }
+        XtraReport resaved = new XtraReport();
+        resaved.LoadLayoutFromXml(handPath);
+        string resavedPath = Path.ChangeExtension(outPath, ".hand-resaved.repx");
+        resaved.SaveLayoutToXml(resavedPath);
+        Console.WriteLine("hand-written, loaded and saved again:");
+        Console.WriteLine(File.ReadAllText(resavedPath));
+
+        // The form Forma writes: the control keeps its own Text, the default
+        // language is also an item (Culture="Default"), and the second
+        // language is NEUTRAL ("de"), so the question is whether de-DE and
+        // de-AT find it through their parent.
+        // A second label with no item at all ("No. 42", nothing to translate)
+        // asks whether a control the items do not name keeps its own Text.
+        string written = hand.Replace(
+            "<LocalizationItems><Item1 Ref=\"7\" Component=\"#Ref-4\" Culture=\"de-DE\" Path=\"Text\" Data=\"Rechnung\" /></LocalizationItems>",
+            "<LocalizationItems><Item1 Ref=\"7\" Component=\"#Ref-4\" Culture=\"Default\" Path=\"Text\" Data=\"Invoice\" /><Item2 Ref=\"8\" Component=\"#Ref-4\" Culture=\"de\" Path=\"Text\" Data=\"Rechnung\" /></LocalizationItems>")
+            .Replace("</Controls></Item2>", "<Item2 Ref=\"9\" ControlType=\"XRLabel\" Name=\"labelNumber\" Text=\"No. 42\" LocationFloat=\"0, 40\" SizeF=\"300, 30\" Font=\"Arial, 14pt\" />" +
+                "<Item3 Ref=\"10\" ControlType=\"XRTable\" Name=\"tableHead\" LocationFloat=\"0, 80\" SizeF=\"400, 25\"><Rows><Item1 Ref=\"11\" ControlType=\"XRTableRow\" Name=\"rowHead\" Weight=\"1\"><Cells>" +
+                "<Item1 Ref=\"12\" ControlType=\"XRTableCell\" Name=\"cellDesc\" Text=\"Description\" Weight=\"3\" /><Item2 Ref=\"13\" ControlType=\"XRTableCell\" Name=\"cellAmount\" Text=\"Amount\" Weight=\"1\" />" +
+                "</Cells></Item1></Rows></Item3></Controls></Item2>")
+            .Replace("</LocalizationItems>", "<Item7 Ref=\"18\" Component=\"#Ref-9\" Culture=\"Default\" Path=\"Font\" Data=\"Arial, 14pt\" /><Item3 Ref=\"14\" Component=\"#Ref-9\" Culture=\"Default\" Path=\"Text\" Data=\"No. 42\" /><Item4 Ref=\"15\" Component=\"#Ref-12\" Culture=\"Default\" Path=\"Text\" Data=\"Description\" />" +
+                "<Item5 Ref=\"16\" Component=\"#Ref-12\" Culture=\"de\" Path=\"Text\" Data=\"Beschreibung\" /><Item6 Ref=\"17\" Component=\"#Ref-13\" Culture=\"Default\" Path=\"Text\" Data=\"Amount\" /></LocalizationItems>");
+        string writtenPath = Path.ChangeExtension(outPath, ".forma.repx");
+        File.WriteAllText(writtenPath, written);
+        Console.WriteLine();
+        Console.WriteLine("Forma's form: control Text, a Default item and a neutral de item");
+        foreach (string culture in new string[] { null, "de", "de-DE", "de-AT", "fr-FR", "" }) {
+            XtraReport back = new XtraReport();
+            back.LoadLayoutFromXml(writtenPath);
+            if (culture != null) back.ApplyLocalization(culture);
+            XRLabel t = (XRLabel)back.FindControl("labelTitle", true);
+            XRLabel n = (XRLabel)back.FindControl("labelNumber", true);
+            XRTableCell cd = (XRTableCell)back.FindControl("cellDesc", true);
+            XRTableCell ca = (XRTableCell)back.FindControl("cellAmount", true);
+            Console.WriteLine("culture " + (culture == null ? "(none applied)" : "'" + culture + "'") + ": title=" + t.Text + " size=" + t.SizeF + " number=" + n.Text + " font=" + n.Font.Size +
+                " cells=" + cd.Text + "|" + ca.Text + " widths=" + cd.WidthF + "|" + ca.WidthF);
+        }
     }
 
     /// Writes an XRCharacterComb -- one boxed cell per character, which is how

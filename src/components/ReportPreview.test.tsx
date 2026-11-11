@@ -21,6 +21,7 @@ import { act, render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { useState } from 'react';
 import ReportPreview from './ReportPreview';
 import { pxToUnits } from '../lib/reportGeometry';
+import { localizationItems, localizeRepx } from '../lib/repxTranslate';
 
 afterEach(cleanup);
 
@@ -986,5 +987,50 @@ CREATE TABLE dbo.Orders (OrderID int PRIMARY KEY, CustomerID int NOT NULL REFERE
     fireEvent.click(north);
     expect(screen.getByText('1 records')).toBeTruthy();
     expect(screen.getByText('8.00')).toBeTruthy();
+  });
+});
+
+/*
+ * A report in two languages (2026-11-11, the full audit's CP-06) and the
+ * original under the page (CP-03).
+ */
+describe('languages and the original', () => {
+  const twoLanguages = localizeRepx(`<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Bilingual" PageWidth="850" PageHeight="1100" Version="20.1" Dpi="100">
+  <Bands><Item1 Ref="2" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="40" Dpi="100"><Controls><Item1 Ref="3" ControlType="XRLabel" Name="labelTitle" Text="Invoice" SizeF="200,30" Dpi="100" /></Controls></Item1></Bands>
+</XtraReportsLayoutSerializer>`, 'de', new Map([['Invoice', 'Rechnung']])).xml;
+
+  it('offers the languages a report carries and draws the one chosen', () => {
+    render(<ReportPreview repxContent={twoLanguages} layout={null} title="Bilingual" />);
+    expect(screen.getByText('Invoice')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('The language the Preview shows'), { target: { value: 'de' } });
+    expect(screen.getByText('Rechnung')).toBeTruthy();
+    expect(screen.queryByText('Invoice')).toBeNull();
+  });
+
+  it('writes a label retyped while German shows to the German, and keeps the English', () => {
+    const onEdit = vi.fn();
+    render(<ReportPreview repxContent={twoLanguages} layout={null} title="Bilingual" onEdit={onEdit} />);
+    fireEvent.change(screen.getByLabelText('The language the Preview shows'), { target: { value: 'de' } });
+    fireEvent.doubleClick(document.querySelector('.rp-hit') as HTMLElement);
+    const field = screen.getByLabelText("Edit the control's text") as HTMLInputElement;
+    expect(field.value).toBe('Rechnung');
+    fireEvent.change(field, { target: { value: 'Rechnung Nr.' } });
+    fireEvent.blur(field);
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    const items = localizationItems(onEdit.mock.calls[0][0]);
+    expect(items).toContainEqual({ component: '3', culture: 'Default', path: 'Text', data: 'Invoice' });
+    expect(items).toContainEqual({ component: '3', culture: 'de', path: 'Text', data: 'Rechnung Nr.' });
+    expect(onEdit.mock.calls[0][0]).toContain('Name="labelTitle" Text="Invoice"');
+  });
+
+  it('shows no language switch for a report in one, and the sliders only with an original', () => {
+    render(<ReportPreview repxContent={geometry} layout={null} title="One" />);
+    expect(screen.queryByLabelText('The language the Preview shows')).toBeNull();
+    expect(screen.queryByLabelText('How much of the original shows')).toBeNull();
+    cleanup();
+    render(<ReportPreview repxContent={geometry} layout={null} title="One" compareWith={['data:image/png;base64,iVBORw0KGgo=']} />);
+    expect(screen.getByLabelText('How much of the original shows')).toBeTruthy();
+    expect(screen.getByLabelText('How far across the page the original reaches')).toBeTruthy();
   });
 });

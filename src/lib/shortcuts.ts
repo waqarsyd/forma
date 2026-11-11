@@ -38,7 +38,7 @@ export interface ShortcutKey {
  * every pane. Only the Preview read them until then. In a field they are the
  * field's own.
  */
-export type WorkspaceShortcut = 'commands' | 'clean' | 'shortcuts' | 'undo' | 'redo' | 'zoomIn' | 'zoomOut' | 'zoom100' | 'zoomFit' | 'zoomSelection' | 'mark' | 'select';
+export type WorkspaceShortcut = 'commands' | 'clean' | 'shortcuts' | 'undo' | 'redo' | 'zoomIn' | 'zoomOut' | 'zoom100' | 'zoomFit' | 'zoomSelection' | 'mark' | 'select' | 'compare';
 
 export function workspaceShortcutOf(e: ShortcutKey, typing: boolean): WorkspaceShortcut | null {
   if (e.isComposing || e.altKey) return null;
@@ -62,6 +62,8 @@ export function workspaceShortcutOf(e: ShortcutKey, typing: boolean): WorkspaceS
   // The Preview's tools (2026-11-08), Stitch's Mark (M) and Select (V).
   if (key === 'm' && !e.shiftKey) return 'mark';
   if (key === 'v' && !e.shiftKey) return 'select';
+  // Compare with the original (2026-11-11, the full audit's CP-03).
+  if (key === 'o' && !e.shiftKey) return 'compare';
   return null;
 }
 
@@ -128,6 +130,7 @@ export function shortcutGroups(mac: boolean): { title: string; rows: ShortcutRow
         ['Select more', ['⇧', 'Click']],
         ['Mark an area to select what is in it', ['M']],
         ['Back to selecting one at a time', ['V']],
+        ['Compare with the original', ['O']],
         ['Nudge the selection', ['↑ ↓ ← →']],
         ['Nudge it ten units', ['⇧', '↑ ↓ ← →']],
         ['Duplicate the selection', [mod, 'D']],

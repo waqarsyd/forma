@@ -126,6 +126,21 @@ export function pointsToUnits(points: number, reportUnit?: string): number {
   return (points / POINTS_PER_INCH) * unitsPerInch(reportUnit);
 }
 
+/** Points per unit of a written length, for `lengthToPoints`. */
+const POINTS_PER: Record<string, number> = { in: 72, cm: 72 / 2.54, mm: 72 / 25.4, pt: 1, pc: 12, px: 72 / CSS_PX_PER_INCH };
+
+/**
+ * A length written with its unit, as an SSRS report definition writes every
+ * size ("2.5in", "1cm", "12pt", 2026-11-11, the full audit's CP-08), in
+ * points; null when it is not one. A bare number is taken as points, which is
+ * what a font size without a unit means.
+ */
+export function lengthToPoints(written: string | null | undefined): number | null {
+  const m = /^\s*(-?\d+(?:[.,]\d+)?)\s*(in|cm|mm|pt|pc|px)?\s*$/i.exec(written ?? '');
+  if (!m) return null;
+  return Number(m[1].replace(',', '.')) * POINTS_PER[(m[2] ?? 'pt').toLowerCase()];
+}
+
 /**
  * Report units → typographic points, for a DevExpress `Font` size.
  *

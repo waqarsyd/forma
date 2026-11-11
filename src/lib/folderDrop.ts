@@ -25,13 +25,14 @@ const MAX_DEPTH = 8;
 /**
  * The sources the batch takes: images, PDFs, .repx files and, since
  * 2026-11-11 (the full audit's CP-01a), SSRS report definitions (.rdl,
- * .rdlc), which are read as text the way a .repx is. By type or, where the
- * browser gave none, by name.
+ * .rdlc), and since CP-08 the same day FastReport reports (.frx), both
+ * converted to a DevExpress report as they are read (lib/importForeign.ts).
+ * By type or, where the browser gave none, by name.
  */
 export function acceptsForBatch(name: string, type: string): boolean {
   const base = name.split('/').pop() ?? name;
   if (base.startsWith('.')) return false;
-  return type.startsWith('image/') || type === 'application/pdf' || /\.(repx|rdlc?|pdf|png|jpe?g|gif|webp|bmp|tiff?)$/i.test(base);
+  return type.startsWith('image/') || type === 'application/pdf' || /\.(repx|rdlc?|frx|pdf|png|jpe?g|gif|webp|bmp|tiff?)$/i.test(base);
 }
 
 /** Whether a file is a Crystal Reports file, which only Crystal Reports reads: its PDF is the way in. */

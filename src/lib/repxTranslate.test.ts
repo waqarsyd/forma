@@ -3,7 +3,25 @@
  * the first gap of docs/proposals/ai-designers.md).
  */
 import { describe, expect, it } from 'vitest';
-import { applyTranslations, collectTexts, languageAsked, languageName, namesLanguage, translatable } from './repxTranslate';
+import {
+  applyTranslations,
+  collectTexts,
+  cultureName,
+  cultureOf,
+  inCulture,
+  keepsBoth,
+  languageAsked,
+  languageName,
+  localizationItems,
+  localizeRepx,
+  namesLanguage,
+  placeTranslations,
+  reportCultures,
+  retypeInCulture,
+  syncLocalization,
+  translatable,
+  translatedLine,
+} from './repxTranslate';
 import { escapeXmlAttribute } from './xmlEscape';
 
 const REPX = `<?xml version="1.0" encoding="utf-8"?>
@@ -135,5 +153,143 @@ describe('what is translated', () => {
       expect(xml, to).toContain(`Name="cellAmount" Text="${escapeXmlAttribute(to)}"`);
       expect(xml.replace(/Text="[^"]*"/g, ''), to).toBe(REPX.replace(/Text="[^"]*"/g, ''));
     }
+  });
+});
+
+/*
+ * A report in two languages (2026-11-11, the full audit's CP-06), in the form
+ * RepxProbe emit-localize measured DevExpress 20.1 loading: every control's
+ * Text and Font as Default items, the second language neutral.
+ */
+describe('a second language beside the first (CP-06)', () => {
+  const GERMAN = new Map([['Invoice', 'Rechnung'], ['Amount', 'Betrag'], ['Customer', 'Kunde']]);
+
+  it('reads the words that ask to keep both, and not those that ask for one', () => {
+    for (const words of ['add German', 'make it bilingual', 'in English and German please', 'keep the English and add French', 'German as well', 'show it in two languages', 'alongside English, put it in Hindi'])
+      expect(keepsBoth(words), words).toBe(true);
+    for (const words of ['translate it into German', 'in German', 'add a German date format', 'add a total', 'make the English title bold',
+      'translate it into German but keep the original layout', 'keep the original formatting', 'translate to French, keeping the English font'])
+      expect(keepsBoth(words), words).toBe(false);
+    for (const words of ['translate it into German but keep the original', 'keep the original text and add French', 'keep the original wording too, in German'])
+      expect(keepsBoth(words), words).toBe(true);
+  });
+
+  it('names the language added when two are joined, and only after in, into, to or a translate verb', () => {
+    expect(languageAsked('make the report in English and German')).toBe('German');
+    expect(languageAsked('translate it, English and French')).toBe('French');
+    // A pair that does not start with English keeps its first, as before pairs were read.
+    expect(languageAsked('translate it into German and French')).toBe('German');
+    expect(languageAsked('the source is English and German already, fix the total')).toBeNull();
+  });
+
+  it('writes the culture neutral, Norwegian as Bokmal, and names a culture back', () => {
+    expect(cultureOf('German')).toBe('de');
+    expect(cultureOf('Deutsch')).toBe('de');
+    expect(cultureOf('Norwegian')).toBe('nb');
+    expect(cultureOf('Klingon')).toBeNull();
+    expect(cultureName('de-DE')).toBe('German');
+    expect(cultureName('nb')).toBe('Norwegian');
+  });
+
+  it('keeps every text, adds Default items for every Text and Font and the translation in the culture', () => {
+    const { xml, changed } = localizeRepx(REPX, 'de', GERMAN);
+    expect(changed).toBe(3); // two "Invoice" labels and the Amount cell; the bound label is not one
+    expect(xml).toContain('Name="labelTitle" Text="Invoice"');
+    const items = localizationItems(xml);
+    expect(items).toContainEqual({ component: '4', culture: 'Default', path: 'Text', data: 'Invoice' });
+    expect(items).toContainEqual({ component: '4', culture: 'Default', path: 'Font', data: 'Arial, 16pt, style=Bold' });
+    expect(items).toContainEqual({ component: '4', culture: 'de', path: 'Text', data: 'Rechnung' });
+    // Untranslated controls keep their Text through a Default item: the loader drops it otherwise.
+    expect(items).toContainEqual({ component: '6', culture: 'Default', path: 'Text', data: '12345' });
+    expect(items).toContainEqual({ component: '14', culture: 'Default', path: 'Text', data: '-' });
+    expect(items.some((i) => i.component === '7' && i.culture === 'de')).toBe(false);
+    // After </Bands>, with Refs no element of the report already has.
+    expect(xml.indexOf('<LocalizationItems>')).toBeGreaterThan(xml.indexOf('</Bands>'));
+    const refs = [...xml.matchAll(/\sRef="(\d+)"/g)].map((m) => m[1]);
+    expect(new Set(refs).size).toBe(refs.length);
+    expect(reportCultures(xml)).toEqual(['de']);
+  });
+
+  it('adds a third language to the items already there, keeping their Refs', () => {
+    const de = localizeRepx(REPX, 'de', GERMAN).xml;
+    const ref = /Culture="de" Path="Text" Data="Rechnung"/.exec(de) && /<Item\d+ Ref="(\d+)" Component="#Ref-4" Culture="de"/.exec(de)![1];
+    const fr = localizeRepx(de, 'fr', new Map([['Invoice', 'Facture']])).xml;
+    expect(reportCultures(fr)).toEqual(['de', 'fr']);
+    expect(fr).toContain(`Ref="${ref}" Component="#Ref-4" Culture="de"`);
+    expect(fr.match(/<LocalizationItems>/g)).toHaveLength(1);
+  });
+
+  it('draws the report in a culture, its neutral parent, or its own language', () => {
+    const xml = localizeRepx(REPX, 'de', GERMAN).xml;
+    expect(inCulture(xml, 'de-AT')).toContain('Name="labelTitle" Text="Rechnung"');
+    expect(inCulture(xml, 'de')).toContain('Name="cellAmount" Text="Betrag"');
+    expect(inCulture(xml, 'fr-FR')).toContain('Name="labelTitle" Text="Invoice"');
+    expect(inCulture(xml, null)).toContain('Name="cellAmount" Text="Amount"');
+  });
+
+  it('keeps the Default items true to an edit, and drops the items of a control that is gone', () => {
+    const xml = localizeRepx(REPX, 'de', GERMAN).xml;
+    expect(syncLocalization(xml)).toBe(xml);
+    const retyped = syncLocalization(xml.replace('Name="labelTitle" Text="Invoice"', 'Name="labelTitle" Text="Bill"'));
+    expect(localizationItems(retyped)).toContainEqual({ component: '4', culture: 'Default', path: 'Text', data: 'Bill' });
+    const gone = syncLocalization(retyped.replace(/<Item2 Ref="13"[^>]*\/>/, ''));
+    expect(localizationItems(gone).some((i) => i.component === '13')).toBe(false);
+    expect(syncLocalization(REPX)).toBe(REPX);
+  });
+
+  it('writes the items on the report, not inside a detail report band that has Bands of its own', () => {
+    const master = `<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Orders" PageWidth="850" PageHeight="1100" Version="20.1" Dpi="100">
+  <Bands>
+    <Item1 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="25" Dpi="100"><Controls>
+      <Item1 Ref="3" ControlType="XRLabel" Name="labelTitle" Text="Invoice" SizeF="200,30" Dpi="100" />
+    </Controls></Item1>
+    <Item2 Ref="4" ControlType="DetailReportBand" Name="DetailReport" Level="0" Dpi="100">
+      <Bands>
+        <Item1 Ref="5" ControlType="DetailBand" Name="Detail1" HeightF="25" Dpi="100"><Controls>
+          <Item1 Ref="6" ControlType="XRLabel" Name="labelLine" Text="Amount" SizeF="200,20" Dpi="100" />
+        </Controls></Item1>
+      </Bands>
+    </Item2>
+  </Bands>
+  <StyleSheet />
+</XtraReportsLayoutSerializer>`;
+    const { xml, changed } = localizeRepx(master, 'de', GERMAN);
+    expect(changed).toBe(2);
+    const at = xml.indexOf('<LocalizationItems>');
+    // After the report's own </Bands>, the last one, and nowhere inside the detail report band.
+    expect(at).toBeGreaterThan(xml.lastIndexOf('</Bands>'));
+    expect(at).toBeGreaterThan(xml.indexOf('</Item2>\n  </Bands>'));
+    expect(at).toBeLessThan(xml.indexOf('<StyleSheet />'));
+    // An edit rewrites the block in the same place.
+    const edited = syncLocalization(xml.replace('Text="Invoice" SizeF', 'Text="Bill" SizeF'));
+    expect(edited.indexOf('<LocalizationItems>')).toBeGreaterThan(edited.lastIndexOf('</Bands>'));
+  });
+
+  it('writes a retype made while another language shows to that language, keeping the first', () => {
+    const xml = localizeRepx(REPX, 'de', GERMAN).xml;
+    // The Preview retypes the file as it is: the control's own Text takes the German words.
+    const typed = xml.replace('Name="labelTitle" Text="Invoice"', 'Name="labelTitle" Text="Rechnung Nr."');
+    const out = syncLocalization(retypeInCulture(xml, typed, 'de'));
+    expect(out).toContain('Name="labelTitle" Text="Invoice"');
+    const items = localizationItems(out);
+    expect(items).toContainEqual({ component: '4', culture: 'Default', path: 'Text', data: 'Invoice' });
+    expect(items).toContainEqual({ component: '4', culture: 'de', path: 'Text', data: 'Rechnung Nr.' });
+    expect(items.filter((i) => i.component === '4' && i.culture === 'de')).toHaveLength(1);
+    // A control with no German yet gains it; with no language shown nothing moves.
+    const number = retypeInCulture(xml, xml.replace('Text="12345"', 'Text="Nr. 12345"'), 'de');
+    expect(localizationItems(number)).toContainEqual({ component: '6', culture: 'de', path: 'Text', data: 'Nr. 12345' });
+    expect(retypeInCulture(xml, typed, '')).toBe(typed);
+  });
+
+  it('places a translation beside the first language only when the words ask for both', () => {
+    expect(placeTranslations(REPX, GERMAN, 'German', 'add German').bilingual).toBe(true);
+    const replaced = placeTranslations(REPX, GERMAN, 'German', 'translate it into German');
+    expect(replaced.bilingual).toBe(false);
+    expect(replaced.xml).toContain('Name="labelTitle" Text="Rechnung"');
+    expect(replaced.xml).not.toContain('LocalizationItems');
+    // A language with no culture Forma knows is put in place, as before.
+    expect(placeTranslations(REPX, new Map([['Invoice', 'Qapla']]), 'Klingon', 'add Klingon').bilingual).toBe(false);
+    expect(translatedLine('German', true)).toMatch(/beside its own language/);
   });
 });

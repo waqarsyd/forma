@@ -51,7 +51,7 @@ import {
 } from './repxEdit';
 import { SUPPORTED_PAGE_SIZES, pageSizeInUnits } from './reportGeometry';
 import { readRepxDataSources } from './repxSqlDataSource';
-import { languageAsked, languageName, namesLanguage } from './repxTranslate';
+import { languageAsked, languageName, namesLanguage, syncLocalization } from './repxTranslate';
 import { NOT_FOLLOWED } from './chatTurn';
 import { plainBand, plainKind } from './plainKind';
 
@@ -1114,6 +1114,8 @@ export function applyEdits(xml: string, edits: readonly AgentEdit[], hooks: Edit
     }
   }
   if (edits.length > MAX_EDITS) declined.push(`${edits.length - MAX_EDITS} more edits were not made: more than ${MAX_EDITS} is a redesign`);
+  // A report in two languages prints its own from its Default items (2026-11-11, CP-06).
+  if (current !== xml) current = syncLocalization(current);
   return { xml: current, applied, appliedOps, declined, changed: current !== xml };
 }
 

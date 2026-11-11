@@ -19,7 +19,10 @@
  * lives outside the suite. Everything here is pure and under test.
  *
  * Two deliberate limits. There is no pixel comparison: a mockup drawn from the
- * layout is the model's own account of itself. And the checks are coarse on
+ * layout is the model's own account of itself. (The person can make one by
+ * eye since 2026-11-11: the Preview's Compare with the original, CP-03, draws
+ * the source under the printed page, lib/sourceAlign.ts; this scorecard
+ * still reads positions as numbers, lib/sourceAgreement.ts.) And the checks are coarse on
  * purpose -- a band present or absent, a phrase found or lost, a median inside
  * a range. Those are the failures that have actually happened here, and a
  * coarse check that trips is worth more than a precise one nobody can keep

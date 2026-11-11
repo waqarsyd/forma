@@ -40,8 +40,6 @@ import {
   IconLogout,
   IconMenu,
   IconCollapse,
-  IconMarquee,
-  IconPointer,
   IconPanelLeft,
   IconCompose,
   IconSave,
@@ -150,6 +148,8 @@ const AccountDialog = lazy(() => import('./components/AccountDialog'));
    workspace with a finished report, and it carries its own print stylesheet. */
 const loadPreview = () => import('./components/ReportPreview');
 const ReportPreview = lazy(loadPreview);
+/* The Preview's rail (2026-11-11, CP-03): lazy, so its third tool cost the App chunk nothing. */
+const PreviewRail = lazy(() => import('./components/PreviewRail'));
 /* The binding screen. Lazy for the same reason as the preview: workspace-only,
    reachable only with a finished report, and it carries its own styles. */
 const DataBinding = lazy(() => import('./components/DataBinding'));
@@ -313,6 +313,7 @@ import type { ReaderBuiltReport } from './lib/ocrAttach';
 import type { ReadPage } from './lib/ocrAttach';
 import type { DatabaseText, SqlSchema } from './lib/sqlSchema';
 import type { TextAttachment } from './lib/repxIntake';
+import type { PreviewTool } from './components/PreviewRail';
 import type { ReportQuery } from './lib/sqlQuery';
 import type { DataField } from './lib/dataSource';
 import { mergeStoredConfig, toPersistable, STORAGE_KEY as CONFIG_STORAGE_KEY } from './lib/reportConfigStore';
@@ -1676,9 +1677,10 @@ export default function App() {
   /*
    * The Preview's tool (2026-11-08), from the rail at the bench's right as
    * Stitch's: Select, one control at a time, or Mark, a box dragged over the
-   * report selecting what it touches, which returns to Select once drawn.
+   * report selecting what it touches, which returns to Select once drawn;
+   * or Compare, the original under the report (2026-11-11, CP-03).
    */
-  const [previewTool, setPreviewTool] = useState<'select' | 'mark'>('select');
+  const [previewTool, setPreviewTool] = useState<PreviewTool>('select');
   /**
    * An export the chat or the Export panel asked the Preview for, made once per
    * nonce: every format one turn asked for together, saved as one download, and
@@ -2559,7 +2561,8 @@ export default function App() {
    * laid over it; every path that makes a report reads that, not `config`.
    */
   const detectedRef = useRef<DetectedSettings | null>(null);
-  const isReportFile = (t: { file: string }) => /\.repx$/i.test(t.file);
+  // An SSRS or FastReport file arrives converted to a .repx (CP-08).
+  const isReportFile = (t: { file?: string }) => /\.(repx|rdlc?|frx)$/i.test(t.file ?? '');
   const detectionInput = (sources: DetectionSources, withOpenReport: boolean): DetectInput => ({
     // An uploaded report first, then the one open, which a request refines.
     repx: [...(sources.texts ?? []).filter(isReportFile).map((t) => t.text), ...(withOpenReport ? [result?.repxContent] : [])],
@@ -2616,7 +2619,8 @@ export default function App() {
       prepareTeam,
       ocrAttachments,
       asConfigured,
-      translateXml,
+      // A Batch file is translated whole, never into two languages, so it hands no words.
+      translateXml: (xml, language, signal, worked) => translateXml(xml, language, signal, '', worked),
       recordLearning,
       aiKindOf,
       uid: previousUidRef.current,
@@ -3995,9 +3999,9 @@ export default function App() {
     if (!draft && input.read.length) {
       const built = await readerBuild(input.read, config);
       if (built && !signal.aborted) {
-        const [{ draftBrief }, { draftToText }] = await Promise.all([import('./lib/formaTeam'), import('./lib/draftText')]);
+        const { draftBrief, readerCorrection } = await import('./lib/formaTeam');
         brief = draftBrief(built.skeleton, built.layout, config.unit, 'reader');
-        correct = { text: draftToText(built.skeleton, built.used), texts: built.texts, title: built.title };
+        correct = readerCorrection(built);
         const readerResult: DesignResult = { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: built.repxContent, usage: null };
         draft = async () => ({ result: readerResult, source: 'reader' });
       }
@@ -4066,7 +4070,6 @@ export default function App() {
 
     try {
       team = await prepareTeam(teamInput, signal);
-      if (signal.aborted) return;
       // No draft to correct, so the AI designs the report from every page:
       // the pages between the first and the last are read now (PL-23).
       if (teamInput?.readRest && (open || !team.correct)) {
@@ -4074,6 +4077,9 @@ export default function App() {
         if (signal.aborted) return;
         currentTexts = [...currentTexts, ...more];
       }
+      // A Word or Excel template's layout, when the words ask for a report from it (CP-11); after the pages, which it does not stand in for.
+      if (!team.correct && currentTexts.some((t) => t.layout)) team = { ...team, correct: (await loadIntake()).templateCorrection(currentTexts, currentPrompt) };
+      if (signal.aborted) return;
       // Text before images, and malformed previews dropped rather than thrown
       // on — see src/lib/attachmentParts.ts.
       const attachmentParts = toAttachmentParts(currentPreviews, currentTexts);
@@ -4243,15 +4249,15 @@ export default function App() {
        * a translation that fails leaves the report as built, and says nothing
        * of the language.
        */
-      let translated: { xml: string; language: string } | null = null;
+      let translated: { xml: string; language: string; bilingual: boolean } | null = null;
       const askedLanguage = !open && response.repxContent
         ? await import('./lib/repxTranslate').then((m) => m.languageAsked(currentPrompt || describeRequest?.description || '')).catch(() => null)
         : null;
       if (askedLanguage) {
         try {
-          const done = await translateXml(response.repxContent, askedLanguage, signal);
+          const done = await translateXml(response.repxContent, askedLanguage, signal, currentPrompt);
           if (signal.aborted) return;
-          translated = { xml: done.xml, language: askedLanguage };
+          translated = { xml: done.xml, language: askedLanguage, bilingual: done.bilingual };
         } catch (translateError) {
           if (signal.aborted) return;
           console.warn(`The report could not be translated into ${askedLanguage}; it stays as built.`, translateError);
@@ -4327,10 +4333,10 @@ export default function App() {
       const kind: ReplyKind = describeRequest
         ? 'description'
         : open?.repxContent ? 'open'
-        : currentTexts.some((t) => /\.repx$/i.test(t.file ?? '')) ? 'repx'
+        : currentTexts.some(isReportFile) ? 'repx'
         : currentTexts.some((t) => /\.pdf$/i.test(t.file ?? '')) ? 'pdf'
         : currentPreviews.length ? 'picture' : 'description';
-      const said = firstReply(kind, Boolean(currentPrompt.trim()), translated?.language);
+      const said = firstReply(kind, Boolean(currentPrompt.trim()), translated?.language, translated?.bilingual);
       const learnedAs = { id: recordLearning(null), ai: aiKindOf(chained.by) };
       const newAssistantMsg: ChatMessage = {
         id: nextMessageId(),
@@ -4355,7 +4361,7 @@ export default function App() {
         sourceCounts: {
           images: currentPreviews.length,
           pdfs: currentTexts.filter((t) => /\.pdf$/i.test(t.file ?? '')).length,
-          repx: currentTexts.filter((t) => /\.repx$/i.test(t.file ?? '')).length,
+          repx: currentTexts.filter(isReportFile).length,
           words: Boolean(describeRequest) || Boolean(currentPrompt.trim()),
           database: Boolean(databaseShared && activeDatabase),
         },
@@ -6028,28 +6034,20 @@ export default function App() {
   };
 
   /**
-   * The report's typed texts translated into a language (2026-11-10, the
-   * first gap of docs/proposals/ai-designers.md, lib/repxTranslate.ts): one
-   * request with every distinct text, the answers put back, the layout
-   * untouched, kept as a revision and reported in the thread with its Undo.
-   * Run at once when asked for (it was offered as a button first for a few
-   * hours on 2026-11-10, until the owner saw it); the next free AI answers
-   * on a limit, as any request does.
-   */
-  /**
    * A report's typed texts in another language (lib/repxTranslate.ts): one
    * request with every distinct text, the answers put back, the layout
-   * untouched. Shared by a translation asked for in the chat and a first
-   * report whose words name a language (2026-11-11, the full audit's CV-14).
+   * untouched; beside the report's own language when the words ask for both
+   * (CP-06). Shared by a translation asked for in the chat (kept as a
+   * revision, with its Undo) and a first report whose words name a language
+   * (2026-11-11, the full audit's CV-14). Run at once, never offered.
    */
-  const translateXml = async (xml: string, language: string, signal: AbortSignal, worked?: ReportConfig) => {
-    const [{ collectTexts, applyTranslations }, { translateTexts }, { askWithChain }] = await Promise.all([import('./lib/repxTranslate'), loadGemini(), import('./lib/fallbackChain')]);
+  const translateXml = async (xml: string, language: string, signal: AbortSignal, words: string, worked?: ReportConfig) => {
+    const [{ collectTexts, placeTranslations }, { translateTexts }, { askWithChain }] = await Promise.all([import('./lib/repxTranslate'), loadGemini(), import('./lib/fallbackChain')]);
     const texts = collectTexts(xml);
-    if (!texts.length) return { xml, changed: 0, any: false, note: '', by: null };
+    if (!texts.length) return { xml, changed: 0, any: false, note: '', by: null, bilingual: false };
     // A Batch file's own settings when it is one (lib/batchRun.ts).
     const answered = await askWithChain(worked ?? effectiveConfig(), (asked) => translateTexts(texts.map((t) => t.text), language, asked, signal), signal);
-    const out = applyTranslations(xml, answered.value);
-    return { xml: out.xml, changed: out.changed, any: true, note: answered.note, by: answered.by };
+    return { ...placeTranslations(xml, answered.value, language, words), any: true, note: answered.note, by: answered.by };
   };
 
   const translateReport = async (named: string, replyId?: string | null) => {
@@ -6065,7 +6063,7 @@ export default function App() {
      * translation is dropped, quietly. "Which language should the report be
      * translated into?" was asked of "generate the report in German".
      */
-    const { languageAsked, languageName } = await import('./lib/repxTranslate');
+    const { languageAsked, languageName, translatedLine } = await import('./lib/repxTranslate');
     const lastAsk = [...messages].reverse().find((m) => m.role === 'user')?.text ?? '';
     const language = languageName(named) || languageAsked(lastAsk) || '';
     if (!language) {
@@ -6089,7 +6087,7 @@ export default function App() {
       // Stop stops it (2026-11-10, the full audit's FE2): the turn's controller, which handleStop aborts.
       const turn = new AbortController();
       turnAbortRef.current = turn;
-      const done = await translateXml(open.repxContent, language, turn.signal);
+      const done = await translateXml(open.repxContent, language, turn.signal, lastAsk);
       if (sessionId.current !== session || turn.signal.aborted) return;
       if (!done.any) {
         say('There is nothing to translate: every text in this report prints a field.');
@@ -6108,7 +6106,7 @@ export default function App() {
       const id = replyId && messages.some((m) => m.id === replyId) ? replyId : null;
       if (id) setChatChanges((prev) => ({ ...prev, [id]: { before: prev[id]?.before ?? open, after: next } }));
       if (done.by) recordLearning({ kind: 'translate', request: 'edit', ai: aiKindOf(done.by), repx: next.repxContent, ops: ['translate'], prompt: language });
-      const text = [done.note, `Done, the report is in ${language}. Some labels are longer now; worth a look in the Preview.`].filter(Boolean).join('\n\n');
+      const text = [done.note, translatedLine(language, done.bilingual)].filter(Boolean).join('\n\n');
       if (id) say(text);
       else {
         const fresh = nextMessageId();
@@ -6558,9 +6556,9 @@ export default function App() {
       else redoReport();
     }
     // The Preview's tools (2026-11-08): M marks an area, V selects; only on the Preview.
-    else if (shortcut === 'mark' || shortcut === 'select') {
-      if (!result?.repxContent || plate !== 'print') return false;
-      setPreviewTool(shortcut === 'mark' ? 'mark' : 'select');
+    else if (shortcut === 'mark' || shortcut === 'select' || shortcut === 'compare') {
+      if (!result?.repxContent || plate !== 'print' || (shortcut === 'compare' && !mockupSourceImages)) return false;
+      setPreviewTool(shortcut);
     }
     // The selection's zoom wants a selection (2026-11-06); it zoomed to twice the fit without one.
     else if (shortcut === 'zoomSelection' && !previewSelection.length) return false;
@@ -7382,6 +7380,7 @@ export default function App() {
                         if (names.length) setBindTarget(names);
                       }}
                       marking={previewTool === 'mark'}
+                      compareWith={previewTool === 'compare' ? mockupSourceImages : undefined}
                       onMarked={() => setPreviewTool('select')}
                       highlight={changedHighlight}
                       historyElsewhere
@@ -7839,26 +7838,12 @@ export default function App() {
             (`undoReport`), and on Preview its scale, with Fit as the start.
             Since 2026-11-06 the corner is always there, for Stitch's "?" at
             its end; the history and the zoom still come with a report. */}
-        {/* The Preview's tools at the bench's right edge (2026-11-08), as
-            Stitch's rail: Select and Mark an area. Only on the Preview, the one
-            pane where a control can be picked. */}
+        {/* The Preview's tools at the bench's right edge (2026-11-08): Select,
+            Mark an area and Compare with the original (components/PreviewRail.tsx). */}
         {result?.repxContent && plate === 'print' && (
-          <div className="wb-float wb-float-rail" role="toolbar" aria-label="Preview tools" aria-orientation="vertical">
-            <button type="button" aria-label="Select" title="Select (V)" aria-pressed={previewTool === 'select'} onClick={() => setPreviewTool('select')}>
-              <IconPointer size={16} />
-            </button>
-            <button
-              type="button"
-              aria-label="Mark an area"
-              title="Mark an area (M): drag over the report to select everything in it"
-              aria-pressed={previewTool === 'mark'}
-              onClick={() => setPreviewTool((tool) => (tool === 'mark' ? 'select' : 'mark'))}
-            >
-              <IconMarquee size={16} />
-            </button>
-            {/* Upload files stood here for a day (2026-11-08), a repeat of the
-                box's "+", and went with the workspace's other repeats. */}
-          </div>
+          <Suspense fallback={null}>
+            <PreviewRail tool={previewTool} onTool={setPreviewTool} canCompare={!!mockupSourceImages} />
+          </Suspense>
         )}
         <div className="wb-float wb-float-corner">
           {/* A notice in its own words (2026-11-04), not always "Saved":

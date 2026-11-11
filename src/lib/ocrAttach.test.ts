@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PreviewMeta } from './attachments';
 import type { OcrLine, OcrPage } from './ocr';
-import { buildFromRead, ocrTexts, sourceLayoutOf, type ReadPage } from './ocrAttach';
+import { buildFromRead, ocrTexts, pictureDpi, sourceLayoutOf, type ReadPage } from './ocrAttach';
 
 /*
  * A page OCR read, built into a report with no AI (2026-11-11, the full
@@ -66,5 +66,15 @@ describe("OCR's own reading of the source", () => {
     expect(texts).toHaveLength(1);
     expect(texts[0]).toMatchObject({ uploadId: 'u1', file: 'Invoice 42.pdf', page: 1 });
     expect(texts[0].text).toContain('INVOICE');
+  });
+});
+
+// The wave 6b follow-up to CC-07: the fit to the page's positions is held to 3 px at the picture's own dpi.
+describe('pictureDpi', () => {
+  it("is a rendered PDF page's own, and a screenshot's width over the paper it pictures", () => {
+    expect(pictureDpi({ width: 1275, height: 1650, dpi: 150 }, 'Letter')).toBe(150);
+    // A Letter-shaped picture 850 pixels across is 100 per inch of the page.
+    expect(pictureDpi({ width: 850, height: 1100, dpi: null }, 'Letter')).toBeCloseTo(100, 5);
+    expect(pictureDpi({ width: 2550, height: 3300, dpi: null }, 'Letter')).toBeCloseTo(300, 5);
   });
 });

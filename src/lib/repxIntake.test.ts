@@ -4,6 +4,7 @@ import {
   crystalNotice,
   evidenceMarkdown,
   evidenceSummary,
+  importedReport,
   inUnit,
   isTiff,
   LOGIN_REMOVED_NOTICE,
@@ -15,9 +16,30 @@ import {
   pictureNeed,
   rdlAttachment,
   repxAttachment,
+  templateCorrection,
   tiffNotice,
   transform,
 } from './repxIntake';
+
+// CP-11: a Word or Excel file's layout is corrected by the AI only when the words ask for a report from it.
+describe('templateCorrection', () => {
+  const texts = [
+    { id: '1', uploadId: 'u', file: 'Orders.csv', text: 'DATA SOURCE' },
+    { id: '2', uploadId: 'v', file: 'Stock template.xlsx', text: 'DATA SOURCE', layout: 'page A4 portrait 827 1169 75 75 75 75' },
+  ];
+  it('gives the layout and the file name when the words ask for the template', () => {
+    for (const words of ['use this template', 'lay it out like the spreadsheet', 'same format as the attached file', 'a report from this Word document',
+      "keep the spreadsheet's layout", 'laid out as in the attached workbook', 'use this layout'])
+      expect(templateCorrection(texts, words), words).toEqual({ text: texts[1].layout, texts: [], title: 'Stock template' });
+  });
+  it('gives nothing when the words ask for the data, or no file has a layout', () => {
+    expect(templateCorrection(texts, 'a report of these orders grouped by region')).toBeNull();
+    // A layout or a look that is not the file's (the review of CP-11).
+    for (const words of ['a report of these orders with a clean layout', 'make it look like a modern invoice', 'laid out in two columns'])
+      expect(templateCorrection(texts, words), words).toBeNull();
+    expect(templateCorrection([texts[0]], 'use this template')).toBeNull();
+  });
+});
 import { decodeBase64, encodeBase64 } from './repxSqlDataSource';
 
 /*
@@ -173,6 +195,18 @@ describe('Crystal Reports and SSRS (CP-01a)', () => {
     expect(text).toContain('<DataSource  Name="db"/>');
     expect(text).not.toContain('iVBORw0KGgo');
     expect(text).toContain('<ImageData>(an embedded picture)</ImageData>');
+  });
+
+  // CP-08: converted and repaired, then read as an uploaded .repx is.
+  it('opens an SSRS file as a repaired DevExpress report, and gives back nothing for one it cannot read', async () => {
+    const rdl =
+      '<Report><Body><ReportItems><Textbox Name="Title"><Value>Orders</Value><Top>0in</Top><Left>0in</Left><Height>0.3in</Height><Width>2in</Width></Textbox></ReportItems><Height>1in</Height></Body>' +
+      '<PageWidth>21cm</PageWidth><PageHeight>29.7cm</PageHeight></Report>';
+    const made = await importedReport('Orders.rdl', rdl);
+    expect(made?.xml).toContain('PaperKind="A4"');
+    expect(made?.xml).toContain('Text="Orders"');
+    expect(made?.notices).toEqual([]);
+    expect(await importedReport('broken.rdl', '<Workbook/>')).toBeNull();
   });
 });
 

@@ -14,6 +14,7 @@
  */
 import type { PreviewMeta } from './attachments';
 import { MAX_FILE_BYTES, MAX_PDF_PAGES } from './attachmentBudget';
+import { inkPoints, pageShaped, pageTurn } from './deskew';
 import { withPdfDocument } from './pdf';
 import { checkRepx } from './repx';
 import { pointsToUnits } from './reportGeometry';
@@ -58,6 +59,47 @@ export interface TextAttachment {
    * also carries.
    */
   readByOcr?: true;
+  /**
+   * A Word or Excel file's layout as Forma's draft (2026-11-11, the full
+   * audit's CP-11, lib/docxLayout.ts and lib/xlsxLayout.ts): what the AI
+   * corrects when the words ask for a report from the file
+   * (`templateCorrection`). The file's words or data go as `text` as before.
+   */
+  layout?: string;
+}
+
+/*
+ * Whether the words ask for a report laid out from an attached file rather
+ * than for its data or its words alone: "use this template", "lay it out
+ * like the Word document", "same layout as the spreadsheet", "a report from
+ * this form". A layout or a look counts only when it is the file's
+ * (2026-11-11, the review of CP-11): "a report of these orders with a clean
+ * layout" beside a spreadsheet of data asks for the data, not its layout.
+ */
+const FILE_NOUN = '(?:word\\s+|excel\\s+)?(?:document|doc|docx|file|form|sheet|spreadsheet|workbook|xlsx|attachment)';
+const THE = '(?:the|this|my|that|attached|the\\s+attached)';
+const FROM_TEMPLATE = new RegExp(
+  [
+    'template',
+    'same\\s+(?:layout|look|format|design|style)',
+    `(?:lay(?:\\s+it)?\\s+out|laid\\s+out|layout|look(?:s|ing)?|design(?:ed)?|format(?:ted)?)\\s+(?:just\\s+)?(?:like|as\\s+in|as|of|from|in)\\s+${THE}\\s+${FILE_NOUN}`,
+    `${FILE_NOUN}'?s\\s+(?:layout|look|design|format)`,
+    `(?:this|that|its)\\s+(?:layout|look|design)`,
+    `like\\s+${THE}\\s+${FILE_NOUN}`,
+    `(?:from|based\\s+on)\\s+${THE}\\s+(?:word\\s+|excel\\s+)?(?:document|doc|docx|form|template)`,
+  ].map((p) => `\\b${p}\\b`).join('|'),
+  'i',
+);
+
+/**
+ * The draft of an attached Word or Excel template, when the words ask for a
+ * report from it (CP-11), as the AI is given it to correct: its layout and
+ * its name. Null when they do not, or no attachment has one.
+ */
+export function templateCorrection(texts: readonly TextAttachment[], words: string): { text: string; texts: []; title: string } | null {
+  const found = texts.find((t) => t.layout);
+  if (!found?.layout || !FROM_TEMPLATE.test(words)) return null;
+  return { text: found.layout, texts: [], title: found.file.replace(/\.[^.]+$/, '') };
 }
 
 export interface IngestResult {
@@ -344,10 +386,27 @@ export function rdlAttachment(name: string, xml: string): string {
   return `An SSRS report definition (${name}); reproduce its layout as a DevExpress report:\n\n${clean}`;
 }
 
+/**
+ * An SSRS or FastReport file as a repaired DevExpress report, with what to
+ * tell the user of it, or null when it is not one Forma converts. Both
+ * modules come with such a file only.
+ */
+export async function importedReport(name: string, xml: string): Promise<{ xml: string; notices: string[] } | null> {
+  const [{ importForeign }, { repairRepx }] = await Promise.all([import('./importForeign'), import('./repairChain')]);
+  const made = importForeign(name, xml);
+  if (!made) return null;
+  return { xml: repairRepx(made.repx, { version: '20.1' }).xml, notices: made.notices };
+}
+
 /* ------------------------------------------------------------- intake */
 
-/** Render one PDF page to a white-backed JPEG at PDF_RENDER_SCALE. */
-async function renderPdfPage(page: any): Promise<string | null> {
+/**
+ * Render one PDF page to a white-backed JPEG at PDF_RENDER_SCALE, at most
+ * MAX_IMAGE_EDGE on its longest side. A scanned page (`straighten`, one with
+ * no text layer) is drawn straight (CP-05); a digital one never is, its text
+ * layer's places being the page's as it is.
+ */
+async function renderPdfPage(page: any, straighten: boolean): Promise<{ src: string; sideways: boolean } | null> {
   const viewport = page.getViewport({ scale: PDF_RENDER_SCALE });
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
@@ -363,9 +422,10 @@ async function renderPdfPage(page: any): Promise<string | null> {
 
   await page.render({ canvasContext: context, viewport, canvas: canvas as any }).promise;
 
-  // Route through the same optimiser as uploaded images — at this scale a page
-  // can exceed the edge cap, which it never did at 1.5.
-  return optimizeImageDataUrl(canvas.toDataURL('image/jpeg', JPEG_QUALITY));
+  const turn = straighten ? await turnOf(canvas, canvas.width, canvas.height) : 0;
+  const drawn = drawTurned(canvas, canvas.width, canvas.height, turn);
+  if (!drawn) return null;
+  return { src: await encode(drawn.canvas, 'image/jpeg', JPEG_QUALITY), sideways: drawn.sideways };
 }
 
 /** A page's text layer, or null when it has none or it will not read. */
@@ -399,7 +459,7 @@ export async function ingestFile(file: File, uploadId: string, reportUnit?: stri
 
   if (file.type.startsWith('image/') || isTiff(file.type, name)) {
     const original = await readAsDataUrl(file);
-    const picture = pictureNeed(file.type, name) === 'keep' ? await optimizeImageDataUrl(original) : await redrawPicture(original);
+    const picture = await preparePicture(file, original);
     if (!picture) {
       out.notices.push(isTiff(file.type, name) ? tiffNotice(name) : `"${name}" could not be read as a picture. Save it as PNG or JPEG and attach that.`);
       return out;
@@ -419,21 +479,25 @@ export async function ingestFile(file: File, uploadId: string, reportUnit?: stri
         for (const n of numbers) {
           const page = await pdf.getPage(n);
           try {
-            const image = await renderPdfPage(page);
+            // The text layer first: a page without one is a scan, and only a
+            // scan is straightened as it is drawn (CP-05).
+            const pdfText = await readPdfPageText(page, n);
+            const image = await renderPdfPage(page, !pdfText);
             if (image) {
-              out.images.push(image);
+              out.images.push(image.src);
               // Same uploadId for every page, so the composer shows one attachment
               // for the file the user actually dropped rather than one per page.
-              // Its size in points too, so OCR can read the image at its resolution.
+              // Its size in points too, so OCR can read the image at its
+              // resolution: across and down as the picture now lies.
               const points = page.getViewport({ scale: 1 });
-              out.imageMeta.push({ uploadId, file: name, page: n, pagePoints: { width: points.width, height: points.height } });
+              const pagePoints = image.sideways ? { width: points.height, height: points.width } : { width: points.width, height: points.height };
+              out.imageMeta.push({ uploadId, file: name, page: n, pagePoints });
             }
             // A dense page's tail past the per-page string cap is read from the
             // image instead, and a scan, with no text layer, is read as pictures
             // when it is sent. Notices said both until 2026-11-11 (the full
             // audit, CV-12 and CV-25): they told how the page was read and
             // changed nothing the user could do.
-            const pdfText = await readPdfPageText(page, n);
             const text = pdfText && pdfPageText(pdfText, reportUnit);
             if (pdfText && text) out.texts.push({ id: `${Date.now()}-${name}-p${n}`, uploadId, file: name, page: n, text, pdf: pdfText });
           } finally {
@@ -469,13 +533,27 @@ export async function ingestFile(file: File, uploadId: string, reportUnit?: stri
     return out;
   }
 
-  if (/\.rdlc?$/i.test(name)) {
+  if (/\.(rdlc?|frx)$/i.test(name)) {
     const xml = (await file.text()).trim();
     if (!xml) {
       out.notices.push(`"${name}" is empty.`);
       return out;
     }
-    out.texts.push({ id: `${Date.now()}-${name}`, uploadId, file: name, text: rdlAttachment(name, xml) });
+    // Converted to a DevExpress report and repaired as a generated one is
+    // (2026-11-11, the full audit's CP-08), then read as an uploaded .repx:
+    // the base the request builds on, positions, fields and totals exact.
+    // One that will not convert goes to the AI as its text, as an SSRS file
+    // did before.
+    const report = await importedReport(name, xml);
+    if (report) {
+      const read = repxAttachment(name, report.xml);
+      out.notices.push(...report.notices, ...read.notices);
+      out.texts.push({ id: `${Date.now()}-${name}`, uploadId, file: name, text: read.text });
+    } else if (/\.rdlc?$/i.test(name)) {
+      out.texts.push({ id: `${Date.now()}-${name}`, uploadId, file: name, text: rdlAttachment(name, xml) });
+    } else {
+      out.notices.push(`"${name}" could not be read as a FastReport report.`);
+    }
     return out;
   }
 
@@ -498,11 +576,15 @@ export async function ingestFile(file: File, uploadId: string, reportUnit?: stri
     }
     const read = await data.readDataFile(name, bytes);
     if (read.note) out.notices.push(read.note);
-    if (read.text) out.texts.push({ id: `${Date.now()}-${name}`, uploadId, file: name, text: read.text });
+    // A Word or Excel file's layout too (CP-11), used when the words ask for a report from it.
+    const layout = /\.docx$/i.test(name)
+      ? await import('./docxLayout').then((m) => m.docxDraft(bytes))
+      : /\.xlsx$/i.test(name) ? await import('./xlsxLayout').then((m) => m.xlsxDraft(bytes)) : null;
+    if (read.text) out.texts.push({ id: `${Date.now()}-${name}`, uploadId, file: name, text: read.text, ...(layout ? { layout } : {}) });
     return out;
   }
 
-  out.notices.push(`"${name}" is not a supported type. Use an image, a PDF, a .repx or SSRS report (.rdl), or data (CSV, TSV, JSON, text, SQL, Excel or Word).`);
+  out.notices.push(`"${name}" is not a supported type. Use an image, a PDF, a report (.repx, SSRS .rdl or FastReport .frx), or data (CSV, TSV, JSON, text, SQL, Excel or Word).`);
   return out;
 }
 
@@ -543,7 +625,7 @@ const JPEG_QUALITY = 0.92;
 /** Below this, re-encoding is not worth the quality risk. */
 const REENCODE_THRESHOLD_BYTES = 1_200_000;
 
-function readAsDataUrl(file: File): Promise<string> {
+function readAsDataUrl(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => resolve(e.target?.result as string);
@@ -552,73 +634,133 @@ function readAsDataUrl(file: File): Promise<string> {
   });
 }
 
-/** A picture decoded and drawn on white at most MAX_IMAGE_EDGE on its longest side, or null when it will not decode. */
-async function drawn(dataUrl: string): Promise<{ canvas: HTMLCanvasElement; w: number; h: number } | null> {
-  const img = new Image();
-  img.src = dataUrl;
-  await img.decode();
-  const w = img.naturalWidth;
-  const h = img.naturalHeight;
-  if (!w || !h) return null;
-  const longest = Math.max(w, h);
-  const ratio = longest > MAX_IMAGE_EDGE ? MAX_IMAGE_EDGE / longest : 1;
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.round(w * ratio);
-  canvas.height = Math.round(h * ratio);
-  const ctx = canvas.getContext('2d');
+/*
+ * Drawing a picture (2026-11-11, the full audit's PR-26): decoded with
+ * `createImageBitmap`, which decodes off the page's thread, and drawn on an
+ * `OffscreenCanvas` where the browser has them, so a large photo does not
+ * stall the page while it is read. An `<img>` and a canvas in the page are
+ * the way where it has not, and the way for a picture `createImageBitmap`
+ * refuses.
+ */
+type Surface = HTMLCanvasElement | OffscreenCanvas;
+type Context2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+
+/** A white sheet to draw on, `w` by `h`. */
+function surface(w: number, h: number): { canvas: Surface; ctx: Context2D } | null {
+  const canvas: Surface = typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
+  const ctx = canvas.getContext('2d') as Context2D | null;
   if (!ctx) return null;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   // JPEG carries no alpha, so paint the sheet white first — otherwise a
   // transparent screenshot background would come out black.
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-  return { canvas, w, h };
+  ctx.fillRect(0, 0, w, h);
+  return { canvas, ctx };
 }
 
-/**
- * Shrink an oversized image, leaving small ones exactly as they are. Returns
- * the original on any failure, and never returns something larger than it was
- * given — so this can only ever help.
- */
-async function optimizeImageDataUrl(dataUrl: string): Promise<string> {
+/** A sheet as a data URL. */
+async function encode(canvas: Surface, type: string, quality?: number): Promise<string> {
+  if ('toDataURL' in canvas) return canvas.toDataURL(type, quality);
+  return readAsDataUrl(await canvas.convertToBlob({ type, quality }));
+}
+
+/** A picture decoded, or null when the browser cannot draw it (a TIFF in Chrome). */
+async function decode(file: Blob, dataUrl: string): Promise<{ image: CanvasImageSource; w: number; h: number; close: () => void } | null> {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(file);
+      if (bitmap.width && bitmap.height) return { image: bitmap, w: bitmap.width, h: bitmap.height, close: () => bitmap.close() };
+    } catch {
+      // An <img> below, which decodes some pictures a bitmap will not.
+    }
+  }
   try {
-    if (!dataUrl?.startsWith('data:image/')) return dataUrl;
     const img = new Image();
     img.src = dataUrl;
     await img.decode();
-    const longest = Math.max(img.naturalWidth, img.naturalHeight);
-    // Already modest in both dimensions and weight — leave it completely alone.
-    if (!longest || (longest <= MAX_IMAGE_EDGE && dataUrl.length < REENCODE_THRESHOLD_BYTES)) return dataUrl;
-    const page = await drawn(dataUrl);
-    if (!page) return dataUrl;
-    const out = page.canvas.toDataURL('image/jpeg', JPEG_QUALITY);
-    if (out.length >= dataUrl.length) return dataUrl;
-    console.debug(
-      `Optimised upload: ${page.w}x${page.h} ${Math.round(dataUrl.length / 1024)}KB -> ` +
-      `${page.canvas.width}x${page.canvas.height} ${Math.round(out.length / 1024)}KB.`
-    );
-    return out;
+    return img.naturalWidth && img.naturalHeight ? { image: img, w: img.naturalWidth, h: img.naturalHeight, close: () => undefined } : null;
   } catch {
-    return dataUrl; // Never let optimisation block an upload.
+    return null;
+  }
+}
+
+/** The longest side the turn is measured on: enough for lines of text, cheap to read. */
+const TURN_SAMPLE_EDGE = 700;
+
+/** How far a page is turned clockwise, in degrees (lib/deskew.ts); 0 when it is straight or cannot be read. */
+async function turnOf(image: CanvasImageSource, w: number, h: number): Promise<number> {
+  try {
+    const scale = Math.min(1, TURN_SAMPLE_EDGE / Math.max(w, h));
+    const sw = Math.max(1, Math.round(w * scale));
+    const sh = Math.max(1, Math.round(h * scale));
+    const small = surface(sw, sh);
+    if (!small) return 0;
+    small.ctx.drawImage(image, 0, 0, sw, sh);
+    // On its side only when it is shaped like a page, not a logo or a barcode.
+    return pageTurn(inkPoints(small.ctx.getImageData(0, 0, sw, sh).data, sw, sh), pageShaped(w, h));
+  } catch {
+    return 0;
   }
 }
 
 /**
- * A picture of a type the AI does not take, drawn again (PL-17): PNG, which
- * keeps every edge of a scan's text, unless that is larger than the JPEG and
- * past the re-encoding threshold. Null when the browser cannot draw it.
+ * A picture drawn on white, turned back by `turn` degrees about its centre
+ * and at most MAX_IMAGE_EDGE on its longest side: a page on its side is
+ * drawn upright, its width and height exchanged (`sideways`).
  */
-async function redrawPicture(dataUrl: string): Promise<string | null> {
+function drawTurned(image: CanvasImageSource, w: number, h: number, turn: number): { canvas: Surface; sideways: boolean } | null {
+  const sideways = Math.round(turn / 90) % 2 !== 0;
+  const ow = sideways ? h : w;
+  const oh = sideways ? w : h;
+  const ratio = Math.min(1, MAX_IMAGE_EDGE / Math.max(ow, oh));
+  const sheet = surface(Math.round(ow * ratio), Math.round(oh * ratio));
+  if (!sheet) return null;
+  const { ctx } = sheet;
+  if (turn) {
+    ctx.translate((ow * ratio) / 2, (oh * ratio) / 2);
+    ctx.rotate((-turn * Math.PI) / 180);
+    ctx.drawImage(image, (-w * ratio) / 2, (-h * ratio) / 2, w * ratio, h * ratio);
+  } else {
+    ctx.drawImage(image, 0, 0, w * ratio, h * ratio);
+  }
+  return { canvas: sheet.canvas, sideways };
+}
+
+/**
+ * A picture as it is sent: straightened when it is turned (CP-05), drawn
+ * again when it is a type the AI does not take (PL-17), shrunk when it is
+ * past the edge or the weight worth sending (see MAX_IMAGE_EDGE), and
+ * otherwise exactly as it came. Null when the browser cannot draw a picture
+ * that has to be drawn again.
+ *
+ * Drawn again, a picture the AI does not take is PNG, which keeps every edge
+ * of a scan's text, unless that is larger than the JPEG and past the
+ * re-encoding threshold. Shrunk, a straight picture is never sent larger
+ * than it came; a straightened one is worth its bytes.
+ */
+async function preparePicture(file: File, original: string): Promise<string | null> {
+  const redraw = pictureNeed(file.type, file.name) === 'redraw';
+  const decoded = await decode(file, original);
+  if (!decoded) return redraw ? null : original;
   try {
-    const page = await drawn(dataUrl);
-    if (!page) return null;
-    const png = page.canvas.toDataURL('image/png');
-    if (png.length < REENCODE_THRESHOLD_BYTES) return png;
-    const jpeg = page.canvas.toDataURL('image/jpeg', JPEG_QUALITY);
-    return jpeg.length < png.length ? jpeg : png;
+    const { image, w, h } = decoded;
+    const turn = await turnOf(image, w, h);
+    if (!redraw && !turn && Math.max(w, h) <= MAX_IMAGE_EDGE && original.length < REENCODE_THRESHOLD_BYTES) return original;
+    const page = drawTurned(image, w, h, turn);
+    if (!page) return redraw ? null : original;
+    if (redraw) {
+      const png = await encode(page.canvas, 'image/png');
+      if (png.length < REENCODE_THRESHOLD_BYTES) return png;
+      const jpeg = await encode(page.canvas, 'image/jpeg', JPEG_QUALITY);
+      return jpeg.length < png.length ? jpeg : png;
+    }
+    const out = await encode(page.canvas, 'image/jpeg', JPEG_QUALITY);
+    return !turn && out.length >= original.length ? original : out;
   } catch {
-    return null;
+    // Never let the drawing block an upload that can go as it came.
+    return redraw ? null : original;
+  } finally {
+    decoded.close();
   }
 }

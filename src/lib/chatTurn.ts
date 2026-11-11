@@ -114,14 +114,16 @@ export type ReplyKind = 'open' | 'picture' | 'pdf' | 'repx' | 'description';
  * request said back. "I've updated the report from your instructions" was
  * said of a first report built from a picture and "Make this report in German".
  */
-export function firstReply(kind: ReplyKind, hasWords: boolean, language?: string | null): string {
+export function firstReply(kind: ReplyKind, hasWords: boolean, language?: string | null, bilingual?: boolean): string {
   if (kind === 'open') return "Done. I've changed the report as you asked.";
-  if (kind === 'description') return `Here's the report you described${language ? `, in ${language}` : ''}.`;
+  // Asked for in two languages (CP-06): said as the chat's translation says it.
+  const both = language && bilingual ? `, with ${language} beside its own language. Switch between them in the Preview` : '';
+  if (kind === 'description') return `Here's the report you described${both || (language ? `, in ${language}` : '')}.`;
   // A .repx is already a report (2026-11-11, the full audit's UI11): "the
   // report from your report" said the same word twice and meant nothing.
-  if (kind === 'repx') return `Here's your report again${language ? `, in ${language}` : hasWords ? ', with what you asked for' : ''}.`;
+  if (kind === 'repx') return `Here's your report again${both || (language ? `, in ${language}` : hasWords ? ', with what you asked for' : '')}.`;
   const from = kind === 'pdf' ? 'your PDF' : 'your page';
-  if (language) return `Here's the report from ${from}, in ${language}.`;
+  if (language) return `Here's the report from ${from}${both || `, in ${language}`}.`;
   return hasWords ? `Here's the report from ${from}, with what you asked for.` : `Here's the report from ${from}.`;
 }
 

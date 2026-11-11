@@ -61,6 +61,8 @@ describe('forBatch', () => {
   it('takes SSRS report definitions, and counts Crystal Reports files among what it skips', () => {
     expect(acceptsForBatch('ssrs/Sales.rdl', '')).toBe(true);
     expect(acceptsForBatch('Local.RDLC', '')).toBe(true);
+    // A FastReport report is converted as it is read (CP-08).
+    expect(acceptsForBatch('demos/Products.frx', '')).toBe(true);
     const out = forBatch([given('Sales.rdl', ''), given('Old.rpt', ''), given('Older.RPT', 'application/octet-stream'), given('notes.txt', 'text/plain')]);
     expect(out.files.map((f) => f.path)).toEqual(['Sales.rdl']);
     expect([out.crystal, out.skipped]).toEqual([2, 3]);

@@ -60,6 +60,8 @@ import { readRepxDataSources } from '../lib/repxSqlDataSource';
 import type { SqlSchema } from '../lib/sqlSchema';
 import type { ReportQuery } from '../lib/sqlQuery';
 import { readBoundFields } from '../lib/repxBindingPlan';
+import { cultureName, inCulture, reportCultures, retypeInCulture, syncLocalization } from '../lib/repxTranslate';
+import { inkBounds, placeSource, unionBox, type Box } from '../lib/sourceAlign';
 import { groupHeaderFields, setGroupField } from '../lib/repxGroupField';
 import { unitsToPx, pxToUnits, unitsPerInch } from '../lib/reportGeometry';
 import { naturalSize, pictureRect } from '../lib/pictureBox';
@@ -192,6 +194,14 @@ interface Props {
    */
   marking?: boolean;
   onMarked?: () => void;
+  /**
+   * Compare with the original (2026-11-11, the full audit's CP-03): the
+   * pictures the report was made from, one per page, each drawn under its
+   * page at the printed paper size (lib/sourceAlign.ts), with a slider for
+   * how much of it shows and one that swipes between it and the report.
+   * Absent, nothing is drawn.
+   */
+  compareWith?: readonly string[];
   /**
    * The pane's own export buttons (2026-11-06). Off in the workspace, whose
    * Export panel offers every format and reaches these exports through
@@ -1276,7 +1286,7 @@ const PrintedControl = React.memo(ControlBox);
 // box and a streamed reply no longer draw every page again.
 export default React.memo(ReportPreview);
 
-function ReportPreview({ repxContent, layout, title, onEdit, records: given, database, onTestData, onClearTestData, testDataBusy, onStopTestData, exportRequest, onExportRequestDone, onExported, shared = false, onSelectionChange, highlight, historyElsewhere = false, onEditText, onDescribe, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true, marking = false, onMarked }: Props) {
+function ReportPreview({ repxContent, layout, title, onEdit, records: given, database, onTestData, onClearTestData, testDataBusy, onStopTestData, exportRequest, onExportRequestDone, onExported, shared = false, onSelectionChange, highlight, historyElsewhere = false, onEditText, onDescribe, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true, marking = false, onMarked, compareWith }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const highlightKey = (highlight ?? []).join('\n');
   const changedNames = useMemo(() => new Set(highlightKey ? highlightKey.split('\n') : []), [highlightKey]);
@@ -1405,8 +1415,10 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
       undoStack.current.push({ xml: previous, reason: result.reason });
       setUndoDepth(undoStack.current.length);
     }
-    if (continues) onEdit(result.xml, result.reason, true);
-    else onEdit(result.xml, result.reason);
+    // A report in two languages prints its own from its Default items (CP-06).
+    const xml = syncLocalization(result.xml);
+    if (continues) onEdit(xml, result.reason, true);
+    else onEdit(xml, result.reason);
   };
 
   /**
@@ -1636,8 +1648,55 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
       return next;
     });
   }, []);
+  /*
+   * The report's languages (2026-11-11, the full audit's CP-06): a report
+   * with DevExpress LocalizationItems is drawn in the one chosen, as
+   * DevExpress prints it for that culture; '' is its own language. Edits
+   * still write the file as it is.
+   */
+  /*
+   * Compare with the original (CP-03): each picture's size and ink, read once
+   * from a small copy, then how much of it shows (0 to 1) and how far across
+   * the page it reaches from the left (0 to 100), the rest being the report.
+   */
+  const [sourceInfo, setSourceInfo] = useState<Record<string, { width: number; height: number; ink: Box | null }>>({});
+  const [sourceOpacity, setSourceOpacity] = useState(0.5);
+  const [sourceSwipe, setSourceSwipe] = useState(100);
+  const sourcesAsked = useRef(new Set<string>());
+  useEffect(() => {
+    for (const src of compareWith ?? []) {
+      if (sourcesAsked.current.has(src)) continue;
+      sourcesAsked.current.add(src);
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, 600 / Math.max(img.naturalWidth, img.naturalHeight, 1));
+        const w = Math.max(1, Math.round(img.naturalWidth * scale));
+        const h = Math.max(1, Math.round(img.naturalHeight * scale));
+        let ink: Box | null = null;
+        try {
+          const ctx = Object.assign(document.createElement('canvas'), { width: w, height: h }).getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, w, h);
+            const small = inkBounds(ctx.getImageData(0, 0, w, h).data, w, h);
+            ink = small && { x0: small.x0 / scale, y0: small.y0 / scale, x1: small.x1 / scale, y1: small.y1 / scale };
+          }
+        } catch {
+          // A picture the canvas will not read is laid at the page's width.
+        }
+        setSourceInfo((prev) => ({ ...prev, [src]: { width: img.naturalWidth, height: img.naturalHeight, ink } }));
+      };
+      img.src = src;
+    }
+  }, [compareWith]);
+
+  const cultures = useMemo(() => reportCultures(repxContent ?? ''), [repxContent]);
+  const [culture, setCulture] = useState('');
+  const shownCulture = cultures.includes(culture) ? culture : '';
+  /** A retype made while another language shows is that language's words, not the report's own (the review of CP-06). */
+  const retyped = (result: { xml: string; applied: boolean; reason: string }) =>
+    shownCulture && result.applied && repxContent ? { ...result, xml: retypeInCulture(repxContent, result.xml, shownCulture) } : result;
   const { structure, report } = useMemo(() => {
-    const parsed = parseReportStructure(repxContent);
+    const parsed = parseReportStructure(shownCulture && repxContent ? inCulture(repxContent, shownCulture) : repxContent);
     // With sample rows the record count is theirs; otherwise it is the number
     // of rows the model read out of the source document.
     const count = records?.length ? records.length : recordCountFromLayout(layout);
@@ -1646,7 +1705,7 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
       structure: parsed,
       report: paginate(parsed, count, { measure, rows: records ?? null, parameters: paramValues, drillToggled, ...dataOptions }) as PaginatedReport,
     };
-  }, [repxContent, layout, records, measure, paramValues, drillToggled, dataOptions]);
+  }, [repxContent, shownCulture, layout, records, measure, paramValues, drillToggled, dataOptions]);
 
   reportRef.current = report;
   const boundFields = useMemo(() => readBoundFields(repxContent), [repxContent]);
@@ -2318,6 +2377,26 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
                   </span>
                 </div>
               )}
+              {/* The original under the page (CP-03), in the pane only, never in a print or an export. */}
+              {editing && windowed && compareWith?.[pageIndex] && sourceInfo[compareWith[pageIndex]] && (() => {
+                const src = compareWith[pageIndex];
+                const content = unionBox(page.bands.flatMap((placed) => placed.controls.map((pc) => {
+                  const x = unitsToPx(placed.left + pc.control.x + (pc.control.offsetX ?? 0), report.unit);
+                  const y = unitsToPx(placed.top + pc.y, report.unit);
+                  return { x0: x, y0: y, x1: x + unitsToPx(pc.control.width, report.unit), y1: y + unitsToPx(pc.height, report.unit) };
+                })));
+                const at = placeSource(sourceInfo[src], { width: pageW, height: pageH, content });
+                return (
+                  <>
+                    <div aria-hidden className="rp-source" style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 0, clipPath: `inset(0 ${100 - sourceSwipe}% 0 0)` }}>
+                      <img src={src} alt="" style={{ position: 'absolute', left: at.x0, top: at.y0, width: at.x1 - at.x0, height: at.y1 - at.y0, maxWidth: 'none', opacity: sourceOpacity }} />
+                    </div>
+                    {sourceSwipe < 100 && (
+                      <div aria-hidden style={{ position: 'absolute', top: 0, bottom: 0, left: `${sourceSwipe}%`, borderLeft: '1px dashed #2563eb', pointerEvents: 'none', zIndex: 3 }} />
+                    )}
+                  </>
+                );
+              })()}
               {(!windowed || isDrawn(pageIndex)) && page.bands.map((placed, i) => (
                 <div
                   key={i}
@@ -2512,7 +2591,7 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
                                 onChange={setEditingText}
                                 onDone={() => {
                                   if (repxContent && asLines(editingText) !== asLines(control.text)) {
-                                    commit(setControlText(repxContent, { band: bandIndex, control: c }, editingText), repxContent);
+                                    commit(retyped(setControlText(repxContent, { band: bandIndex, control: c }, editingText)), repxContent);
                                   }
                                   setEditingText(null);
                                 }}
@@ -2536,7 +2615,7 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
                                   onChange={(text) => setEditingCell({ ...editingCell, text })}
                                   onDone={() => {
                                     if (repxContent && asLines(editingCell.text) !== asLines(before?.text ?? '')) {
-                                      commit(setCellText(repxContent, editingCell.ref, editingCell.row, editingCell.cell, editingCell.text), repxContent);
+                                      commit(retyped(setCellText(repxContent, editingCell.ref, editingCell.row, editingCell.cell, editingCell.text)), repxContent);
                                     }
                                     setEditingCell(null);
                                   }}
@@ -2869,6 +2948,29 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
               </span>
             )}
           </>
+        )}
+        {compareWith && compareWith.length > 0 && (
+          /* Compare with the original (CP-03): how much of it shows, and how far across. */
+          <>
+            <label className="rp-stat">
+              Original{' '}
+              <input type="range" min={0} max={100} value={Math.round(sourceOpacity * 100)} onChange={(e) => setSourceOpacity(Number(e.target.value) / 100)} aria-label="How much of the original shows" />
+            </label>
+            <label className="rp-stat">
+              Swipe{' '}
+              <input type="range" min={0} max={100} value={sourceSwipe} onChange={(e) => setSourceSwipe(Number(e.target.value))} aria-label="How far across the page the original reaches" />
+            </label>
+          </>
+        )}
+        {cultures.length > 0 && (
+          /* The language the Preview draws (CP-06), for a report in two or more. */
+          <label className="rp-stat">
+            Language{' '}
+            <select value={shownCulture} onChange={(e) => setCulture(e.target.value)} aria-label="The language the Preview shows">
+              <option value="">Its own</option>
+              {cultures.map((c) => <option key={c} value={c}>{cultureName(c)}</option>)}
+            </select>
+          </label>
         )}
         {sql && !given && !live && (
           /* The database's own sample rows (2026-11-09, batch DF): no request,

@@ -101,6 +101,21 @@ export interface ReaderBuiltReport {
   /** The first page's texts as read, and the words and fields the build used: what a draft for the AI is written from (2026-11-05). */
   texts: PageText[];
   used: DraftGiven;
+  /**
+   * The first page's resolution, in pixels per inch of the page it is a
+   * picture of (2026-11-11, the wave 6b follow-up to CC-07): the texts above
+   * are in hundredths of an inch, so the fit to the page's positions
+   * (lib/sourceAgreement.ts) cannot tell a 300 dpi scan from a 96 dpi
+   * screenshot without it, and held both to 3 px at 150 dpi.
+   */
+  dpi: number;
+}
+
+/** A page's pixels per inch: a rendered PDF page's own, else the image's width over the paper it is a picture of. */
+export function pictureDpi(ocr: { width: number; height: number; dpi: number | null }, paper: string): number {
+  if (ocr.dpi && ocr.dpi > 0) return ocr.dpi;
+  const page = pageForImage(ocr, 'HundredthsOfAnInch', paper);
+  return page.width > 0 ? (ocr.width * 100) / page.width : 0;
 }
 
 /**
@@ -149,6 +164,7 @@ export function buildWithReader(
     placeholders: design.placeholders,
     texts,
     used: design.used,
+    dpi: pictureDpi(pages[0].read.ocr, paper),
   };
 }
 

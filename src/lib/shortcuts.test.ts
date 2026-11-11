@@ -15,6 +15,13 @@ describe('workspaceShortcutOf', () => {
     expect(workspaceShortcutOf(press('M', { shiftKey: true }), false)).toBeNull();
   });
 
+  // CP-03 (2026-11-11): O compares the report with the original, never while typing.
+  it('reads O as Compare with the original', () => {
+    expect(workspaceShortcutOf(press('o'), false)).toBe('compare');
+    expect(workspaceShortcutOf(press('O'), true)).toBeNull();
+    expect(workspaceShortcutOf(press('o', { ctrlKey: true }), false)).toBeNull();
+  });
+
   it('reads Ctrl+K and Cmd+K as the command menu, and Ctrl+\\ as the clean screen, typing or not', () => {
     expect(workspaceShortcutOf(press('k', { ctrlKey: true }), true)).toBe('commands');
     expect(workspaceShortcutOf(press('K', { metaKey: true }), false)).toBe('commands');
