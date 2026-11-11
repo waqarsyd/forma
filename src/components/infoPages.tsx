@@ -141,7 +141,7 @@ export const SECURITY: InfoDoc = {
 
 const PRICE_CARD = 'rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card p-5';
 
-export const PRICING: InfoDoc = {
+const PRICING: InfoDoc = {
   eyebrow: 'Pricing',
   nav: 'Pricing',
   title: 'Forma is free. So is the AI, if you want it to be.',
@@ -201,7 +201,7 @@ export const PRICING: InfoDoc = {
 
 /* ------------------------------------------------------------- examples */
 
-export const EXAMPLES: InfoDoc = {
+const EXAMPLES: InfoDoc = {
   eyebrow: 'Examples',
   title: 'Six reports to start from.',
   lede: (
@@ -443,7 +443,7 @@ export const ABOUT: InfoDoc = {
 
 /* ------------------------------------------------------------------ faq */
 
-export const FAQ_PAGE: InfoDoc = {
+const FAQ_PAGE: InfoDoc = {
   eyebrow: 'FAQ',
   title: 'Questions people ask about Forma.',
   lede: (

@@ -270,7 +270,7 @@ function closingQuote(sql: string, open: number): number {
 }
 
 /** Splits on commas at the top level: not inside parentheses, quotes or brackets. */
-export function splitTopLevel(text: string): string[] {
+function splitTopLevel(text: string): string[] {
   const parts: string[] = [];
   let depth = 0;
   let start = 0;
@@ -315,7 +315,7 @@ function unquote(part: string): string {
 }
 
 /** `[dbo].[Orders]` or `Orders` into `{ schema, name }`, `dbo` when unqualified. */
-export function parseQualifiedName(text: string): { schema: string; name: string } {
+function parseQualifiedName(text: string): { schema: string; name: string } {
   const parts = (text.match(new RegExp(IDENT, 'g')) ?? []).map(unquote);
   if (parts.length >= 2) return { schema: parts[parts.length - 2], name: parts[parts.length - 1] };
   return { schema: 'dbo', name: parts[0] ?? text.trim() };

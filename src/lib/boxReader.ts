@@ -465,7 +465,7 @@ export function contextFeatures(lines: readonly BoxLine[], boxes: readonly ReadB
 }
 
 /** The band scores of every line: the first network's, then the second look's when the model has one. */
-export function lineScores(model: BoxReaderModel, lines: readonly BoxLine[], boxes: readonly ReadBox[], lineFeats: readonly number[][]): number[][] {
+function lineScores(model: BoxReaderModel, lines: readonly BoxLine[], boxes: readonly ReadBox[], lineFeats: readonly number[][]): number[][] {
   const first = lineFeats.map((x) => mlpProbs(model.lines, x));
   return model.context ? contextFeatures(lines, boxes, lineFeats, first).map((x) => mlpProbs(model.context!, x)) : first;
 }
@@ -601,7 +601,7 @@ export function settleRecords(boxes: readonly ReadBox[], reading: BoxReading, ru
 }
 
 /** A page number as DevExpress prints one: "7", "Page 7", "7 of 12", "Page: 7 of 12", "7/12". */
-export const PAGE_NUMBER = /^(page\s*:?\s*)?\d{1,4}(\s*(of|\/)\s*\d{1,4})?$/i;
+const PAGE_NUMBER = /^(page\s*:?\s*)?\d{1,4}(\s*(of|\/)\s*\d{1,4})?$/i;
 
 /**
  * Page numbers at the foot of a page (2026-11-10, the AI accuracy programme,
@@ -647,7 +647,7 @@ export interface FooterRules {
  * 52.5% to 94.9%, and on the drawn pages' held-out layouts no change from the
  * page rule.
  */
-export const DEFAULT_RULES: FooterRules = { totals: true, footers: true, columns: true, pages: true, records: true };
+const DEFAULT_RULES: FooterRules = { totals: true, footers: true, columns: true, pages: true, records: true };
 
 /**
  * Rules from a list such as `totals+footers` (the training and scoring

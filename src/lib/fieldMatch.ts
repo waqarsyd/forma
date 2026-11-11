@@ -25,7 +25,7 @@ const STOP = new Set([
 ]);
 
 /** Short forms a heading uses for what a column spells out. */
-export const SYNONYMS: Record<string, string> = {
+const SYNONYMS: Record<string, string> = {
   qty: 'quantity', amt: 'amount', no: 'number', num: 'number', nbr: 'number', desc: 'description', dt: 'date',
   cust: 'customer', inv: 'invoice', prod: 'product', addr: 'address', tel: 'phone', telephone: 'phone', mobile: 'phone',
   co: 'company', comp: 'company', dept: 'department', emp: 'employee',
@@ -80,7 +80,7 @@ export interface ColumnMatch {
 }
 
 /** Below this nothing is suggested: a hole in the form beats a confident wrong field. */
-export const MATCH_FLOOR = 0.45;
+const MATCH_FLOOR = 0.45;
 
 const squash = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
 /** A value as it compares: "1,240.50" and "1240.5" are one number; text by its letters, case aside. */

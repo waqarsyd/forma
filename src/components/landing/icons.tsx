@@ -149,11 +149,6 @@ export const IconPulse = (p: Props) => (
     <path d="M2 12h4l3-8 4 16 3-8h6" />
   </Svg>
 );
-export const IconPause = (p: Props) => (
-  <Svg {...p}>
-    <path d="M9 4v16M15 4v16" strokeWidth={2.4} />
-  </Svg>
-);
 export const IconChat = (p: Props) => (
   <Svg {...p}>
     <path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-6.5A8 8 0 0 1 11 4h2a8 8 0 0 1 8 8z" />
@@ -364,7 +359,7 @@ export const IconHelp = (p: Props) => (
    glyph it replaced, not a new invention — `architecture` was a drafting
    compass, so IconRuler is a compass. `IconHistory`, a clock with a turning
    arrow, was removed on 2026-11-01 in the repository audit as unrendered:
-   nothing imported it. Recover it from this commit's parent. */
+   nothing imported it. Recover it from `22c73c4~1`. */
 export const IconTrash = (p: Props) => (
   <Svg {...p}>
     <path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" />
@@ -470,11 +465,6 @@ export const IconPlus = (p: Props) => (
     <path d="M12 5v14M5 12h14" />
   </Svg>
 );
-export const IconPlay = (p: Props) => (
-  <Svg {...p}>
-    <path d="M7 4.5v15l12-7.5z" />
-  </Svg>
-);
 export const IconArrowUp = (p: Props) => (
   <Svg strokeWidth={2.4} {...p}>
     <path d="M12 20V4M6 10l6-6 6 6" />
@@ -539,18 +529,10 @@ export const IconBell = (p: Props) => (
     <path d="M13.7 18a2 2 0 0 1-3.4 0" />
   </Svg>
 );
-/* The rail's own expander. Double chevrons rather than the single one
-   `IconChevronDown` carries, so it does not read as "open this section". */
-export const IconChevronsRight = (p: Props) => (
-  <Svg {...p}>
-    <path d="m7 6 6 6-6 6M13 6l6 6-6 6" />
-  </Svg>
-);
-export const IconChevronsLeft = (p: Props) => (
-  <Svg {...p}>
-    <path d="m17 6-6 6 6 6M11 6l-6 6 6 6" />
-  </Svg>
-);
+/* IconPause, IconPlay and the rail's old double-chevron expander
+   (IconChevronsRight and IconChevronsLeft) went on 2026-11-11 in the full
+   audit (RH-06): nothing imported them once the queue's pause and the rail's
+   expander had gone. Recover them from `0cec241`. */
 export const IconCheckCircle = (p: Props) => (
   <Svg {...p}>
     <circle cx="12" cy="12" r="9" />

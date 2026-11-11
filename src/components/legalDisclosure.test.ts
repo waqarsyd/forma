@@ -268,8 +268,6 @@ const STORED: Record<string, RegExp> = {
   libraryCanonical: /which library reports are your house style/,
   houseStyle: /which library reports are your house style, and whether it is used/,
   'forma.csvSafeForSpreadsheets': /whether CSV exports are made safe for spreadsheets/,
-  reviewWidth: /the workspace’s layout/,
-  reviewWidthEpoch: /the workspace’s layout/,
   reviewCollapsed: /the workspace’s layout/,
   railExpanded: /the workspace’s layout/,
   'forma:requestsToday': /today’s request counts/,
@@ -303,6 +301,9 @@ const NOT_STORED: Record<string, string> = {
   customGeminiApiKey: 'read once to erase',
   // App.tsx removes what an old model dropdown stored; nothing writes it.
   selectedAiModel: 'erased only',
+  // App.tsx removes the side panel's width, kept until its handle went (WS-39).
+  reviewWidth: 'erased only',
+  reviewWidthEpoch: 'erased only',
   // lib/designerBridge.ts: the link scheme that starts Forma Designer.
   'forma-repx': 'a link scheme',
   // lib/router.ts: the event a route change dispatches in the page.

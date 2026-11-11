@@ -10,7 +10,7 @@ import { MIN_READ_SHARE, pageFromRegions, readShare, readingOrder, type PaddlePa
 import type { PaddleReply, PaddleRequest } from './paddleWorker';
 import type { PixelBox } from './reportGeometry';
 
-export const PADDLE_BASE = PADDLE_ASSET_BASE;
+const PADDLE_BASE = PADDLE_ASSET_BASE;
 
 let served: Promise<boolean> | null = null;
 

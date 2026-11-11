@@ -53,13 +53,13 @@ import { MAX_SHARES, inviteesOf, splitShare, type LegacyShareFields, type Stored
 import { storedVersion, type VersionDocument, type VersionIo } from './revisionStore';
 
 /** Everything for one account hangs off `users/{uid}`. */
-export const USERS_COLLECTION = 'users';
+const USERS_COLLECTION = 'users';
 
 /** Saved projects. `firestore.rules` allows `list` here, scoped to the owner. */
-export const REPORTS_COLLECTION = 'reports';
+const REPORTS_COLLECTION = 'reports';
 
 /** The encrypted key vault. No `list` rule — see the note above. */
-export const VAULT_COLLECTION = 'vault';
+const VAULT_COLLECTION = 'vault';
 
 /**
  * What the account let Forma learn from (2026-11-10, the full audit;
@@ -68,13 +68,13 @@ export const VAULT_COLLECTION = 'vault';
  * removes it with the rest; `deleteLearning` is Settings' "Delete what was
  * kept".
  */
-export const LEARNING_COLLECTION = 'learning';
+const LEARNING_COLLECTION = 'learning';
 
 export function learningCollectionRef(db: Firestore, uid: string): CollectionReference {
   return collection(db, USERS_COLLECTION, uid, LEARNING_COLLECTION);
 }
 
-export function learningDocRef(db: Firestore, uid: string, eventId: string): DocumentReference {
+function learningDocRef(db: Firestore, uid: string, eventId: string): DocumentReference {
   return doc(db, USERS_COLLECTION, uid, LEARNING_COLLECTION, eventId);
 }
 
@@ -97,10 +97,10 @@ export async function countLearning(db: Firestore, uid: string): Promise<number>
  * Until then one account could write without bound, on a free plan whose
  * daily writes every visitor shares. `firestore.rules` holds every number.
  */
-export const USAGE_DOC_ID = 'usage';
+const USAGE_DOC_ID = 'usage';
 export const MAX_REPORTS = 1000;
 export const MAX_EVENTS_A_DAY = 300;
-export const EVENT_SPACING_MS = 2000;
+const EVENT_SPACING_MS = 2000;
 /**
  * How many of a day's events may carry the whole report, on the opt-in tier
  * (2026-11-11, the re-audit's R5-05): 300 a day of up to 700,000 characters
@@ -123,7 +123,7 @@ async function readUsage(db: Firestore, uid: string): Promise<DocumentData> {
 const count = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0);
 
 /** Thrown when an account has sent its day's learning events: the rest wait in the outbox for tomorrow. */
-export class LearningLimitError extends Error {
+class LearningLimitError extends Error {
   readonly code = 'forma/learning-limit';
   constructor() {
     super(`An account sends at most ${MAX_EVENTS_A_DAY} learning events a day; the rest go tomorrow.`);
@@ -304,12 +304,12 @@ export function ownedShares(db: Firestore, uid: string, reportId?: string): Quer
  * `MAX_SHARES`; so a share is created and deleted only through `writeShare`
  * and `deleteShare` below, one at a time.
  */
-export const META_COLLECTION = 'meta';
-export const QUOTA_DOC_ID = 'quota';
+const META_COLLECTION = 'meta';
+const QUOTA_DOC_ID = 'quota';
 // MAX_SHARES lives in shares.ts (2026-11-08), which loads no Firestore, so the
 // public Security page can state the limit without pulling the SDK in.
 
-export function quotaDocRef(db: Firestore, uid: string): DocumentReference {
+function quotaDocRef(db: Firestore, uid: string): DocumentReference {
   return doc(db, USERS_COLLECTION, uid, META_COLLECTION, QUOTA_DOC_ID);
 }
 
@@ -321,9 +321,9 @@ export function quotaDocRef(db: Firestore, uid: string): DocumentReference {
  * on one computer left it on at every other. `firestore.rules` pins the two
  * booleans; `deleteAccountData` removes the document.
  */
-export const LEARNING_PREFS_DOC_ID = 'learning';
+const LEARNING_PREFS_DOC_ID = 'learning';
 
-export function learningPrefsDocRef(db: Firestore, uid: string): DocumentReference {
+function learningPrefsDocRef(db: Firestore, uid: string): DocumentReference {
   return doc(db, USERS_COLLECTION, uid, META_COLLECTION, LEARNING_PREFS_DOC_ID);
 }
 
@@ -456,7 +456,7 @@ export async function writeReport(db: Firestore, uid: string, reportId: string, 
  * which the list listens to instead of the projects themselves. Written beside
  * the project on every save, and deleted with it and with the account.
  */
-export const REPORT_INDEX_COLLECTION = 'reportIndex';
+const REPORT_INDEX_COLLECTION = 'reportIndex';
 
 export function reportIndexCollectionRef(db: Firestore, uid: string): CollectionReference {
   return collection(db, USERS_COLLECTION, uid, REPORT_INDEX_COLLECTION);

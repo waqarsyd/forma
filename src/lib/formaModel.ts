@@ -328,7 +328,7 @@ function medoidOf(members: number[], vectors: number[][], scale: { sd: number[] 
 }
 
 /** A plain name for a kind of report, from its shape. */
-export function archetypeLabel(k: ReportSkeleton): string {
+function archetypeLabel(k: ReportSkeleton): string {
   const f = Object.fromEntries(FEATURE_NAMES.map((name, i) => [name, skeletonFeatures(k)[i]]));
   const turned = k.landscape ? ', landscape' : '';
   if (f.smallPage && k.width < 400) return 'Label';
@@ -339,7 +339,7 @@ export function archetypeLabel(k: ReportSkeleton): string {
 }
 
 /** The face an archetype is written in when the set allows no house font: the one DevExpress itself defaults to. */
-export const DEFAULT_FACE = 'Arial';
+const DEFAULT_FACE = 'Arial';
 
 /** Learn the model from a set of reports: the house style and `k` archetypes. */
 export function learnModel(

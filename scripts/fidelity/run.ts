@@ -9,7 +9,9 @@
  *   --cases <dir>     where the cases live (default scripts/fidelity/cases)
  *   --only <name>     run one case; may be repeated
  *   --runs <n>        generate each case n times, to see variance (default 1)
- *   --out <dir>       where results go (default fidelity-results/<timestamp>)
+ *   --out <dir>       where results go (default
+ *                     ../forma-model-data/fidelity-results/<timestamp>, beside
+ *                     the repository rather than in it: RESULTS_DIR, below)
  *   --replay <dir>    re-score the saved outputs in that results directory
  *                     against the CURRENT case files, calling nothing.
  *                     scripts/fidelity/replay/reference-2026-11-11 is one kept
@@ -20,7 +22,7 @@
  *                     nothing else, so the print expectations replay with no
  *                     results folder from elsewhere. The summary is written
  *                     beside the saved outputs, except for a folder kept in
- *                     the repository, whose goes to fidelity-results/ so the
+ *                     the repository, whose goes to RESULTS_DIR so the
  *                     tracked one stays as committed; --out names another
  *   --model <name>    pin a model instead of letting the app auto-detect one
  *   --thinking <n>    set ReportConfig.thinkingBudget for every case
@@ -201,6 +203,17 @@ import type { FormaModel } from '../../src/lib/formaModel';
 
 /** The browser downsizes anything longer than this on its long edge (App.tsx). */
 const MAX_IMAGE_EDGE = 2048;
+
+/**
+ * Where a run's results go unless --out names a folder: beside the repository,
+ * not in it (2026-11-11, the full audit's RH-05). They went to
+ * fidelity-results/ in the working tree, where 386 files and 20.5 MB had
+ * collected, ignored by git but copied, searched and backed up with the
+ * source. The owner keeps everything of Forma's in DevFiles, and the model
+ * data folder beside the repository is where the rest of it already is. Read
+ * from the repository's root, as every path in this script is.
+ */
+const RESULTS_DIR = join('..', 'forma-model-data', 'fidelity-results');
 
 interface CaseFile {
   source: string;
@@ -1006,7 +1019,7 @@ async function main(): Promise<number> {
 
   // The median font size of each .html source, for fontSize.relative.sourcePt (CC-02); writes nothing beside the case.
   if (opts.measureSource) {
-    const scratch = opts.out || join('fidelity-results', `measure-${timestamp()}`);
+    const scratch = opts.out || join(RESULTS_DIR, `measure-${timestamp()}`);
     for (const c of cases) {
       const pt = measureSourceFont(c, scratch);
       console.log(`${pad(c.name, 24)}${pt === null ? 'not an .html source, or Edge could not lay it out' : `${pt}pt median over the page's text`}`);
@@ -1019,7 +1032,7 @@ async function main(): Promise<number> {
 
   if (opts.score.length) {
     // One file against one case, no key and no request (CC-02): the auditor's score.ts as an option.
-    outDir = opts.out || join('fidelity-results', `score-${timestamp()}`);
+    outDir = opts.out || join(RESULTS_DIR, `score-${timestamp()}`);
     const all = loadCases(opts.cases, []);
     for (const [name, file] of opts.score) {
       const c = all.find((x) => x.name === name);
@@ -1054,10 +1067,10 @@ async function main(): Promise<number> {
   }
 
   if (opts.replay) {
-    // A replay kept under scripts/ is tracked: its summary and coverage go to fidelity-results/, not into it.
+    // A replay kept under scripts/ is tracked: its summary and coverage go to RESULTS_DIR, not into it.
     const fromScripts = relative(resolve('scripts'), resolve(opts.replay));
     const kept = !fromScripts.startsWith('..') && !isAbsolute(fromScripts);
-    outDir = opts.out || (kept ? join('fidelity-results', `replay-${timestamp()}`) : opts.replay);
+    outDir = opts.out || (kept ? join(RESULTS_DIR, `replay-${timestamp()}`) : opts.replay);
     const byName = new Map(cases.map((c) => [c.name, c]));
     for (const file of readdirSync(opts.replay).filter((f) => /^run-.*\.json$/.test(f))) {
       const record = JSON.parse(readFileSync(join(opts.replay, file), 'utf8')) as RunRecord;
@@ -1100,7 +1113,7 @@ async function main(): Promise<number> {
       console.error('That does not look like an API key (too short, or it contains whitespace). Nothing was sent.');
       return 1;
     }
-    outDir = opts.out || join('fidelity-results', timestamp());
+    outDir = opts.out || join(RESULTS_DIR, timestamp());
     mkdirSync(outDir, { recursive: true });
     for (const c of cases) {
       for (let run = 1; run <= opts.runs; run++) {

@@ -65,7 +65,7 @@ export function isVersioned(filePath: string): boolean {
 }
 
 /** Whether a path is a picture IMAGE_CACHE covers. */
-export function isImage(filePath: string): boolean {
+function isImage(filePath: string): boolean {
   return new RegExp(`\\.(${IMAGE_EXTENSIONS.join('|')})$`, 'i').test(filePath);
 }
 

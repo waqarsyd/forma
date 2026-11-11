@@ -77,7 +77,7 @@ export const NO_DEVEXPRESS_FOR_ROWS = new CompanionProblem(
 );
 
 /** A connection the report or the person names that Forma Designer does not keep. */
-export function missingConnection(names: readonly string[]): string {
+function missingConnection(names: readonly string[]): string {
   return `Forma Designer keeps no connection named ${names.join(', ')}. Add it from its tray menu, SQL Server connections.`;
 }
 
@@ -86,7 +86,7 @@ export function missingConnection(names: readonly string[]): string {
  * DevExpress reported carries its own message (which names what is wrong)
  * after the .NET type name, which says nothing to a person and goes.
  */
-export function companionProblem(status: number, body: { error?: string; missing?: string[] } = {}): CompanionProblem {
+function companionProblem(status: number, body: { error?: string; missing?: string[] } = {}): CompanionProblem {
   if (status === 404 && body.missing?.length) return new CompanionProblem(missingConnection(body.missing));
   if (status === 404) return notRunning();
   if (status === 424) return NO_DEVEXPRESS_FOR_ROWS;

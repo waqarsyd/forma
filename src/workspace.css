@@ -21,8 +21,8 @@
    legend, outline tree, checklist, sign-in button, auth note and Google button,
    about 6.9 KB every visitor downloaded for nothing. Rules were removed whole;
    every declaration still in the block is byte-identical to the artifact, so a
-   diff against it lists exactly that commit's removals. Recover any of them
-   from its parent.
+   diff against it lists exactly that commit's (22c73c4) removals. Recover any
+   of them from `22c73c4~1`.
    ----------------------------------------------------------------------------- */
 .wb-root button,
 .wb-root input,
@@ -324,8 +324,9 @@
    Two adaptations, both non-visual:
      - Class names carry a "wb-" prefix. Three artifact names collide with the
        app: ".sheet" is the token scope in index.css, and ".skeleton" and
-       ".reg-marks" already exist there. Prefixing avoids the collision without
-       touching a value.
+       ".reg-marks" already existed there (".skeleton" was removed from
+       index.css on 2026-11-11, the full audit's RH-09, for having no element).
+       Prefixing avoids the collision without touching a value.
      - The artifact's token block is absent. The app's ".sheet" scope defines the
        identical palette, and index.css aliases the artifact's token names onto
        it so these rules resolve unchanged.
@@ -497,7 +498,7 @@ html:where(:not([data-modality='pointer'])) .wb-root :focus-visible { outline: 2
    (`git log -S".wb-actions"`). */
 
 .wb-panel-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.wb-thread { flex: 1; overflow-y: auto; padding: 18px 20px calc(var(--composer-h, 0px) + 18px); display: flex; flex-direction: column; gap: 18px; }
+.wb-thread { flex: 1; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 18px; }
 /* Back to the latest message (2026-11-05): a round button over the foot of the
    conversation while it is scrolled up, as ChatGPT's and Gemini's. */
 .wb-thread .wb-to-latest {
@@ -734,20 +735,8 @@ html:where(:not([data-modality='pointer'])) .wb-root :focus-visible { outline: 2
 .wb-edit textarea { width: 100%; resize: vertical; font: inherit; font-size: 13.5px; line-height: 1.6; }
 
 /* The transcript search: its field sits under the column head and the
-   matches are marked in the messages. */
-.wb-icon-btn {
-  align-self: center;
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: none;
-  color: var(--ink-faint);
-  cursor: pointer;
-}
-.wb-icon-btn:hover { color: var(--ink); border-color: var(--rule); background: var(--track); }
+   matches are marked in the messages. (Its `.wb-icon-btn`, drawn by nothing,
+   went on 2026-11-11 in the full audit's RH-09; `0cec241` has it.) */
 .wb-chat-search {
   display: flex;
   align-items: center;
@@ -1324,14 +1313,13 @@ html[data-modality='keyboard'] .wb-ctl:focus-visible { border-color: var(--ink-2
 @media (min-width: 881px) {
   .wb-shell { position: relative; }
   /* `.wb-shell >` for the weight: `.wb-review { position: relative }` further
-     down, the resizer's, would otherwise win and leave the panel in the grid. */
+     down would otherwise win and leave the panel in the grid. */
   .wb-shell > .wb-review {
     position: absolute; z-index: 5; left: calc(var(--wb-rail-w, 56px) + 16px); top: calc(var(--wb-bar-h, 57px) + 16px); bottom: 16px; width: 360px;
     border: 1px solid var(--rule); border-radius: 20px; overflow: hidden;
     background: color-mix(in srgb, var(--panel-2) 90%, transparent);
     backdrop-filter: blur(14px) saturate(1.3); box-shadow: var(--shadow-md);
   }
-  .wb-review .wb-resizer { display: none; }
   .wb-shell[data-side='open'] .wb-float-panel { display: none; }
   .wb-shell[data-side='open'] .wb-bench-body { padding-left: 392px; }
 }
@@ -1340,46 +1328,11 @@ html[data-modality='keyboard'] .wb-ctl:focus-visible { border-color: var(--ink-2
 .wb-review-close { position: absolute; top: 12px; right: 12px; z-index: 2; }
 .wb-review .wb-col-head { padding-right: 52px; }
 
-/* The handle straddles the column's right border: 7px of hit area for a 1px
-   rule, which is what makes it findable with a mouse without widening anything
-   the eye can see. It is the section's own child rather than a fourth grid item
-   because the shell's three tracks are load-bearing everywhere else. */
+/* The section is the containing block of its close button. Its drag handle,
+   hidden on every screen once the side panels floated (2026-11-08), went on
+   2026-11-11 (the full audit's WS-39); `git show 0cec241:src/workspace.css`
+   has its rules. */
 .wb-review { position: relative; }
-.wb-resizer {
-  position: absolute;
-  top: 0;
-  right: -3px;
-  bottom: 0;
-  width: 7px;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: col-resize;
-  z-index: 3;
-  /* Without this a touch drag scrolls the panel instead of moving the handle. */
-  touch-action: none;
-}
-/* The paint is inset to the border's own line, so hovering lights up the rule
-   that is already there rather than adding a second one beside it. */
-.wb-resizer::before {
-  content: '';
-  position: absolute;
-  inset: 0 3px;
-  background: transparent;
-  transition: background .15s ease;
-}
-.wb-resizer:hover::before,
-.wb-resizer:focus-visible::before,
-.wb-shell[data-resizing='true'] .wb-resizer::before {
-  background: var(--rule-strong);
-}
-/* Held on the shell, not the handle: once the pointer is captured the cursor is
-   over the bench for most of the drag, and a text selection started on the way
-   past would survive the mouseup. */
-.wb-shell[data-resizing='true'] {
-  cursor: col-resize;
-  user-select: none;
-}
 /* ------------------------------------------------------- the expanded rail
 
    The rail is 56px of centred icons in the artifact, which is learnable only by
@@ -1655,14 +1608,6 @@ html[data-modality='keyboard'] .wb-ctl:focus-visible { border-color: var(--ink-2
    settings' shape (components/dialogs.css). Kept from here: a dialog takes
    focus on open, and its container must not take the focus ring, or the
    whole box is outlined; dialogs.css and ocr.css say so for theirs. */
-
-/* Nothing to resize once the layout has stacked. The hide toggle survives,
-   because hiding is the one width change that still means something in a
-   single column. The rail's own toggle was hidden here too until 2026-11-04;
-   stacked, it is now the drawer's close button. */
-@media (max-width: 880px) {
-  .wb-resizer { display: none; }
-}
 
 /* The stacked rail used to be a row of icons across the top, and a rule here
    let it wrap: nine 38px targets and the mark demanded 358px and scrolled a

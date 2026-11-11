@@ -41,12 +41,12 @@ interface Props {
  * a GitHub account. The status rows are Forma's own live checks
  * (.github/workflows/live.yml) and Google's pages for Gemini and Firebase.
  */
-export const LIVE_CHECKS_URL = 'https://github.com/waqarsyd/forma/actions/workflows/live.yml';
-export const GEMINI_STATUS_URL = 'https://aistudio.google.com/status';
-export const FIREBASE_STATUS_URL = 'https://status.firebase.google.com/';
+const LIVE_CHECKS_URL = 'https://github.com/waqarsyd/forma/actions/workflows/live.yml';
+const GEMINI_STATUS_URL = 'https://aistudio.google.com/status';
+const FIREBASE_STATUS_URL = 'https://status.firebase.google.com/';
 
 /** The prefilled issue for a problem someone met without a crash. */
-export function helpProblemUrl(): string {
+function helpProblemUrl(): string {
   return problemReportUrl({
     area: 'the workspace',
     message: 'something did not work as it should',

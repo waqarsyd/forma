@@ -127,6 +127,14 @@ describe('the files crawlers ask for', () => {
     expect(text).not.toMatch(/waqarshaikh/);
     expect(text).toContain('Expires: 2027-11-08T00:00:00Z');
     expect(text).toContain(`Canonical: ${SITE_ORIGIN}/.well-known/security.txt`);
+    // Both sites serve the same file (2026-11-11, PS-24), so both are canonical.
+    expect(text).toContain('Canonical: https://forma-201ba.web.app/.well-known/security.txt');
+  });
+
+  it('names a canonical address for every site firebase.json deploys', () => {
+    const hosting = JSON.parse(readFileSync('firebase.json', 'utf8')) as { hosting: { site: string }[] };
+    const text = securityTxt(new Date());
+    for (const { site } of hosting.hosting) expect(text).toContain(`Canonical: https://${site}.web.app/.well-known/security.txt`);
   });
 
   it('describes every public page in llms.txt', () => {

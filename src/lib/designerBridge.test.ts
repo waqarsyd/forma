@@ -631,6 +631,8 @@ describe('what DevExpress makes of a report (CC-10)', () => {
  * REPX pane, which hears of it when it arrives. The last four files only.
  */
 describe('what DevExpress found, kept for the REPX pane', () => {
+  afterEach(async () => (await import('./designerBridge')).forgetInspectionsForTests());
+
   it('is kept by file, heard by whoever listens, and only for the last few files', async () => {
     const { keepInspection, inspectionOf, onInspection } = await import('./designerBridge');
     const finding = (code: string) => ({ severity: 'warning' as const, code, message: code });
@@ -646,5 +648,13 @@ describe('what DevExpress found, kept for the REPX pane', () => {
     stop();
     keepInspection('<f />', []);
     expect(heard).toHaveBeenCalledTimes(5);
+  });
+
+  it('forgets everything it kept when a test asks, so nothing leaks into the next', async () => {
+    const { keepInspection, inspectionOf, forgetInspectionsForTests } = await import('./designerBridge');
+    keepInspection('<g />', [{ severity: 'error', code: 'designer-lost-controls', message: 'lost' }]);
+    expect(inspectionOf('<g />')).toHaveLength(1);
+    forgetInspectionsForTests();
+    expect(inspectionOf('<g />')).toEqual([]);
   });
 });

@@ -26,21 +26,14 @@
  */
 
 /**
- * What is happening, in order, in the person's words (2026-11-11, the full
- * audit's WS-06 and CV-21). They were "Generating spatial map...",
- * "Constructing DevExpress XML..." until then: a screen reader announced the
- * machinery, as nothing else in the workspace does. The progress bar itself
- * now says "Designing the report" and a percentage; these are for any other
- * reader of the step.
+ * How many steps the bar moves through. The steps had words until 2026-11-11
+ * ("Reading your page...", and before the full audit's WS-06 "Constructing
+ * DevExpress XML..."), but nothing has shown them since the bar came to say
+ * "Designing the report" and a percentage, so the words and `stepLabel` went
+ * in the audit's cleanup (CLEAN) and only the count is kept: it is what sets
+ * the simulated phase's pace. `0cec241` has the words.
  */
-export const ANALYZING_STEPS = [
-  'Reading your page...',
-  'Finding its sections...',
-  'Laying out the report...',
-  'Writing the report file...',
-  'Drawing the mockup...',
-  'Finishing...',
-] as const;
+export const STEP_COUNT = 6;
 
 /**
  * How far the simulated opening phase may climb.
@@ -54,7 +47,7 @@ export const PRE_STREAM_CEILING = 14;
 export const STEP_INTERVAL_MS = 2500;
 
 export interface GenerationProgress {
-  /** Index into `ANALYZING_STEPS`. */
+  /** Which step, 0 to `STEP_COUNT - 1`. */
   stepIndex: number;
   /** 0-100. Only `finishProgress` reaches 100. */
   percent: number;
@@ -82,7 +75,7 @@ function simulatedPercent(stepIndex: number): number {
 
 function clampStep(index: number): number {
   if (!Number.isFinite(index)) return 0;
-  return Math.min(ANALYZING_STEPS.length - 1, Math.max(0, Math.floor(index)));
+  return Math.min(STEP_COUNT - 1, Math.max(0, Math.floor(index)));
 }
 
 /**
@@ -129,7 +122,7 @@ export function applyStreamProgress(
   const percent = Math.max(state.percent, PRE_STREAM_CEILING + 1, reported);
 
   return {
-    stepIndex: clampStep((reported / 100) * ANALYZING_STEPS.length),
+    stepIndex: clampStep((reported / 100) * STEP_COUNT),
     // Never 100: only a parsed result finishes the bar. Approaching completion
     // without arriving is the honest shape for a length nobody knows yet.
     percent: Math.min(percent, 99.9),
@@ -139,10 +132,5 @@ export function applyStreamProgress(
 
 /** The run produced a result. This is the only thing that reaches 100. */
 export function finishProgress(state: GenerationProgress): GenerationProgress {
-  return { ...state, stepIndex: ANALYZING_STEPS.length - 1, percent: 100 };
-}
-
-/** The label for the current step. Never undefined, whatever the index. */
-export function stepLabel(state: GenerationProgress): string {
-  return ANALYZING_STEPS[clampStep(state.stepIndex)];
+  return { ...state, stepIndex: STEP_COUNT - 1, percent: 100 };
 }

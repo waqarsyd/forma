@@ -36,7 +36,7 @@ export function acceptsForBatch(name: string, type: string): boolean {
 }
 
 /** Whether a file is a Crystal Reports file, which only Crystal Reports reads: its PDF is the way in. */
-export function isCrystalReport(name: string): boolean {
+function isCrystalReport(name: string): boolean {
   const base = name.split('/').pop() ?? name;
   return !base.startsWith('.') && /\.rpt$/i.test(base);
 }

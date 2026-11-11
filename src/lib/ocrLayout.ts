@@ -125,7 +125,7 @@ const FACES: readonly WidthFace[] = [
 ];
 
 /** Widths from the browser's canvas, unkerned as DevExpress draws; null in Node and under jsdom. */
-export const canvasFaceWidth: FaceWidth = (text, face) => {
+const canvasFaceWidth: FaceWidth = (text, face) => {
   const at100 = lineWidthPt(text, { family: face.family, sizePt: 100, bold: face.bold, italic: face.italic ?? false });
   return at100 === null ? null : at100 / 100;
 };

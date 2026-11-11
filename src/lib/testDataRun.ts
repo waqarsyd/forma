@@ -15,7 +15,7 @@ import type { SqlSchema } from './sqlSchema';
 import type { ReportQuery } from './sqlQuery';
 
 /** How many rows one request asks for: DevExpress's preview shows about as many. */
-export const TEST_ROWS = 20;
+const TEST_ROWS = 20;
 
 /** `stop` aborted whenever `also` is, unless `also` already was (a turn Stop ended is not the rows' business). */
 export function linkStop(stop: AbortController, also?: AbortSignal | null): void {

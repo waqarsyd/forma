@@ -1021,10 +1021,8 @@ export function rdlToRepx(xml: string, file: string): { repx: string; unconverte
 
 /* ------------------------------------------------------------- the way in */
 
-/** Whether a file is another tool's report this module opens. */
-export function isForeignReport(name: string): boolean {
-  return /\.(rdlc?|frx)$/i.test(name);
-}
+/* `isForeignReport` went on 2026-11-11 (the full audit's cleanup): nothing
+   called it. `0cec241` has it. */
 
 /**
  * Another tool's report as a REPX, with what to tell the user, or null when

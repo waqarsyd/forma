@@ -309,7 +309,7 @@ export function pictureKey(src: string): string {
  * repeat. Only these two codes come from the page; another says nothing
  * rather than something general.
  */
-export const EVIDENCE_SENTENCES: Readonly<Record<string, string>> = {
+const EVIDENCE_SENTENCES: Readonly<Record<string, string>> = {
   'grid-not-a-table': 'A table on your page came out as separate texts, so its columns cannot be bound to data or repeat for each record.',
   'no-detail-band': 'Your page has rows that repeat, but the report has no section for its records, so they print only once.',
 };

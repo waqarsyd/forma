@@ -76,7 +76,7 @@ export function parseDelimited(text: string, delimiter: string): string[][] {
 const csvCell = (value: string) => (/[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
 
 /** A table as the AI is given it: its columns as fields, then its first rows. */
-export function tableText(name: string, rows: string[][]): DataFileText {
+function tableText(name: string, rows: string[][]): DataFileText {
   if (!rows.length) return { text: '', note: `"${name}" holds no rows.` };
   const [header, ...body] = rows;
   const columns = header.slice(0, MAX_COLUMNS).map((c, i) => c.trim() || `Column${i + 1}`);
@@ -96,7 +96,7 @@ export function tableText(name: string, rows: string[][]): DataFileText {
 }
 
 /** A JSON file: an array of records is a table; anything else goes as written, cut short. */
-export function jsonText(name: string, raw: string): DataFileText {
+function jsonText(name: string, raw: string): DataFileText {
   let value: unknown;
   try {
     value = JSON.parse(raw);
@@ -116,7 +116,7 @@ export function jsonText(name: string, raw: string): DataFileText {
 }
 
 /** Text as written, cut short, under a heading saying what it is. */
-export function plainText(name: string, raw: string, kind: 'DATA SOURCE' | 'DOCUMENT'): DataFileText {
+function plainText(name: string, raw: string, kind: 'DATA SOURCE' | 'DOCUMENT'): DataFileText {
   const text = raw.trim();
   if (!text) return { text: '', note: `"${name}" is empty.` };
   const cut = text.length > MAX_TEXT;
@@ -257,7 +257,7 @@ export const MAX_SHEET_COLUMNS = 16_384;
 const columnIndex = (letters: string) => [...letters].reduce((n, c) => n * 26 + (c.charCodeAt(0) - 64), 0) - 1;
 
 /** The first worksheet of an Excel workbook, as rows of text. */
-export async function xlsxRows(bytes: Uint8Array): Promise<string[][]> {
+async function xlsxRows(bytes: Uint8Array): Promise<string[][]> {
   // The first sheet alone is inflated (R5-07): every sheet was, then all but one set aside.
   const sheetName = firstSheet(zipNames(bytes));
   if (!sheetName) return [];
@@ -287,7 +287,7 @@ export async function xlsxRows(bytes: Uint8Array): Promise<string[][]> {
 }
 
 /** A Word document's text: paragraphs on lines, a table's cells joined by " | ". */
-export async function docxText(bytes: Uint8Array): Promise<string> {
+async function docxText(bytes: Uint8Array): Promise<string> {
   const parts = await unzip(bytes, (n) => n === 'word/document.xml');
   const xml = new TextDecoder().decode(parts.get('word/document.xml') ?? new Uint8Array());
   return unescapeXml(

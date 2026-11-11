@@ -9,8 +9,8 @@
 import { useRef, useState } from 'react';
 import './overlays.css';
 
-export const MIN_PERCENT = 10;
-export const MAX_PERCENT = 400;
+const MIN_PERCENT = 10;
+const MAX_PERCENT = 400;
 
 /** A typed size as a whole percentage inside the limits, or null when it is not a number. */
 export function readPercent(text: string): number | null {

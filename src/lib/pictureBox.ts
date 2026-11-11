@@ -28,10 +28,10 @@
  */
 import { unitsPerInch } from './reportGeometry';
 
-export const PICTURE_SIZINGS = ['Normal', 'StretchImage', 'AutoSize', 'CenterImage', 'ZoomImage', 'Squeeze', 'Tile'] as const;
+const PICTURE_SIZINGS = ['Normal', 'StretchImage', 'AutoSize', 'CenterImage', 'ZoomImage', 'Squeeze', 'Tile'] as const;
 export type PictureSizing = (typeof PICTURE_SIZINGS)[number];
 
-export const PICTURE_ALIGNMENTS = [
+const PICTURE_ALIGNMENTS = [
   'Default',
   'TopLeft',
   'TopCenter',

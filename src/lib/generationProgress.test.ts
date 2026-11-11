@@ -16,14 +16,13 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  ANALYZING_STEPS,
+  STEP_COUNT,
   PRE_STREAM_CEILING,
   IDLE_PROGRESS,
   startProgress,
   tickSimulated,
   applyStreamProgress,
   finishProgress,
-  stepLabel,
   type GenerationProgress,
 } from './generationProgress';
 
@@ -67,12 +66,12 @@ describe('startProgress', () => {
     expect(s.percent).toBeGreaterThan(startProgress(0).percent);
   });
 
-  it('clamps a nonsense starting step rather than indexing past the labels', () => {
+  it('clamps a nonsense starting step rather than running past the last', () => {
     for (const from of [-5, 99, NaN]) {
       const s = startProgress(from);
       expect(s.stepIndex).toBeGreaterThanOrEqual(0);
-      expect(s.stepIndex).toBeLessThan(ANALYZING_STEPS.length);
-      expect(stepLabel(s)).toBeTruthy();
+      expect(s.stepIndex).toBeLessThan(STEP_COUNT);
+      expect(Number.isInteger(s.stepIndex)).toBe(true);
     }
   });
 
@@ -91,8 +90,7 @@ describe('the simulated opening phase', () => {
 
   it('stops at the last step instead of running off the end', () => {
     const s = tickN(startProgress(), 50);
-    expect(s.stepIndex).toBe(ANALYZING_STEPS.length - 1);
-    expect(stepLabel(s)).toBe(ANALYZING_STEPS[ANALYZING_STEPS.length - 1]);
+    expect(s.stepIndex).toBe(STEP_COUNT - 1);
   });
 
   it('never climbs past the ceiling, however long the model thinks', () => {
@@ -122,7 +120,7 @@ describe('the simulated opening phase', () => {
    * moment the coupling actually matters.
    */
   it('the last simulated step lands at or under the ceiling', () => {
-    const lastStepPercent = 4 + (ANALYZING_STEPS.length - 1) * 2;
+    const lastStepPercent = 4 + (STEP_COUNT - 1) * 2;
     expect(lastStepPercent).toBeLessThanOrEqual(PRE_STREAM_CEILING);
   });
 });
@@ -143,17 +141,16 @@ describe('the streamed phase', () => {
     expect(s.streamChars).toBe(9000);
   });
 
-  it('moves the step label in step with the real percentage', () => {
+  it('moves the step in step with the real percentage', () => {
     const early = applyStreamProgress(startProgress(), { percent: 10, chars: 1 });
     const late = applyStreamProgress(startProgress(), { percent: 90, chars: 9000 });
     expect(late.stepIndex).toBeGreaterThan(early.stepIndex);
-    expect(late.stepIndex).toBeLessThan(ANALYZING_STEPS.length);
+    expect(late.stepIndex).toBeLessThan(STEP_COUNT);
   });
 
-  it('does not index past the last label at 100%', () => {
+  it('does not run past the last step at 100%', () => {
     const s = applyStreamProgress(startProgress(), { percent: 100, chars: 20000 });
-    expect(s.stepIndex).toBe(ANALYZING_STEPS.length - 1);
-    expect(stepLabel(s)).toBeTruthy();
+    expect(s.stepIndex).toBe(STEP_COUNT - 1);
   });
 });
 
@@ -206,27 +203,5 @@ describe('finishProgress', () => {
     s = tickN(s, 100);
     s = applyStreamProgress(s, { percent: 99.9, chars: 50000 });
     expect(s.percent).toBeLessThan(100);
-  });
-});
-
-describe('stepLabel', () => {
-  it('names every step', () => {
-    for (let i = 0; i < ANALYZING_STEPS.length; i++) {
-      expect(stepLabel({ stepIndex: i, percent: 0, streamChars: 0 })).toBe(ANALYZING_STEPS[i]);
-    }
-  });
-
-  it('never returns undefined for an out-of-range index', () => {
-    for (const stepIndex of [-1, 999]) {
-      expect(stepLabel({ stepIndex, percent: 0, streamChars: 0 })).toBeTruthy();
-    }
-  });
-
-  // The full audit (2026-11-11, WS-06 and CV-21): a screen reader heard "Constructing DevExpress XML...".
-  it('names each step in plain words, never the machinery', () => {
-    expect(ANALYZING_STEPS).toContain('Reading your page...');
-    expect(ANALYZING_STEPS).toContain('Laying out the report...');
-    expect(ANALYZING_STEPS).toContain('Writing the report file...');
-    for (const step of ANALYZING_STEPS) expect(step).not.toMatch(/XML|spatial|boundaries|DevExpress|mega|model|OCR|token/i);
   });
 });

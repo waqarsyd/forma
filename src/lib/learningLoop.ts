@@ -38,7 +38,11 @@ import { skeletonFeatures, type ReportSkeleton } from './reportSkeleton';
 import { categoryOf, learnStyle, loadFormaModel, type FormaModel } from './formaModel';
 import { keptExampleBlock } from './houseStyle';
 import { houseStyleBrief } from './formaTeam';
-import { designedReply, generateOffline, type OfflineDesign } from './offlineGenerator';
+import { generateOffline, type OfflineDesign } from './offlineGenerator';
+// Static (2026-11-11, the full audit's TC-09): App's chunk already holds it
+// through promptToReport.ts, so a dynamic import split nothing; in App.tsx,
+// where this lived, it drew the build's "also statically imported" warning.
+import { parseDataSource } from './dataSource';
 
 let deps: LibraryDeps | null = null;
 /** The library, opened once per session; a test passes its own. */
@@ -244,8 +248,7 @@ export async function designFromWords(
   message: string,
   owner: string | null,
   projectId?: string | null,
-): Promise<{ design: OfflineDesign; reply: string }> {
-  const { parseDataSource } = await import('./dataSource');
+): Promise<{ design: OfflineDesign }> {
   const fields = request.dataSchema
     ? parseDataSource(request.dataSchema).fields.map((f) => ({ name: f.name, type: f.type === 'string' ? ('text' as const) : f.type }))
     : undefined;
@@ -254,7 +257,7 @@ export async function designFromWords(
     fields,
     preferences: memory.preferencesOf(memory.readMemory(owner), projectId),
   });
-  return { design, reply: designedReply(design) };
+  return { design };
 }
 
 /**

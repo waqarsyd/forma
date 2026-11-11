@@ -69,7 +69,7 @@ export function glyphRun(font: TrueTypeFont, text: string): { hex: string; glyph
 }
 
 /** A glyph's advance in the thousandths of an em a PDF's widths are in. */
-export const pdfWidth = (font: TrueTypeFont, g: number) => Number(((font.advances[g] * 1000) / font.unitsPerEm).toFixed(3));
+const pdfWidth = (font: TrueTypeFont, g: number) => Number(((font.advances[g] * 1000) / font.unitsPerEm).toFixed(3));
 
 /** The CIDFont's /W array for the glyphs used, one entry each, in glyph order. */
 export function widthsArray(font: TrueTypeFont, glyphs: Iterable<number>): string {

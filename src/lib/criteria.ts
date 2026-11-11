@@ -346,7 +346,7 @@ export const isTrue = truthy;
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 /** A double as .NET Framework prints one: 15 significant digits, no trailing zeros. */
-export function doubleText(x: number): string {
+function doubleText(x: number): string {
   if (!Number.isFinite(x)) return Number.isNaN(x) ? 'NaN' : x > 0 ? 'Infinity' : '-Infinity';
   if (x === 0) return '0';
   const precise = Number(x.toPrecision(15));

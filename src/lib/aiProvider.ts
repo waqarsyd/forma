@@ -130,7 +130,7 @@ export function aiReady(config: ReportConfig): boolean {
 }
 
 /** A Local AI model imported as Forma's vision model (milestone 6): "forma-vision", any tag. */
-export const isFormaVisionName = (model: string | undefined) => /forma-vision/i.test(model ?? '');
+const isFormaVisionName = (model: string | undefined) => /forma-vision/i.test(model ?? '');
 
 /**
  * Whether the AI that designs is itself Forma's vision model on Local AI.

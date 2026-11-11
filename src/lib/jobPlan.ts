@@ -39,8 +39,8 @@ export interface JobPlan {
   skip: string[];
 }
 
-export const PLAN_FILES = 3;
-export const PLAN_PAGES = 9;
+const PLAN_FILES = 3;
+const PLAN_PAGES = 9;
 
 /** The files a message carries, in the order they were attached, from its pages' and texts' upload ids. */
 export function planFiles(images: readonly { uploadId: string; file: string }[], texts: readonly { uploadId: string; file: string }[]): PlanFile[] {

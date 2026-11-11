@@ -31,14 +31,14 @@ import type { PixelBox } from './reportGeometry';
 /** Scripts other than Latin that Forma can read, as Tesseract names their data. */
 export const OTHER_SCRIPTS = ['ara', 'urd', 'hin'] as const;
 /** Latin-script languages besides English. */
-export const LATIN_LANGUAGES = ['fra', 'deu', 'spa'] as const;
+const LATIN_LANGUAGES = ['fra', 'deu', 'spa'] as const;
 
 /** A page read this confidently in English is a Latin-script page. */
 export const CONFIDENT = 70;
 /** A line English read below this is garbled: the kind another script may read. */
-export const GARBLED = 40;
+const GARBLED = 40;
 /** Another script must read the probed lines this many points more confidently than English did, on average. */
-export const SCRIPT_MARGIN = 12;
+const SCRIPT_MARGIN = 12;
 
 /** The page's confidence: its lines', weighted by how much text each holds. */
 export function meanConfidence(lines: readonly OcrLine[]): number {

@@ -51,7 +51,7 @@ export class WrongPassphraseError extends Error {
 }
 
 /** Thrown when the browser has no WebCrypto — see isVaultAvailable(). */
-export class VaultUnavailableError extends Error {
+class VaultUnavailableError extends Error {
   constructor() {
     super(
       "Encrypted key storage needs a secure context. Open the app over HTTPS or on localhost."

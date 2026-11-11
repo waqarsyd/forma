@@ -45,7 +45,7 @@ export const DESIGNER_RELEASE: DesignerRelease = {
 };
 // END designer release
 
-export const DESIGNER_REPO = 'waqarsyd/forma';
+const DESIGNER_REPO = 'waqarsyd/forma';
 
 /**
  * DevExpress's own trial page: 30 days, no registration, the current version

@@ -145,7 +145,5 @@ SELECT REPLACE(@json, N'?>', N'?\\u003e') AS [processing-instruction(forma)] FOR
 `;
 }
 
-/** The same layout from the command line, for a database too large to copy from SSMS. */
-export function sqlcmdLine(server: string, database: string, file = 'forma-schema.sql'): string {
-  return `sqlcmd -S ${server} -d ${database} -E -y 0 -h -1 -i ${file} -o forma-schema.txt`;
-}
+/* `sqlcmdLine`, the same layout from the command line, went on 2026-11-11 (the
+   full audit's RH-06): nothing offered it. `0cec241` has it. */

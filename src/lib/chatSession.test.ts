@@ -20,8 +20,6 @@ import {
   projectMatches,
   projectSearchNote,
   requestAnnouncement,
-  requestMatches,
-  requestState,
   requestTitle,
   requestsOf,
   searchParts,
@@ -43,22 +41,11 @@ describe('requestsOf', () => {
     expect(requestsOf([])).toEqual([]);
   });
 
-  it("names a request by its first line, its pictures or Forma, and says where it stands", () => {
+  it('names a request by its first line, its pictures or Forma', () => {
     const ask = (over: Partial<ChatMessage>) => ({ id: 'q', ask: { id: 'q', role: 'user' as const, text: '', ...over }, replies: [] as ChatMessage[] });
     expect(requestTitle(ask({ text: '\n  Make the total bold\nand more' }))).toBe('Make the total bold');
     expect(requestTitle(ask({ images: ['x', 'y'] }))).toBe('2 pictures');
     expect(requestTitle({ id: 'a', ask: null, replies: [] })).toBe('Forma');
-    const r = (reply: Partial<ChatMessage>) => ({ id: 'q', ask: null, replies: [{ id: 'r', role: 'assistant' as const, text: 'x', ...reply }] });
-    expect(requestState(r({}))).toBe('done');
-    expect(requestState(r({ error: 'no' }))).toBe('failed');
-    expect(requestState(r({ clarify: { questions: [{ id: '1', question: 'Paper?' }], answered: false } }))).toBe('waiting');
-    expect(requestState(r({ confirm: { prompt: 'p', answered: 'yes' } }))).toBe('done');
-    // A plan to start and the Preview's rows to let go wait too (2026-11-10).
-    expect(requestState(r({ plan: { files: [], mode: 'one', skip: [], prompt: 'p', askId: 'u' } }))).toBe('waiting');
-    expect(requestState(r({ consent: { rows: 20, fields: ['A'], source: 'test rows', prompt: 'p', askId: 'u' } }))).toBe('waiting');
-    expect(requestState(r({ consent: { rows: 20, fields: ['A'], source: 'test rows', prompt: 'p', askId: 'u', answered: 'no' } }))).toBe('done');
-    expect(requestMatches(r({ text: 'The Total is bold' }), 'total')).toBe(true);
-    expect(requestMatches(r({ text: 'nothing' }), 'total')).toBe(false);
   });
 });
 

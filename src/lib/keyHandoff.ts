@@ -24,8 +24,8 @@ export interface ChannelLike {
   close(): void;
 }
 
-export const KEY_CHANNEL = 'forma-keys';
-export const KEY_ACROSS_TABS_SETTING = 'forma:keyAcrossTabs';
+const KEY_CHANNEL = 'forma-keys';
+const KEY_ACROSS_TABS_SETTING = 'forma:keyAcrossTabs';
 
 /** Whether tabs share the keys: on unless turned off. */
 export function keysAcrossTabs(storage: Pick<Storage, 'getItem'> | null = typeof localStorage === 'undefined' ? null : localStorage): boolean {

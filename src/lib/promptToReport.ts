@@ -41,7 +41,6 @@
  * is the same rule DevExpress's wizard applies with a real connection.
  */
 import { parseDataSource, type DataSource } from './dataSource';
-import type { RepxAudit } from './repxAudit';
 
 /*
  * PREDEFINED_PROMPTS, six complete descriptions offered as chips in an empty
@@ -190,29 +189,10 @@ export function buildDescriptionBrief(request: ReportDescriptionRequest, source:
 
 /** How many times a report with structural errors is regenerated. DevExpress's default is 3 attempts; one more after the first is enough here, each being a full generation. */
 export const MAX_FIX_ATTEMPTS = 2;
-
-/**
- * Whether to send the report back for repair.
- *
- * Only ERRORS count: a warning is a worse report, not a broken one, and asking
- * for another generation over a warning trades a usable report for a different
- * one. `attempt` is how many generations have already run.
+/*
+ * `shouldRetryForErrors` and `fixInstruction` went on 2026-11-11 (the full
+ * audit's cleanup, after wave 5b): the fix loop moved to lib/printCheck.ts
+ * (`fixUntilPrints`, `findingsToFix`, `fixInstructionFor`), which decides what
+ * to retry for and words the instruction itself, and nothing called these any
+ * more. `0cec241` has them.
  */
-export function shouldRetryForErrors(audit: Pick<RepxAudit, 'errors'>, attempt: number, max: number = MAX_FIX_ATTEMPTS): boolean {
-  return audit.errors > 0 && attempt < max;
-}
-
-/**
- * The instruction for a repair pass, built from the audit so the model is told
- * exactly what is wrong rather than asked to try again.
- */
-export function fixInstruction(audit: Pick<RepxAudit, 'findings'>): string {
-  const errors = audit.findings.filter((f) => f.severity === 'error');
-  const list = errors.map((f) => `- [${f.code}] ${f.message}`).join('\n');
-  return (
-    'The previous report has structural errors that a designer will refuse or silently lose content over. ' +
-    'Keep the layout exactly as it is and fix ONLY these:\n' +
-    list +
-    '\nReturn the complete report again with every band and control present.'
-  );
-}

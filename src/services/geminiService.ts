@@ -897,7 +897,7 @@ Answer with one JSON object and nothing around it: {"reply": "...", "action": "a
  * the instructions above send to a redesign. Forma writes the data source
  * from the JSON (lib/databaseAi.ts), holding every name to the layout.
  */
-export const DATABASE_CHAT_RULES = `THE DATABASE: the user shared their SQL Server database's layout, in <database>, ending with what the report reads now. With it, binding to data, new fields from the database, a filter and a group are edits, not a rebuild:
+const DATABASE_CHAT_RULES = `THE DATABASE: the user shared their SQL Server database's layout, in <database>, ending with what the report reads now. With it, binding to data, new fields from the database, a filter and a group are edits, not a rebuild:
 - data: query, what the report reads, as JSON: {"table":"dbo.Orders","joins":[{"table":"dbo.Customers","type":"LeftOuter","on":[{"from":"CustomerID","to":"CustomerID"}]}],"filter":"[Customers.Region] = ?Region","sort":[{"column":"dbo.Orders.OrderDate","descending":true}],"details":[{"table":"dbo.OrderLines","on":[{"from":"OrderID","to":"OrderID"}]}]}, or {"procedure":"dbo.usp_Name"}, or {"name":"Q","sql":"SELECT ..."}. Write the WHOLE query, starting from what the report reads now and changing what was asked. A join's "from" is the main table's column and "to" the joined one's; a filter's ?Name becomes a report parameter Forma adds. Then bind, or add and bind, the controls that print new fields.
 - group: field, and optionally total (a field to sum in the group's footer): a group band on that field, outside any group the report has.
 So "bind it to dbo.usp_Sales" is a data edit {"procedure":"dbo.usp_Sales"} and binds; "add the customer's phone" is a data edit joining the customers' table, then an add and a bind of [Phone]; "filter by a region parameter" is a data edit with a filter on ?Region; "group by Region" is a group edit. Name only the tables, columns and procedures <database> lists, spelled as it spells them.`;
@@ -1209,8 +1209,8 @@ export function isTruncatedStream(error: any): boolean {
  * There was no limit at all, so a stalled connection showed the working dots
  * for ever and the user had to guess to press Stop.
  */
-export const FIRST_CHUNK_TIMEOUT_MS = 120_000;
-export const BETWEEN_CHUNKS_TIMEOUT_MS = 60_000;
+const FIRST_CHUNK_TIMEOUT_MS = 120_000;
+const BETWEEN_CHUNKS_TIMEOUT_MS = 60_000;
 /**
  * The first window when silence before the answer is expected: a generation
  * whose thinking nobody capped (the owner's bilingual certificate thought for
@@ -1219,7 +1219,7 @@ export const BETWEEN_CHUNKS_TIMEOUT_MS = 60_000;
  * computer's own processor before it writes anything. Two minutes would have
  * cut both off and asked again into the same silence.
  */
-export const SLOW_FIRST_CHUNK_TIMEOUT_MS = 600_000;
+const SLOW_FIRST_CHUNK_TIMEOUT_MS = 600_000;
 
 /**
  * A stream that fails once it has said nothing for too long, as a stream that

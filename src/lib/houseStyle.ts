@@ -51,10 +51,10 @@ import type { Match } from './vectorSearch';
 export const MAX_EXAMPLES = 4;
 
 /** Below this, a match is noise rather than a weak answer. Unmeasured; see the header. */
-export const DEFAULT_MIN_SCORE = 0.45;
+const DEFAULT_MIN_SCORE = 0.45;
 
 /** How many separate retrievals one refine performs. Each is an embedding request. */
-export const MAX_QUERIES = 6;
+const MAX_QUERIES = 6;
 
 export interface StyleBlockOptions {
   maxExamples?: number;

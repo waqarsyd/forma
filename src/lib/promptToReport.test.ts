@@ -3,13 +3,10 @@ import {
   buildDescriptionBrief,
   describeDataSource,
   describedRequest,
-  fixInstruction,
   isDescribable,
   normalizeDescription,
   requestDataSource,
-  shouldRetryForErrors,
   withAnswers,
-  MAX_FIX_ATTEMPTS,
 } from './promptToReport';
 
 describe('normalizeDescription and isDescribable', () => {
@@ -66,25 +63,7 @@ describe('buildDescriptionBrief', () => {
   });
 });
 
-describe('the repair decision', () => {
-  it('retries only on errors, and only up to the limit', () => {
-    expect(shouldRetryForErrors({ errors: 1 }, 1)).toBe(true);
-    expect(shouldRetryForErrors({ errors: 1 }, MAX_FIX_ATTEMPTS)).toBe(false);
-    expect(shouldRetryForErrors({ errors: 0 }, 1)).toBe(false);
-  });
-
-  it('tells the model exactly which errors to fix and nothing else', () => {
-    const text = fixInstruction({
-      findings: [
-        { severity: 'error', code: 'duplicate-ref', message: 'Ref values are reused (5x2).' },
-        { severity: 'warning', code: 'a11y-text-size', message: 'small text' },
-      ],
-    });
-    expect(text).toContain('[duplicate-ref] Ref values are reused (5x2).');
-    expect(text).not.toContain('a11y-text-size');
-    expect(text).toContain('fix ONLY these');
-  });
-});
+/* The repair decision and its instruction are lib/printCheck.ts's since wave 5b (printCheck.test.ts). */
 
 /*
  * A description typed into the chat box (2026-11-01), which took over the

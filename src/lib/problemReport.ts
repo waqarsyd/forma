@@ -22,7 +22,7 @@
  * says `/s/(a shared report)`), and an API key an error message happened to
  * quote (Gemini's or OpenRouter's, said as "(a key)").
  */
-export const ISSUES_URL = 'https://github.com/waqarsyd/forma/issues/new';
+const ISSUES_URL = 'https://github.com/waqarsyd/forma/issues/new';
 /** The issue form it opens, and the ids of the fields it fills. */
 export const BUG_TEMPLATE = 'bug-report.yml';
 

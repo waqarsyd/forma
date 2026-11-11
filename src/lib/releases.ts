@@ -69,7 +69,7 @@ export const AREA_LABELS: Record<ChangeArea, string> = {
 };
 
 /** Where the site lives, for the feed's absolute links. */
-export const SITE_URL = 'https://openforma.web.app';
+const SITE_URL = 'https://openforma.web.app';
 /** The repository, for a version's release notes. */
 export const REPO_URL = 'https://github.com/waqarsyd/forma';
 

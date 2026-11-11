@@ -571,8 +571,8 @@ body {
 }
 
 /* `.no-scrollbar`, which hid an element's scrollbar, was removed on 2026-11-01
-   in the repository audit: no element used it. Recover it from that commit's
-   parent. */
+   in the repository audit (22c73c4): no element used it. Recover it from
+   `22c73c4~1`. */
 
 /* ====================================================================
    SHARED INTERACTION HELPERS
@@ -622,36 +622,10 @@ body {
     }
   }
 
-  /* Loading placeholder for the AI pipeline steps. */
-  .skeleton {
-    position: relative;
-    overflow: hidden;
-    background-color: var(--border);
-  }
-  /* The highlight is derived from --foreground, not --background: against the
-     --border track, a background-derived sweep is *lighter* than the track in
-     light mode but *darker* than it in dark mode, so the shimmer disappeared
-     exactly where it was needed. --foreground inverts with the theme, so the
-     sweep stays a lift on both. */
-  .skeleton::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    transform: translateX(-100%);
-    background-image: linear-gradient(
-      90deg,
-      transparent,
-      color-mix(in srgb, var(--foreground) 14%, transparent),
-      transparent
-    );
-    animation: skeleton-shimmer 1.6s infinite;
-  }
-
-  @keyframes skeleton-shimmer {
-    100% {
-      transform: translateX(100%);
-    }
-  }
+  /* `.skeleton`, the shimmering placeholder of the AI pipeline's old steps, went
+     on 2026-11-11 in the full audit (RH-09): no element has used it since the
+     workspace became a chat. Recover it, with its note on why the sweep is drawn
+     from --foreground, from `0cec241`. */
 
   /* `.dot-grid` was the workspace canvas backdrop: a 22px dot field drawn from
      the shadcn-family `--foreground`. Both canvas surfaces now use `.sheet-grid`

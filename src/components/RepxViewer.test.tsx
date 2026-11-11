@@ -9,10 +9,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import RepxViewer from './RepxViewer';
-import { keepInspection } from '../lib/designerBridge';
+import { forgetInspectionsForTests, keepInspection } from '../lib/designerBridge';
 import type { RepxAudit } from '../lib/repxAudit';
 
 afterEach(cleanup);
+// What one test kept for XML would otherwise still be there for the next.
+afterEach(forgetInspectionsForTests);
 
 const XML = `<?xml version="1.0" encoding="utf-8"?>
 <XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1" Name="Report1" ReportUnit="HundredthsOfAnInch" PageWidth="850" PageHeight="1100" Version="20.1">

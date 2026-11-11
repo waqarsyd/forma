@@ -70,7 +70,7 @@ export function readerCorrection(built: { skeleton: ReportSkeleton; used: DraftG
 
 /** The most boxes a draft brief lists, and the longest text it quotes. */
 export const BRIEF_MAX_ELEMENTS = 150;
-export const BRIEF_MAX_TEXT = 60;
+const BRIEF_MAX_TEXT = 60;
 
 /** A length in hundredths of an inch, in the report's unit, rounded for reading. */
 function inUnit(hundredths: number, unit: string): number {

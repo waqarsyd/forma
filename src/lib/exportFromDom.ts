@@ -6,10 +6,11 @@
  * - `picturesOf`: every chart the pages drew, as a PNG with its box in report
  *   units, for the exports that place a drawing as a picture, as DevExpress
  *   places its chart.
- * - `pageToPng`: a page drawn to an image, cropped to what it prints. Given
- *   the continuous layout, that is DevExpress's default image export, one
- *   picture of the whole report: s54a's came out 384 pixels wide, its title's
- *   width, and as tall as its content.
+ * - `pageToPictures`: a page drawn to an image, cropped to what it prints.
+ *   Given the continuous layout, that is DevExpress's default image export,
+ *   one picture of the whole report: s54a's came out 384 pixels wide, its
+ *   title's width, and as tall as its content; a report taller than a canvas
+ *   can be comes out as several, in a .zip.
  */
 import { pageOps } from './pdfFromDom';
 import type { ExportPicture } from './exportItems';
@@ -214,26 +215,17 @@ async function cropped(page: HTMLElement) {
 }
 
 /** What a report too tall for one picture is said to have become. */
-export const PICTURE_PARTS_NOTE = 'This report is too long for one picture, so it was saved as several, top to bottom, in one .zip.';
+const PICTURE_PARTS_NOTE = 'This report is too long for one picture, so it was saved as several, top to bottom, in one .zip.';
 
 /**
- * A page drawn to a PNG at 96 dpi, cropped to its controls' boxes, as
+ * The page as one PNG at 96 dpi, cropped to its controls' boxes, as
  * DevExpress crops: s54a's image was its 400-unit title's 384 pixels wide
  * though the title's text is far narrower, and ran to the bottom of its last
- * label's box. Without a control, to what it draws. A page taller than a
- * canvas can be is refused in plain words (PX-24); `pageToPictures` writes
- * it as several pictures instead.
- */
-export async function pageToPng(page: HTMLElement): Promise<Blob> {
-  const { ops, images, boxes, left, top, right, bottom } = await cropped(page);
-  if (pictureParts(top, bottom, boxes, MAX_CANVAS_PX / PX_PER_PT).length > 1) throw new Error('the report is too long for one picture.');
-  return new Blob([await regionPng(ops, images, left, top, right, bottom)], { type: 'image/png' });
-}
-
-/**
- * The page as one PNG, or, when it is taller than a canvas can be (PX-24),
- * as several cut between controls, in a .zip named after `base`, with a note
- * that says so for the person who asked.
+ * label's box. Without a control, to what it draws. When it is taller than a
+ * canvas can be (PX-24), as several cut between controls, in a .zip named
+ * after `base`, with a note that says so for the person who asked.
+ * (`pageToPng`, which refused such a page, went on 2026-11-11 in the full
+ * audit's cleanup once the Preview called this instead; `0cec241` has it.)
  */
 export async function pageToPictures(page: HTMLElement, base: string): Promise<{ blob: Blob; extension: 'png' | 'zip'; note: string | null }> {
   const { ops, images, boxes, left, top, right, bottom } = await cropped(page);

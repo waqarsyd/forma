@@ -490,21 +490,17 @@ export function requestTitle(request: ChatRequest): string {
   return pictures ? `${pictures} ${pictures === 1 ? 'picture' : 'pictures'}` : 'Your message';
 }
 
-/**
- * Where a request stands, for its mark in the log: failed, waiting on the
- * person (questions or a redesign to confirm), or answered.
+/*
+ * `requestState` (a request's mark in the log) and `requestMatches` (the log's
+ * search) went on 2026-11-11 in the full audit's RH-07: their callers,
+ * RequestLog and RequestCard, went with the thread panel in 0d8d6ff. Recover
+ * them from `0cec241`.
  */
-export function requestState(request: ChatRequest): 'failed' | 'waiting' | 'done' {
-  const all = [request.ask, ...request.replies].filter(Boolean) as ChatMessage[];
-  if (all.some((m) => m.error)) return 'failed';
-  if (request.replies.some((m) => (m.clarify && !m.clarify.answered) || (m.confirm && !m.confirm.answered) || (m.plan && !m.plan.answered) || (m.consent && !m.consent.answered))) return 'waiting';
-  return 'done';
-}
 
 /** How much of the conversation a chat turn carries, in characters (agent audit item 91). */
-export const CONTEXT_CHARS = 16_000;
+const CONTEXT_CHARS = 16_000;
 /** An older message longer than this is cut to its start and its end. */
-export const TURN_CHARS = 2_400;
+const TURN_CHARS = 2_400;
 
 /**
  * The conversation as a chat turn sends it (2026-11-07, agent audit item 91):
@@ -574,11 +570,6 @@ export function requestAnnouncement(request: ChatRequest): string {
   const said = words.length > 160 ? `${words.slice(0, 157).replace(/\s+\S*$/, '')}…` : words;
   if (reply.result) return said ? `The report is ready. ${said}` : 'The report is ready.';
   return said ? `Forma replied: ${said}` : 'Forma replied.';
-}
-
-/** Whether a request holds `query` in anything it says, for the log's search. */
-export function requestMatches(request: ChatRequest, query: string): boolean {
-  return [request.ask, ...request.replies].some((m) => !!m && messageMatches(m, query));
 }
 
 /**

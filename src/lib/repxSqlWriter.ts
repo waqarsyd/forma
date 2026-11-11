@@ -65,7 +65,7 @@ export function resultTypeOf(sqlType: string): string {
 }
 
 /** A SQL type as the .NET type a report parameter is declared with. */
-export function parameterTypeOf(sqlType: string): string {
+function parameterTypeOf(sqlType: string): string {
   const t = resultTypeOf(sqlType);
   return t === 'Unknown' || t === 'ByteArray' ? 'System.String' : `System.${t}`;
 }
@@ -226,7 +226,7 @@ function relationName(spec: DataSourceSpec, detail: NonNullable<DataSourceSpec['
  * chosen on the Data tab) as master-detail relations, unless the spec names
  * its own.
  */
-export function withDetails(spec: DataSourceSpec): DataSourceSpec {
+function withDetails(spec: DataSourceSpec): DataSourceSpec {
   if (spec.details || spec.query.kind !== 'table' || !spec.query.details?.length) return spec;
   return {
     ...spec,

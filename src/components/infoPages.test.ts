@@ -5,11 +5,11 @@
  * 404, unindexed or untitled, without an error anywhere.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { INFO_DOCS, EXAMPLE_SHARES } from './infoPages';
 import { INFO_ROUTES } from './publicPages';
 import { ROUTES } from '../lib/router';
-import { INDEXED_ROUTES, ROUTE_DESCRIPTIONS } from '../lib/seo';
+import { INDEXED_ROUTES, ROUTE_DESCRIPTIONS, securityTxt } from '../lib/seo';
 import { titleForRoute, viewForRoute } from '../lib/routes';
 import { PRERENDERED } from '../prerender';
 import { STARTING_POINTS } from '../lib/startingPoints';
@@ -80,12 +80,16 @@ describe('the pages SJ added', () => {
 
   /*
    * security.txt (item 110). RFC 9116 makes Contact and Expires required, and
-   * an expired file is one a scanner ignores. This fails once the date has
-   * passed, on purpose: that is the only way anyone hears it is due. Renew by
-   * moving Expires on a year.
+   * an expired file is one a scanner ignores. Since 2026-11-11 (the full
+   * audit's PS-24) the build writes it (vite.config.ts, `securityTxt`), a year
+   * from the day it is built, so a deploy renews it; the hand-written
+   * public/security.txt it replaces would have expired on 2027-11-08 unless
+   * someone remembered.
    */
   it('publishes a security.txt that is valid and current, with the contact SECURITY.md gives', () => {
-    const txt = readFileSync('public/security.txt', 'utf8');
+    expect(existsSync('public/security.txt'), 'a second, hand-written copy would shadow the built one').toBe(false);
+    expect(readFileSync('vite.config.ts', 'utf8')).toMatch(/'security\.txt': \{[^}]*securityTxt\(new Date\(\)\)/);
+    const txt = securityTxt(new Date());
     const fields = (name: string) => [...txt.matchAll(new RegExp(`^${name}: (.+)$`, 'gm'))].map((m) => m[1]);
     expect(fields('Contact')).toContain('mailto:waqarsayyed.official@gmail.com');
     expect(readFileSync('SECURITY.md', 'utf8')).toContain('waqarsayyed.official@gmail.com');

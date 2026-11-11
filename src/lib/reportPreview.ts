@@ -1141,7 +1141,7 @@ const STYLE_NAME: Record<AppearanceProperty, string | null> = {
  * installed here; a later DevExpress may differ, and a generated report almost
  * always writes its own fonts anyway.
  */
-export const DEFAULT_APPEARANCE: Appearance = { Font: 'Times New Roman, 9.75pt' };
+const DEFAULT_APPEARANCE: Appearance = { Font: 'Times New Roman, 9.75pt' };
 
 /** Each named style in the report's `<StyleSheet>`, as control-side properties. */
 function parseStyleSheet(text: string): Map<string, Appearance> {
@@ -1195,7 +1195,7 @@ function ownPart(slice: string): string {
  * children, while its own fill and borders applied. So a panel passes down its
  * parent's colour, not its own.
  */
-export function resolveAppearance(
+function resolveAppearance(
   attrs: string,
   ownSlice: string,
   styles: ReadonlyMap<string, Appearance>,
@@ -1576,7 +1576,7 @@ function parseTableRows(
  * table, and the top is dropped only when all of them draw a bottom. Aligned
  * grids, the only shape measured, reduce to the cell directly above.
  */
-export function shareTableBorders(rows: PreviewRow[]): PreviewRow[] {
+function shareTableBorders(rows: PreviewRow[]): PreviewRow[] {
   const spans = rows.map((row) => {
     const total = row.cells.reduce((sum, c) => sum + c.weight, 0) || 1;
     let at = 0;
@@ -2653,7 +2653,7 @@ function textHeight(
  * records, 33 a page where it would have allowed 30. The margin bands are not
  * included: their height is the page's margin whatever they hold.
  */
-export function isEmptyBand(band: PreviewBand): boolean {
+function isEmptyBand(band: PreviewBand): boolean {
   return band.kind !== 'TopMargin' && band.kind !== 'BottomMargin' && !band.controls.some((c) => c.visible);
 }
 
@@ -2918,7 +2918,7 @@ export interface ChartModel {
  * value. A pie labels each slice with its share of the series' total to two
  * places, 1.28% for 100 of 7,820.
  */
-export function chartModel(control: PreviewControl, rows: readonly TypedRow[] | null | undefined): ChartModel | null {
+function chartModel(control: PreviewControl, rows: readonly TypedRow[] | null | undefined): ChartModel | null {
   if (control.type !== 'XRChart' || !rows?.length || !control.series.length) return null;
   const number = (v: Value | undefined): number | null => {
     if (v === null || v === undefined) return null;

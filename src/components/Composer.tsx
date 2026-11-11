@@ -201,7 +201,7 @@ export interface ComposerProps {
 const NO_BOX = createPromptBox();
 
 /** A model's name as the picker shows it: "2.5-flash" for "gemini-2.5-flash". */
-export function modelLabel(id: string): string {
+function modelLabel(id: string): string {
   return id ? id.replace(/^models\//, '').replace(/^gemini-/, '') : 'Auto';
 }
 
@@ -419,34 +419,14 @@ export default function Composer({
   const describedBy = [uploadNotices.length ? noticeId : '', error ? errorId : '', listening ? listenId : ''].filter(Boolean).join(' ') || undefined;
 
   /*
-   * The box floats over the conversation (2026-11-05), as Gemini's does: the
-   * messages scroll on behind it and fade out there, rather than ending at a
-   * band the box sits in. The box overlaps the foot of the thread by its own
-   * height, which it publishes to its column as `--composer-h`, and the
-   * thread pads its foot by as much so its last message can still scroll
-   * clear. Measured, because the box grows with a long message, staged
-   * files and a notice. Measured from offsetHeight, which a browser without
-   * ResizeObserver (jsdom) still reports once.
+   * The box published its height as `--composer-h` (2026-11-05) while it
+   * floated over the thread, which padded its foot by as much. Since the
+   * thread moved into the panel (2026-11-08) the box sits below it, and
+   * `.wb-panel .wb-thread` sets its own padding, so the measurement reached
+   * nothing and went on 2026-11-11 (the full audit's PR-24); `0cec241` has it.
    */
-  const rootRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const el = rootRef.current;
-    // On the bench since 2026-11-07, where the report's foot reads it to clear
-    // the box (agent audit item 62); on the parent it reached nothing.
-    const column = (el?.closest('.wb-bench') as HTMLElement | null) ?? el?.parentElement;
-    if (!el || !column) return;
-    const publish = () => column.style.setProperty('--composer-h', `${el.offsetHeight}px`);
-    publish();
-    const watch = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(publish) : null;
-    watch?.observe(el);
-    return () => {
-      watch?.disconnect();
-      column.style.removeProperty('--composer-h');
-    };
-  }, []);
-
   return (
-    <div className="wb-composer" ref={rootRef}>
+    <div className="wb-composer">
       {/* The queue (2026-11-05), as Stitch's tray over its box. */}
       {queue.length > 0 && (
         <div className="wb-queue" role="list" aria-label="Queued messages">

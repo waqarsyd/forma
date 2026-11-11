@@ -57,9 +57,11 @@ const PRINT_ONLY = process.argv.includes('--print');
 
 /**
  * Matched as a prefix against the filename, because Vite fingerprints every
- * chunk. `index-` deliberately matches the eager entry chunk *and* the lazily
- * loaded genai chunk; both are budgeted by the same worst-case number, which is
- * the entry chunk's.
+ * chunk. `index-` matched the eager entry chunk *and* the lazily loaded genai
+ * chunk, both budgeted by the entry's number, until 2026-11-11, when the genai
+ * chunk was named (TC-10) and given a budget of its own. A prefix matches in
+ * every folder of dist/ and every budget is applied, not the first match, so
+ * a new prefix must not be the start of any other file's name.
  */
 const BUDGETS = [
   // Lowered from 1,160,000 on 2026-09-01, when Firebase was deferred behind
@@ -151,9 +153,43 @@ const BUDGETS = [
   // from PublicSite.tsx and loads App.tsx only on /workspace. At 567,446 B
   // (97.5%) before, 419,174 B after, -148,272 (-26%); what is left is React,
   // motion and the home page. 446_000 is 94.0%, so the workspace creeping
-  // back into the entry trips it. The genai chunk shares the prefix and sits
-  // at 278 kB under it.
-  { prefix: 'index-', ext: '.js', max: 446_000, note: 'eager entry chunk (the public site) + the genai chunk' },
+  // back into the entry trips it. (The genai chunk shared the prefix then,
+  // at 278 kB under it, until the change below.)
+  //
+  // Lowered to 412_000 on 2026-11-11 (the full audit's TC-10), when the genai
+  // and tesseract chunks were named in vite.config.ts and stopped sharing this
+  // prefix: it watches the entry alone now, 387,396 B in the build of
+  // 2026-11-11 19:47 (wave 10's merge). 446_000 would leave it at 86.9%, room
+  // to hide a regression; 412_000 is 94.0%.
+  { prefix: 'index-', ext: '.js', max: 412_000, note: 'eager entry chunk (the public site)' },
+  /*
+   * The Gemini SDK and tesseract.js, named chunks since 2026-11-11 (TC-10;
+   * chunkFileNames in vite.config.ts), each loaded only when a request or a
+   * picture needs it. Measured as index-*.js in the same 19:47 build:
+   * 278,415 B and 15,829 B. Vendored, so they move with an upgrade
+   * (@google/genai 3 is Owner decision 18), and 296_000 is 94.1%; 17_000 is
+   * 93.1%.
+   *
+   * Every budget here applies to every file whose name it matches, anywhere
+   * in dist/, so a prefix must be one no other file starts with. The first
+   * draft named the OCR chunk `tesseract-`, which the three
+   * tesseract-core-*.wasm.js builds in dist/ocr/ (about 3.9 MB each) also
+   * start with: three breaches of a 17 kB cap on every build.
+   */
+  { prefix: 'gemini-sdk-', ext: '.js', max: 296_000, note: '@google/genai, lazy, loaded with the first request' },
+  { prefix: 'ocr-engine-', ext: '.js', max: 17_000, note: 'tesseract.js, lazy, loaded with the first picture' },
+  /*
+   * The six largest route and pane chunks, unbudgeted until 2026-11-11 (TC-10):
+   * each grew with no number watching it. Measured in the 19:47 build above
+   * and set at 94%, the band this file keeps. Case matters: `ReportPreview-`
+   * is the Preview pane's component, `reportPreview-` the engine it draws with.
+   */
+  { prefix: 'ReportPreview-', ext: '.js', max: 105_000, note: 'the Preview pane, lazy (98,725 B at 94.0%)' },
+  { prefix: 'DocsPage-', ext: '.js', max: 80_000, note: 'the Docs page, lazy (75,105 B at 93.9%)' },
+  { prefix: 'reportPreview-', ext: '.js', max: 69_000, note: 'the Preview engine, lazy (64,916 B at 94.1%)' },
+  { prefix: 'releases-', ext: '.js', max: 50_500, note: 'the changelog and What\'s new, lazy (47,436 B at 93.9%)' },
+  { prefix: 'FeaturesPage-', ext: '.js', max: 47_000, note: 'the Features page, lazy (44,081 B at 93.8%)' },
+  { prefix: 'DatabasePanel-', ext: '.js', max: 37_700, note: 'the Data tab\'s database, lazy (35,468 B at 94.1%)' },
   // The workspace itself (2026-11-08), lazy since the cut above, budgeted so
   // it is watched like the rest: 143,209 B, 152_500 is 93.9%.
   // Raised to 159_000 the same day, at 149,354 B (97.9%): the site audit's
@@ -462,9 +498,12 @@ const BUDGETS = [
    * Handwriting (2026-11-04, lib/handwriting.ts), opt-in. The runtime is from
    * @huggingface/transformers 3.7.6 and its onnxruntime-web; the model is
    * pinned by SHA-256 in scripts/fetch-handwriting.mjs and is optional here,
-   * since a build made without fetching it (CI's) has none.
+   * since a build made without fetching it (CI's) has none. Transformers.js is
+   * optional too since 2026-11-11 (the full audit's RH-13): a build without
+   * FORMA_HANDWRITING=1 compiles the handwriting branch out of lib/ocr.ts
+   * (`__FORMA_HANDWRITING__`), so its 890 kB chunk is not emitted at all.
    */
-  { prefix: 'transformers.web', ext: '.js', max: 947_000, note: 'Transformers.js, handwriting only' },
+  { prefix: 'transformers.web', ext: '.js', max: 947_000, note: 'Transformers.js, handwriting only', optional: true },
   { prefix: 'ort-wasm-simd-threaded', ext: '.wasm', max: 22_970_000, note: "ONNX Runtime's WebAssembly, handwriting and PaddleOCR" },
   { prefix: 'encoder_model_quantized', ext: '.onnx', max: 24_550_000, note: 'TrOCR encoder, handwriting only', optional: true },
   { prefix: 'decoder_model_merged_quantized', ext: '.onnx', max: 43_110_000, note: 'TrOCR decoder, handwriting only', optional: true },

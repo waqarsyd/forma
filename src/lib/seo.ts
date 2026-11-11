@@ -22,12 +22,12 @@ import { NOT_FOUND_TITLE, ROUTE_TITLES, SHARED_REPORT_TITLE, sharedReportId } fr
  * A fork deploying elsewhere changes it here.
  */
 export const SITE_ORIGIN = 'https://openforma.web.app';
-export const SITE_NAME = 'Forma';
+const SITE_NAME = 'Forma';
 /** The 1200x630 card every page previews with, by absolute URL as Open Graph asks. */
-export const OG_IMAGE = `${SITE_ORIGIN}/og-card.png`;
-export const REPOSITORY = 'https://github.com/waqarsyd/forma';
+const OG_IMAGE = `${SITE_ORIGIN}/og-card.png`;
+const REPOSITORY = 'https://github.com/waqarsyd/forma';
 /** The project's public contact address (SECURITY.md); never the git address. */
-export const CONTACT_EMAIL = 'waqarsayyed.official@gmail.com';
+const CONTACT_EMAIL = 'waqarsayyed.official@gmail.com';
 
 /** The pages a search engine may index: the public ones. */
 export const INDEXED_ROUTES = ['/', '/features', '/pricing', '/docs', '/faq', '/examples', '/compare', '/security', '/self-host', '/download', '/about', '/contact', '/changelog', '/terms', '/privacy', '/accessibility'] as const;
@@ -221,7 +221,21 @@ export function robotsTxt(): string {
   return `User-agent: *\nAllow: /\n\nSitemap: ${SITE_ORIGIN}/sitemap.xml\n`;
 }
 
-/** /.well-known/security.txt (RFC 9116), valid for a year from `now`; each build renews it. */
+/**
+ * The two sites that serve the same build (firebase.json's `hosting` array),
+ * each of which answers /.well-known/security.txt with this file, so each is
+ * a canonical address of it.
+ */
+const SECURITY_TXT_ORIGINS = [SITE_ORIGIN, 'https://forma-201ba.web.app'];
+
+/**
+ * /.well-known/security.txt (RFC 9116), valid for a year from `now`; each
+ * build renews it. The one copy since 2026-11-11 (the full audit's PS-24 and
+ * RH-10): the build wrote this at `.well-known/`, which Hosting never deploys
+ * (it drops every dot-path), while a hand-written public/security.txt with a
+ * fixed Expires was what both sites served. The build now writes it at the
+ * root, where the rewrite in firebase.json and server.ts finds it.
+ */
 export function securityTxt(now: Date): string {
   const expires = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
   return [
@@ -230,7 +244,7 @@ export function securityTxt(now: Date): string {
     `Expires: ${expires}`,
     'Preferred-Languages: en',
     `Policy: ${REPOSITORY}/blob/main/SECURITY.md`,
-    `Canonical: ${SITE_ORIGIN}/.well-known/security.txt`,
+    ...SECURITY_TXT_ORIGINS.map((origin) => `Canonical: ${origin}/.well-known/security.txt`),
     '',
   ].join('\n');
 }

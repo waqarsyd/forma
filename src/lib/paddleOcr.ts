@@ -369,7 +369,7 @@ export async function recognizeRegions(
  * 46% of the time and at 98 or more 14%, and only 1% of its words fell below the 60
  * Tesseract is flagged at. Below 95 flags 11% of its words, about half of them wrong.
  */
-export const UNSURE_BELOW = 95;
+const UNSURE_BELOW = 95;
 
 /** A page from its regions in reading order and what each read as. */
 export function pageFromRegions(img: { width: number; height: number }, dpi: number | null, boxes: readonly PixelBox[], lines: readonly (OcrLine | null)[]): PaddlePage {

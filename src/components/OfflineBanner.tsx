@@ -78,7 +78,7 @@ function subscribe(onChange: () => void): () => void {
 }
 
 /** Whether the browser reports a network, and true where nothing can tell (the build's prerender). */
-export function useOnline(): boolean {
+function useOnline(): boolean {
   return useSyncExternalStore(
     subscribe,
     () => navigator.onLine,

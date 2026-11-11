@@ -159,6 +159,5 @@ export interface ExportPicture {
 
 /** `FFRRGGBB` as its six hex digits, as RTF, DOCX and HTML want them. */
 export const rgbHex = (argbColour: string) => argbColour.slice(-6);
-
-/** A colour as `#RRGGBB`, or null. */
-export const cssHex = (css: string | null | undefined) => (css ? `#${rgbHex(argb(css, 'FF000000'))}` : null);
+/* `cssHex`, a colour as `#RRGGBB`, went on 2026-11-11 (the full audit's RH-06):
+   no export called it. `0cec241` has it. */

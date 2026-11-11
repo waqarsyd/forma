@@ -22,9 +22,9 @@
  */
 
 /** PDF and typography both use 1/72". */
-export const POINTS_PER_INCH = 72;
+const POINTS_PER_INCH = 72;
 /** One CSS inch. The mockup is drawn in these. */
-export const CSS_PX_PER_INCH = 96;
+const CSS_PX_PER_INCH = 96;
 
 /**
  * Units per inch for **every** `ReportUnit` DevExpress accepts.
@@ -344,7 +344,7 @@ export function placeImage(
  * as that whole page. The papers this app knows differ by far more: A4 is
  * 1.414 times as tall as it is wide, Letter 1.294, Tabloid 1.545, Legal 1.647.
  */
-export const WHOLE_PAGE_TOLERANCE = 0.02;
+const WHOLE_PAGE_TOLERANCE = 0.02;
 
 /** How many times as long as it is wide, whichever way up. */
 const elongation = (w: number, h: number) => Math.max(w, h) / Math.max(1e-9, Math.min(w, h));

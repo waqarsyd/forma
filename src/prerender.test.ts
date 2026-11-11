@@ -23,7 +23,7 @@ const tags = (html: string, tag: string) => [...html.matchAll(new RegExp(`<${tag
 const textOf = (html: string) => decode(html.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
 
 /** What the build writes beside the pages, or Hosting answers by rewrite (vite.config.ts, appRoutes.ts). */
-const BUILT = new Set(['/licenses.txt', '/changelog.xml', '/sitemap.xml', '/robots.txt', '/sw.js', '/.well-known/security.txt']);
+const BUILT = new Set(['/licenses.txt', '/changelog.xml', '/sitemap.xml', '/robots.txt', '/sw.js', '/security.txt', '/.well-known/security.txt']);
 
 /** Whether a site path is something this site serves: a route, a shared report, a file in public/ or one the build writes. */
 function served(path: string): boolean {

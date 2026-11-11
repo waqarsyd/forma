@@ -131,7 +131,7 @@ export const MAX_KEPT = 30;
  * The longest skeleton kept with a style: thirty of them stay under about
  * 600 kB of this browser's storage, which signed out also holds the projects.
  */
-export const MAX_KEPT_SKELETON_CHARS = 20_000;
+const MAX_KEPT_SKELETON_CHARS = 20_000;
 
 const EMPTY: MemoryState = { memories: [], kept: [], learnFromKept: true, ledger: [] };
 
@@ -255,7 +255,7 @@ export function hintsOf(text: string): MemoryHints {
 }
 
 /** Words that say a memory is for the open project alone (CP-13). */
-export const FOR_THIS_PROJECT = /\bfor\s+(this|the\s+current)\s+(client|customer|project|report)\b/i;
+const FOR_THIS_PROJECT = /\bfor\s+(this|the\s+current)\s+(client|customer|project|report)\b/i;
 
 /**
  * A memory from a message: the words after "remember", capitalised. Said

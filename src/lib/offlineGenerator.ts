@@ -72,33 +72,15 @@ export interface OfflineDesign {
   totals: string[];
 }
 
-/**
- * With no key, the words that make a message a report request for Forma's own
- * model; anything else is answered with OFFLINE_HELP, since there is no model
- * to talk to. Here rather than in App.tsx, so the entry chunk carries none of it.
+/*
+ * The no-key chat's words went on 2026-11-11 (the full audit's PL-31a): the
+ * request test, the two help texts and the reply for a report designed
+ * offline. Nothing showed them since the key became the entry point
+ * (2026-11-05), and they promised a workspace with no key that the owner's rule
+ * forbids. Forma's own design is now only the stand-in when the AI fails, and
+ * the thread speaks of it as of any other report. `git show 0cec241:src/lib/offlineGenerator.ts`
+ * has them.
  */
-const OFFLINE_REQUEST = /\b(create|build|make|design|generate|produce|draft|prepare|report|list|register|invoice|statement|label|labels|payslip|ledger|columns?|fields?|grouped|table)\b/i;
-
-export const isOfflineRequest = (message: string) => OFFLINE_REQUEST.test(message);
-
-export const OFFLINE_HELP =
-  "Forma is working offline, with its own model and no AI key. It designs a report from your words, " +
-  'for example "a stock register grouped by warehouse with totals", or "an invoice with columns item, quantity, price and amount", ' +
-  "and builds one from an image's text, read by OCR in your browser. To ask questions or to have a picture's design read by AI, add a free Gemini key in Settings.";
-
-export const OFFLINE_NEEDS_MODEL =
-  "Without an AI key, Forma builds a report from an image's text, read by OCR in your browser, and designs one from your words. " +
-  "A PDF's text and an attached .repx need an AI provider: add a free Gemini key in Settings.";
-
-/** What the thread says of a report designed offline. */
-export function designedReply(design: OfflineDesign): string {
-  const columns = design.fields.filter((f) => f.name !== design.groupBy).length;
-  return (
-    `Designed "${design.title}" with Forma's own model, offline and with no key: the pattern of its ${design.archetype.label.toLowerCase()} reports, ` +
-    `${columns} column${columns === 1 ? '' : 's'}${design.groupBy ? `, grouped by ${design.groupBy}` : ''}${design.totals.length ? ', with totals' : ''}. ` +
-    'Bind your data in the Data tab. For a design read from a picture or a PDF, add a free Gemini key in Settings.'
-  );
-}
 
 /** Words that name a kind of report rather than a thing it lists. */
 const REPORT_KINDS = /^(stock|inventory|payroll|salary|sales|account|accounts|ledger|invoice|invoices|label|labels|cheque|cheques|catalogue|catalog|production|manufacturing|document|documents|purchase|order|orders)$/i;

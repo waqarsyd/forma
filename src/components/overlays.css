@@ -242,10 +242,6 @@ html[data-modality='keyboard'] .wb-root .wb-project-rename input:focus-visible {
 .wb-help-row[aria-expanded='true'] svg { transform: rotate(180deg); }
 .wb-help-row kbd { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); }
 .wb-help-row svg { color: var(--ink-2); }
-.wb-help-news { list-style: none; margin: 0 0 4px; padding: 4px 10px; max-height: 220px; overflow-y: auto; display: grid; gap: 10px; }
-.wb-help-news b { font-size: 12.5px; }
-.wb-help-news time { margin-left: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); }
-.wb-help-news p { margin: 3px 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-2); }
 .wb-help-note { margin: 6px 10px 2px; font-size: 11.5px; line-height: 1.45; color: var(--ink-faint); }
 
 /* The percentage at the corner is a field you type a size into (ZoomField.tsx),
@@ -291,7 +287,8 @@ input.wb-corner-zoom:hover { background: var(--track); }
 .wb-box-menu button:disabled { color: var(--ink-faint); cursor: default; }
 .wb-box-menu small { font-size: 11.5px; font-weight: 400; line-height: 1.4; color: var(--ink-2); }
 .wb-box-menu button:disabled small { color: var(--ink-faint); }
-.wb-box-menu-head { margin: 8px 10px 2px; font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); }
+/* `.wb-help-news` (What's new inside "?") and `.wb-box-menu-head` went on
+   2026-11-11 (the full audit's RH-09): no element drew either. `0cec241` has them. */
 
 /* The Open in designer dialog (2026-11-09, OpenInDesigner.tsx): the share dialog's frame, a row of actions. */
 .wb-designer-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }

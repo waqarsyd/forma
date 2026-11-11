@@ -31,7 +31,7 @@ export interface DocsSection {
 }
 
 /** The most of the articles' text sent with one question. */
-export const DOCS_MAX_CHARS = 7_000;
+const DOCS_MAX_CHARS = 7_000;
 
 const STOP = new Set(
   'a an and are as at be but by can could do does for from had has have how i if in into is it its me my no not of on or our so than that the their them then there these they this to was we were what when where which who why will with would you your about any some more most other such only own same too very just should now forma report reports'.split(' '),
@@ -52,7 +52,7 @@ const stem = (w: string) =>
     .replace(/(?<=\w{3})e$/, '');
 
 /** The words a question is about. */
-export function questionWords(question: string): string[] {
+function questionWords(question: string): string[] {
   const words = question.toLowerCase().match(/[a-z0-9][a-z0-9.+-]*[a-z0-9]|[a-z0-9]/g) ?? [];
   return [...new Set(words.filter((w) => w.length > 1 && !STOP.has(w)).map(stem))];
 }
@@ -64,7 +64,7 @@ export function questionWords(question: string): string[] {
  * says `share` six times, came before "Sharing a report" for a question
  * about sharing.
  */
-export function scoreSection(words: readonly string[], section: DocsSection): number {
+function scoreSection(words: readonly string[], section: DocsSection): number {
   const keys = DOCS_SECTIONS.find((s) => s.id === section.id)?.keys ?? '';
   const titleWords = new Set(questionWords(section.title));
   const keyWords = new Set(questionWords(keys));

@@ -91,6 +91,9 @@ export function ocrPageFrom(blocks: readonly TesseractBlocks[] | null | undefine
   return { ...image, lines };
 }
 
+/** Whether the build carries handwriting (vite.config.ts); absent under the tests, which read none. */
+declare const __FORMA_HANDWRITING__: boolean | undefined;
+
 /** What the engine reports as it loads and reads, for a progress bar: a stage and 0 to 1. */
 export type OcrProgress = (stage: string, progress: number) => void;
 
@@ -393,7 +396,11 @@ async function readOne(
     // The lines still unsure, read again as handwriting (2026-11-04,
     // lib/handwriting.ts): only on a Latin page where enough of them are
     // unsure, and only where this site serves the model. One that will not
-    // load leaves Tesseract's reading as it was.
+    // load leaves Tesseract's reading as it was. Only in a build made with
+    // FORMA_HANDWRITING=1 (2026-11-11, the full audit's RH-13): the constant
+    // is written in by vite.config.ts, so elsewhere the branch and its import
+    // are compiled out and Transformers.js is not emitted at all.
+    if (!(typeof __FORMA_HANDWRITING__ === 'boolean' && __FORMA_HANDWRITING__)) return page;
     if (language !== 'eng' || !looksHandwritten(page)) return page;
     try {
       const { handwritingServed, readHandwriting } = await import('./handwriting');

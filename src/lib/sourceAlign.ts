@@ -27,7 +27,7 @@ export interface Box {
 }
 
 /** How dark a pixel must be to be ink: luminance below this, of 255. */
-export const INK_THRESHOLD = 170;
+const INK_THRESHOLD = 170;
 /** How close two shapes must be to be the same page: 3% in their height to width ratio. */
 const SAME_SHAPE = 0.03;
 

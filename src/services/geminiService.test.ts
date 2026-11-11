@@ -37,6 +37,26 @@ vi.mock('../lib/designerBridge', async (importOriginal) => ({
   inspectInDesigner: (xml: string) => bridge.inspect?.(xml) ?? Promise.resolve(null),
 }));
 
+/*
+ * Forma Designer, as the generation asks it once the report is on screen
+ * (2026-11-11, the full audit's cleanup after PERF): the real module, but for
+ * whether it answered and what it says, which a test sets. Unset, it has not
+ * answered, as on a computer without it.
+ */
+const designer = vi.hoisted(() => ({
+  answered: false,
+  inspect: null as null | ((repx: string) => Promise<unknown>),
+}));
+vi.mock('../lib/designerBridge', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../lib/designerBridge')>();
+  return {
+    ...real,
+    designerAnswered: () => designer.answered,
+    inspectInDesigner: (repx: string) => (designer.inspect ? designer.inspect(repx) : real.inspectInDesigner(repx, null)),
+  };
+});
+
+import { forgetInspectionsForTests, inspectionOf } from '../lib/designerBridge';
 import {
   analyzeReportDesign,
   chatReply,
@@ -778,6 +798,74 @@ describe('the generation service', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/*
+ * What DevExpress makes of the report, asked once it is on screen (the PERF
+ * batch's `inspect`; the full audit's cleanup, 2026-11-11): its findings are
+ * kept under the very text the result carries, so the REPX pane showing that
+ * file finds them, and asking can fail without the report failing.
+ */
+describe('asking Forma Designer about the finished report', () => {
+  beforeEach(() => {
+    sdk.requests = [];
+    sdk.answers = [];
+    sdk.fallback = null;
+    for (const level of ['log', 'warn', 'error', 'debug', 'info'] as const) vi.spyOn(console, level).mockImplementation(() => {});
+  });
+  afterEach(() => {
+    designer.answered = false;
+    designer.inspect = null;
+    forgetInspectionsForTests();
+    vi.restoreAllMocks();
+  });
+
+  it('keeps what DevExpress found under the result\'s own report, embedded data and all', async () => {
+    // A report with a picture in it: the AI is sent a placeholder, and the result has the picture back.
+    const logo = `img,${'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk'.repeat(50)}`;
+    const uploaded = MOCK_INVOICE_RESPONSE.repxContent.replace('Name="labelTitle"', `Name="labelTitle" ImageSource="${logo}"`);
+    queue((request) => {
+      const sent = partsOf(request).find((p) => typeof p.text === 'string' && p.text.includes('forma-blob:1')).text as string;
+      return streamed(sent.slice(sent.indexOf('<?xml')))(request);
+    });
+    const result = await analyzeReportDesign('Keep it as it is', [attached(uploaded)], CONFIG);
+    expect(result.inspect).toBeTypeOf('function');
+
+    const asked: string[] = [];
+    designer.answered = true;
+    designer.inspect = async (repx) => {
+      asked.push(repx);
+      return { lost: ['tableHead'], dropped: [], margins: null, pages: null };
+    };
+    const found = await result.inspect!();
+    // The file with its picture put back, never the one with the placeholder the AI saw.
+    expect(asked).toEqual([result.repxContent]);
+    expect(result.repxContent).toContain(`ImageSource="${logo}"`);
+    expect(asked[0]).not.toContain('forma-blob');
+    expect(found.map((f) => f.code)).toEqual(['designer-lost-controls']);
+    expect(inspectionOf(result.repxContent)).toEqual(found);
+    expect(inspectionOf(`${result.repxContent} `)).toEqual([]);
+  });
+
+  it('never rejects: a designer that fails to answer is no findings', async () => {
+    queue(streamed(MOCK_INVOICE_RESPONSE.repxContent));
+    const result = await analyzeReportDesign('An invoice', [PICTURE], CONFIG);
+    designer.answered = true;
+    designer.inspect = async () => {
+      throw new Error('connection refused');
+    };
+    await expect(result.inspect!()).resolves.toEqual([]);
+    expect(inspectionOf(result.repxContent)).toEqual([]);
+  });
+
+  it('asks nothing of a computer where Forma Designer has not answered', async () => {
+    queue(streamed(MOCK_INVOICE_RESPONSE.repxContent));
+    const result = await analyzeReportDesign('An invoice', [PICTURE], CONFIG);
+    const ask = vi.fn();
+    designer.inspect = ask;
+    await expect(result.inspect!()).resolves.toEqual([]);
+    expect(ask).not.toHaveBeenCalled();
   });
 });
 

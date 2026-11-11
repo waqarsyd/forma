@@ -320,13 +320,6 @@ import type { PreviewTool } from './components/PreviewRail';
 import type { ReportQuery } from './lib/sqlQuery';
 import type { DataField } from './lib/dataSource';
 import { mergeStoredConfig, toPersistable, STORAGE_KEY as CONFIG_STORAGE_KEY } from './lib/reportConfigStore';
-import {
-  clampReviewWidth,
-  readReviewWidth,
-  REVIEW_DEFAULT_WIDTH,
-  REVIEW_MIN_WIDTH,
-  REVIEW_MAX_WIDTH,
-} from './lib/panelSize';
 
 /** What a request brings that its settings are worked out from (lib/autoConfig.ts). */
 interface DetectionSources {
@@ -435,14 +428,18 @@ export interface SavedReport {
 type RailPanel = 'review' | 'projects' | 'batch' | 'revisions' | 'library';
 
 /**
- * The review column's own geometry, remembered between sessions.
+ * Whether the side panel is showing and the rail is open, remembered between
+ * sessions.
  *
  * Separate keys rather than a slot in `reportConfig`: that object is an
  * allowlist of settings that describe the *document* and is read back into the
- * config the model is given (see `reportConfigStore.ts`). How wide someone
- * likes their panel is not a report setting and must not travel with one.
+ * config the model is given (see `reportConfigStore.ts`). How someone likes
+ * their workspace laid out is not a report setting and must not travel with one.
+ * The column's width went on 2026-11-11 (the full audit's WS-39): its handle had
+ * been hidden on every screen since the side panels started floating
+ * (2026-11-08), so `reviewWidth` is only erased now; `git show 0cec241:src/lib/panelSize.ts`
+ * has the clamp it was read through.
  */
-const REVIEW_WIDTH_KEY = 'reviewWidth';
 const REVIEW_COLLAPSED_KEY = 'reviewCollapsed';
 const RAIL_EXPANDED_KEY = 'railExpanded';
 /* Which library files are house style. Names only -- the library itself is in
@@ -451,20 +448,6 @@ const CANONICAL_KEY = 'libraryCanonical';
 /** The box's house style switch (2026-11-08): 'off' when turned off, absent when on. */
 const HOUSE_STYLE_KEY = 'houseStyle';
 
-/**
- * Bump when a stored width stops meaning what it meant, and a browser carrying
- * the old one is worse off than one carrying nothing.
- *
- * Epoch 2 retires what the rail's widen button wrote. That button jumped the
- * column to 1000px and was removed the day it shipped; a browser that had
- * clicked it was left with a chat column filling two thirds of the window, and
- * the only way back was a double-click on a 7px divider nobody knows to try.
- * Persisted state that outlives the control that set it is not a preference,
- * it is a trap — so it is dropped once, here, rather than left for the user to
- * discover a gesture for.
- */
-const REVIEW_WIDTH_EPOCH = '2';
-const REVIEW_WIDTH_EPOCH_KEY = 'reviewWidthEpoch';
 /* The project open in this tab, kept in sessionStorage so a reload opens it
    again (2026-11-05). An id only; the project itself is where it was saved. */
 const OPEN_PROJECT_KEY = 'forma:openProject';
@@ -479,24 +462,6 @@ const MOCK_MODE = ['true', 'misordered'].includes(((import.meta as { env?: Recor
 /* Pinned and archived projects, kept on this device (2026-11-05). Ids only. */
 const PINNED_PROJECTS_KEY = 'forma:pinnedProjects';
 const ARCHIVED_PROJECTS_KEY = 'forma:archivedProjects';
-
-/**
- * The remembered column width, or the default if this browser has not caught up
- * to the current epoch. Guarded: `localStorage` throws outright in a
- * locked-down profile, and the workspace still has to open.
- */
-function rememberedReviewWidth(): number {
-  try {
-    if (localStorage.getItem(REVIEW_WIDTH_EPOCH_KEY) !== REVIEW_WIDTH_EPOCH) {
-      localStorage.removeItem(REVIEW_WIDTH_KEY);
-      localStorage.setItem(REVIEW_WIDTH_EPOCH_KEY, REVIEW_WIDTH_EPOCH);
-      return REVIEW_DEFAULT_WIDTH;
-    }
-    return readReviewWidth(localStorage.getItem(REVIEW_WIDTH_KEY));
-  } catch {
-    return REVIEW_DEFAULT_WIDTH;
-  }
-}
 
 /**
  * The rail's two widths.
@@ -948,11 +913,9 @@ export default function App() {
   );
   const workspaceProfileRef = useRef<HTMLDivElement>(null);
 
-  /* The column's width and whether it is showing at all. Both persist: a panel
-     you have to re-widen on every reload is one you stop widening. `localStorage`
+  /* Whether the side panel is showing at all, which persists. `localStorage`
      can throw outright in a locked-down profile, so every access is guarded —
      the workspace must still open, just without the memory. */
-  const [reviewWidth, setReviewWidth] = useState(rememberedReviewWidth);
   const [isReviewCollapsed, setIsReviewCollapsed] = useState(() => {
     try {
       return localStorage.getItem(REVIEW_COLLAPSED_KEY) === 'true';
@@ -980,28 +943,14 @@ export default function App() {
     });
   }, []);
 
-  const [isResizingReview, setIsResizingReview] = useState(false);
-  /* Where the pointer went down, and how wide the column was then. Deltas from
-     that origin rather than "pointer position minus rail width", so a fast drag
-     cannot slew the column by however far the pointer got ahead of the paint. */
-  const reviewResizeFrom = useRef({ x: 0, width: REVIEW_DEFAULT_WIDTH });
-
-  /* The stored width is what the user asked for; this is what fits right now.
-     Keeping the two apart is what lets a 700px column survive a spell on a
-     laptop and come back at 700 rather than at whatever the laptop allowed. */
+  /* The window's width, for whether the layout is stacked. */
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   useEffect(() => {
     const onResize = () => setViewportWidth(window.innerWidth);
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
-  /* `panelSize.ts` reserves room for a 56px rail. An expanded one takes its
-     extra out of the same window, so the clamp is handed a viewport that has
-     already paid for it — otherwise widening the rail and then the column
-     leaves the bench short of the reserve it was promised, by the difference
-     between the two widths. */
   const railWidth = isRailExpanded ? RAIL_EXPANDED_WIDTH : RAIL_WIDTH;
-  const layoutWidth = viewportWidth - (railWidth - RAIL_WIDTH);
 
   /* Stacked, the sidebar is a drawer, as Gemini's is on a phone: a menu button
      in a top bar opens it over a dimmed page, and it closes on its own X, on
@@ -1042,15 +991,6 @@ export default function App() {
       toggleRail();
     }
   }, [toggleRail]);
-  const appliedReviewWidth = clampReviewWidth(reviewWidth, layoutWidth);
-
-  const rememberReviewWidth = useCallback((width: number) => {
-    try {
-      localStorage.setItem(REVIEW_WIDTH_KEY, String(width));
-    } catch {
-      /* storage disabled — the width still applies for this session */
-    }
-  }, []);
   const rememberReviewCollapsed = useCallback((collapsed: boolean) => {
     try {
       localStorage.setItem(REVIEW_COLLAPSED_KEY, String(collapsed));
@@ -1058,13 +998,6 @@ export default function App() {
       /* storage disabled — the choice still applies for this session */
     }
   }, []);
-
-  const toggleReviewPanel = useCallback(() => {
-    setIsReviewCollapsed((prev) => {
-      rememberReviewCollapsed(!prev);
-      return !prev;
-    });
-  }, [rememberReviewCollapsed]);
 
   /* Every route into the second column goes through here, so that choosing a
      section while the panel is hidden shows it rather than switching a section
@@ -1174,57 +1107,6 @@ export default function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [showWorkspace, showLogin, isRailDrawerOpen, toggleSidebar, closeRailDrawer, sidePanel, showRailPanel]);
-
-  const beginReviewResize = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    // Stops the drag from being interpreted as a text selection or an image drag
-    // in the panel it starts against.
-    e.preventDefault();
-    reviewResizeFrom.current = { x: e.clientX, width: appliedReviewWidth };
-    // Capture, so the rest of the drag is delivered here even though the pointer
-    // spends it over the bench.
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setIsResizingReview(true);
-  };
-  const moveReviewResize = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isResizingReview) return;
-    const { x, width } = reviewResizeFrom.current;
-    setReviewWidth(clampReviewWidth(width + (e.clientX - x), layoutWidth));
-  };
-  const endReviewResize = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isResizingReview) return;
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
-    setIsResizingReview(false);
-    // Written once, at the end. A setItem per pointermove is a disk write per
-    // frame for a value only the last of which matters.
-    rememberReviewWidth(reviewWidth);
-  };
-  const resetReviewWidth = () => {
-    setReviewWidth(REVIEW_DEFAULT_WIDTH);
-    rememberReviewWidth(REVIEW_DEFAULT_WIDTH);
-  };
-  /* The handle is a real control, not a hover affordance: it takes focus and the
-     arrow keys move it, which is the whole of the WAI-ARIA window-splitter
-     pattern and the only way to resize this without a pointer. */
-  const onReviewResizeKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    let next: number | null = null;
-    const step = e.shiftKey ? 64 : 16;
-
-    if (e.key === 'ArrowLeft') next = appliedReviewWidth - step;
-    else if (e.key === 'ArrowRight') next = appliedReviewWidth + step;
-    else if (e.key === 'Home') next = REVIEW_MIN_WIDTH;
-    else if (e.key === 'End') next = REVIEW_MAX_WIDTH;
-    else if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      toggleReviewPanel();
-      return;
-    } else return;
-
-    e.preventDefault();
-    const clamped = clampReviewWidth(next, layoutWidth);
-    setReviewWidth(clamped);
-    rememberReviewWidth(clamped);
-  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -1821,6 +1703,8 @@ export default function App() {
     // unset. A stored 'selectedAiModel' from the old dropdown would pin a
     // retired id (gemini-2.5-flash) and defeat detection — drop it.
     try { localStorage.removeItem('selectedAiModel'); } catch { /* storage disabled */ }
+    // The side panel's width, kept until its hidden handle went (2026-11-11, WS-39).
+    try { localStorage.removeItem('reviewWidth'); localStorage.removeItem('reviewWidthEpoch'); } catch { /* storage disabled */ }
 
     // The page size is worked out per request (lib/autoConfig.ts); this one is
     // the stand-in until the first request does. There is no header or footer
@@ -3909,7 +3793,7 @@ export default function App() {
   /** A report Forma's own model designs from a description, with no AI: the stand-in when the AI fails (the chat box with no key used it until 2026-11-05). */
   const offlineDesign = async (request: ReportDescriptionRequest, message: string) => {
     // In the person's own style where their memory has one (lib/learningLoop.ts, D1).
-    const { design, reply } = await (await loadLoop()).designFromWords(request, message, previousUidRef.current, openReportId.current);
+    const { design } = await (await loadLoop()).designFromWords(request, message, previousUidRef.current, openReportId.current);
     const newResult: DesignResult = {
       content: design.markdown,
       timestamp: new Date(),
@@ -3919,7 +3803,7 @@ export default function App() {
       usage: null,
     };
     recordLearning({ kind: 'generation', source: 'words', request: 'new', ai: 'forma', draft: 'offline', repx: design.repx });
-    return { design, result: newResult, reply };
+    return { design, result: newResult };
   };
 
   /**
@@ -6748,7 +6632,6 @@ export default function App() {
         // report in the chat's place, as the chat does (workspace.css).
         '--wb-review-w': '0px',
       } as React.CSSProperties}
-      data-resizing={isResizingReview ? 'true' : undefined}
       /* Stacked, the drawer always shows the labelled column, whatever the
          desktop choice: it is the open sidebar, on a phone. */
       data-rail={isRailExpanded || isStackedLayout ? 'wide' : undefined}
@@ -7123,29 +7006,6 @@ export default function App() {
             </Suspense>
           </div>
         </div>
-
-        {/* The column's right edge, made draggable. Last child so it paints over
-            the three panel bodies, and inside the section rather than beside it
-            because the shell's three grid tracks are load-bearing everywhere
-            else — a fourth item would land in the bench's track. */}
-        <div
-          className="wb-resizer"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize the side panel"
-          aria-controls="wb-review-panel"
-          aria-valuenow={appliedReviewWidth}
-          aria-valuemin={REVIEW_MIN_WIDTH}
-          aria-valuemax={REVIEW_MAX_WIDTH}
-          tabIndex={0}
-          title="Drag to resize · double-click to reset"
-          onPointerDown={beginReviewResize}
-          onPointerMove={moveReviewResize}
-          onPointerUp={endReviewResize}
-          onPointerCancel={endReviewResize}
-          onDoubleClick={resetReviewWidth}
-          onKeyDown={onReviewResizeKey}
-        />
       </section>
 
       {/* ============================================================= bench */}

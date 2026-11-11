@@ -40,8 +40,9 @@ export function hostingRewrites(): { source: string; destination: string }[] {
 
 /**
  * Where RFC 9116 says a security contact lives, and the file that answers it
- * (2026-11-08, site audit item 110). The file is `public/security.txt`
- * rather than `public/.well-known/security.txt` because Firebase Hosting's
+ * (2026-11-08, site audit item 110). The file is `security.txt` at the root
+ * (written by the build from src/lib/seo.ts since 2026-11-11, and
+ * public/security.txt before that) rather than under `.well-known/` because Firebase Hosting's
  * `ignore` drops every dot-path from a deploy (`**\/.*`), and `npm start`'s
  * express.static ignores dotfiles too: so Hosting rewrites the address to the
  * file and server.ts does the same.

@@ -1,10 +1,11 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import {createServer, defineConfig, type Plugin} from 'vite';
-import {createReadStream, existsSync, readdirSync, readFileSync, writeFileSync} from 'node:fs';
+import {createReadStream, existsSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {execSync} from 'node:child_process';
-import {relative, resolve} from 'node:path';
+import {createRequire} from 'node:module';
+import {dirname, relative, resolve} from 'node:path';
 import {atomFeed, RELEASES} from './src/lib/releases';
 import {headFor, llmsTxt, pageFile, robotsTxt, securityTxt, sitemapXml, softwareJsonLd, withHead} from './src/lib/seo';
 import {ROUTES} from './src/lib/router';
@@ -22,11 +23,23 @@ import {serviceWorkerSource} from './src/lib/serviceWorker';
  * `dist/ocr/` at build. Nothing is committed: they come with `npm ci`. Each
  * browser downloads one core build, and only when OCR first runs.
  */
+/*
+ * Where the two packages are, asked of Node rather than assumed
+ * (2026-11-11, the full audit's RH-14): tesseract.js-core is tesseract.js's
+ * dependency, not this project's, so it is resolved from tesseract.js. Written
+ * as node_modules/tesseract.js-core it held only while npm happened to hoist
+ * it; a second version anywhere in the tree would nest it and the build would
+ * copy the wrong engine, or none.
+ */
+const requireHere = createRequire(import.meta.url);
+const TESSERACT_JS = dirname(requireHere.resolve('tesseract.js/package.json'));
+const TESSERACT_CORE = dirname(createRequire(resolve(TESSERACT_JS, 'package.json')).resolve('tesseract.js-core/package.json'));
+
 const OCR_ASSETS: Record<string, string> = {
-  'worker.min.js': 'node_modules/tesseract.js/dist/worker.min.js',
-  'tesseract-core-relaxedsimd-lstm.wasm.js': 'node_modules/tesseract.js-core/tesseract-core-relaxedsimd-lstm.wasm.js',
-  'tesseract-core-simd-lstm.wasm.js': 'node_modules/tesseract.js-core/tesseract-core-simd-lstm.wasm.js',
-  'tesseract-core-lstm.wasm.js': 'node_modules/tesseract.js-core/tesseract-core-lstm.wasm.js',
+  'worker.min.js': resolve(TESSERACT_JS, 'dist/worker.min.js'),
+  'tesseract-core-relaxedsimd-lstm.wasm.js': resolve(TESSERACT_CORE, 'tesseract-core-relaxedsimd-lstm.wasm.js'),
+  'tesseract-core-simd-lstm.wasm.js': resolve(TESSERACT_CORE, 'tesseract-core-simd-lstm.wasm.js'),
+  'tesseract-core-lstm.wasm.js': resolve(TESSERACT_CORE, 'tesseract-core-lstm.wasm.js'),
   'eng.traineddata.gz': 'node_modules/@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz',
   // The languages OCR reads besides English (2026-11-04), each fetched only when
   // a page turns out to need it (lib/ocrScript.ts): Arabic, Urdu and Hindi to
@@ -188,13 +201,42 @@ function versionMeta(): Plugin {
   };
 }
 
-/** The files a crawler asks for by name (site audit items 36 and 118), from src/lib/seo.ts. */
+/**
+ * The files a crawler asks for by name (site audit items 36 and 118), from
+ * src/lib/seo.ts. security.txt is written at the root (2026-11-11, the full
+ * audit's PS-24): Hosting deploys no dot-path, so a `.well-known/` copy never
+ * left dist/, and /.well-known/security.txt is rewritten to this one by
+ * firebase.json and server.ts (`SECURITY_TXT` in src/server/appRoutes.ts).
+ */
 const CRAWLER_FILES = (): Record<string, { type: string; body: string }> => ({
   'robots.txt': { type: 'text/plain; charset=utf-8', body: robotsTxt() },
   'sitemap.xml': { type: 'application/xml; charset=utf-8', body: sitemapXml(RELEASES[0]?.date ?? new Date().toISOString().slice(0, 10)) },
-  '.well-known/security.txt': { type: 'text/plain; charset=utf-8', body: securityTxt(new Date()) },
+  'security.txt': { type: 'text/plain; charset=utf-8', body: securityTxt(new Date()) },
   'llms.txt': { type: 'text/plain; charset=utf-8', body: llmsTxt() },
 });
+
+/** The prerender's own dependency cache (`cacheDir` below), which no other server reads. */
+const PRERENDER_CACHE = 'node_modules/.vite-prerender';
+
+/**
+ * The optimizer's half-written folders the prerender leaves behind
+ * (2026-11-11, the full audit's RH-11): it starts optimising, the build is
+ * done before it finishes, and `close()` leaves a `deps_temp_<hash>` folder
+ * every time; 23 of them had collected. Only those, and only in the
+ * prerender's own cache: the dev server's `node_modules/.vite` is never
+ * touched, and the finished `deps/` stays for the next build. Two builds at
+ * once must not share that cache: a git worktree whose node_modules is a
+ * junction to another's reaches the same folder, and one build's sweep would
+ * delete the `deps_temp_*` the other's prerender is still writing. Build one
+ * tree at a time.
+ */
+function clearPrerenderTemp(): void {
+  const cache = resolve(PRERENDER_CACHE);
+  if (!existsSync(cache)) return;
+  for (const name of readdirSync(cache)) {
+    if (name.startsWith('deps_temp_')) rmSync(resolve(cache, name), { recursive: true, force: true });
+  }
+}
 
 /**
  * One page per route, each with its own head, the marketing pages drawn in
@@ -275,7 +317,7 @@ function pagesAndCrawlers(): Plugin {
         // in production mode, on every build, and the dev server's next page
         // load died with "jsxDEV is not a function" and drew nothing: the blank
         // page CLAUDE.md had been putting down to config edits.
-        cacheDir: 'node_modules/.vite-prerender',
+        cacheDir: PRERENDER_CACHE,
         logLevel: 'error',
         plugins: [react()],
         server: { middlewareMode: true, hmr: false, ws: false, watch: null },
@@ -308,6 +350,7 @@ function pagesAndCrawlers(): Plugin {
         }
       } finally {
         await ssr.close();
+        clearPrerenderTemp();
       }
       writeFileSync(resolve(outDir, 'share.html'), withHead(shell, headFor(`/s/${'x'.repeat(16)}`)));
       writeFileSync(resolve(outDir, '404.html'), withHead(notFoundShell, headFor('/404')));
@@ -367,10 +410,10 @@ function packageWork(dir: string): LicensedWork | null {
 function servedWorks(): LicensedWork[] {
   const ofl = (name: string, file: string): LicensedWork => ({ name, license: 'OFL-1.1', text: readFileSync(resolve(file), 'utf8') });
   const served = [
-    'tesseract.js',
-    'tesseract.js-core',
-    ...['eng', 'ara', 'hin', 'urd', 'fra', 'deu', 'spa'].map((l) => `@tesseract.js-data/${l}`),
-  ].map((name) => packageWork(resolve('node_modules', name)));
+    TESSERACT_JS,
+    TESSERACT_CORE,
+    ...['eng', 'ara', 'hin', 'urd', 'fra', 'deu', 'spa'].map((l) => resolve('node_modules', `@tesseract.js-data/${l}`)),
+  ].map((dir) => packageWork(dir));
   return [
     ...served.filter((w): w is LicensedWork => w !== null),
     ofl('Inter (typeface)', 'src/fonts/OFL-inter.txt'),
@@ -462,6 +505,11 @@ export default defineConfig(() => {
       // package.json's version too (2026-11-08, site audit item 43): the release
       // a deploy tags, shown beside the commit it was built from.
       __FORMA_BUILD__: JSON.stringify({ version: JSON.parse(readFileSync('package.json', 'utf8')).version, commit: commitOf(), date: new Date().toISOString().slice(0, 10) }),
+      // Whether this build carries handwriting (2026-11-11, the full audit's
+      // RH-13): false compiles lib/ocr.ts's handwriting branch out, so the
+      // 890 kB Transformers.js chunk is not emitted into a build that serves
+      // no model for it to run.
+      __FORMA_HANDWRITING__: JSON.stringify(WITH_HANDWRITING),
       __FORMA_ASSETS__: JSON.stringify({
         ocr: `/ocr/${VERSIONS.ocr}/`,
         pdfFonts: `/pdf-fonts/${VERSIONS.pdfFonts}/`,
@@ -484,6 +532,15 @@ export default defineConfig(() => {
     // module worker keeps that, where Vite's default IIFE worker cannot.
     worker: { format: 'es' },
     build: {
+      /*
+       * Vite's 500 kB warning is off the scale this site works at (2026-11-11,
+       * the full audit's TC-09): it fired on every build for chunks that are
+       * lazy and budgeted, so a clean build log meant nothing. 950 kB is above
+       * the largest JS chunk any build makes (Transformers.js, 890 kB, in a
+       * FORMA_HANDWRITING=1 build only). scripts/check-bundle-size.mjs owns the
+       * budgets, chunk by chunk; this number only keeps the log quiet.
+       */
+      chunkSizeWarningLimit: 950,
       rollupOptions: {
         output: {
           /**
@@ -521,6 +578,33 @@ export default defineConfig(() => {
             if (id.includes('node_modules/@firebase') || id.includes('node_modules/firebase')) {
               return 'firebase';
             }
+          },
+          /*
+           * The Gemini SDK's and tesseract.js's chunks renamed, not regrouped
+           * (2026-11-11, the full audit's TC-10), so each can have a budget of
+           * its own in scripts/check-bundle-size.mjs. Rollup called both
+           * `index-*` after their packages' entry files: the SDK shared the
+           * public entry chunk's cap, and tesseract.js had none.
+           *
+           * A file name and not manualChunks, which a first draft used. A manual
+           * chunk also takes in its modules' static dependencies that no other
+           * manual chunk holds (the `firebase` comment above), and tesseract.js
+           * is CommonJS: Rollup's CommonJS helpers, which React in the entry
+           * imports too, could have landed in it and made every public page
+           * load OCR eagerly. Renaming the chunk Rollup already made leaves
+           * what goes in it, and what loads it, exactly as before. Each is the
+           * facade of one dynamic import (lib/genai.ts, lib/ocr.ts).
+           *
+           * The names start with nothing the OCR assets start with: `tesseract-`
+           * was the first draft's, and it matched the three
+           * tesseract-core-*.wasm.js builds of about 3.9 MB in dist/ocr/, which
+           * its 17 kB budget would have failed on every build.
+           */
+          chunkFileNames(chunk: { facadeModuleId: string | null }) {
+            const facade = chunk.facadeModuleId ?? '';
+            if (/node_modules[\\/]@google[\\/]genai[\\/]/.test(facade)) return 'assets/gemini-sdk-[hash].js';
+            if (/node_modules[\\/]tesseract\.js[\\/]/.test(facade)) return 'assets/ocr-engine-[hash].js';
+            return 'assets/[name]-[hash].js';
           },
         },
       },

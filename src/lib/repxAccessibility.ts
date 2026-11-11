@@ -51,10 +51,10 @@
 import type { RepxFinding } from './repxAudit';
 
 /** WCAG 1.4.3: 4.5:1 for ordinary text, 3:1 for large text (18pt, or 14pt bold). */
-export const MIN_CONTRAST = 4.5;
-export const MIN_CONTRAST_LARGE = 3;
-export const LARGE_TEXT_PT = 18;
-export const LARGE_BOLD_PT = 14;
+const MIN_CONTRAST = 4.5;
+const MIN_CONTRAST_LARGE = 3;
+const LARGE_TEXT_PT = 18;
+const LARGE_BOLD_PT = 14;
 /** DevExpress's AYXRE010 threshold for body text. */
 export const MIN_BODY_PT = 12;
 
@@ -129,7 +129,7 @@ function channel(c: number): number {
 }
 
 /** WCAG relative luminance. */
-export function luminance(c: Rgb): number {
+function luminance(c: Rgb): number {
   return 0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b);
 }
 

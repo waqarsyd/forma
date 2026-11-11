@@ -118,7 +118,7 @@ export interface SharedReport {
 /** The rules' cap on `emails`. */
 export const MAX_INVITED = 50;
 /** The rules' cap on `result`, in characters. */
-export const MAX_SHARED_RESULT = 1_000_000;
+const MAX_SHARED_RESULT = 1_000_000;
 /** How many shares an account may hold at once (2026-11-08, site audit item 57); firestore.rules caps the count at the same number. */
 export const MAX_SHARES = 100;
 

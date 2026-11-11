@@ -799,9 +799,9 @@ function applyOne(xml: string, edit: AgentEdit, hooks: EditHooks = {}): EditResu
  * designer. They run after any edits, against the report those edits left.
  */
 /** `undo` (2026-11-07, agent audit item 85): "undo that" takes back the last change, as the corner's Undo does. */
-export const TOOL_NAMES = ['show', 'testData', 'export', 'designer', 'undo', 'translate'] as const;
-export const PANES = ['mockup', 'preview', 'data', 'spec', 'repx'] as const;
-export const EXPORT_FORMATS = ['repx', 'pdf', 'csv', 'xlsx', 'docx', 'rtf', 'html', 'png'] as const;
+const TOOL_NAMES = ['show', 'testData', 'export', 'designer', 'undo', 'translate'] as const;
+const PANES = ['mockup', 'preview', 'data', 'spec', 'repx'] as const;
+const EXPORT_FORMATS = ['repx', 'pdf', 'csv', 'xlsx', 'docx', 'rtf', 'html', 'png'] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 export type Pane = (typeof PANES)[number];
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
@@ -941,7 +941,7 @@ export function afterRedesign(tools: readonly AgentTool[], elsewhere = false): {
  * press: until then it was offered as one, and 9 of 14 ordinary phrasings,
  * "print it", "I want it in Excel", "open it in DevExpress", got a button).
  */
-export const ASK_FIRST_TOOLS: readonly ToolName[] = ['export', 'designer', 'translate'];
+const ASK_FIRST_TOOLS: readonly ToolName[] = ['export', 'designer', 'translate'];
 
 /*
  * An export asked for in so many words: the verb, or a format named after

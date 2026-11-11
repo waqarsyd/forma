@@ -47,7 +47,7 @@ export const auth = getAuth(app);
 // The local Auth emulator in development when asked (2026-11-11, the full
 // audit's SA-11a; lib/firebaseClient.ts connects Firestore's beside it).
 if (usesEmulators()) connectAuthEmulator(auth, AUTH_EMULATOR_URL, { disableWarnings: true });
-export const googleProvider = new GoogleAuthProvider();
+const googleProvider = new GoogleAuthProvider();
 
 /**
  * Where the link in an account email brings the person back to (2026-11-11,
@@ -147,7 +147,7 @@ export const hasPasswordProvider = (user: User) =>
  * Password accounts re-enter their password; Google accounts go back through
  * the popup.
  */
-export const reauthenticate = async (user: User, password?: string) => {
+const reauthenticate = async (user: User, password?: string) => {
   if (hasPasswordProvider(user)) {
     if (!user.email) throw new Error('This account has no email address to re-authenticate with.');
     await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password ?? ''));

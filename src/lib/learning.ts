@@ -236,8 +236,8 @@ export interface LearningEvent {
   prompt: string;
 }
 
-export const MAX_OPS = 40;
-export const MAX_SKELETON_CHARS = 80_000;
+const MAX_OPS = 40;
+const MAX_SKELETON_CHARS = 80_000;
 /**
  * The whole report's cap, in UTF-8 bytes (LM-25): 400,000 characters of a
  * report in Arabic or Chinese is over a megabyte, more than a document holds,
@@ -245,7 +245,7 @@ export const MAX_SKELETON_CHARS = 80_000;
  * measured in, and `firestore.rules` caps the characters at the same number.
  */
 export const MAX_FULL_BYTES = 700_000;
-export const MAX_PROMPT_CHARS = 4_000;
+const MAX_PROMPT_CHARS = 4_000;
 export const MAX_REF_CHARS = 64;
 /** Events kept on the device, newest first; older ones go. */
 export const MAX_LOCAL = 500;
@@ -429,7 +429,7 @@ export function learningEvent(input: LearningEventInput, settings: LearningSetti
  * fields at their "none", and a skeleton on a kind that no longer carries one
  * left out, so an event waiting in the outbox is still one the rules take.
  */
-export function upgradeEvent<T extends Partial<LearningEvent> & Pick<LearningEvent, 'id' | 'kind'>>(event: T): T & LearningEvent {
+function upgradeEvent<T extends Partial<LearningEvent> & Pick<LearningEvent, 'id' | 'kind'>>(event: T): T & LearningEvent {
   const kind = (LEARNING_KINDS as readonly string[]).includes(event.kind) ? event.kind : 'edit';
   const ops = Array.isArray(event.ops) ? event.ops.slice(0, MAX_OPS) : [];
   const full = typeof event.full === 'string' && FULL_KINDS.has(kind) && utf8Bytes(event.full) <= MAX_FULL_BYTES ? event.full : '';

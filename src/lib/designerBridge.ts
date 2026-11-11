@@ -154,7 +154,7 @@ export async function loopbackPermission(): Promise<LoopbackPermission> {
  * instead of failing the request (developer.chrome.com, Local Network Access).
  * A browser that does not know the field ignores it.
  */
-export const LOOPBACK_FETCH = { targetAddressSpace: 'loopback' } as unknown as RequestInit;
+const LOOPBACK_FETCH = { targetAddressSpace: 'loopback' } as unknown as RequestInit;
 
 /**
  * Is the companion running? Resolves false rather than throwing — a refused
@@ -306,11 +306,11 @@ export async function sendToDesigner(repxContent: string, fileName: string): Pro
 }
 
 /** Forma Designer accepted the connection and then said nothing: a dialog of its own is the usual cause. */
-export const DESIGNER_STUCK = 'Forma Designer did not answer. If a window of it is open, close it and try again.';
+const DESIGNER_STUCK = 'Forma Designer did not answer. If a window of it is open, close it and try again.';
 /** It answered /health a moment before and could not be reached for the report. */
 export const DESIGNER_GONE = 'Forma Designer stopped answering before it took the report. Start it from the Start menu, then try again.';
 /** It answered, and refused the report. */
-export const DESIGNER_REFUSED = 'Forma Designer could not open this report.';
+const DESIGNER_REFUSED = 'Forma Designer could not open this report.';
 
 /** A refusal by the companion, with its status: 424 says there is no DevExpress to open it in. */
 export class DesignerRefused extends Error {
@@ -379,8 +379,8 @@ export function readDesignerHealth(body: unknown): DesignerHealth | null {
  * browser asked about a second time, and called it not installed. While the
  * browser will ask, the wait is long enough to read and answer.
  */
-export const HEALTH_WAIT_MS = 1500;
-export const PROMPT_WAIT_MS = 30_000;
+const HEALTH_WAIT_MS = 1500;
+const PROMPT_WAIT_MS = 30_000;
 export function healthTimeout(permission: LoopbackPermission): number {
   return permission === 'prompt' ? PROMPT_WAIT_MS : HEALTH_WAIT_MS;
 }
@@ -630,6 +630,16 @@ export function inspectionOf(repxContent: string): readonly RepxFinding[] {
 export function onInspection(listener: () => void): () => void {
   inspectionListeners.add(listener);
   return () => inspectionListeners.delete(listener);
+}
+
+/**
+ * Forgets every kept inspection, for a test (2026-11-11, the full audit's
+ * cleanup after the PERF batch): the map lives as long as the module, so what
+ * one test kept was still there, under the same file, for the next. The page
+ * never calls it; a reload is its reset.
+ */
+export function forgetInspectionsForTests(): void {
+  inspections.clear();
 }
 
 /** The attributes' own names, as a person reads them. */

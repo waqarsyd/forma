@@ -59,7 +59,7 @@ export type FirestoreValue = {
 };
 
 /** A Firestore REST value as plain JSON. */
-export function plainValue(v: FirestoreValue): unknown {
+function plainValue(v: FirestoreValue): unknown {
   if (v.stringValue !== undefined) return v.stringValue;
   if (v.integerValue !== undefined) return Number(v.integerValue);
   if (v.doubleValue !== undefined) return v.doubleValue;
@@ -115,7 +115,7 @@ export interface PullCursor {
   name: string;
 }
 
-export const PAGE_SIZE = 300;
+const PAGE_SIZE = 300;
 
 /**
  * The collection-group query over every account's `learning`, one page.
@@ -367,7 +367,7 @@ export function soundSkeleton(input: string | unknown): ReportSkeleton | null {
 }
 
 /** A skeleton's identity for telling repeats apart: the hash of its JSON. */
-export const skeletonHash = (k: ReportSkeleton): string => shortHash(JSON.stringify(k));
+const skeletonHash = (k: ReportSkeleton): string => shortHash(JSON.stringify(k));
 
 /** Why a pulled event was not learned from. */
 export type DropReason =
@@ -387,7 +387,7 @@ export type DropReason =
 export type AccountState = 'verified' | 'unverified' | 'gone';
 
 /** How many distinct skeletons one account may add to one pull, by default. */
-export const PER_ACCOUNT = 20;
+const PER_ACCOUNT = 20;
 
 export interface TrainingPick {
   event: PulledEvent;
@@ -491,7 +491,7 @@ export interface FsLike {
 }
 
 /** The folders a pull writes an event's files into, each file named `<id>.<ext>`. */
-export const PULL_DIRS = ['skeletons', 'repx', 'prompts'] as const;
+const PULL_DIRS = ['skeletons', 'repx', 'prompts'] as const;
 export type PullDir = (typeof PULL_DIRS)[number];
 
 export interface ReconcilePlan {
