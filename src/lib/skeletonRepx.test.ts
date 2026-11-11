@@ -203,6 +203,44 @@ describe('skeletonToDesign', () => {
     expect(auditRepx(design.repx).findings.map((f) => f.code)).not.toContain('field-named-after-text');
   });
 
+  /*
+   * CC-06 (2026-11-11): DevExpress printed "1240" and "10/14/2026 12:00 AM"
+   * where the page shows "1,240" and "14 Oct 2026", because no value carried
+   * a format; the page's own text says which.
+   */
+  it('prints a value and the totals over it as the page printed the value (CC-06)', () => {
+    const read: PageText[] = [...texts, { text: '1,240', x: 700, y: 163, w: 40, h: 14 }];
+    const { repx } = skeletonToDesign(skeleton, { texts: read });
+    expect(repx).toMatch(/TextFormatString="\{0:n0\}"[^>]*><ExpressionBindings><Item1 [^>]*Expression="\[Quantity\]"/);
+    expect(repx).toMatch(/TextFormatString="\{0:n0\}"[^>]*><Summary Ref="\d+" Running="Group" \/><ExpressionBindings><Item1 [^>]*Expression="sumSum\(\[Quantity\]\)"/);
+    expect(repx.match(/TextFormatString="\{0:n0\}"/g)).toHaveLength(3);
+    // A value with no text read, or one printed as its own text, gets none.
+    expect(skeletonToDesign(skeleton, { texts }).repx).not.toMatch(/TextFormatString="\{0:n/);
+    expect(skeletonToDesign(skeleton, { texts: [...texts, { text: '18', x: 700, y: 163, w: 20, h: 14 }] }).repx).not.toMatch(/TextFormatString="\{0:n/);
+  });
+
+  // CC-05 (2026-11-11): every total was a sum, and a "Margin %" column added up to 248.3.
+  it('averages a column the page calls a percentage, a rate or a margin, and sums the rest (CC-05)', () => {
+    const read = texts.map((t) => (t.text === 'Quantity' ? { ...t, text: 'Margin %' } : t));
+    const { repx } = skeletonToDesign(skeleton, { texts: read });
+    expect(repx.match(/Expression="sumAvg\(\[Margin\]\)"/g)).toHaveLength(2);
+    expect(repx).not.toContain('sumSum(');
+    expect(auditRepx(repx).findings.filter((f) => f.severity === 'error')).toEqual([]);
+  });
+
+  // The review of CC-05 (2026-11-11): a sales report's "Margin" beside Revenue
+  // and Cost, or an invoice's "Rate", is money, and its total is a sum.
+  it('sums a bare "Margin" or "Rate" column over plain money, and averages it only when its values print a "%"', () => {
+    for (const caption of ['Margin', 'Rate']) {
+      const read = [...texts.map((t) => (t.text === 'Quantity' ? { ...t, text: caption } : t)), { text: '1,240.00', x: 700, y: 163, w: 50, h: 14 }];
+      const { repx } = skeletonToDesign(skeleton, { texts: read });
+      expect(repx.match(new RegExp(`Expression="sumSum\\(\\[${caption}\\]\\)"`, 'g'))).toHaveLength(2);
+      expect(repx).not.toContain('sumAvg(');
+    }
+    const percent = [...texts.map((t) => (t.text === 'Quantity' ? { ...t, text: 'Margin' } : t)), { text: '28.7%', x: 700, y: 163, w: 40, h: 14 }];
+    expect(skeletonToDesign(skeleton, { texts: percent }).repx.match(/Expression="sumAvg\(\[Margin\]\)"/g)).toHaveLength(2);
+  });
+
   it('writes whole margins and a whole page, as DevExpress keeps them (CC-03)', () => {
     const fractional = { ...skeleton, paper: 'Custom' as const, width: 826.4, height: 1169.6, margins: { top: 43.45, bottom: 23.4, left: 50.6, right: 14.92 } };
     const { repx } = skeletonToDesign(fractional);

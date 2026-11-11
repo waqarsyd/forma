@@ -9,7 +9,8 @@ import { normalizeItemNames } from './repxItems';
 import { ensureUniqueRefs } from './repxRefs';
 import { repairDpi } from './repxDpi';
 import { repairPaper } from './repxPaper';
-import { liftReportMargins } from './repxMargins';
+import { liftReportMargins, repairWholeMargins } from './repxMargins';
+import { repairCalculatedFields } from './repxCalculatedFields';
 import { liftParameterTypes } from './repxParameters';
 import { repairSummaries } from './repxSummaries';
 import { repairGroupLevels } from './repxGroups';
@@ -36,8 +37,10 @@ const REPORT = `<?xml version="1.0" encoding="utf-8"?>
 
 describe('the repair chain', () => {
   it('runs the passes in the order the generation always did', () => {
+    // Whole margins beside the paper and calculated fields after the groups
+    // joined on 2026-11-11 (CC-03, CC-04), where the generation ran them beside the chain.
     expect([...REPAIR_ORDER]).toEqual([
-      'items', 'refs', 'dpi', 'paper', 'margins', 'overlaps', 'parameters', 'totals', 'groups', 'cross-tabs', 'data source', 'logins', 'scripts', 'styles',
+      'items', 'refs', 'dpi', 'paper', 'whole margins', 'margins', 'overlaps', 'parameters', 'totals', 'groups', 'calculated fields', 'cross-tabs', 'data source', 'logins', 'scripts', 'styles',
     ]);
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -53,11 +56,27 @@ describe('the repair chain', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(console, 'debug').mockImplementation(() => {});
     let byHand = REPORT;
-    for (const pass of [normalizeItemNames, ensureUniqueRefs, repairDpi, repairPaper, liftReportMargins, (x: string) => liftParameterTypes(x, '23.2'), repairSummaries, repairGroupLevels, repairCrossTabs, stripStoredCredentials, stripReportScripts, liftStyles]) {
+    for (const pass of [normalizeItemNames, ensureUniqueRefs, repairDpi, repairPaper, repairWholeMargins, liftReportMargins, (x: string) => liftParameterTypes(x, '23.2'), repairSummaries, repairGroupLevels, (x: string) => repairCalculatedFields(x), repairCrossTabs, stripStoredCredentials, stripReportScripts, liftStyles]) {
       const r = pass(byHand);
       if (r.applied) byHand = r.xml;
     }
     expect(repairRepx(REPORT, { version: '23.2' }).xml).toBe(byHand);
+  });
+
+  it('makes the margins whole and declares a group field as the calculated field its header prints, with the data fields', () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const letters = REPORT.replace('Margins="0, 0, 0, 0"', 'Margins="39.37, 39.37, 20, 20"').replace(
+      '<Item3 Ref="5" ControlType="DetailBand" Name="Detail" HeightF="60" />',
+      '<Item3 Ref="10" ControlType="GroupHeaderBand" Name="GroupHeader1" HeightF="40"><GroupFields><Item1 Ref="11" FieldName="FirstLetter" /></GroupFields><Controls><Item1 Ref="12" ControlType="XRLabel" Name="letter" LocationFloat="0,0" SizeF="200,40"><ExpressionBindings><Item1 Ref="13" EventName="BeforePrint" PropertyName="Text" Expression="Substring([ProductName], 0, 1)" /></ExpressionBindings></Item1></Controls></Item3>' +
+        '<Item4 Ref="5" ControlType="DetailBand" Name="Detail" HeightF="60" />',
+    ).replace('<Item4 Ref="6" ControlType="BottomMarginBand"', '<Item5 Ref="6" ControlType="BottomMarginBand"');
+    const { xml, steps } = repairRepx(letters, { version: '23.2', fields: ['ProductName', 'UnitPrice'] });
+    expect(steps.find((s) => s.name === 'whole margins')?.applied).toBe(true);
+    expect(/Margins="([^"]*)"/.exec(xml)?.[1]).toBe('39, 39, 20, 20');
+    expect(steps.find((s) => s.name === 'calculated fields')?.applied).toBe(true);
+    expect(xml).toMatch(/<CalculatedFields>[\s\S]*Name="FirstLetter"[\s\S]*Expression="Substring\(\[ProductName\], 0, 1\)"/);
   });
 
   it('takes out code the answer carried, and keeps code the user brought', () => {

@@ -16,7 +16,12 @@
  *   column, so `[Amount]` rather than `[Field3]` wherever a caption was read.
  * - **A total** sums the field of the value in its column, running over its
  *   band: a group footer's for each group, the report footer's over the
- *   report and the page footer's over the page.
+ *   report and the page footer's over the page. A column whose caption or
+ *   field names a percentage, a rate, a margin or an average is averaged
+ *   instead (2026-11-11, CC-05).
+ * - **A value or a total prints as the page printed it**: the format that
+ *   gives the page's own text back exactly, "1,763.00" or "14 Oct 2026",
+ *   when one does (2026-11-11, CC-06, formatFromText.ts).
  * Only the bands whose place on the page does not depend on how many records
  * print are matched against the reading. Those are the margins, the report
  * and page headers, the group headers above the first record, the first
@@ -32,6 +37,7 @@ import { ensureUniqueRefs } from './repxRefs';
 import { repairDpi } from './repxDpi';
 import { repairPaper } from './repxPaper';
 import { wholeMargins } from './repxMargins';
+import { formatFor, isPlain, saysRatio } from './formatFromText';
 import { pointsToUnits } from './reportGeometry';
 import type { DetectedLayout } from './ocrLayout';
 import type { BandKind } from './reportPreview';
@@ -342,6 +348,8 @@ export function skeletonToDesign(
     return f;
   };
   const values = places.filter((p) => p.role === 'value');
+  /** The caption over each value's column, by place, for how its total adds up. */
+  const captionOf = new Map<string, string>();
   for (const v of values) {
     const own = named(v);
     if (own) {
@@ -365,6 +373,7 @@ export function skeletonToDesign(
         return da - db || overlap(b, v) - overlap(a, v);
       })[0];
     const heading = beside ?? above;
+    if (heading) captionOf.set(key(v), words.get(key(heading)) ?? '');
     const base = heading ? fieldFromCaption(words.get(key(heading)) ?? '') : '';
     if (base && !fields.includes(base)) {
       fields.push(base);
@@ -373,18 +382,45 @@ export function skeletonToDesign(
       fieldOf.set(key(v), unique(''));
     }
   }
-  // A total sums the value in its column; one with none above it gets a field of its own.
+  /*
+   * The format each value and total prints in, read off the page's own text
+   * where it printed (2026-11-11, the full audit's CC-06, formatFromText.ts):
+   * "14 Oct 2026" is `{0:dd MMM yyyy}` and "1,763.00" `{0:n2}`, where
+   * DevExpress's default printed "10/14/2026 12:00 AM" and "1763.0". Only a
+   * format that prints the page's text back exactly is written.
+   */
+  const formatOf = new Map<string, string>();
+  const readFormat = (p: Place) => {
+    const found = p.box ? formatFor(textIn(texts, p.box)) : null;
+    return found && !isPlain(found) ? found.format : undefined;
+  };
+  for (const v of values) {
+    const format = readFormat(v);
+    if (format) formatOf.set(key(v), format);
+  }
+  /*
+   * A total sums the value in its column; one with none above it gets a field
+   * of its own. A column the page shows to be a ratio is averaged, never summed
+   * (2026-11-11, CC-05): the builder summed every total, and a "Margin %"
+   * column added up to 248.3. Only on evidence, which is a caption or field
+   * that says percent, ratio or average (`saysRatio`), or a "%" printed in the
+   * column or its total: a bare "Margin" or "Rate" is as often money that
+   * really is summed (the review of CC-05), and nothing after the builder
+   * would put a sum back.
+   */
+  const percentIn = (p: Place | undefined) => !!p?.box && textIn(texts, p.box).includes('%');
+  const averaged = new Set<string>();
   for (const t of places.filter((p) => p.role === 'total')) {
     const own = named(t);
-    if (own) {
-      fieldOf.set(key(t), own);
-      continue;
-    }
     const under = values
       .map((v) => ({ v, o: overlap(v, t) }))
       .filter((x) => x.o > 0)
       .sort((a, b) => b.o - a.o)[0];
-    fieldOf.set(key(t), under ? fieldOf.get(key(under.v))! : unique(''));
+    const field = own || (under ? fieldOf.get(key(under.v))! : unique(''));
+    fieldOf.set(key(t), field);
+    if (saysRatio(field) || (under && saysRatio(captionOf.get(key(under.v)) ?? '')) || percentIn(under?.v) || percentIn(t)) averaged.add(key(t));
+    const format = readFormat(t) ?? (under ? formatOf.get(key(under.v)) : undefined);
+    if (format) formatOf.set(key(t), format);
   }
 
   let ref = 0;
@@ -393,11 +429,15 @@ export function skeletonToDesign(
     `<ExpressionBindings><Item1 Ref="${next()}" EventName="BeforePrint" PropertyName="Text" Expression="${attr(expression)}" /></ExpressionBindings>`;
   const content = (p: Pick<Place, 'band' | 'control' | 'row' | 'cell'>, role: SkeletonRole, kind: BandKind) => {
     const field = fieldOf.get(key(p));
-    if (role === 'value') return { text: undefined, inner: binding(`[${field}]`), shown: `[${field}]` };
-    if (role === 'total')
-      return { text: undefined, inner: `<Summary Ref="${next()}" Running="${SCOPE[kind] ?? 'Report'}" />${binding(`sumSum([${field}])`)}`, shown: `sum [${field}]` };
+    const format = formatOf.get(key(p));
+    const formatted = format ? ` TextFormatString="${attr(format)}"` : '';
+    if (role === 'value') return { text: undefined, inner: binding(`[${field}]`), shown: `[${field}]`, formatted };
+    if (role === 'total') {
+      const sum = averaged.has(key(p)) ? 'sumAvg' : 'sumSum';
+      return { text: undefined, inner: `<Summary Ref="${next()}" Running="${SCOPE[kind] ?? 'Report'}" />${binding(`${sum}([${field}])`)}`, shown: `${sum === 'sumAvg' ? 'average' : 'sum'} [${field}]`, formatted };
+    }
     const text = words.get(key(p)) ?? '';
-    return { text, inner: '', shown: text };
+    return { text, inner: '', shown: text, formatted: '' };
   };
 
   const bandsXml: { kind: BandKind; xml: string }[] = [];
@@ -459,7 +499,7 @@ export function skeletonToDesign(
               return {
                 xml:
                   `<Item${k2 + 1} Ref="${next()}" ControlType="XRTableCell" Name="${name}_${ri + 1}_${k2 + 1}" Weight="${n(cell.weight)}"` +
-                  `${got.text !== undefined ? ` Text="${attr(got.text)}"` : ''}${fontAttr(cell.font)} TextAlignment="${ALIGN[cell.align]}" Padding="2,2,0,0,100">${got.inner}</Item${k2 + 1}>`,
+                  `${got.text !== undefined ? ` Text="${attr(got.text)}"` : ''}${got.formatted}${fontAttr(cell.font)} TextAlignment="${ALIGN[cell.align]}" Padding="2,2,0,0,100">${got.inner}</Item${k2 + 1}>`,
                 shown: got.shown,
                 weight: cell.weight,
               };
@@ -476,12 +516,12 @@ export function skeletonToDesign(
         case 'label':
         case 'richText':
         case 'checkbox': {
-          const got = c.role === 'decoration' ? { text: '', inner: '', shown: '' } : content(self, c.role, b.kind);
+          const got = c.role === 'decoration' ? { text: '', inner: '', shown: '', formatted: '' } : content(self, c.role, b.kind);
           const control = c.kind === 'checkbox' ? 'XRCheckBox' : 'XRLabel';
           const multiline = c.kind === 'richText' ? ' Multiline="true" WordWrap="true"' : '';
           const text = got.text !== undefined && got.text !== '' ? ` Text="${attr(got.text)}"` : '';
           controls.push(
-            `<${item} Ref="${next()}" ControlType="${control}" Name="${name}"${text} TextAlignment="${ALIGN[c.align]}"${multiline}${at}${look} Padding="2,2,0,0,100">${got.inner}</${item}>`,
+            `<${item} Ref="${next()}" ControlType="${control}" Name="${name}"${text}${got.formatted} TextAlignment="${ALIGN[c.align]}"${multiline}${at}${look} Padding="2,2,0,0,100">${got.inner}</${item}>`,
           );
           elements.push(element(c.kind === 'checkbox' ? 'checkbox' : 'label', got.shown));
           return;

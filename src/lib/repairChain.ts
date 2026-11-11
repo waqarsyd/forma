@@ -16,10 +16,17 @@
  *   DevExpress will load, and a collection named wrong loads empty.
  * - **Dpi**, then **paper**, before anything that reads geometry: every band
  *   and control is read at its own Dpi, and the page is PaperKind's.
+ * - **Whole margins** beside the paper (2026-11-11, CC-03): DevExpress 20.1
+ *   drops a `Margins` that is not four whole numbers, and a fractional custom
+ *   page size, so they are made whole before anything reads the page.
  * - **Margins** next, from the bands as they now stand; **overlaps** only for
  *   a report designed from words, where there is no source to be faithful to.
  * - **Parameters, totals, groups, cross-tabs**: the parts the model writes in
- *   a form DevExpress reads differently, each measured by printing.
+ *   a form DevExpress reads differently, each measured by printing. A group
+ *   on a field nothing declares becomes the **calculated field** its header
+ *   prints (CC-04), after the group levels, against the data's own fields
+ *   when they are known. Both ran beside the chain in the generation for a
+ *   wave, until this order took them.
  * - **The data source** carried through a redesign, then **stored logins** and
  *   **scripts** removed (2026-11-11, SE-02b: Forma writes no code, so code in
  *   a generated report came from the model unless the user brought it).
@@ -29,7 +36,8 @@ import { normalizeItemNames } from './repxItems';
 import { ensureUniqueRefs } from './repxRefs';
 import { repairDpi } from './repxDpi';
 import { repairPaper } from './repxPaper';
-import { liftReportMargins } from './repxMargins';
+import { liftReportMargins, repairWholeMargins } from './repxMargins';
+import { repairCalculatedFields } from './repxCalculatedFields';
 import { resolveOverlaps } from './repxOverlaps';
 import { liftParameterTypes } from './repxParameters';
 import { repairSummaries } from './repxSummaries';
@@ -49,6 +57,8 @@ export interface RepairContext {
   previous?: string | null;
   /** The user brought code in their own report, so the answer may keep it. */
   keepScripts?: boolean;
+  /** The data's own fields when known (the Data tab's schema), for the calculated-field repair. */
+  fields?: readonly string[];
 }
 
 /** One pass, as it went. */
@@ -64,11 +74,13 @@ export const REPAIR_ORDER = [
   'refs',
   'dpi',
   'paper',
+  'whole margins',
   'margins',
   'overlaps',
   'parameters',
   'totals',
   'groups',
+  'calculated fields',
   'cross-tabs',
   'data source',
   'logins',
@@ -100,11 +112,13 @@ const LOGGED: Record<RepairName, [applied: 'warn' | 'log', skipped: 'debug' | 'l
   refs: ['warn', 'debug'],
   dpi: ['log', 'debug'],
   paper: ['log', 'debug'],
+  'whole margins': ['warn', 'debug'],
   margins: ['log', 'log'],
   overlaps: ['log', 'debug'],
   parameters: ['log', 'log'],
   totals: ['warn', 'debug'],
   groups: ['warn', 'debug'],
+  'calculated fields': ['warn', 'debug'],
   'cross-tabs': ['warn', 'debug'],
   'data source': ['warn', null],
   logins: ['warn', null],
@@ -119,11 +133,13 @@ export function repairRepx(xml: string, ctx: RepairContext): { xml: string; step
     refs: ensureUniqueRefs,
     dpi: repairDpi,
     paper: repairPaper,
+    'whole margins': repairWholeMargins,
     margins: liftReportMargins,
     overlaps: ctx.description ? (text) => resolveOverlaps(text) : null,
     parameters: (text) => liftParameterTypes(text, ctx.version),
     totals: repairSummaries,
     groups: repairGroupLevels,
+    'calculated fields': (text) => repairCalculatedFields(text, { fields: ctx.fields }),
     'cross-tabs': repairCrossTabs,
     'data source': ctx.previous ? (text) => carryDataSource(ctx.previous!, text) : null,
     logins: stripStoredCredentials,

@@ -233,9 +233,7 @@ import type { RepxAudit, RepxFinding } from './lib/repxAudit';
 import type { AgentTool, FormatAction } from './lib/agentEdit';
 import {
   describedRequest,
-  fixInstruction,
   isDescribable,
-  shouldRetryForErrors,
   withAnswers,
   type ClarificationAnswer,
   type ReportDescriptionRequest,
@@ -2718,8 +2716,13 @@ export default function App() {
    * Checked with RepxProbe render: the turned report printed every string
    * where the page as seen printed it. A report already laid out right to
    * left is left as it is. Loaded when needed, off the workspace's chunk.
+   *
+   * `built`: one of Forma's own builds, which goes through every repair an
+   * AI's answer does first (2026-11-11, the full audit's ARCH-1b,
+   * lib/repairChain.ts); it had three of them.
    */
-  const asConfigured = async (xml: string, asSeen = false): Promise<string> => {
+  const asConfigured = async (xml: string, asSeen = false, built = false): Promise<string> => {
+    if (built && xml) xml = (await import('./lib/repairChain')).repairRepx(xml, { version: effectiveConfig().version }).xml;
     if (!effectiveConfig().rtl || !xml) return xml;
     const { makeRightToLeft, toLogicalRtl } = await import('./lib/repxRtl');
     return makeRightToLeft(asSeen ? toLogicalRtl(xml) : xml);
@@ -2732,7 +2735,7 @@ export default function App() {
       timestamp: new Date(),
       title: built.title,
       layout: built.layout,
-      repxContent: await asConfigured(built.repxContent, true),
+      repxContent: await asConfigured(built.repxContent, true, true),
       usage: null,
     };
     setResult(newResult);
@@ -2765,8 +2768,8 @@ export default function App() {
   const handleReaderBuild = async (built: ReaderBuiltReport, copy: OcrBuiltReport | null) => {
     // Labelled by result (2026-11-11, the full audit's WS-05): the copy is the
     // page as it printed, the build the report made from it.
-    if (copy) recordRevision('Your page as printed', { content: copy.markdown, timestamp: new Date(), title: copy.title, layout: copy.layout, repxContent: await asConfigured(copy.repxContent, true), usage: null });
-    const newResult: DesignResult = { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: await asConfigured(built.repxContent, true), usage: null };
+    if (copy) recordRevision('Your page as printed', { content: copy.markdown, timestamp: new Date(), title: copy.title, layout: copy.layout, repxContent: await asConfigured(copy.repxContent, true, true), usage: null });
+    const newResult: DesignResult = { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: await asConfigured(built.repxContent, true, true), usage: null };
     setResult(newResult);
     recordRevision('From your page', newResult);
     setActiveTab('ui');
@@ -4057,71 +4060,35 @@ export default function App() {
       }
 
       /*
-       * The repair loop, for a report designed from words.
-       *
-       * DevExpress's Prompt-to-Report retries a layout the model got wrong up
-       * to RetryAttemptCount times. Here the audit decides: only ERRORS -- a
-       * file a designer refuses or silently loses content over -- send the
-       * report back, and the model is told exactly which, with the previous
-       * report as the thing to fix rather than a blank page. Warnings never
-       * do; a second generation over a warning trades a usable report for a
-       * different one. Bounded by MAX_FIX_ATTEMPTS in lib/promptToReport.ts.
-       * Image runs are not retried this way: an error there is more often a
-       * repair that declined than a layout the model can be talked out of.
+       * The fix loop (lib/printCheck.ts, `fixUntilPrints`), moved out of here
+       * on 2026-11-11 and opened to every run (the full audit's CC-01): any
+       * audit ERROR on a report designed from words, as DevExpress's
+       * Prompt-to-Report retries a layout the model got wrong, and on every
+       * run what printing it with the page's own records shows, an expression
+       * DevExpress cannot read, and a grid drawn as loose texts (PL-11b). The
+       * model is told exactly which, with the report as the thing to fix.
+       * The grid is the one warning that sends it back; no other does, and a
+       * run that started from a report (the open one, or a .repx attached)
+       * keeps its own expressions. One more answer at most, from this
+       * click's allowance (PL-20); the better is kept, and a fix that fails
+       * keeps the report so far (batch AG item 23).
        */
+      const startedFromReport = Boolean(open?.repxContent) || currentTexts.some((t) => isReportFile({ file: t.file ?? '' }));
+      const fixed = await import('./lib/printCheck').then((m) => m.fixUntilPrints(response, {
+        described: Boolean(describeRequest),
+        fields,
+        fromReport: startedFromReport,
+        spent: response.usage ?? null,
+        left: () => budget.left,
+        aborted: () => signal.aborted,
+        ask: (instruction, repxContent) => analyzeReportDesign(instruction, [], answering, { repxContent }, signal, handleStreamProgress, { description: describeRequest, database, fields, budget, evidence: team.evidence }),
+      }));
+      if (!fixed) return;
+      response = fixed.answer;
+      /** The file the print findings were found in; a later change to it makes them stale. */
+      const printed = response.repxContent;
       /** Every answer this report cost, the repairs' too (agent audit item 79). */
-      let spent: TokenUsage | null = response.usage ?? null;
-      if (describeRequest) {
-        const { auditRepx } = await import('./lib/repxAudit');
-        let attempt = 1;
-        let audit = auditRepx(response.repxContent, response.layout, { fields });
-        while (shouldRetryForErrors(audit, attempt)) {
-          // From the same allowance as the request that wrote it (PL-20).
-          if (budget.left <= 0) {
-            console.warn(`Report has ${audit.errors} structural error(s), and this request's allowance is spent; keeping it as it is.`);
-            break;
-          }
-          attempt += 1;
-          console.warn(`Report has ${audit.errors} structural error(s) after repairs; asking for a fix (attempt ${attempt}).`);
-          /*
-           * The report so far is a checkpoint (2026-11-10, the AI accuracy
-           * programme, batch AG item 23): a fix that fails, on a limit above
-           * all, keeps it. Until then a 429 here threw away a whole report the
-           * AI had already written, and Forma's draft stood in for it.
-           */
-          let fixed: Awaited<ReturnType<typeof askAi>>;
-          try {
-            fixed = await analyzeReportDesign(
-              fixInstruction(audit),
-              [],
-              answering,
-              { repxContent: response.repxContent },
-              signal,
-              handleStreamProgress,
-              { description: describeRequest, database, fields, budget },
-            );
-          } catch (fixError) {
-            if (signal.aborted) throw fixError;
-            console.warn(`The fix (attempt ${attempt}) did not answer; keeping the report as it was, with ${audit.errors} error(s).`, fixError);
-            break;
-          }
-          if (signal.aborted) {
-            console.debug('Generation aborted/paused by user during repair.');
-            return;
-          }
-          spent = addUsage(spent, fixed.usage);
-          const next = auditRepx(fixed.repxContent, fixed.layout, { fields });
-          // Keep the better of the two; a repair that made things worse is not applied.
-          if (next.errors <= audit.errors) {
-            // The query the first answer named stands unless the repair names another (batch DE).
-            response = { ...fixed, dataQuery: fixed.dataQuery ?? response.dataQuery };
-            audit = next;
-          } else {
-            console.warn(`The repair attempt had ${next.errors} error(s) against ${audit.errors}; keeping the earlier report.`);
-            break;
-          }
-        }
-      }
+      const spent = fixed.spent;
 
       /*
        * The data source, written by Forma from what the AI named (batch DE,
@@ -4179,8 +4146,7 @@ export default function App() {
       // or a .repx attached) keeps that report's positions, which are already
       // laid out right to left, and turning them again would print it back
       // to front if the answer left out RightToLeftLayout (the PIPE1 review).
-      const fromAReport = Boolean(open?.repxContent) || currentTexts.some((t) => isReportFile({ file: t.file ?? '' }));
-      const repxContent = await asConfigured(response.repxContent, !fromAReport);
+      const repxContent = await asConfigured(response.repxContent, !startedFromReport);
       if (signal.aborted) return;
       const found = response.evidenceFindings ?? [];
       const newResult = {
@@ -4211,12 +4177,16 @@ export default function App() {
       // (PL-11b): a table drawn as loose texts, rows with no section to
       // repeat in. Only that reading can see those, and it was in the console.
       // Said in sentences of their own (`evidenceMarkdown`), since the
-      // general list's fallback said something untrue of them.
+      // general list's fallback said something untrue of them. What the print
+      // showed is said only of the file it was found in: a data source written,
+      // a translation or right to left changes the file after it, and a
+      // clipped label may no longer be (the review of CC-01).
+      const printFindings = repxContent === printed ? response.printFindings ?? [] : [];
       const [changed, checked, compared] = newResult.repxContent
         ? await Promise.all([import('./lib/agentEdit'), import('./lib/repxAudit'), loadIntake()])
             .then(([m, a, intake]) => [
               open?.repxContent ? m.changesMarkdown(m.describeChanges(open.repxContent, newResult.repxContent!)) : '',
-              m.checksMarkdown(a.auditRepx(newResult.repxContent, newResult.layout, { fields }).findings.filter((f) => f.severity === 'error')),
+              m.checksMarkdown([...a.auditRepx(newResult.repxContent, newResult.layout, { fields }).findings, ...printFindings]),
               intake.evidenceMarkdown(found),
             ])
             .catch(() => ['', '', ''])
@@ -4297,7 +4267,7 @@ export default function App() {
             const { fallbackReply } = await import('./lib/formaTeam');
             if (signal.aborted) return;
             // A draft from the page is written as the page is seen; one from a description is not (PL-04b).
-            const drafted = { ...made.result, repxContent: await asConfigured(made.result.repxContent ?? '', made.source !== 'offline') };
+            const drafted = { ...made.result, repxContent: await asConfigured(made.result.repxContent ?? '', made.source !== 'offline', true) };
             if (signal.aborted) return;
             setResult(drafted);
             // Named by what it is to the person (2026-11-11, the full audit's CV-07): "Forma's own draft" until then.
@@ -4851,7 +4821,7 @@ export default function App() {
         timestamp: new Date(),
         title: design.title,
         layout: design.layout,
-        repxContent: await asConfigured(design.repx, true),
+        repxContent: await asConfigured(design.repx, true, true),
         usage: null,
       };
       if (turn.signal.aborted) return;

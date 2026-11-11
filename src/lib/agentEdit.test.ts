@@ -688,6 +688,18 @@ describe('describeChanges: what the reply says changed', () => {
     expect(plainFinding('band-taller-than-page')).toBe('One section is taller than the page, so each record prints on its own sheet.');
   });
 
+  // The full audit (2026-11-11, PL-11b and CC-01): what the page's reading and its print find, in the person's words.
+  it("says what Forma's reading of the page and its print found in plain words, never the general sentence", () => {
+    const general = plainFinding(undefined);
+    for (const code of ['grid-not-a-table', 'prints-extra-pages', 'clipped-at-margin', 'bound-cell-blank', 'group-collapses', 'total-disagrees-with-page', 'field-unknown', 'margins-not-whole', 'page-size-not-whole']) {
+      expect(plainFinding(code)).not.toBe(general);
+      expect(plainFinding(code)).not.toMatch(/OCR|model|audit|expression|\[|_/i);
+    }
+    expect(checksMarkdown([{ severity: 'error', code: 'prints-extra-pages', message: 'Printed with the 9 records the page shows, the report runs to 2 pages where the page has 1.' }])).toBe(
+      '**1 thing to fix**\n- With the records your page shows, the report prints on more pages than your page has.',
+    );
+  });
+
   it('says only what an edit brought, and nothing when it brought nothing', () => {
     const before = [{ severity: 'error', code: 'truncated', message: 'old one' }];
     expect(checksMarkdown(before, before)).toBe('');

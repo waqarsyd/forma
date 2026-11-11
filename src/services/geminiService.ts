@@ -41,8 +41,6 @@ import { instructionBlock } from "../lib/userInstructions";
 import { auditRepx, type RepxAudit, type RepxFinding } from "../lib/repxAudit";
 import { carryDataSource } from "../lib/repxSqlDataSource";
 import { repairRepx } from "../lib/repairChain";
-import { repairWholeMargins } from "../lib/repxMargins";
-import { repairCalculatedFields } from "../lib/repxCalculatedFields";
 import { isRepxText, restoreBlobs, stashBlobs, type BlobStash } from "../lib/repxBlobs";
 import { hasReportScripts } from "../lib/shares";
 import { rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
@@ -3414,29 +3412,50 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
      * designed from words, parameters, totals, groups and cross-tabs, the data
      * source carried through a redesign, stored logins and code removed, the
      * style sheet last. Why each is needed, and why there, is its module's
-     * doc comment; until then this was thirteen blocks of this function.
+     * doc comment; until then this was thirteen blocks of this function. The
+     * whole margins and the calculated fields ran beside it for a wave and
+     * are in its order now, with the Data tab's fields.
      */
     parsed.repxContent = repairRepx(parsed.repxContent, {
       version: targetVersion,
       description: Boolean(description),
       previous: previousState?.repxContent ?? null,
       keepScripts,
+      fields: options?.fields,
     }).xml;
 
     /*
-     * Two passes beside the chain (2026-11-11, the full audit's CC-03 and
-     * CC-04), until lib/repairChain.ts takes them into its order: Margins and
-     * a custom page size made whole numbers, which DevExpress 20.1 otherwise
-     * drops (a report converted to millimetres writes fractions too), and a
-     * group on a field nothing has declared as the calculated field its
-     * header prints. Both after the paper and the group levels, as they would
-     * stand in the chain.
+     * The page's own records (2026-11-11, the full audit's CC-01, CC-05 and
+     * CC-06; lib/pageRows.ts): the grid Forma read on the page, each column
+     * under the field the report prints there. With them, after the totals'
+     * scope is repaired above, a total that works out differently from the
+     * page's figure becomes the one form that prints it, when exactly one
+     * does (lib/totalsCheck.ts), and each value takes the format the page
+     * prints it in (lib/formatFromText.ts). Loaded here, off this chunk, and
+     * only for a run that read a page; nothing in them can fail the run.
      */
-    for (const pass of [repairWholeMargins, (xml: string) => repairCalculatedFields(xml, { fields: options?.fields })]) {
-      const result = pass(parsed.repxContent);
-      if (result.applied) {
-        parsed.repxContent = result.xml;
-        console.warn(`Repair: ${result.reason}.`);
+    let page: import("../lib/pageRows").PageRows | null = null;
+    if (options?.evidence) {
+      try {
+        const [{ rowsFromEvidence, pageFormats }, { repairTotals }, { applyFormats }] = await Promise.all([
+          import("../lib/pageRows"),
+          import("../lib/totalsCheck"),
+          import("../lib/formatFromText"),
+        ]);
+        const read = rowsFromEvidence(options.evidence, parsed.repxContent);
+        if (read) {
+          console.log(`Read ${read.rows.length} record(s) off the page, columns as ${JSON.stringify(read.columns)}.`);
+          for (const pass of [(xml: string) => repairTotals(xml, read), (xml: string) => applyFormats(xml, pageFormats(read))]) {
+            const result = pass(parsed.repxContent);
+            if (result.applied) {
+              parsed.repxContent = result.xml;
+              console.warn(`Repair: ${result.reason}.`);
+            }
+          }
+        }
+        page = read;
+      } catch (err) {
+        console.warn("The page's records could not be read for the print check.", err);
       }
     }
 
@@ -3505,6 +3524,33 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
      * compares the Mockup's sections and means nothing against OCR's.
      */
     const evidenceFindings = options?.evidence ? evidenceFindingsOf(audit, auditRepx(parsed.repxContent, null, auditOptions)) : [];
+    /*
+     * The report printed with the page's records before it is answered
+     * (2026-11-11, the full audit's CC-01, lib/printCheck.ts): pages beyond
+     * the page's own, text past the margin, a bound value printing blank, a
+     * group that collapses, a value in another form than the page's, and a
+     * total a percentage was summed into. In the browser text is measured as
+     * the Preview measures it, so it grows as it prints. App sends what the
+     * repairs left back once (`fixUntilPrints`) and says the rest.
+     */
+    const printFindings: RepxFinding[] = [];
+    if (page) {
+      try {
+        const [{ printCheck }, { sumOfRatio, checkTotals }, measure] = await Promise.all([
+          import("../lib/printCheck"),
+          import("../lib/totalsCheck"),
+          typeof document === "undefined" ? null : import("../lib/textMeasure").then((m) => m.canvasMeasurer()).catch(() => null),
+        ]);
+        printFindings.push(
+          ...printCheck(parsed.repxContent, page.rows, { pagesShown: page.pages, groupsShown: page.groups.length, samples: page.samples, measure }),
+          ...checkTotals(parsed.repxContent, page),
+          ...sumOfRatio(parsed.repxContent),
+        );
+        for (const finding of printFindings) console[finding.severity === "error" ? "error" : "warn"](`  [print: ${finding.code}] ${finding.message}`);
+      } catch (err) {
+        console.warn("The report could not be printed with the page's records.", err);
+      }
+    }
     const result: GenerationResult = {
       markdown: specFromRepx(parsed.repxContent, title),
       layout: layoutFromRepx(parsed.repxContent, title),
@@ -3516,6 +3562,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       ...(named.query !== undefined ? { dataQuery: named.query } : {}),
       ...(coverage ? { coverage } : {}),
       ...(evidenceFindings.length ? { evidenceFindings } : {}),
+      ...(printFindings.length ? { printFindings } : {}),
     };
     /*
      * Asked once more, and only once, when the report left out enough of the
@@ -3594,6 +3641,13 @@ export interface GenerationResult extends AnalysisResponse {
    * shows them in plain words (PIPE1).
    */
   evidenceFindings?: RepxFinding[];
+  /**
+   * What printing the report with the page's own records found (2026-11-11,
+   * the full audit's CC-01, lib/printCheck.ts and lib/totalsCheck.ts); absent
+   * when there were no records to print with, or nothing was found. App sends
+   * them back once (`fixUntilPrints`) and says what is left in plain words.
+   */
+  printFindings?: RepxFinding[];
 }
 
 /**

@@ -1403,6 +1403,17 @@ export const PLAIN_FINDINGS: Readonly<Record<string, string>> = {
   'query-param-unbound': 'A query needs a value the report never asks for, so it cannot run.',
   'datamember-unknown': 'The report reads a table its data source does not have, so no rows will print.',
   'band-taller-than-page': 'One section is taller than the page, so each record prints on its own sheet.',
+  // What Forma's own reading of the page and its print with the page's
+  // records find (2026-11-11, the full audit's PL-11b, CC-01, CC-04, CC-05).
+  'grid-not-a-table': 'The rows on your page came out as separate texts rather than a table, so they will not repeat for each record.',
+  'field-unknown': 'The report groups or sorts by a field your data does not have, so it will not group as drawn.',
+  'margins-not-whole': "The page's margins are written in a form the designer drops, so it prints with its own margins instead.",
+  'page-size-not-whole': "The page's size is written in a form the designer drops, so it prints on a different size of paper.",
+  'prints-extra-pages': 'With the records your page shows, the report prints on more pages than your page has.',
+  'clipped-at-margin': 'Some text runs past the right margin, so part of it is cut off or printed on a page of its own.',
+  'bound-cell-blank': 'Some values print blank with the records your page shows.',
+  'group-collapses': 'The groups do not break where your page does.',
+  'total-disagrees-with-page': 'A total works out differently from the figure on your page.',
 };
 
 /** A finding in the person's words: its plain sentence, or the general one. */
