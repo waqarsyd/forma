@@ -225,17 +225,113 @@ namespace RepxDesigner
             return "<?forma " + body.Replace("?>", "?\\u003e") + "?>";
         }
 
-        private static readonly Regex Writes = new Regex(@"\b(INSERT|UPDATE|DELETE|MERGE|DROP|ALTER|CREATE|TRUNCATE|EXEC|EXECUTE|GRANT|DENY|REVOKE|BACKUP|RESTORE|SHUTDOWN|DBCC|OPENROWSET|OPENDATASOURCE|xp_\w+|sp_\w+)\b|\bINTO\b", RegexOptions.IgnoreCase);
+        // OPENQUERY, KILL, WAITFOR, WRITETEXT, UPDATETEXT and RECONFIGURE joined the list on
+        // 2026-11-11 (the full audit, SE-12): OPENQUERY passes text to a linked server,
+        // which can write, and the others act on the server rather than read from it.
+        private static readonly Regex Writes = new Regex(@"\b(INSERT|UPDATE|DELETE|MERGE|DROP|ALTER|CREATE|TRUNCATE|EXEC|EXECUTE|GRANT|DENY|REVOKE|BACKUP|RESTORE|SHUTDOWN|DBCC|OPENROWSET|OPENDATASOURCE|OPENQUERY|KILL|WAITFOR|WRITETEXT|UPDATETEXT|RECONFIGURE|xp_\w+|sp_\w+)\b|\bINTO\b", RegexOptions.IgnoreCase);
 
-        /// <summary>The report's data sources set to the connections they name, or the names this PC does not have.</summary>
-        private static List<string> Connect(XtraReport report, out List<SqlDataSource> sources)
+        /// <summary>
+        /// Is this custom SQL one SELECT (or WITH ... SELECT) and nothing else?
+        ///
+        /// Since 2026-11-11 (SE-12) the text is read left to right first, with string
+        /// literals emptied, comments dropped and bracketed or quoted names replaced, so
+        /// that a quote inside a comment cannot hide a statement from the check (the
+        /// literal-stripping regex before it could be walked past that way), and a
+        /// second statement is refused: a semicolon is allowed only at the very end.
+        /// A parser (ScriptDom) would be exact, but it would be a second DLL in a
+        /// download that is one exe; and wrapping the query in a transaction does not
+        /// help, because DevExpress opens its own connection to run it.
+        /// </summary>
+        public static bool IsOneSelect(string sql)
+        {
+            string plain = Plain(sql ?? "").Trim();
+            if (plain.EndsWith(";")) plain = plain.Substring(0, plain.Length - 1).TrimEnd();
+            if (plain.IndexOf(';') >= 0) return false;
+            return Regex.IsMatch(plain, @"^(\(\s*)*(SELECT|WITH)\b", RegexOptions.IgnoreCase) && !Writes.IsMatch(plain);
+        }
+
+        /// <summary>The SQL with '' for each literal, a space for each comment and [x] for each quoted name.</summary>
+        private static string Plain(string sql)
+        {
+            var b = new StringBuilder(sql.Length);
+            int i = 0;
+            while (i < sql.Length)
+            {
+                char c = sql[i];
+                char next = i + 1 < sql.Length ? sql[i + 1] : '\0';
+                if (c == '-' && next == '-')
+                {
+                    while (i < sql.Length && sql[i] != '\n') i++;
+                    b.Append(' ');
+                }
+                else if (c == '/' && next == '*')
+                {
+                    // T-SQL block comments nest.
+                    int depth = 0;
+                    while (i < sql.Length)
+                    {
+                        if (sql[i] == '/' && i + 1 < sql.Length && sql[i + 1] == '*') { depth++; i += 2; }
+                        else if (sql[i] == '*' && i + 1 < sql.Length && sql[i + 1] == '/') { depth--; i += 2; if (depth == 0) break; }
+                        else i++;
+                    }
+                    b.Append(' ');
+                }
+                else if (c == '\'' || ((c == 'N' || c == 'n') && next == '\'' && (i == 0 || !(char.IsLetterOrDigit(sql[i - 1]) || sql[i - 1] == '_'))))
+                {
+                    i += c == '\'' ? 1 : 2;
+                    while (i < sql.Length)
+                    {
+                        if (sql[i] == '\'' && i + 1 < sql.Length && sql[i + 1] == '\'') i += 2;
+                        else if (sql[i] == '\'') { i++; break; }
+                        else i++;
+                    }
+                    b.Append("''");
+                }
+                else if (c == '[' || c == '"')
+                {
+                    char close = c == '[' ? ']' : '"';
+                    i++;
+                    while (i < sql.Length)
+                    {
+                        if (sql[i] == close && i + 1 < sql.Length && sql[i + 1] == close) i += 2;
+                        else if (sql[i] == close) { i++; break; }
+                        else i++;
+                    }
+                    b.Append("[x]");
+                }
+                else
+                {
+                    b.Append(c);
+                    i++;
+                }
+            }
+            return b.ToString();
+        }
+
+        /// <summary>
+        /// A data source that could change data when it runs: a stored procedure (which
+        /// may write whatever its name says) or custom SQL that is not one SELECT.
+        /// </summary>
+        private static bool CouldWrite(SqlDataSource ds)
+        {
+            return ds.Queries.OfType<StoredProcQuery>().Any() || ds.Queries.OfType<CustomSqlQuery>().Any(q => !IsOneSelect(q.Sql));
+        }
+
+        /// <summary>
+        /// The report's data sources set to the connections they name, or the names this
+        /// PC does not have. With <paramref name="fromPage"/>, a source that could write
+        /// is left unconnected and named in <paramref name="held"/>.
+        /// </summary>
+        private static List<string> Connect(XtraReport report, bool fromPage, out List<SqlDataSource> sources, out List<string> held)
         {
             sources = report.ComponentStorage.OfType<SqlDataSource>().ToList();
             var missing = new List<string>();
+            held = new List<string>();
             foreach (SqlDataSource ds in sources)
             {
                 StoredConnection c = IsName(ds.ConnectionName) ? Find(ds.ConnectionName) : null;
                 if (c == null) { missing.Add(ds.ConnectionName ?? ""); continue; }
+                if (fromPage && CouldWrite(ds)) { held.Add(ds.ConnectionName); continue; }
                 ds.ConnectionParameters = Parameters(c);
                 ds.Connection.StoreConnectionNameOnly = true;
             }
@@ -251,19 +347,28 @@ namespace RepxDesigner
             var report = new XtraReport();
             using (var ms = new MemoryStream(Encoding.UTF8.GetBytes(repx))) report.LoadLayoutFromXml(ms);
             List<SqlDataSource> sources;
-            List<string> missing = Connect(report, out sources);
+            List<string> held;
+            List<string> missing = Connect(report, false, out sources, out held);
             if (sources.Count == 0) { status = 400; return "{\"error\":\"the report has no SQL data source\"}"; }
             if (missing.Count > 0) { status = 404; return "{\"missing\":[" + string.Join(",", missing.Select(Json)) + "]}"; }
             var procs = sources.SelectMany(ds => ds.Queries.OfType<StoredProcQuery>()).Select(q => q.Name).ToList();
             if (procs.Count > 0 && !procedures) { status = 409; return "{\"procedures\":[" + string.Join(",", procs.Select(Json)) + "]}"; }
             foreach (var q in sources.SelectMany(ds => ds.Queries.OfType<CustomSqlQuery>()))
             {
-                string sql = q.Sql ?? "";
-                if (!Regex.IsMatch(sql, @"^\s*(\(\s*)?(SELECT|WITH)\b", RegexOptions.IgnoreCase) || Writes.IsMatch(Regex.Replace(sql, @"N?'(?:[^']|'')*'", "''")))
+                if (!IsOneSelect(q.Sql))
                 {
                     status = 400;
                     return "{\"error\":" + Json("the custom SQL of " + q.Name + " is not one SELECT") + "}";
                 }
+            }
+            // At most MaxRows from SQL Server itself (2026-11-11, the full audit, SD-14a):
+            // until then the whole table was read and the first MaxRows kept, so Live rows
+            // on a large table ran for minutes and held every row in memory. A query that
+            // asks for fewer keeps its own Top. Custom SQL and procedures are the report's
+            // own text, and the Take below still bounds what is sent.
+            foreach (SelectQuery q in sources.SelectMany(ds => ds.Queries.OfType<SelectQuery>()))
+            {
+                if (q.Top == 0 || q.Top > MaxRows) q.Top = MaxRows;
             }
             foreach (KeyValuePair<string, string> v in values)
             {
@@ -293,12 +398,24 @@ namespace RepxDesigner
             return "{\"queries\":[" + string.Join(",", queries) + "]}";
         }
 
-        /// <summary>Item 38: the designer reads the connections this PC has, and saves only their names.</summary>
-        public static int PrepareForDesigner(XtraReport report)
+        /// <summary>
+        /// Item 38: the designer reads the connections this PC has, and saves only their
+        /// names. Returns how many were connected; <paramref name="held"/> names those
+        /// left unconnected.
+        ///
+        /// A report a page sent (fromPage, POST /open) is not connected where it could
+        /// change data (2026-11-11, the full audit, SD-15 and SE-07): /sql/fill runs a
+        /// procedure only when the person asked for it and custom SQL only when it is
+        /// one SELECT, but the designer's own Preview runs whatever the data source
+        /// holds, so a shared report naming a connection this PC keeps and a purge
+        /// procedure would run it with this user's credentials on a Preview. A file the
+        /// person opens from Windows is connected as before.
+        /// </summary>
+        public static int PrepareForDesigner(XtraReport report, bool fromPage, out List<string> held)
         {
             List<SqlDataSource> sources;
-            List<string> missing = Connect(report, out sources);
-            return sources.Count - missing.Count;
+            List<string> missing = Connect(report, fromPage, out sources, out held);
+            return sources.Count - missing.Count - held.Count;
         }
 
         // ------------------------------------------------------------ JSON

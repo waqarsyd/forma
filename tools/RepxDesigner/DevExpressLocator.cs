@@ -22,6 +22,13 @@ namespace RepxDesigner
         public string Bin;
         /// <summary>Where it was seen: registry, folder, gac.</summary>
         public readonly List<string> Sources = new List<string>();
+        /// <summary>
+        /// Where its WinForms report designer (DevExpress.XtraReports.vN.N.Extensions)
+        /// was found, the Bin file or "gac", or null when this install has none: a
+        /// web- or WPF-only DevExpress has the report engine and no designer to open
+        /// (2026-11-11, the full audit, SD-13).
+        /// </summary>
+        public string Extensions;
 
         public Version Number { get { return System.Version.Parse(Version); } }
     }
@@ -173,7 +180,38 @@ namespace RepxDesigner
                 }
             }
 
+            foreach (DevExpressInstall install in byVersion.Values) install.Extensions = ExtensionsOf(install);
             return byVersion.Values.OrderByDescending(i => i.Number).ToList();
+        }
+
+        /// <summary>The name of the assembly that holds the WinForms report designer, in a version.</summary>
+        public static string ExtensionsName(string version)
+        {
+            return "DevExpress.XtraReports.v" + version + ".Extensions";
+        }
+
+        /// <summary>Where an install's designer assembly is: its Bin file, "gac", or null.</summary>
+        private static string ExtensionsOf(DevExpressInstall install)
+        {
+            string name = ExtensionsName(install.Version);
+            if (install.Bin != null)
+            {
+                string file = Path.Combine(install.Bin, name + ".dll");
+                if (File.Exists(file)) return file;
+            }
+            if (!NoGac)
+            {
+                try
+                {
+                    string dir = Path.Combine(GacRoot, name);
+                    if (Directory.Exists(dir) && Directory.GetDirectories(dir).Length > 0) return "gac";
+                }
+                catch (Exception)
+                {
+                    // An unreadable GAC says nothing; the Bin folder already answered if it could.
+                }
+            }
+            return null;
         }
 
         /// <summary>The folder holding the .NET Framework assemblies under an install's root.</summary>
@@ -184,10 +222,15 @@ namespace RepxDesigner
             return Directory.Exists(bin) ? bin : null;
         }
 
-        /// <summary>The newest installation this program can run on, or null.</summary>
+        /// <summary>
+        /// The newest installation this program can run on, or null. "Can run on"
+        /// includes the WinForms designer since 2026-11-11 (SD-13): before, a PC
+        /// with DevExpress for the web alone counted as found, the page said
+        /// "Opened" and the tray process died loading a designer that was not there.
+        /// </summary>
         public static DevExpressInstall Usable(List<DevExpressInstall> found)
         {
-            return found.FirstOrDefault(i => i.Number >= Oldest);
+            return found.FirstOrDefault(i => i.Number >= Oldest && i.Extensions != null);
         }
 
         private static DevExpressInstall _target;
@@ -207,34 +250,67 @@ namespace RepxDesigner
             return m.Success ? m.Groups[1].Value + ".v" + version + m.Groups[2].Value : null;
         }
 
+        /// <summary>
+        /// Set while Resolve is loading, on this thread: the Assembly.Load below asks
+        /// the runtime again, and a miss there would land back here.
+        /// </summary>
+        [ThreadStatic] private static bool _resolving;
+
+        /// <summary>
+        /// Answers a DevExpress assembly the runtime could not bind with the same one
+        /// from the install found.
+        ///
+        /// Until 2026-11-11 (the full audit, SD-01) it answered only when the name
+        /// differed (another major version), and returned null when the name was the
+        /// same. But the name is the same on every 20.1 build, and the reference is
+        /// to 20.1.3.0 exactly: DevExpress ships no publisher policy in the GAC, so on
+        /// a PC with 20.1.12, or with 20.1.3 in its Bin folder and not the GAC, the
+        /// runtime misses, asks here, and was told nothing. The program then died at
+        /// its first DevExpress call. Now a same-named request is answered from the
+        /// install as well: its Bin file, else the GAC at the build installed.
+        /// Measured with --check --simulate-build, below.
+        /// </summary>
         private static Assembly Resolve(object sender, ResolveEventArgs e)
         {
-            if (_target == null) return null;
+            if (_target == null || _resolving) return null;
             AssemblyName wanted;
             try { wanted = new AssemblyName(e.Name); }
             catch (Exception) { return null; }
             // A culture's satellite is optional; asking for another version's would only fail louder.
             if (wanted.Name.EndsWith(".resources", StringComparison.OrdinalIgnoreCase)) return null;
             string renamed = Rename(wanted.Name, _target.Version);
-            if (renamed == null || string.Equals(renamed, wanted.Name, StringComparison.OrdinalIgnoreCase)) return null;
+            if (renamed == null) return null;
 
-            if (_target.Bin != null)
+            _resolving = true;
+            try
             {
-                string path = Path.Combine(_target.Bin, renamed + ".dll");
-                if (File.Exists(path)) return Assembly.LoadFrom(path);
+                if (_target.Bin != null)
+                {
+                    string path = Path.Combine(_target.Bin, renamed + ".dll");
+                    if (File.Exists(path)) return Assembly.LoadFrom(path);
+                }
+                // The GAC at the build installed. When that is the very version asked
+                // for, the runtime has just missed it, and asking again cannot help.
+                bool sameName = string.Equals(renamed, wanted.Name, StringComparison.OrdinalIgnoreCase);
+                bool sameBuild = wanted.Version != null && _target.Build != null &&
+                    string.Equals(wanted.Version.ToString(3), _target.Build, StringComparison.Ordinal);
+                if (_target.Build != null && !(sameName && sameBuild))
+                {
+                    try
+                    {
+                        return Assembly.Load(renamed + ", Version=" + _target.Build + ".0, Culture=neutral, PublicKeyToken=" + Token);
+                    }
+                    catch (Exception)
+                    {
+                        return null;
+                    }
+                }
+                return null;
             }
-            if (_target.Build != null)
+            finally
             {
-                try
-                {
-                    return Assembly.Load(renamed + ", Version=" + _target.Build + ".0, Culture=neutral, PublicKeyToken=" + Token);
-                }
-                catch (Exception)
-                {
-                    return null;
-                }
+                _resolving = false;
             }
-            return null;
         }
     }
 
@@ -254,13 +330,27 @@ namespace RepxDesigner
             json.Append("{\"app\":\"RepxDesigner\",\"compiled\":\"").Append(DevExpressLocator.Compiled).Append("\",\"found\":[");
             json.Append(string.Join(",", found.Select(i =>
                 "{\"version\":" + Str(i.Version) + ",\"build\":" + Str(i.Build) + ",\"bin\":" + Str(i.Bin) +
+                ",\"designer\":" + (i.Extensions == null ? "null" : "{\"assembly\":" + Str(DevExpressLocator.ExtensionsName(i.Version)) + ",\"at\":" + Str(i.Extensions) + "}") +
                 ",\"sources\":[" + string.Join(",", i.Sources.Select(Str)) + "]}")));
             json.Append("],\"using\":").Append(usable == null ? "null" : Str(usable.Version));
 
             if (usable != null && Array.IndexOf(args, "--no-load") < 0)
             {
                 DevExpressLocator.Use(usable);
-                json.Append(",\"load\":").Append(Load("DevExpress.XtraReports.v" + DevExpressLocator.Compiled + ", Version=" + DevExpressLocator.Compiled + ".3.0, Culture=neutral, PublicKeyToken=" + DevExpressLocator.Token));
+                // What the program itself asks for: the version its reference names, read off
+                // this assembly (no DevExpress type is named), never a number written here.
+                // --simulate-build 20.1.99 asks for a build that is not installed, as the
+                // program's 20.1.3 reference is on a PC with another 20.1 build, so the
+                // same-named answer in Resolve is measured here (2026-11-11, SD-01).
+                string asked = Referenced("DevExpress.XtraReports.v" + DevExpressLocator.Compiled);
+                int simulate = Array.IndexOf(args, "--simulate-build");
+                if (simulate >= 0 && simulate + 1 < args.Length && Regex.IsMatch(args[simulate + 1], @"^\d+\.\d+\.\d+$"))
+                {
+                    asked = args[simulate + 1] + ".0";
+                    json.Append(",\"simulated\":").Append(Str(asked));
+                }
+                json.Append(",\"load\":").Append(Load("DevExpress.XtraReports.v" + DevExpressLocator.Compiled + ", Version=" + asked + ", Culture=neutral, PublicKeyToken=" + DevExpressLocator.Token));
+                json.Append(",\"designerLoad\":").Append(LoadOnly(DevExpressLocator.ExtensionsName(DevExpressLocator.Compiled) + ", Version=" + asked + ", Culture=neutral, PublicKeyToken=" + DevExpressLocator.Token));
                 int alias = Array.IndexOf(args, "--alias");
                 if (alias >= 0 && alias + 1 < args.Length)
                 {
@@ -310,6 +400,28 @@ namespace RepxDesigner
             {
                 Exception inner = ex is TargetInvocationException && ex.InnerException != null ? ex.InnerException : ex;
                 return "{\"asked\":" + Str(fullName.Split(',')[0]) + ",\"error\":" + Str(inner.GetType().Name + ": " + inner.Message) + "}";
+            }
+        }
+
+        /// <summary>The four-part version this program's reference to an assembly names.</summary>
+        private static string Referenced(string name)
+        {
+            AssemblyName reference = typeof(Check).Assembly.GetReferencedAssemblies()
+                .FirstOrDefault(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase));
+            return reference != null && reference.Version != null ? reference.Version.ToString() : DevExpressLocator.Oldest.ToString(2) + ".0.0";
+        }
+
+        /// <summary>Loads an assembly by name and says what came back, with no report made.</summary>
+        private static string LoadOnly(string fullName)
+        {
+            try
+            {
+                Assembly assembly = Assembly.Load(fullName);
+                return "{\"asked\":" + Str(fullName.Split(',')[0]) + ",\"got\":" + Str(assembly.FullName) + ",\"location\":" + Str(assembly.Location) + "}";
+            }
+            catch (Exception ex)
+            {
+                return "{\"asked\":" + Str(fullName.Split(',')[0]) + ",\"error\":" + Str(ex.GetType().Name + ": " + ex.Message) + "}";
             }
         }
 

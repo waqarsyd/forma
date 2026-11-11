@@ -9,6 +9,7 @@ using System;
 using System.Data.SqlClient;
 using System.Drawing;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace RepxDesigner
@@ -117,11 +118,31 @@ namespace RepxDesigner
             var save = new Button { Text = "Save", AutoSize = true };
             var cancel = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
             var test = new Button { Text = "Test", AutoSize = true };
-            test.Click += (s, e) => _status.Text = Test(Build()) ?? "Connected.";
+            // Off the window's thread (2026-11-11, the full audit, SD-28): a server that
+            // does not answer takes the 15-second connect timeout, which froze the window.
+            test.Click += async (s, e) =>
+            {
+                test.Enabled = false;
+                _status.Text = "Testing...";
+                StoredConnection candidate = Build();
+                string problem = await Task.Run(() => Test(candidate));
+                if (IsDisposed) return;
+                _status.Text = problem ?? "Connected.";
+                test.Enabled = true;
+            };
             save.Click += (s, e) =>
             {
-                if (!SqlCompanion.IsName(_name.Text.Trim())) { _status.Text = "A name is letters, digits, _ . or - (as in connectionStrings)."; return; }
+                string name = _name.Text.Trim();
+                if (!SqlCompanion.IsName(name)) { _status.Text = "A name is letters, digits, _ . or - (as in connectionStrings)."; return; }
                 if (_server.Text.Trim().Length == 0 || _database.Text.Trim().Length == 0) { _status.Text = "Give the server and the database."; return; }
+                // A same-named connection used to be replaced without a word (SD-28).
+                StoredConnection existing = SqlCompanion.Find(name);
+                if (existing != null && MessageBox.Show(
+                        "A connection named \"" + existing.Name + "\" is kept already (" + existing.Server + " / " + existing.Database + "). Replace it?",
+                        Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+                {
+                    return;
+                }
                 SqlCompanion.Put(Build());
                 DialogResult = DialogResult.OK;
                 Close();

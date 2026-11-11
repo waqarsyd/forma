@@ -345,7 +345,8 @@ namespace RepxDesigner
 
         /// <summary>
         /// The offer shown when the downloaded exe is opened from anywhere but its
-        /// install folder: install (the default), run it once as it is, or cancel.
+        /// install folder: install (the default), open a report once without
+        /// installing, or cancel.
         /// </summary>
         public static Choice Offer(InstallTarget t, out bool startup, out bool openWith)
         {
@@ -389,8 +390,11 @@ namespace RepxDesigner
                     Location = new Point(16, 144),
                     Size = new Size(488, 24),
                 };
-                var install = new Button { Text = installed == null ? "Install" : "Update", Location = new Point(176, 222), Size = new Size(110, 30), DialogResult = DialogResult.OK };
-                var once = new Button { Text = "Run once", Location = new Point(294, 222), Size = new Size(110, 30), DialogResult = DialogResult.Retry };
+                // "Open a report once", not "Run once" (2026-11-11, the full audit, SD-27): it
+                // opens the file picker and the designer, and starts nothing that listens, so
+                // Forma's Open in designer cannot reach it; the old label promised more.
+                var install = new Button { Text = installed == null ? "Install" : "Update", Location = new Point(146, 222), Size = new Size(110, 30), DialogResult = DialogResult.OK };
+                var once = new Button { Text = "Open a report once", Location = new Point(264, 222), Size = new Size(140, 30), DialogResult = DialogResult.Retry };
                 var cancel = new Button { Text = "Cancel", Location = new Point(412, 222), Size = new Size(92, 30), DialogResult = DialogResult.Cancel };
                 form.Controls.AddRange(new Control[] { headline, body, start, open, install, once, cancel });
                 form.AcceptButton = install;

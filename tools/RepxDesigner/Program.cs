@@ -5,6 +5,8 @@ using System.Linq;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -16,17 +18,18 @@ namespace RepxDesigner
     /// <summary>
     /// Opens a .repx file in the DevExpress end-user report designer.
     ///
-    /// This is the "edit after export" half of Forma. Forma generates the report
-    /// and the model's job ends there: the layout JSON and repxContent are
-    /// terminal outputs of one request, never edited afterwards, so they cannot
-    /// drift apart. Adjustments -- moving a field, resizing a box, fixing a
-    /// caption -- happen here in the real designer, where they cost no tokens and
-    /// change nothing you did not touch.
+    /// This is the "open it in the real designer" half of Forma. Forma writes the
+    /// report and edits it in place (the chat and the Preview change the REPX
+    /// itself); this program opens that same file in DevExpress's own WinForms
+    /// designer, for the work only the designer does, and saving there writes
+    /// back to the file it opened. (Until 2026-11-11 this said the REPX was never
+    /// edited after the request that wrote it, which stopped being true when the
+    /// chat began editing reports in place.)
     ///
-    /// Three ways in:
+    /// The ways in:
     ///
     ///   RepxDesigner.exe                 pick a file (starts in Downloads)
-    ///   RepxDesigner.exe report.repx     open that file
+    ///   RepxDesigner.exe report.repx     open that file (report scripts denied unless allowed, below)
     ///   RepxDesigner.exe --serve         listen on 127.0.0.1:7317 for Forma
     ///   RepxDesigner.exe --register      register the forma-repx:// protocol
     ///   RepxDesigner.exe --unregister    remove it again
@@ -34,10 +37,11 @@ namespace RepxDesigner
     ///   RepxDesigner.exe --uninstall     remove that install
     ///   RepxDesigner.exe --check         what DevExpress it finds, as JSON (DevExpressLocator.cs)
     ///
-    /// --serve is what puts an "Open in designer" button in Forma's workspace:
-    /// the page POSTs the XML here and the designer opens on it directly, with no
-    /// download and no file dialog. A browser cannot start a program itself, which
-    /// is why this side has to exist at all.
+    /// --serve is what Forma's Open in designer dialog talks to (designerStep in
+    /// src/lib/designerBridge.ts): when it is clicked the page asks /health, then
+    /// POSTs the XML to /open, and the designer opens on it directly, with no
+    /// download and no file dialog. Nothing is asked before the click. A browser
+    /// cannot start a program itself, which is why this side has to exist at all.
     ///
     /// --register is the answer to the obvious complaint about that: the button is
     /// dead until someone remembers to start a tray app, which is a poor deal for
@@ -159,13 +163,18 @@ namespace RepxDesigner
                 // box the user did not ask for and cannot act on.
                 bool fromProtocol = Array.Exists(
                     args, a => a != null && a.StartsWith(Scheme + ":", StringComparison.OrdinalIgnoreCase));
+                for (int i = 0; i + 1 < args.Length; i++)
+                {
+                    int pagePort;
+                    if (args[i] == "--page-port" && int.TryParse(args[i + 1], out pagePort) && pagePort > 0 && pagePort < 65536) PagePorts.Add(pagePort);
+                }
                 RunServer(PortFrom(args), fromProtocol);
                 return;
             }
 
             // The downloaded exe, double-clicked from wherever it was saved: offer to
             // install it, as an installer would (2026-11-09). The installed copy, and
-            // "Run once", go on as before.
+            // "Open a report once", go on as before, to the file picker.
             if (args.Length == 0)
             {
                 InstallTarget target = InstallTarget.For(args);
@@ -196,7 +205,71 @@ namespace RepxDesigner
                 return; // cancelled the picker
             }
 
-            OpenDesigner(path);
+            // A file opened from Windows (Open with, the picker, the tray's Open a .repx)
+            // runs no report script unasked (2026-11-11, the full audit, SE-02c). Until
+            // then this path allowed scripts, on the reasoning that a file the person
+            // opens is theirs; but Open with Forma Designer is on by default, and a .repx
+            // downloaded from a share is one somebody else wrote. So scripts are denied
+            // here too, and a report that carries one asks once, naming that it runs
+            // code on this PC; Yes starts a process of its own that allows them, because
+            // the mode holds for the whole process once set (measured, README).
+            if (Array.IndexOf(args, AllowScripts) < 0)
+            {
+                DenyReportScripts();
+                if (HasReportScripts(path) && AskToRunScripts(path))
+                {
+                    try
+                    {
+                        Process.Start(new ProcessStartInfo(Application.ExecutablePath, "\"" + path + "\" " + AllowScripts) { UseShellExecute = false });
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show(
+                            "This report could not be opened with its code allowed." + Environment.NewLine + Environment.NewLine + ex.Message,
+                            "Forma Designer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
+                    return;
+                }
+            }
+
+            OpenDesigner(path, false);
+        }
+
+        /// <summary>Passed only by the process the question above starts, never by an installer or a page.</summary>
+        private const string AllowScripts = "--allow-scripts";
+
+        /// <summary>
+        /// Does the file carry code DevExpress runs? The same test as hasReportScripts
+        /// in src/lib/shares.ts: a ScriptsSource with text in it, or a control's
+        /// Scripts element naming an event handler. Read as text, before any load.
+        /// </summary>
+        private static bool HasReportScripts(string path)
+        {
+            try
+            {
+                return Regex.IsMatch(File.ReadAllText(path), "\\sScriptsSource=\"[^\"]|<Scripts\\b[^>]*\\sOn\\w+=\"[^\"]");
+            }
+            catch (Exception)
+            {
+                return false; // unreadable: the open below says so
+            }
+        }
+
+        /// <summary>
+        /// The one question this program asks about a report: a security question
+        /// about the person's own PC, not a step to go on with. No is the default.
+        /// </summary>
+        private static bool AskToRunScripts(string path)
+        {
+            return MessageBox.Show(
+                "This report contains code that runs on this PC when it is previewed or printed." + Environment.NewLine + Environment.NewLine +
+                "File: " + Path.GetFileName(path) + Environment.NewLine + Environment.NewLine +
+                "Allow its code to run only if you trust whoever made the report. If you choose No, the report opens " +
+                "and you can edit it, but its preview will not run the code.",
+                "Forma Designer - allow this report's code?",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2) == DialogResult.Yes;
         }
 
         // ----------------------------------------------------------------- //
@@ -208,24 +281,51 @@ namespace RepxDesigner
         /// OpenDesignerCore, whose body names DevExpress types and so cannot even be
         /// compiled on a PC without it.
         /// </summary>
-        private static void OpenDesigner(string path)
+        private static void OpenDesigner(string path, bool fromPage)
         {
             if (Installed == null)
             {
                 MissingDevExpress.ShowWindow(Found);
                 return;
             }
-            OpenDesignerCore(path);
+            // OpenDesignerCore's own try cannot catch this: an assembly its body names
+            // that will not load fails while the method is compiled, before its first
+            // line. That is what a DevExpress without the WinForms designer did, in the
+            // tray process, after the page had already been told the report opened
+            // (2026-11-11, the full audit, SD-13; Usable now also asks for the designer).
+            try
+            {
+                OpenDesignerCore(path, fromPage);
+            }
+            catch (Exception ex) when (ex is FileNotFoundException || ex is FileLoadException || ex is TypeLoadException ||
+                ex is MissingMethodException || ex is BadImageFormatException)
+            {
+                MessageBox.Show(
+                    "This PC's DevExpress has no WinForms report designer. Install DevExpress Reporting for WinForms." +
+                    Environment.NewLine + Environment.NewLine + ex.GetType().Name + ": " + ex.Message,
+                    "Forma Designer",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    "This report could not be opened in the designer." + Environment.NewLine + Environment.NewLine +
+                    ex.GetType().Name + ": " + ex.Message,
+                    "Forma Designer",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
         }
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-        private static void OpenDesignerCore(string path)
+        private static void OpenDesignerCore(string path, bool fromPage)
         {
             if (!File.Exists(path))
             {
                 MessageBox.Show(
-                    "No file at:" + Environment.NewLine + path,
-                    "RepxDesigner",
+                    "There is no report at this place any more:" + Environment.NewLine + path,
+                    "Forma Designer",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
                 return;
@@ -246,33 +346,47 @@ namespace RepxDesigner
                 XtraReport report = XtraReport.FromFile(path, true);
 
                 // Item 38 (2026-11-09): each connection the report names that this PC keeps,
-                // set so the designer's preview reads it, and saved as its name alone.
-                SqlCompanion.PrepareForDesigner(report);
+                // set so the designer's preview reads it, and saved as its name alone. A
+                // report a page sent is not connected where it could change data (SD-15).
+                List<string> notConnected;
+                SqlCompanion.PrepareForDesigner(report, fromPage, out notConnected);
 
                 using (ReportDesignTool tool = new ReportDesignTool(report))
                 {
+                    if (notConnected.Count > 0) SayNotConnected(tool, notConnected);
                     // Modal. Saving inside the designer writes back to `path`.
                     tool.ShowDesignerDialog();
                 }
             }
             catch (Exception ex)
             {
+                // A plain first line, then the details for whoever has to look into it
+                // (2026-11-11, SD-24). The two versions are information, not a diagnosis:
+                // a file targeting a newer release normally loads here regardless.
                 MessageBox.Show(
-                    "Could not open this report." + Environment.NewLine + Environment.NewLine +
-                    "File:              " + Path.GetFileName(path) + Environment.NewLine +
-                    "SerializerVersion: " + (fileVersion ?? "not declared") + Environment.NewLine +
-                    "Designer version:  " + runtimeVersion + Environment.NewLine + Environment.NewLine +
-                    "Both versions are shown because they are useful to know, not " +
-                    "because a difference between them is the cause -- a file targeting " +
-                    "a newer release normally loads here regardless. Look first at the " +
-                    "exception below, and at whether the report uses a control this " +
-                    "version of DevExpress does not have." +
+                    "This report could not be opened in the designer." + Environment.NewLine + Environment.NewLine +
+                    "File: " + Path.GetFileName(path) + Environment.NewLine +
+                    "Written for DevExpress " + (fileVersion ?? "(not said)") + ", opened with DevExpress " + runtimeVersion + "." +
                     Environment.NewLine + Environment.NewLine +
                     ex.GetType().Name + ": " + ex.Message,
-                    "RepxDesigner",
+                    "Forma Designer",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
             }
+        }
+
+        /// <summary>
+        /// Says, in the designer's own title, which data sources were left unconnected
+        /// and why, so a Preview that cannot reach the database is not a mystery. Set
+        /// once the window is shown, because the designer titles it as it loads.
+        /// </summary>
+        private static void SayNotConnected(ReportDesignTool tool, List<string> names)
+        {
+            Form form = tool.DesignForm as Form;
+            if (form == null) return;
+            string note = "not connected to your saved databases (" + string.Join(", ", names) +
+                "): it came from a web page and runs a stored procedure or SQL that could change data. Open the file with Forma Designer to connect it.";
+            form.Shown += (s, e) => { form.Text = form.Text + " - " + note; };
         }
 
         private static string PickFile()
@@ -424,7 +538,7 @@ namespace RepxDesigner
                     Environment.NewLine + Environment.NewLine +
                     "Registered for your user only. Nothing was installed system-wide." + Environment.NewLine +
                     "Handler: " + exe,
-                    "RepxDesigner",
+                    "Forma Designer",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
             }
@@ -432,7 +546,7 @@ namespace RepxDesigner
             {
                 MessageBox.Show(
                     "Could not register the forma-repx:// protocol." + Environment.NewLine + Environment.NewLine + ex.Message,
-                    "RepxDesigner",
+                    "Forma Designer",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
             }
@@ -446,7 +560,7 @@ namespace RepxDesigner
                 MessageBox.Show(
                     "The forma-repx:// protocol has been removed." + Environment.NewLine +
                     "Forma's button still works while this program is running with --serve.",
-                    "RepxDesigner",
+                    "Forma Designer",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
             }
@@ -454,7 +568,7 @@ namespace RepxDesigner
             {
                 MessageBox.Show(
                     "Could not remove the forma-repx:// protocol." + Environment.NewLine + Environment.NewLine + ex.Message,
-                    "RepxDesigner",
+                    "Forma Designer",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning);
             }
@@ -484,6 +598,7 @@ namespace RepxDesigner
         /// </summary>
         private static void RunServer(int port, bool quietIfTaken = false)
         {
+            _port = port;
             TcpListener listener;
             try
             {
@@ -514,7 +629,8 @@ namespace RepxDesigner
             // print a report with a script ("Report scripts were found in the
             // application while script execution is disabled"), and the mode holds
             // for the whole process whatever is set later, so it is set once, here.
-            // A file the person opens themselves runs in a process of its own.
+            // A file the person opens themselves runs in a process of its own, which
+            // denies them too and asks first (SE-02c, Run above).
             if (Installed != null) DenyReportScripts();
 
             // The designer must open on the UI thread; the accept loop cannot run
@@ -578,26 +694,67 @@ namespace RepxDesigner
             }
         }
 
+        /// <summary>The port this process listens on: the Host a request must name.</summary>
+        private static int _port = DefaultPort;
+
+        /// <summary>
+        /// The largest request body read: a report with its pictures fits many times
+        /// over, and a Content-Length larger is refused before anything is allocated
+        /// (2026-11-11, the full audit, SE-06). It used to allocate whatever was asked.
+        /// </summary>
+        private const int MaxBody = 8 * 1024 * 1024;
+
+        /// <summary>
+        /// Each caller is served on the thread pool (2026-11-11, SD-14b): this loop
+        /// used to serve one at a time, so a Live rows fill of a large table, or an
+        /// idle socket that never finished its headers, left /health and /open waiting
+        /// and the page said Forma Designer was not running. A socket now has ten
+        /// seconds to send its request.
+        /// </summary>
         private static void AcceptLoop(TcpListener listener)
         {
             while (true)
             {
+                TcpClient client;
                 try
                 {
-                    using (TcpClient client = listener.AcceptTcpClient())
-                    using (NetworkStream stream = client.GetStream())
-                    {
-                        Handle(stream);
-                    }
+                    client = listener.AcceptTcpClient();
                 }
                 catch (SocketException)
                 {
                     return; // listener stopped on exit
                 }
-                catch (Exception ex)
+                catch (ObjectDisposedException)
                 {
-                    Debug.WriteLine("Request failed: " + ex.Message);
+                    return;
                 }
+                ThreadPool.QueueUserWorkItem(_ => Serve(client));
+            }
+        }
+
+        private static void Serve(TcpClient client)
+        {
+            try
+            {
+                using (client)
+                {
+                    client.ReceiveTimeout = 10000;
+                    client.SendTimeout = 10000;
+                    using (NetworkStream stream = client.GetStream())
+                    {
+                        // Only this Windows user's programs (SE-05): see SameUser below.
+                        if (!SameUser.IsCaller(client))
+                        {
+                            Respond(stream, 403, "text/plain", "", null);
+                            return;
+                        }
+                        Handle(stream);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("Request failed: " + ex.Message);
             }
         }
 
@@ -607,8 +764,25 @@ namespace RepxDesigner
             Dictionary<string, string> headers;
             string body;
 
-            if (!ReadRequest(stream, out requestLine, out headers, out body))
+            int refused = ReadRequest(stream, out requestLine, out headers, out body);
+            if (refused == -1)
             {
+                return;
+            }
+            if (refused != 0)
+            {
+                Respond(stream, refused, "text/plain", "", null);
+                return;
+            }
+
+            // The Host must be this listener's own name for itself (SE-06). A page that
+            // rebinds its own domain to 127.0.0.1 is same-origin to the browser and sends
+            // no preflight, but it cannot change the Host its requests carry.
+            string host;
+            headers.TryGetValue("host", out host);
+            if (!IsOwnHost(host))
+            {
+                Respond(stream, 400, "text/plain", "Wrong Host", null);
                 return;
             }
 
@@ -647,6 +821,14 @@ namespace RepxDesigner
 
             if (method == "POST" && target.StartsWith("/open"))
             {
+                // The origin is checked on the request itself, not only on its preflight
+                // (SE-06): a client that skips the preflight, or sends no Origin at all,
+                // used to reach the designer with the header alone.
+                if (allowed == null)
+                {
+                    Respond(stream, 403, "text/plain", "", null);
+                    return;
+                }
                 if (!headers.ContainsKey(ClientHeader))
                 {
                     Respond(stream, 400, "text/plain", "Missing " + ClientHeader, allowed);
@@ -678,7 +860,7 @@ namespace RepxDesigner
 
                 try
                 {
-                    _pump.BeginInvoke(new Action(() => OpenDesigner(path)));
+                    _pump.BeginInvoke(new Action(() => OpenDesigner(path, true)));
                 }
                 catch (Exception ex)
                 {
@@ -705,6 +887,9 @@ namespace RepxDesigner
         /// </summary>
         private static void HandleSql(NetworkStream stream, string method, string target, Dictionary<string, string> headers, string body, string allowed)
         {
+            // Forma's own ports alone (SE-05): any other web app a person runs on this PC
+            // is a local origin too, and none of them is meant to read a database.
+            if (allowed != null && !IsFormaPagePort(allowed)) allowed = null;
             if (allowed == null) { Respond(stream, 403, "text/plain", "", null); return; }
             if (!headers.ContainsKey(ClientHeader)) { Respond(stream, 400, "text/plain", "Missing " + ClientHeader, allowed); return; }
             string path = target.Split('?')[0];
@@ -772,6 +957,28 @@ namespace RepxDesigner
         }
 
         /// <summary>
+        /// The ports a Forma page on this PC is served from: 3000 (npm run dev and npm
+        /// start), 3001 (the second, mock server), and any a person adds with
+        /// --page-port N when they run Forma elsewhere (2026-11-11, SE-05).
+        /// </summary>
+        private static readonly HashSet<int> PagePorts = new HashSet<int> { 3000, 3001 };
+
+        private static bool IsFormaPagePort(string origin)
+        {
+            Match m = Regex.Match(origin ?? "", @":(\d+)$");
+            int port;
+            return m.Success && int.TryParse(m.Groups[1].Value, out port) && PagePorts.Contains(port);
+        }
+
+        /// <summary>The Host header this listener answers to: 127.0.0.1 or localhost, at its own port.</summary>
+        private static bool IsOwnHost(string host)
+        {
+            if (string.IsNullOrEmpty(host)) return false;
+            return string.Equals(host, "127.0.0.1:" + _port, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(host, "localhost:" + _port, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
         /// Forma's own website (2026-11-09, the owner's decision in the download
         /// programme): /health and /open only, never /sql/. Its page sends the first
         /// request only when the person clicks Open in designer, which is when the
@@ -835,7 +1042,13 @@ namespace RepxDesigner
             return path;
         }
 
-        private static bool ReadRequest(
+        /// <summary>
+        /// Reads one request: 0 when it was read, -1 when there is nothing to answer
+        /// (the socket closed, or no blank line within 32 KB), or the status to refuse
+        /// it with: 413 for a body over MaxBody, 400 for a Content-Length that is not
+        /// a number, both decided before a byte of the body is allocated.
+        /// </summary>
+        private static int ReadRequest(
             NetworkStream stream,
             out string requestLine,
             out Dictionary<string, string> headers,
@@ -868,11 +1081,11 @@ namespace RepxDesigner
                 }
             }
 
-            if (headerEnd < 0) return false;
+            if (headerEnd < 0) return -1;
 
             string head = Encoding.UTF8.GetString(buffer.GetBuffer(), 0, headerEnd);
             string[] lines = head.Split(new[] { "\r\n" }, StringSplitOptions.RemoveEmptyEntries);
-            if (lines.Length == 0) return false;
+            if (lines.Length == 0) return -1;
 
             requestLine = lines[0];
             for (int i = 1; i < lines.Length; i++)
@@ -885,8 +1098,14 @@ namespace RepxDesigner
             }
 
             string lengthValue;
+            if (headers.TryGetValue("content-length", out lengthValue))
+            {
+                long declared;
+                if (!long.TryParse(lengthValue, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out declared)) return 400;
+                if (declared > MaxBody) return 413;
+            }
             int contentLength;
-            if (headers.TryGetValue("content-length", out lengthValue) &&
+            if (lengthValue != null &&
                 int.TryParse(lengthValue, out contentLength) &&
                 contentLength > 0)
             {
@@ -901,7 +1120,7 @@ namespace RepxDesigner
                 body = Encoding.UTF8.GetString(payload, 0, got);
             }
 
-            return true;
+            return 0;
         }
 
         private static void Respond(NetworkStream stream, int status, string contentType, string content, string allowedOrigin, bool privateNetwork = false)
@@ -941,6 +1160,7 @@ namespace RepxDesigner
                 case 400: return "Bad Request";
                 case 403: return "Forbidden";
                 case 409: return "Conflict";
+                case 413: return "Payload Too Large";
                 case 424: return "Failed Dependency";
                 case 502: return "Bad Gateway";
                 default: return "Not Found";
@@ -979,6 +1199,145 @@ namespace RepxDesigner
         private static string RuntimeDesignerVersion()
         {
             return typeof(XtraReport).Assembly.GetName().Version.ToString();
+        }
+    }
+
+    /// <summary>
+    /// Only this Windows user's own programs may call the companion (2026-11-11, the
+    /// full audit, SE-05).
+    ///
+    /// 127.0.0.1 is one address for everybody signed in to a PC, and on a Remote
+    /// Desktop server (this project's own home is one) that is many people. The
+    /// Origin and x-forma-client headers stop a web page, not a program: any user's
+    /// curl can send both, and /sql/ then reads the databases with this user's
+    /// Windows sign-in or saved login. So each connection is traced to the process
+    /// that opened it, through the TCP table Windows keeps (GetExtendedTcpTable, the
+    /// one netstat -o reads), and refused unless that process runs as the same user.
+    /// Free, with no prompt and no administrator.
+    ///
+    /// Measured 2026-11-11 on this server: the browser processes that hold this user's
+    /// connections (chrome, msedge, node) all read as this user's SID; another user's
+    /// chrome, msedge and node could not even be opened (error 5, access denied), and
+    /// anything that cannot be read is refused.
+    /// </summary>
+    internal static class SameUser
+    {
+        private const int AfInet = 2;
+        private const int TcpTableOwnerPidAll = 5;
+        private const uint ProcessQueryLimitedInformation = 0x1000;
+        private const uint TokenQuery = 0x0008;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct TcpRow
+        {
+            public uint State;
+            public uint LocalAddr;
+            public uint LocalPort;
+            public uint RemoteAddr;
+            public uint RemotePort;
+            public uint OwningPid;
+        }
+
+        [DllImport("iphlpapi.dll", SetLastError = true)]
+        private static extern uint GetExtendedTcpTable(IntPtr table, ref int size, bool sort, int ipVersion, int tableClass, uint reserved);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr handle);
+
+        private static readonly SecurityIdentifier Me = WindowsIdentity.GetCurrent().User;
+
+        /// <summary>True when the program at the other end of this connection runs as this user.</summary>
+        public static bool IsCaller(TcpClient client)
+        {
+            try
+            {
+                var remote = client.Client.RemoteEndPoint as IPEndPoint;
+                var local = client.Client.LocalEndPoint as IPEndPoint;
+                if (remote == null || local == null || !IPAddress.IsLoopback(remote.Address)) return false;
+                int pid = OwnerOf(remote, local);
+                if (pid <= 0) return false;
+                if (pid == Process.GetCurrentProcess().Id) return true;
+                SecurityIdentifier user = UserOf(pid);
+                return user != null && Me != null && user.Equals(Me);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("Could not tell who called: " + ex.Message);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// The process that owns the caller's end: the IPv4 row whose local end is the
+        /// caller's address and port and whose remote end is this listener.
+        /// </summary>
+        private static int OwnerOf(IPEndPoint caller, IPEndPoint listener)
+        {
+            int size = 0;
+            GetExtendedTcpTable(IntPtr.Zero, ref size, false, AfInet, TcpTableOwnerPidAll, 0);
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                IntPtr buffer = Marshal.AllocHGlobal(size);
+                try
+                {
+                    uint result = GetExtendedTcpTable(buffer, ref size, false, AfInet, TcpTableOwnerPidAll, 0);
+                    if (result == 122) continue; // ERROR_INSUFFICIENT_BUFFER: the table grew; size holds the new need
+                    if (result != 0) return -1;
+                    int rows = Marshal.ReadInt32(buffer);
+                    int rowSize = Marshal.SizeOf(typeof(TcpRow));
+                    uint callerAddr = BitConverter.ToUInt32(caller.Address.GetAddressBytes(), 0);
+                    for (int i = 0; i < rows; i++)
+                    {
+                        var row = (TcpRow)Marshal.PtrToStructure(new IntPtr(buffer.ToInt64() + 4 + i * rowSize), typeof(TcpRow));
+                        if (row.LocalAddr == callerAddr && Port(row.LocalPort) == caller.Port && Port(row.RemotePort) == listener.Port)
+                        {
+                            return (int)row.OwningPid;
+                        }
+                    }
+                    return -1;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(buffer);
+                }
+            }
+            return -1;
+        }
+
+        /// <summary>A port as the table holds it: network byte order in the low 16 bits.</summary>
+        private static int Port(uint value)
+        {
+            return (int)(((value & 0xFF) << 8) | ((value >> 8) & 0xFF));
+        }
+
+        /// <summary>The user a process runs as, or null when it cannot be read (another user's).</summary>
+        private static SecurityIdentifier UserOf(int pid)
+        {
+            IntPtr process = OpenProcess(ProcessQueryLimitedInformation, false, pid);
+            if (process == IntPtr.Zero) return null;
+            try
+            {
+                IntPtr token;
+                if (!OpenProcessToken(process, TokenQuery, out token)) return null;
+                try
+                {
+                    using (var identity = new WindowsIdentity(token)) return identity.User;
+                }
+                finally
+                {
+                    CloseHandle(token);
+                }
+            }
+            finally
+            {
+                CloseHandle(process);
+            }
         }
     }
 }
