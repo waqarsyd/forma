@@ -49,11 +49,14 @@
  * malformed-record guards — stored data outlives the code that wrote it, so a
  * record from an older shape has to be survivable rather than fatal.
  *
- * The IndexedDB calls themselves have no unit test: jsdom provides no IndexedDB,
- * and adding `fake-indexeddb` would be a devDependency for one adapter. That is
- * the same judgement `docs/notes/testing.md` already records for `ReportPreview`,
- * whose portal and `ResizeObserver` are browser behaviour driven through the
- * `run-forma` skill instead. Exercise this in the running app.
+ * The IndexedDB calls themselves have no unit test yet. jsdom provides no
+ * IndexedDB, and `fake-indexeddb` was declined here at first as a devDependency
+ * for one adapter. There are four such stores now (this one, the learning
+ * events, the database layouts and the batch checkpoint), so on 2026-11-11 (the
+ * full audit, TC-07) it became a devDependency, and `learning.test.ts` and
+ * `sqlSchemaStore.test.ts` show the pattern: a fresh `IDBFactory` per case, put
+ * where the store looks for it. This adapter is next in line; until then,
+ * exercise it in the running app.
  */
 import type { LibraryEntry, LibraryStorage } from './embedStore';
 import type { RepxChunk } from './repxChunks';

@@ -75,26 +75,47 @@ concurrency:
 
 jobs:
   checks:
-    name: lint, types, encoding, tests, build
+    # The run on 24 keeps the exact name .github/rulesets/main.json requires as
+    # a status check; a matrix job whose name does not mention the matrix gets
+    # the values appended, which would leave that required check never reported.
+    name: ${{ matrix.node == '24' && 'lint, types, encoding, tests, build' || format('lint, types, encoding, tests, build (Node {0})', matrix.node) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    # The floor in package.json's engines, ^22.22.2 || ^24.15.0 || >=26, is
+    # where vitest's range (^20 || ^22 || >=24) meets jsdom's (2026-11-11,
+    # TC-05). It was tested on 24 alone until then, so a floor that said 20 was
+    # a promise nothing ran. Both lines run now: 22.22.2 exactly, because the
+    # floor is the version most likely to break, and the newest 24, the line
+    # the project is developed on. One failing does not cancel the other.
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.22.2', '24']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
-      # Node 20, 22 and >=24 only: vitest declares ^20 || ^22 || >=24, so the
-      # odd lines 21 and 23 are outside the supported range despite being newer
-      # than 20. Pinned to the version the project is developed against.
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: '24'
+          node-version: ${{ matrix.node }}
           cache: npm
 
       # `ci`, not `install`: it installs from the lockfile and fails if
       # package.json and package-lock.json disagree, which is a check in itself
       # and one nothing else performs.
+      #
+      # Node 22.22.2 brings npm 10, which does not know package.json's
+      # allowScripts, so on that leg the three denied install scripts run.
+      # Two are harmless (tesseract.js prints a funding note, sharp checks for
+      # its prebuilt binary), but onnxruntime-node's postinstall downloads the Linux
+      # CUDA binaries from GitHub on an x64 runner: slower, a feed outside npm
+      # that can fail the run, and files nothing here loads. The variable is its
+      # documented way to skip that, and on 24 the script is denied anyway
+      # (2026-11-11, the full audit's DEPS review).
       - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
 
       - name: Typecheck
         run: npm run lint
@@ -145,6 +166,21 @@ jobs:
       # size. Commit 0bf3291 carries the measurement.
       - name: Bundle size budget
         run: npm run check:size
+
+      # CI only, like `npm ci` above, so the local list of seven stays seven
+      # (2026-11-11, TC-14). securityHeaders.test.ts hashes the source
+      # index.html; this hashes the inline script of every page the build drew
+      # against the policy firebase.json sends, then starts the self-hosted
+      # server (`npm start`), which nothing ran before, and checks the policy
+      # it actually sends allows them too. The trap stops the server however
+      # the step ends.
+      - name: Built pages and the self-hosted server
+        run: |
+          node scripts/check-dist.mjs
+          node dist/server.cjs &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          node scripts/check-dist.mjs --server http://127.0.0.1:3000/
 
   rules:
     name: firestore rules

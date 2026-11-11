@@ -38,21 +38,27 @@ vi.mock('./accountData', () => {
 });
 
 describe('firebaseClient', () => {
-  it('loads auth without loading Firestore or the path builders', async () => {
-    const { loadAuth } = await import('./firebaseClient');
-    const client = await loadAuth();
-    expect(client.service.app).toEqual({ name: 'test-app' });
+  /*
+   * One case, in order, on purpose (2026-11-11, the full audit, TC-06). The
+   * counters above and the module cache are shared by the whole file, so as
+   * two cases the first held only while it ran first: under
+   * `--sequence.shuffle` seeds 1, 2, 3 and 11 ran the database case first and
+   * failed the auth case on a Firestore load that had already happened. The
+   * order is the claim being tested: auth alone loads nothing else, and the
+   * database comes after it, from the same app.
+   */
+  it('loads auth without Firestore or the path builders, then opens the database from the same app', async () => {
+    const { loadAuth, loadFirebase } = await import('./firebaseClient');
+    const auth = await loadAuth();
+    expect(auth.service.app).toEqual({ name: 'test-app' });
     expect(state.firestoreLoads).toBe(0);
     expect(state.accountDataLoads).toBe(0);
     // A signed-out reader never loads reCAPTCHA.
     expect(state.appCheckLoads).toBe(0);
-    expect(await loadAuth()).toBe(client);
-  });
+    expect(await loadAuth()).toBe(auth);
 
-  it('opens the database from the auth client’s app and the configured id', async () => {
-    const { loadAuth, loadFirebase } = await import('./firebaseClient');
     const client = await loadFirebase();
-    expect(client.service).toBe((await loadAuth()).service);
+    expect(client.service).toBe(auth.service);
     expect(client.db).toEqual({ app: { name: 'test-app' }, id: 'test-db' });
     expect(state.firestoreLoads).toBe(1);
     expect(state.accountDataLoads).toBe(1);

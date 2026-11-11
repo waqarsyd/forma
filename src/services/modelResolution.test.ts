@@ -96,7 +96,17 @@ const probedModels = (mock: ReturnType<typeof stubNetwork>): string[] =>
     .map(([url]) => /\/models\/([^:]+):generateContent/.exec(url as string)?.[1])
     .filter((m): m is string => !!m);
 
+/*
+ * Probing narrates itself to the console ("Model probing finished", "Auto-selected
+ * Gemini model"), which belongs in a browser's devtools and was 37 blocks of
+ * noise in every run of this file (2026-11-11, the full audit, TC-13). Nothing
+ * here asserts on the console, so it is silenced per test; `console.error` is
+ * left alone, because that one is never expected.
+ */
+let quiet: Array<{ mockRestore(): void }> = [];
+
 beforeEach(() => {
+  quiet = (['debug', 'log', 'info', 'warn'] as const).map((level) => vi.spyOn(console, level).mockImplementation(() => {}));
   clearCachedModel();
   try { sessionStorage.clear(); localStorage.clear(); } catch { /* jsdom always has it */ }
 });
@@ -104,6 +114,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   clearCachedModel();
+  for (const spy of quiet) spy.mockRestore();
 });
 
 describe('MODEL_PREFERENCE', () => {

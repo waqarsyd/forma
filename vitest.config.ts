@@ -10,15 +10,16 @@ import { defineConfig } from 'vitest/config';
  * costs ~1.4s warm, but on a cold OS file cache it was measured at **113
  * seconds** in a single process on the development machine — and vitest gives a
  * worker 60 seconds to report in (`START_TIMEOUT`, hardcoded in vitest's dist,
- * with no config option feeding it). Every one of the 25 workers therefore died
- * before it could start, and the whole suite failed with
+ * with no config option feeding it). Every worker therefore died before it
+ * could start, and the whole suite failed with
  * `[vitest-pool-runner]: Timeout waiting for worker to respond` — which reads as
  * a broken pool or a broken install, and is really a stopwatch. The second run
  * took 1.4s. See the *cold cache* note in CLAUDE.md.
  *
  * Since the 60s ceiling cannot be raised, the lever is to need jsdom less.
- * Measured: 20 of the 25 files and 363 of the 409 tests never touch a DOM API.
- * The five that do opt in individually with a first-line
+ * Measured when this was written, most files and most tests never touched a
+ * DOM API (`docs/notes/testing.md` keeps the files that do). Those opt in
+ * individually with a first-line
  * `// @vitest-environment jsdom`, which is honoured per file and overrides both
  * this setting and a `--environment` flag on the command line.
  *
@@ -49,7 +50,7 @@ export default defineConfig({
      * from the start but no provider was ever installed, so the number could
      * not be produced at all.
      *
-     * Excludes are the point of this block. Counting `App.tsx` and the twenty
+     * Excludes are the point of this block. Counting `App.tsx` and the
      * components in the denominator produces a number dominated by code that
      * *cannot* be unit-tested until the extraction in ARC-001 is much further
      * along — which makes the figure move for reasons unrelated to whether
@@ -90,6 +91,19 @@ export default defineConfig({
         'src/lib/motion.ts',
       ],
       reporter: ['text-summary', 'text'],
+      /*
+       * Enforced since 2026-11-11 (the full audit, TC-11). Until then the
+       * number was printed in every CI log and gated nothing, so a change that
+       * dropped a module's tests passed green. CI's run of a76e367 read 88.65
+       * statements, 81.09 branches, 90.4 functions and 90.33 lines; each floor
+       * sits about two points under that, so ordinary churn does not trip it
+       * and losing a tested module's cases does. Functions and lines were
+       * planned at 89 and set at 88, because a local run of the same day read
+       * 90.0 and 89.79, under a point clear of them. Raise a floor when the
+       * number has risen and stayed; lowering one is a decision to write down
+       * in the commit, never a way to get a red run green.
+       */
+      thresholds: { statements: 87, branches: 79, functions: 88, lines: 88 },
     },
   },
   /*

@@ -31,7 +31,7 @@ import {
   assertSucceeds,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, setDoc, getDoc, collection, getDocs, writeBatch, type Firestore } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, getDocs, writeBatch, setLogLevel, type Firestore } from 'firebase/firestore';
 import fs from 'node:fs';
 import {
   deleteAccountData,
@@ -53,6 +53,11 @@ import {
   deleteLearning,
   LEARNING_PAGE,
 } from '../src/lib/accountData';
+
+// A failure this file expects is also logged by the SDK as a warning, noise
+// that hid real ones across the rules run (2026-11-11, the full audit, TC-13).
+// The assertions say what failed.
+setLogLevel('silent');
 
 const ALICE = 'alice-uid';
 const BOB = 'bob-uid';

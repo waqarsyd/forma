@@ -17,8 +17,13 @@ import {
   assertSucceeds,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, deleteDoc, updateDoc, collection, getDocs, query, where, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, updateDoc, collection, getDocs, query, where, writeBatch, setLogLevel } from 'firebase/firestore';
 import fs from 'node:fs';
+
+// Every denial this file expects is also logged by the SDK as a
+// PERMISSION_DENIED warning, which buried a real one under dozens of expected
+// ones (2026-11-11, the full audit, TC-13). The assertions say what was denied.
+setLogLevel('silent');
 
 const ALICE = 'alice-uid';
 const BOB = 'bob-uid';

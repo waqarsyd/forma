@@ -7,9 +7,13 @@ import { describe, expect, it } from 'vitest';
 import type { ReportSkeleton } from './reportSkeleton';
 import {
   DEFAULT_LEARNING_SETTINGS,
+  clearLearningEvents,
+  keepLearningEvent,
   learningEvent,
   learningId,
   learningSummary,
+  listLearningEvents,
+  MAX_LOCAL,
   readLearningSettings,
   scrubSkeleton,
   sendable,
@@ -153,5 +157,64 @@ describe('the summary', () => {
     ];
     expect(learningSummary(events)).toEqual({ total: 3, byKind: { generation: 1, edit: 1, translate: 0, rating: 1 }, full: 1, since: '2026-11-09T10:00:00.000Z' });
     expect(learningSummary([])).toEqual({ total: 0, byKind: { generation: 0, edit: 0, translate: 0, rating: 0 }, full: 0, since: null });
+  });
+});
+
+/*
+ * The store on the device (2026-11-11, the full audit, TC-07). It can hold
+ * whole reports on the full tier, so a trim that stops trimming grows it
+ * without bound and a clear that stops clearing leaves those reports on a
+ * shared PC after Settings' Forget, and neither would fail anything but this.
+ * A fresh in-memory IndexedDB from `fake-indexeddb` per case, passed in
+ * through the `idb` parameter the store already takes.
+ *
+ * Loaded through a computed specifier, so that a node_modules installed before
+ * the devDependency arrived skips these cases by name instead of failing to
+ * load the whole file. CI installs from the lockfile, so there a missing
+ * package is an error, never a skip.
+ */
+const FAKE_IDB = 'fake-indexeddb';
+const fakeIdb = (await import(/* @vite-ignore */ FAKE_IDB).catch(() => null)) as { IDBFactory: new () => IDBFactory } | null;
+if (!fakeIdb && process.env.CI) throw new Error('fake-indexeddb is a devDependency and is not installed: run npm ci.');
+
+describe.runIf(fakeIdb)('the store on the device', () => {
+  const structure = { structure: true, full: false };
+  const at = (n: number) => new Date(Date.UTC(2026, 10, 1) + n * 60_000);
+
+  it('keeps events, lists them newest first, and forgets them all', async () => {
+    const idb = new fakeIdb!.IDBFactory();
+    const first = learningEvent({ kind: 'generation' }, structure, at(1));
+    const second = learningEvent({ kind: 'edit', ops: ['font'] }, structure, at(2));
+    const third = learningEvent({ kind: 'rating', rating: 'good' }, structure, at(3));
+    await keepLearningEvent(second, idb);
+    await keepLearningEvent(first, idb);
+    await keepLearningEvent(third, idb);
+
+    expect((await listLearningEvents(idb)).map((e) => e.id)).toEqual([third.id, second.id, first.id]);
+    expect(await listLearningEvents(idb)).toContainEqual(second);
+
+    await clearLearningEvents(idb);
+    expect(await listLearningEvents(idb)).toEqual([]);
+  });
+
+  it(`keeps the newest ${MAX_LOCAL} and lets the oldest go`, async () => {
+    const idb = new fakeIdb!.IDBFactory();
+    const events = Array.from({ length: MAX_LOCAL + 1 }, (_, n) => learningEvent({ kind: 'edit' }, structure, at(n)));
+    for (const event of events) await keepLearningEvent(event, idb);
+
+    const kept = await listLearningEvents(idb);
+    expect(kept).toHaveLength(MAX_LOCAL);
+    expect(kept.some((e) => e.id === events[0].id)).toBe(false);
+    expect(kept[0].id).toBe(events[MAX_LOCAL].id);
+    expect(kept[MAX_LOCAL - 1].id).toBe(events[1].id);
+  }, 60_000);
+});
+
+describe('a browser with no IndexedDB', () => {
+  it('keeps nothing, lists nothing and clears without failing', async () => {
+    const event = learningEvent({ kind: 'edit' }, { structure: true, full: false }, new Date('2026-11-01T00:00:00Z'));
+    await expect(keepLearningEvent(event, null)).resolves.toBeUndefined();
+    expect(await listLearningEvents(null)).toEqual([]);
+    await expect(clearLearningEvents(null)).resolves.toBeUndefined();
   });
 });

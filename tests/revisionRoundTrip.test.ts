@@ -43,6 +43,7 @@ import {
   deleteDoc,
   query,
   orderBy,
+  setLogLevel,
   type Firestore,
 } from 'firebase/firestore';
 import fs from 'node:fs';
@@ -57,6 +58,10 @@ import {
   type VersionDocument,
 } from '../src/lib/revisionStore';
 import type { Revision } from '../src/lib/revisions';
+
+// The denials this file expects are also logged by the SDK as PERMISSION_DENIED
+// warnings, noise that hid real ones (2026-11-11, the full audit, TC-13).
+setLogLevel('silent');
 
 const ALICE = 'alice-uid';
 const BOB = 'bob-uid';

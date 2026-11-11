@@ -125,7 +125,17 @@ beforeAll(async () => {
   await import('@google/genai');
 }, 60_000);
 
+/*
+ * The service narrates every retry, fallback and reply to the console, which is
+ * right in a browser's devtools and was 39 blocks of noise in every run of this
+ * file, enough to hide a real warning (2026-11-11, the full audit, TC-13).
+ * Nothing here asserts on the console, so the narration is silenced per test;
+ * `console.error` is left alone, because that one is never expected.
+ */
+let quiet: Array<{ mockRestore(): void }> = [];
+
 beforeEach(() => {
+  quiet = (['debug', 'log', 'info', 'warn'] as const).map((level) => vi.spyOn(console, level).mockImplementation(() => {}));
   vi.useFakeTimers();
   resetGenAIForTests();
   /*
@@ -151,6 +161,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   resetGenAIForTests();
   clearCachedModel();
+  for (const spy of quiet) spy.mockRestore();
 });
 
 /*
