@@ -68,9 +68,15 @@
 
    `height` + an explicit `minmax(0, 1fr)` row gives the panes the bounded height
    their own overflow already asks for. `min-height: 0` on the columns is what
-   lets a flex child shrink below its content instead of forcing the row taller. */
+   lets a flex child shrink below its content instead of forcing the row taller.
+
+   `100dvh` after each `100vh` (2026-11-11, audit PR-10): on a phone `vh` is the
+   viewport with the browser's toolbar hidden, so with the toolbar showing the
+   shell ran under it and the box at its foot sat behind the toolbar. `dvh` is
+   the height actually visible; a browser without it keeps the `vh` line. */
 .wb-shell {
   height: 100vh;
+  height: 100dvh;
   grid-template-rows: minmax(0, 1fr);
 }
 .wb-rail,
@@ -396,7 +402,7 @@
 }
 .wb-root *, .wb-root *::before, .wb-root *::after { box-sizing: border-box; }
 
-.wb-shell { min-height: 100vh; display: grid; grid-template-columns: 56px 340px minmax(0, 1fr); }
+.wb-shell { min-height: 100vh; min-height: 100dvh; display: grid; grid-template-columns: 56px 340px minmax(0, 1fr); }
 
 /* ------------------------------------------------------------------- rail */
 .wb-rail {
@@ -882,9 +888,17 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 .wb-model-menu small { font-size: 11.5px; font-weight: 400; line-height: 1.4; color: var(--ink-2); }
 .wb-model-menu p { margin: 6px 10px 4px; font-size: 10.5px; line-height: 1.4; color: var(--ink-faint); }
 /* Listening to a spoken message (2026-11-05): the microphone in the accent,
-   breathing, until the browser stops hearing. */
-.wb-tool.wb-is-listening { color: var(--accent); background: var(--accent-wash); animation: wb-listen 1.2s ease-in-out infinite; }
-@keyframes wb-listen { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--ink) 10%, transparent); } }
+   breathing, until the browser stops hearing. The breath is a ring drawn once
+   on `::after` whose opacity pulses (2026-11-11, audit PR-20b): animating the
+   box-shadow itself repainted the button on every frame, which a phone feels;
+   opacity is composited. The workspace's reduced-motion rule reaches `::after`. */
+.wb-tool.wb-is-listening { position: relative; color: var(--accent); background: var(--accent-wash); }
+.wb-tool.wb-is-listening::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ink) 10%, transparent);
+  opacity: 0; animation: wb-listen 1.2s ease-in-out infinite;
+}
+@keyframes wb-listen { 50% { opacity: 1; } }
 
 /* The send button. A real 32px circle — it was an unstyled <button> for a while,
    which is why it rendered as a 31x21 rectangle with square corners. */
@@ -2016,7 +2030,7 @@ html[data-modality='keyboard'] .wb-panel-search:focus-within { border-color: var
   .wb-panel.wb-is-collapsed .wb-panel-head { padding: 6px 10px 0; }
   .wb-panel-head { padding: 6px 10px 0; }
   .wb-panel-convo {
-    position: absolute; left: 8px; right: 8px; bottom: calc(100% + 8px); max-height: min(55vh, 460px);
+    position: absolute; left: 8px; right: 8px; bottom: calc(100% + 8px); max-height: min(55vh, 460px); max-height: min(55dvh, 460px);
     border: 1px solid var(--rule); border-radius: 18px; overflow: hidden;
     background: color-mix(in srgb, var(--panel-2) 96%, transparent); backdrop-filter: blur(14px); box-shadow: var(--shadow-md);
   }
@@ -2028,4 +2042,26 @@ html[data-modality='keyboard'] .wb-panel-search:focus-within { border-color: var
      sheet folds; a padding to scroll clear of it would count toward the
      pane's least height and push the box off the screen. */
   .wb-bench-body, .wb-bench[data-panel='open'] .wb-bench-body { padding: 20px 12px 30px; }
+}
+
+/* Typing on a phone (2026-11-11, audit PR-09): iOS Safari zooms the page into
+   any field whose text is under 16px when it takes focus, and leaves it zoomed,
+   so every field in the workspace (13px and 14px here, 11px to 15px in the
+   dialogs and menus) threw the layout sideways on the first tap. 16px stops it;
+   `maximum-scale=1` would too, and would take pinch zoom from everyone, which
+   is why it is not used. `!important` because the fields' own sizes sit on
+   selectors of two and three classes and in the lazy sheets loaded after this
+   one. The Preview's in-place editor keeps the report's size: it sits inside
+   the control's own box, and 16px would spill out of it. */
+@media (max-width: 880px), (pointer: coarse) {
+  .wb-root input:not(.rp-textedit), .wb-root textarea, .wb-root select { font-size: 16px !important; }
+}
+/* Touch targets of 40px where the pointer is a finger (2026-11-11, audit PR-11):
+   the box's tools were 28px, a reply's icons 24 by 22 and a notice's close 22,
+   under the 40 or so a fingertip covers. Desktop sizes are untouched. The
+   dialogs' closes are in components/dialogs.css and the Export panel's in
+   components/overlays.css, beside their own rules. */
+@media (pointer: coarse) {
+  .wb-tool, .wb-send, .wb-panel-tool, .wb-corner button, .wb-note-act.wb-note-icon,
+  .wb-row-actions button, .wb-toast > button, .wb-note-close { min-width: 40px; min-height: 40px; }
 }

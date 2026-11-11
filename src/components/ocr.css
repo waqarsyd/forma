@@ -12,6 +12,8 @@
 .wb-ocrd {
   width: min(1000px, 100%);
   max-height: calc(100vh - 32px);
+  /* What a phone shows with its toolbar (2026-11-11, audit PR-10), as `.wb-set`. */
+  max-height: calc(100dvh - 32px);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   border: 1px solid var(--rule);

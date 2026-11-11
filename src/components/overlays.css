@@ -119,7 +119,9 @@ html[data-modality='keyboard'] .wb-root .wb-share input:focus-visible, html[data
 .wb-share-note { font-size: 12px; color: var(--ink-faint) !important; }
 
 /* A shared report opened from its link (SharedReportPage.tsx). */
-.wb-shared { min-height: 100vh; background: var(--surface); }
+/* `100dvh` after `100vh` (2026-11-11, audit PR-10): the height a phone shows
+   with its toolbar, so the page's foot is not drawn under the toolbar. */
+.wb-shared { min-height: 100vh; min-height: 100dvh; background: var(--surface); }
 .wb-shared-bar { display: flex; align-items: center; gap: 16px; padding: 12px 22px; border-bottom: 1px solid var(--rule); background: var(--panel); }
 .wb-shared-bar h1 { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--display); font-size: 18px; color: var(--ink); }
 .wb-shared-home { display: grid; place-items: center; padding: 0; border: 0; background: none; cursor: pointer; }
@@ -202,7 +204,7 @@ html[data-modality='keyboard'] .wb-root .wb-project-rename input:focus-visible {
 /* The Export panel (ExportPanel.tsx), as Stitch's, dropping from its button at the right. */
 .wb-export-anchor { position: relative; display: inline-flex; }
 .wb-export {
-  position: absolute; right: 0; top: calc(100% + 8px); z-index: 50; width: 330px; max-height: min(620px, calc(100vh - 90px)); overflow-y: auto;
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 50; width: 330px; max-height: min(620px, calc(100vh - 90px)); max-height: min(620px, calc(100dvh - 90px)); overflow-y: auto;
   padding: 10px; display: grid; gap: 2px; text-align: left;
   border: 1px solid var(--rule); border-radius: 16px; background: var(--panel); box-shadow: var(--shadow-md);
 }
@@ -258,6 +260,21 @@ input.wb-corner-zoom:hover { background: var(--track); }
 }
 .wb-corner .wb-zoom-menu button { width: 100%; height: auto; display: flex; justify-content: space-between; gap: 12px; padding: 7px 9px; border-radius: 8px; font-size: 12.5px; }
 .wb-zoom-menu kbd { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); }
+/* On a phone the corner sits at the top of the report, not its foot
+   (workspace.css, the 880px block), so a menu opening upward from it opened off
+   the screen: "?" and the zoom's sizes could not be reached (2026-11-11, audit
+   PR-12). There they drop down, as the toast beside them already does, the zoom's
+   menu inside the screen's right edge, and "?" scrolls if the screen is short. */
+@media (max-width: 880px) {
+  .wb-float-corner .wb-help, .wb-float-corner .wb-zoom-menu { top: calc(100% + 10px); bottom: auto; }
+  .wb-float-corner .wb-zoom-menu { right: 0; }
+  .wb-float-corner .wb-help { max-height: calc(100vh - 140px); max-height: calc(100dvh - 140px); overflow-y: auto; }
+}
+/* The Export panel's close where the pointer is a finger (2026-11-11, audit
+   PR-11), 40px as the workspace's other closes are there. */
+@media (pointer: coarse) {
+  .wb-export-close { min-width: 40px; min-height: 40px; }
+}
 
 /* The box's + and / menus (2026-11-08, BoxMenus.tsx), as Stitch's: they open
    upward from their buttons, a name over its line as the model menu has. */

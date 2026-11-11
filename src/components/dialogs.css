@@ -16,6 +16,9 @@
 .wb-set {
   width: min(780px, 100%);
   height: min(620px, calc(100vh - 32px));
+  /* The height actually visible on a phone, with its toolbar showing (2026-11-11,
+     audit PR-10); `vh` is the height with it hidden, so the foot went under it. */
+  height: min(620px, calc(100dvh - 32px));
   display: grid;
   grid-template-columns: 200px minmax(0, 1fr);
   border: 1px solid var(--rule);
@@ -120,11 +123,22 @@ html[data-modality='keyboard'] .wb-root .wb-set-input:focus-visible { border-col
 
 /* A phone: the sections become a row across the top, the pane below. */
 @media (max-width: 640px) {
-  .wb-set { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); height: calc(100vh - 32px); }
+  .wb-set { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); height: calc(100vh - 32px); height: calc(100dvh - 32px); }
   .wb-set-nav { padding: 10px 10px 8px; border-right: 0; border-bottom: 1px solid var(--rule); }
   .wb-set-head { padding-bottom: 4px; }
   .wb-set-tabs { flex-direction: row; overflow-x: auto; scrollbar-width: none; }
   .wb-set-tab { width: auto; flex: none; gap: 7px; padding: 7px 9px; }
   .wb-set-pane { padding: 14px 16px 20px; }
   .wb-set-pair { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Where the pointer is a finger (2026-11-11, audit PR-11): the close was 30px
+   and the eye in a key field 28, under the 40 or so a fingertip covers. The
+   fields grow to 40 with them, so the eye stays inside its field rather than
+   hanging below it. Workspace.css does the same for the box and the thread. */
+@media (pointer: coarse) {
+  .wb-set-close, .wb-set-peek { min-width: 40px; min-height: 40px; }
+  .wb-set-input { height: 40px; }
+  .wb-set-secret .wb-set-input { padding-right: 44px; }
+  .wb-set-peek { top: 0; right: 0; }
 }
