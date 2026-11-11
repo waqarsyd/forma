@@ -202,3 +202,54 @@ describe('a stocked library', () => {
     expect(props.onRemove).toHaveBeenCalledWith('Invoice.repx');
   });
 });
+
+/* A drop on the panel (2026-11-11, the full audit's WS-13): into the library, never past it to the box behind. */
+describe('dropping files on the panel', () => {
+  const drop = (names: string[]) => {
+    const files = names.map((name) => new File(['<xml/>'], name, { type: 'text/xml' }));
+    const outside = vi.fn();
+    document.body.addEventListener('drop', outside);
+    fireEvent.drop(document.querySelector('.lp-panel')!, { dataTransfer: { files, types: ['Files'] } });
+    document.body.removeEventListener('drop', outside);
+    return outside;
+  };
+
+  it('adds the .repx files dropped, and the drop goes no further', async () => {
+    const onImport = vi.fn(async (_files: File[]) => result());
+    panel({ onImport });
+    const outside = drop(['a.repx', 'photo.png', 'b.REPX']);
+    await waitFor(() => expect(onImport).toHaveBeenCalledTimes(1));
+    expect(onImport.mock.calls[0][0].map((f) => f.name)).toEqual(['a.repx', 'b.REPX']);
+    expect(outside).not.toHaveBeenCalled();
+    // The file that is not a report is named, not dropped without a word.
+    await waitFor(() => expect(screen.getByText(/so photo\.png was left out\./)).toBeTruthy());
+  });
+
+  it('says so when a drop comes while reports are still going in', async () => {
+    let finish: (value: ImportResult) => void = () => undefined;
+    const onImport = vi.fn((_files: File[]) => new Promise<ImportResult>((resolve) => { finish = resolve; }));
+    panel({ onImport });
+    drop(['a.repx']);
+    await waitFor(() => expect(screen.getByText('Adding…')).toBeTruthy());
+    drop(['b.repx']);
+    expect(onImport).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/Still adding the last reports/)).toBeTruthy();
+    finish(result());
+    await waitFor(() => expect(screen.queryByText('Adding…')).toBeNull());
+  });
+
+  it('says so when nothing dropped is a report', () => {
+    const onImport = vi.fn(async (_files: File[]) => result());
+    panel({ onImport });
+    drop(['photo.png']);
+    expect(onImport).not.toHaveBeenCalled();
+    expect(screen.getByText('Only .repx files go into the library.')).toBeTruthy();
+  });
+
+  it('asks for the key first, as the button does', () => {
+    const props = panel({ ready: false });
+    drop(['a.repx']);
+    expect(props.onNeedKey).toHaveBeenCalledTimes(1);
+    expect(props.onImport).not.toHaveBeenCalled();
+  });
+});

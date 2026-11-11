@@ -1,8 +1,10 @@
 /**
  * The open project's menu, from the button before its name (2026-11-08):
  * Rename in place, Duplicate, Archive, and Delete, which asks once in the
- * menu itself before it does anything. They act on what is kept, so they wait
- * until the project is saved.
+ * menu itself before it does anything. They act on what is kept, so the menu
+ * is there for a saved project only (2026-11-11, the full audit's WS-23): on
+ * unsaved work, the empty home included, it opened with every item disabled
+ * over a line saying they waited for a save, a menu that offered nothing.
  *
  * For a day it was the workspace's main menu, as Stitch's hamburger: Go to
  * all projects, Share, Export, Settings, the command menu, the shortcuts,
@@ -21,12 +23,12 @@ import { useMenuKeys } from './useMenuKeys';
 
 interface Props {
   name: string;
-  onRename?: (name: string) => void;
-  onDuplicate?: () => void;
+  onRename: (name: string) => void;
+  onDuplicate: () => void;
   /** Archive or bring back; `archived` says which this is. */
-  onArchive?: () => void;
+  onArchive: () => void;
   archived?: boolean;
-  onDelete?: () => void;
+  onDelete: () => void;
   onClose: () => void;
   /** Opened at Rename's field, or at Delete's question, as Ctrl+K's "Rename…" and "Delete…" open it (2026-11-06). */
   start?: 'rename' | 'delete';
@@ -34,8 +36,8 @@ interface Props {
 
 export default function ProjectMenu({ name, onRename, onDuplicate, onArchive, archived = false, onDelete, onClose, start }: Props) {
   const box = useRef<HTMLDivElement>(null);
-  const [renaming, setRenaming] = useState<string | null>(start === 'rename' && onRename ? name : null);
-  const [confirming, setConfirming] = useState(start === 'delete' && !!onDelete);
+  const [renaming, setRenaming] = useState<string | null>(start === 'rename' ? name : null);
+  const [confirming, setConfirming] = useState(start === 'delete');
   useEffect(() => {
     const away = (e: PointerEvent) => {
       if (!box.current?.contains(e.target as Node) && !(e.target as Element | null)?.closest?.('[data-project-toggle]')) onClose();
@@ -52,7 +54,7 @@ export default function ProjectMenu({ name, onRename, onDuplicate, onArchive, ar
   };
   return (
     <div className="wb-project-menu" ref={box} role="menu" aria-label="Project">
-      {renaming !== null && onRename ? (
+      {renaming !== null ? (
         <form
           className="wb-project-rename"
           onSubmit={(e) => {
@@ -66,21 +68,20 @@ export default function ProjectMenu({ name, onRename, onDuplicate, onArchive, ar
           <button type="submit">Rename</button>
         </form>
       ) : (
-        <button type="button" role="menuitem" disabled={!onRename} onClick={() => setRenaming(name)}>Rename</button>
+        <button type="button" role="menuitem" onClick={() => setRenaming(name)}>Rename</button>
       )}
-      <button type="button" role="menuitem" disabled={!onDuplicate} onClick={onDuplicate ? run(onDuplicate) : undefined}>Duplicate</button>
-      <button type="button" role="menuitem" disabled={!onArchive} onClick={onArchive ? run(onArchive) : undefined}>{archived ? 'Bring back from the archive' : 'Archive'}</button>
+      <button type="button" role="menuitem" onClick={run(onDuplicate)}>Duplicate</button>
+      <button type="button" role="menuitem" onClick={run(onArchive)}>{archived ? 'Bring back from the archive' : 'Archive'}</button>
       <hr />
-      {confirming && onDelete ? (
+      {confirming ? (
         <div className="wb-project-confirm" role="group" aria-label="Delete this project?">
           <span>Delete this project?</span>
           <button type="button" className="is-danger" onClick={run(onDelete)}>Delete</button>
           <button type="button" onClick={() => setConfirming(false)}>Keep</button>
         </div>
       ) : (
-        <button type="button" role="menuitem" className="is-danger" disabled={!onDelete} onClick={() => setConfirming(true)}>Delete</button>
+        <button type="button" role="menuitem" className="is-danger" onClick={() => setConfirming(true)}>Delete</button>
       )}
-      {!onRename && <p className="wb-project-note">Saved projects can be renamed, duplicated and deleted.</p>}
     </div>
   );
 }

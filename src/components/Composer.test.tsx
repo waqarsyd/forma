@@ -708,3 +708,28 @@ describe("the box's +, Tools and house style", () => {
     expect(screen.getByRole('button', { name: 'Use house style' }).getAttribute('title')).toMatch(/^House style is off/);
   });
 });
+
+/* What goes with each message is said over the box (2026-11-11, the full audit's WS-02). */
+describe('a shared database', () => {
+  it('shows as a chip while it is shared, and stops at its close', () => {
+    const onStop = vi.fn();
+    draw({ database: { name: 'FormaSample', onStop } });
+    expect(screen.getByText(/Database: FormaSample, shared/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Stop sharing FormaSample with the AI' }));
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows nothing while nothing is shared', () => {
+    draw();
+    expect(screen.queryByText(/Database:/)).toBeNull();
+  });
+});
+
+/* The picker takes what a drop takes (2026-11-11, the full audit's CP-01a, a wave-3 follow-up). */
+describe('the file picker', () => {
+  it('offers SSRS and Crystal Reports files beside a .repx', () => {
+    draw();
+    const accept = (document.querySelector('input[type=file]') as HTMLInputElement).accept.split(',');
+    for (const type of ['.repx', '.rdl', '.rdlc', '.rpt']) expect(accept).toContain(type);
+  });
+});

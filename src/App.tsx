@@ -21,7 +21,6 @@ import {
   IconCheck,
   IconChevronDown,
   IconClose,
-  IconCopy,
   IconDownload,
   IconFolder,
   IconHelp,
@@ -43,10 +42,6 @@ import {
   IconPanelLeft,
   IconCompose,
   IconSave,
-  IconTrash,
-  IconPin,
-  IconPencil,
-  IconArchive,
   IconTune,
   IconWarn,
 } from './components/landing/icons';
@@ -116,13 +111,12 @@ import {
   saveReportsLocally,
   loadReportsLocally,
   sessionSignature,
-  arrangeProjects,
   readIdList,
   writeIdList,
   toggleId,
-  deviceProjectsLine,
   plainFirestoreRefusal,
 } from './lib/savedReport';
+import { deferDeletes, signOutKeeping } from './lib/deferredDelete';
 import { reloadIfStaleWaiting, setStaleBusyCheck } from './lib/staleChunks';
 import { toAttachmentParts } from './lib/attachmentParts';
 import {
@@ -198,6 +192,7 @@ import { chatShortcutOf, shortcutText, workspaceShortcutOf, type ChatShortcut, t
 import { hasOpenLayer, topLayer } from './lib/layers';
 import { initialsOf } from './lib/initials';
 import { useLayer } from './components/useLayer';
+import { useFocusTrap } from './components/useFocusTrap';
 import { useMenuKeys } from './components/useMenuKeys';
 import type { Command } from './components/CommandMenu';
 import { TIP_INTERVAL_MS, WORKING_TIPS, forPlatform, tipAt } from './lib/workingTips';
@@ -255,8 +250,6 @@ import {
   showBranch,
   conversationMarkdown,
   type ChatBranch,
-  noteCountLabel,
-  projectMatches,
   requestsOf,
   truncateFrom,
   withdrawTurn,
@@ -284,6 +277,8 @@ const ZoomField = lazy(() => import('./components/ZoomField'));
 const HelpMenu = lazy(() => import('./components/HelpMenu'));
 const ExportPanel = lazy(() => import('./components/ExportPanel'));
 const ProjectMenu = lazy(() => import('./components/ProjectMenu'));
+/* The Projects panel (2026-11-11, the full audit's WSX1), drawn only while it is open. */
+const ProjectsPanel = lazy(() => import('./components/ProjectsPanel'));
 const HomeStart = lazy(() => import('./components/HomeStart'));
 const PinProject = lazy(() => import('./components/PinProject'));
 /* Sharing (2026-11-06): the dialog, and the page a shared link opens. */
@@ -694,7 +689,12 @@ export default function App() {
    */
   const focusBox = () => {
     // The box folds away with the conversation (2026-11-08): open it first.
-    setIsPanelCollapsed(false);
+    // And it is hidden while a side panel floats in its place (2026-11-11,
+    // the full audit's WS-10 and WS-11): a starting point picked with
+    // Projects open went into a box nobody could see. `showRailPanel`, the way
+    // back every other route takes, so the phone's drawer closes and a hidden
+    // column opens too; it opens the folded conversation as well.
+    showRailPanel('review');
     requestAnimationFrame(() => {
       const box = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message"]');
       box?.focus();
@@ -1039,6 +1039,11 @@ export default function App() {
     showRailPanel('projects');
     setProjectQuery((q) => q ?? '');
   }, [showRailPanel]);
+  /** The side panel floating in the chat's place (2026-11-08), or null while the chat is there. */
+  const sidePanel = isReviewCollapsed || railPanel === 'review' ? null : railPanel;
+  /** Read by a deletion that fails after the panel was shown or left (WS-12). */
+  const sidePanelRef = useRef(sidePanel);
+  sidePanelRef.current = sidePanel;
 
   /*
    * The bench's bar height, on the shell as --wb-bar-h (2026-11-08), so a side
@@ -1096,11 +1101,25 @@ export default function App() {
       } else if (e.key === 'Escape' && isRailDrawerOpen) {
         e.preventDefault();
         closeRailDrawer();
+      } else if (e.key === 'Escape' && !e.defaultPrevented && sidePanel && (!target || target === document.body || target.closest('#wb-review-panel, #wb-rail'))) {
+        /*
+         * Escape closes a side panel floating in the chat's place (2026-11-11,
+         * the full audit's UI7), and the keyboard goes back to the rail's
+         * button for it. Projects opened from Search, then Escape, left the
+         * panel open and the box hidden. Not a layer (lib/layers.ts): an open
+         * layer holds back Ctrl+K and the Preview's keys, and the report beside
+         * the panel stays in use. From the panel, the rail or nowhere only, so
+         * Escape on the Preview's selection stays the Preview's, and a field
+         * in the panel that uses Escape itself says so with preventDefault.
+         */
+        e.preventDefault();
+        showRailPanel('review');
+        requestAnimationFrame(() => document.querySelector<HTMLElement>(`#wb-rail [data-panel="${sidePanel}"]`)?.focus());
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [showWorkspace, showLogin, isRailDrawerOpen, toggleSidebar, closeRailDrawer]);
+  }, [showWorkspace, showLogin, isRailDrawerOpen, toggleSidebar, closeRailDrawer, sidePanel, showRailPanel]);
 
   const beginReviewResize = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
@@ -1399,11 +1418,19 @@ export default function App() {
     if (!user || !firebase) return;
     const { sdk, paths, db } = firebase;
     const uid = user.uid;
-    const loadFailed = (error: unknown) =>
+    const loadFailed = (error: unknown) => {
       // Reported, not rethrown (2026-11-08, site audit item 62): this callback
       // runs long after the try below, so the rethrow was an uncaught error
       // whose text carried the account's email.
-      reportFirestoreFailure(error, OperationType.GET, 'users/{uid}/reports', 'Your saved projects could not be loaded just now. What is open here is safe; reload to try again.');
+      projectsLoadFailed.current = true;
+      reportFirestoreFailure(error, OperationType.GET, 'users/{uid}/reports', 'Your saved projects could not be loaded just now. What is open here is safe; reload to try again.', { panel: true });
+    };
+    /** A list that loads after one that did not takes its alert down (the WSX1 review). */
+    const loaded = () => {
+      if (!projectsLoadFailed.current) return;
+      projectsLoadFailed.current = false;
+      setProjectsError(null);
+    };
     let unsubscribe: () => void = () => {};
     let gone = false;
 
@@ -1433,6 +1460,7 @@ export default function App() {
         const reports = snapshot.docs.map((d) => fromFirestoreDocument<ChatMessage, DesignResult>(d.data()));
         reports.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         setSavedReports(reports);
+        loaded();
       }, loadFailed);
     };
 
@@ -1441,6 +1469,7 @@ export default function App() {
       unsubscribe = sdk.onSnapshot(sdk.query(paths.reportIndexCollectionRef(db, uid)), (snapshot) => {
         const rows = snapshot.docs.map((d) => fromIndexDocument<ChatMessage, DesignResult>(d.data()));
         setSavedReports((prev) => mergeIndexed(rows, prev));
+        loaded();
         if (checked) return;
         checked = true;
         let last = 0;
@@ -1545,7 +1574,7 @@ export default function App() {
       setDeviceProjectCount(left.length);
       setSaveNotice(deviceCopyLine(copied.length, left.length));
     } catch (err) {
-      reportFirestoreFailure(err, OperationType.WRITE, `users/${uid}/reports`, 'Those projects could not be added to your account just now. They are still in this browser.');
+      reportFirestoreFailure(err, OperationType.WRITE, `users/${uid}/reports`, 'Those projects could not be added to your account just now. They are still in this browser.', { panel: true });
     } finally {
       setAddingDeviceProjects(false);
     }
@@ -1563,7 +1592,7 @@ export default function App() {
       setSavedReports((prev) => prev.map((r) => (r.id === full.id && r.timestamp === full.timestamp ? full : r)));
       return full;
     } catch (err) {
-      reportFirestoreFailure(err, OperationType.GET, 'users/{uid}/reports', 'That project could not be opened just now. Try again in a moment.');
+      reportFirestoreFailure(err, OperationType.GET, 'users/{uid}/reports', 'That project could not be opened just now. Try again in a moment.', { panel: true });
       return null;
     }
   };
@@ -1684,6 +1713,10 @@ export default function App() {
    * searches its chats: null while closed, the text typed while open.
    */
   const [projectQuery, setProjectQuery] = useState<string | null>(null);
+  /** What failed in the Projects panel, said there (WS-12, `sayProjectsFailure`). */
+  const [projectsError, setProjectsError] = useState<string | null>(null);
+  /** Whether that error is the list failing to load, which the next list that loads answers. */
+  const projectsLoadFailed = useRef(false);
   /** The description the last run was started from, which Test data describes the report by. */
   const activeDescribeRef = useRef<ReportDescriptionRequest | undefined>(undefined);
   /*
@@ -2745,7 +2778,7 @@ export default function App() {
     // so it carries the same label (and RevisionsPanel reads the old one,
     // "Read from the page", as this).
     recordRevision('Your page as printed', newResult);
-    setActiveTab('ui');
+    if (!result) setActiveTab('print');
     const unsure = built.flagged
       ? ' A few words were hard to make out; they are marked in the report, so check them against your page.'
       : '';
@@ -2772,7 +2805,7 @@ export default function App() {
     const newResult: DesignResult = { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: await asConfigured(built.repxContent, true, true), usage: null };
     setResult(newResult);
     recordRevision('From your page', newResult);
-    setActiveTab('ui');
+    if (!result) setActiveTab('print');
     setMessages(prev => [...prev, {
       id: nextMessageId(),
       role: 'assistant',
@@ -2908,7 +2941,7 @@ export default function App() {
     path: string,
     userMessage: string,
     /** The open project's own save, which retries with the next change (plainFirestoreRefusal). */
-    { saving = false }: { saving?: boolean } = {}
+    { saving = false, panel = false }: { saving?: boolean; panel?: boolean } = {}
   ) => {
     /* `loadAuth()` is already resolved wherever this is reached — every
        caller failed a Firestore call to get here, so the module is in memory
@@ -2930,7 +2963,20 @@ export default function App() {
     // The day's free allowance used up, or a sign-in the database no longer
     // takes, said as what they are (2026-11-11, the full audit's SA-21); both
     // were "try again in a moment", which helps with neither.
-    setError(plainFirestoreRefusal(err, { saving }) ?? userMessage);
+    const said = plainFirestoreRefusal(err, { saving }) ?? userMessage;
+    if (panel) sayProjectsFailure(said);
+    else setError(said);
+  };
+  /**
+   * A failure of the Projects list, or of something done to a project in it
+   * (2026-11-11, the full audit's WS-12): said in the panel, and over the box
+   * as well while the panel is not what is shown. It went to the box's error
+   * line alone, which the panel covers, and a list that failed to load said
+   * "No saved projects yet."
+   */
+  const sayProjectsFailure = (message: string) => {
+    setProjectsError(message);
+    if (sidePanelRef.current !== 'projects') setError(message);
   };
 
   /**
@@ -3377,6 +3423,9 @@ export default function App() {
     // Once, when the list first holds the project; the ref keeps it to once.
   }, [savedReports]);
 
+  /** The project asked for last, and the one whose content is on its way (WS-16). */
+  const latestLoad = useRef<string | null>(null);
+  const [loadingProjectId, setLoadingProjectId] = useState<string | null>(null);
   /**
    * Open a saved project, and bring its history with it.
    *
@@ -3387,9 +3436,23 @@ export default function App() {
    * one way a revision list can be actively misleading rather than merely empty.
    */
   const handleLoadReport = async (listed: SavedReport) => {
+    // The newest click is the one that opens (2026-11-11, the full audit's
+    // WS-16): two quick clicks opened whichever fetch answered last. The
+    // project already open stays as it is (WS-15): reopening it from its last
+    // save dropped the undo history and, signed out, its revisions. Picking it
+    // still goes back to its conversation, as ChatGPT's current chat does.
+    latestLoad.current = listed.id;
+    const already = listed.id === openReportId.current;
+    setLoadingProjectId(listed.stub && !already ? listed.id : null);
+    if (already) {
+      showRailPanel('review');
+      return;
+    }
     // Its content first, when the list holds only its index entry (2026-11-08,
     // site audit item 63): an entry has no conversation and no report.
     const report = await fullReport(listed);
+    if (latestLoad.current !== listed.id) return;
+    setLoadingProjectId(null);
     if (!report) return;
     // The session being left keeps its last turn (2026-11-05) and stops what
     // it was doing (2026-11-06, `leaveSession`); the one opened is already
@@ -3456,16 +3519,19 @@ export default function App() {
     }
   };
 
-  /**
-   * Rows on their way out, so the list can fade them before they vanish.
-   *
-   * The delay is presentational only — `handleDeleteReport` still runs after
-   * it, and the row is `pointer-events: none` meanwhile, so a second click
-   * cannot queue the same delete twice.
+  /*
+   * Projects deleted and waiting out their Undo (2026-11-11, the full audit's
+   * WS-03, lib/deferredDelete.ts): gone from every list at once, deleted six
+   * seconds later, one after another (WS-27). The 190 ms fade the rows had
+   * before they were deleted went with it: the row goes as it is clicked.
+   * `undoDelete` is what the toast offers back, and is said by name.
    */
-  const [leavingReportIds, setLeavingReportIds] = useState<string[]>([]);
-  /** Two-step confirm for "Clear all". A native confirm() is banned here. */
-  const [confirmingClearAll, setConfirmingClearAll] = useState(false);
+  const [deletingIds, setDeletingIds] = useState<string[]>([]);
+  const [undoDelete, setUndoDelete] = useState<{ ids: string[]; label: string } | null>(null);
+  const deleteNowRef = useRef<(id: string) => Promise<void>>(async () => undefined);
+  const [deletes] = useState(() => deferDeletes((id) => deleteNowRef.current(id), setDeletingIds));
+  /** The saved projects as the lists show them: without those waiting to be deleted. */
+  const listedReports = useMemo(() => (deletingIds.length ? savedReports.filter((r) => !deletingIds.includes(r.id)) : savedReports), [savedReports, deletingIds]);
 
   /*
    * Pinned and archived projects (2026-11-05), kept on this device at the
@@ -3475,9 +3541,6 @@ export default function App() {
    */
   const [pinnedProjects, setPinnedProjects] = useState(() => readIdList(PINNED_PROJECTS_KEY));
   const [archivedProjects, setArchivedProjects] = useState(() => readIdList(ARCHIVED_PROJECTS_KEY));
-  const [showArchived, setShowArchived] = useState(false);
-  /** The project whose name is being typed over, and the words so far. */
-  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const togglePinned = (id: string) => setPinnedProjects((ids) => {
     const next = toggleId(ids, id);
     writeIdList(PINNED_PROJECTS_KEY, next);
@@ -3491,7 +3554,6 @@ export default function App() {
 
   /** A saved project renamed, where it is kept: the account's document, or this device. */
   const handleRenameProject = async (id: string, typed: string) => {
-    setRenaming(null);
     const report = savedReports.find((r) => r.id === id);
     const name = typed.trim().slice(0, 120);
     if (!report || !name || name === report.name) return;
@@ -3510,14 +3572,14 @@ export default function App() {
           console.warn('The project was renamed; its entry in the projects index was not.', error);
         });
       } catch (err) {
-        reportFirestoreFailure(err, OperationType.WRITE, `users/${user.uid}/reports/${id}`, 'That project could not be renamed in your account. Try again in a moment.');
+        reportFirestoreFailure(err, OperationType.WRITE, `users/${user.uid}/reports/${id}`, 'That project could not be renamed in your account. Try again in a moment.', { panel: true });
       }
       return;
     }
     const updated = savedReports.map((r) => (r.id === id ? renamed : r));
     const outcome = saveReportsLocally(updated);
     if (!outcome.ok) {
-      setError(outcome.message);
+      sayProjectsFailure(outcome.message);
       return;
     }
     setSavedReports(updated);
@@ -3548,7 +3610,7 @@ export default function App() {
       try {
         const fitted = cloudPayload(copy, user.uid);
         if (!fitted) {
-          setError('This project is too large to copy into your account.');
+          sayProjectsFailure('This project is too large to copy into your account.');
           return;
         }
         const { sdk, paths, db } = await loadFirebase();
@@ -3558,14 +3620,14 @@ export default function App() {
         });
         setSaveNotice(`Duplicated as ${copy.name}`);
       } catch (err) {
-        reportFirestoreFailure(err, OperationType.WRITE, `users/${user.uid}/reports/${copy.id}`, 'That project could not be duplicated in your account. Try again in a moment.');
+        reportFirestoreFailure(err, OperationType.WRITE, `users/${user.uid}/reports/${copy.id}`, 'That project could not be duplicated in your account. Try again in a moment.', { panel: true });
       }
       return;
     }
     const updated = [copy, ...savedReports];
     const outcome = saveReportsLocally(updated);
     if (!outcome.ok) {
-      setError(outcome.message);
+      sayProjectsFailure(outcome.message);
       return;
     }
     setSavedReports(updated);
@@ -3577,23 +3639,55 @@ export default function App() {
     removeReports([openProjectId]);
   };
 
-  const REMOVE_FADE_MS = 190;
-
+  /**
+   * Whose each waiting deletion is: the account's uid, or null for this
+   * device, as it was when the trash was clicked. Read when the delete runs,
+   * the mode was the one six seconds later, so a project deleted signed out
+   * and followed by a sign-in went to the account, deleted nothing there, and
+   * came back as one of this device's projects to add (the WSX1 review).
+   */
+  const deleteOwners = useRef(new Map<string, string | null>());
+  /** Projects deleted with an Undo (WS-03): gone from the list now, deleted once the toast's moment is over. */
   const removeReports = (ids: string[]) => {
     if (ids.length === 0) return;
     // The open project among them is closed first, and not saved on its way
     // out (2026-11-06): left open, its next save wrote it back under its id.
+    // Undo brings it back as it was last saved.
     if (openReportId.current && ids.includes(openReportId.current)) handleClearChat('drop');
+    for (const id of ids) deleteOwners.current.set(id, user?.uid ?? null);
+    // A second delete within the first one's Undo joins it, so the toast
+    // takes back both rather than only the last.
+    const waiting = deletes.pending();
+    const earlier = undoDelete ? undoDelete.ids.filter((id) => waiting.includes(id) && !ids.includes(id)) : [];
+    const all = [...earlier, ...ids];
+    const one = all.length === 1 && savedReports.find((r) => r.id === all[0]);
+    setUndoDelete({ ids: all, label: one ? `Deleted "${one.name}"` : `Deleted ${all.length} projects` });
+    deletes.schedule(ids);
+  };
+  deleteNowRef.current = async (id) => {
+    const owner = deleteOwners.current.has(id) ? deleteOwners.current.get(id) ?? null : user?.uid ?? null;
+    deleteOwners.current.delete(id);
     // A deleted project's unsent words go with it (agent audit item 69).
-    writeDrafts(ids.reduce((drafts, id) => withDraft(drafts, id, ''), readDrafts()));
-    setLeavingReportIds((prev) => [...prev, ...ids]);
-    window.setTimeout(() => {
-      ids.forEach((id) => void handleDeleteReport(id));
-      setLeavingReportIds((prev) => prev.filter((id) => !ids.includes(id)));
-    }, REMOVE_FADE_MS);
+    writeDrafts(withDraft(readDrafts(), id, ''));
+    await handleDeleteReport(id, owner);
   };
 
-  const handleDeleteReport = async (id: string) => {
+  /** @param owner where the project was when it was deleted: an account's uid, or null for this device. */
+  const handleDeleteReport = async (id: string, owner: string | null = user?.uid ?? null) => {
+    // A device project deleted before a sign-in is deleted from this device,
+    // not looked for in the account: the list on screen is the account's now,
+    // so the device's copy is read and written apart from it.
+    if (!owner && user) {
+      const local = loadReportsLocally<ChatMessage, DesignResult>();
+      const updated = local.filter((r) => r.id !== id);
+      if (updated.length !== local.length) saveReportsLocally(updated);
+      setDeviceProjectCount(updated.length);
+      return;
+    }
+    // One deleted in an account that is no longer the one signed in is left
+    // alone: a sign-out takes back what waits (`forgetSignedOut`), and the
+    // next account is not the place to look for it.
+    if (owner && user?.uid !== owner) return;
     // Signed in -> Firestore; signed out -> localStorage. This must stay the same
     // shape as handleSaveReport's branch, so a report is always deleted from
     // wherever it was written.
@@ -3607,7 +3701,7 @@ export default function App() {
         await paths.deleteReportAndVersions(db, user.uid, id);
       } catch (err) {
         reportFirestoreFailure(err, OperationType.DELETE, `users/${user.uid}/reports/${id}`,
-          'That project could not be deleted from your account. It is still listed — try again in a moment.');
+          'That project could not be deleted from your account. It is still listed — try again in a moment.', { panel: true });
       }
     } else {
       // Through the same writer as the save path, for the same reason: it is
@@ -3648,6 +3742,11 @@ export default function App() {
     // 69 and 71): the next person to sign in on this machine sees none of them.
     writeDrafts({});
     keptQueue.current = null;
+    // A deletion still waiting out its Undo is not made for whoever signed
+    // out (WS-03): their own Sign out made it first (`handleLogOut`).
+    deletes.undo(deletes.pending());
+    setUndoDelete(null);
+    setProjectsError(null);
     setRailPanel('review');
     // And every session key a sign-out removes, the list the public site
     // uses too (lib/signOut.ts, 2026-11-08), and the database layouts kept here (2026-11-09).
@@ -3685,17 +3784,32 @@ export default function App() {
     void closeFirebase();
   }, [user, firebase]);
 
-  const handleLogOut = async () => {
-    try {
-      await (await loadAuth()).service.logOut();
-    } catch (err) {
-      console.error(err);
-    }
-    setUser(null);
-    forgetSignedOut();
-
-    setSavedReports(loadReportsLocally<ChatMessage, DesignResult>());
-  };
+  /*
+   * The person's own Sign out keeps their last change and makes the deletions
+   * they asked for before it signs them out (2026-11-11, the full audit's
+   * WS-18, `signOutKeeping`): a change in the autosave's last 1.2 seconds, or
+   * a turn still running, was dropped, and a project deleted within its Undo
+   * was left undeleted. The drop stays for a sign-out made somewhere else
+   * (`forgetSignedOut` from the auth listener), which takes back a waiting
+   * deletion rather than make it for whoever is no longer signed in.
+   */
+  const handleLogOut = () => signOutKeeping({
+    keep: async () => {
+      const working = isAnalyzing || isChatting;
+      if (messages.length && (working || currentSignature !== savedSignatureRef.current)) {
+        dropAutosave();
+        const partial = partialReplyRef.current.trim();
+        await persistProject(true, working ? { messages: [...messages, { id: nextMessageId(), role: 'assistant', text: partial || 'Stopped.' }], result } : undefined);
+      }
+      await deletes.flush();
+    },
+    logOut: async () => (await loadAuth()).service.logOut(),
+    forget: () => {
+      setUser(null);
+      forgetSignedOut();
+      setSavedReports(loadReportsLocally<ChatMessage, DesignResult>());
+    },
+  });
 
   /**
    * One definition for both render trees. `showLogin` is reachable from the
@@ -4164,7 +4278,12 @@ export default function App() {
       // A refinement turn replaces the whole report, so this is the moment the
       // previous one would otherwise be gone for good.
       recordRevision(open ? 'Refined' : 'Generated', newResult);
-      setActiveTab('ui');
+      // The pane the person had stays (2026-11-11, the full audit's WS-30):
+      // every report and redesign jumped to the Mockup, so someone working on
+      // the Preview who asked for a redesign landed on the derived view. A
+      // first report opens on the Preview, the report as it prints; the same
+      // rule at each place a report is built.
+      if (!open) setActiveTab('print');
 
       // The reply is the result (2026-11-10, the full audit, the owner's
       // rule): who did what is not said. Mock mode alone says a canned report
@@ -4272,7 +4391,7 @@ export default function App() {
             setResult(drafted);
             // Named by what it is to the person (2026-11-11, the full audit's CV-07): "Forma's own draft" until then.
             recordRevision('First version', drafted);
-            setActiveTab('ui');
+            if (!open) setActiveTab('print');
             setMessages(prev => [...prev, {
               id: nextMessageId(),
               role: 'assistant',
@@ -4831,7 +4950,7 @@ export default function App() {
       // counted the captions it read, the lines of its answer it could not
       // read and the pages it looked at, until then.
       recordRevision('From your page', newResult);
-      setActiveTab('ui');
+      if (!result) setActiveTab('print');
       if (reading.problems.length) console.debug(`${reading.problems.length} line(s) of the page's reading were not understood and were left out.`, reading.problems);
       // With no text read at all every caption is a placeholder, and "a few"
       // would understate it, so that case says what handleReaderBuild says.
@@ -5280,7 +5399,17 @@ export default function App() {
      * time. With no report open it is a design, and goes straight to one.
      */
     const withPictures = isGenerationTurn(currentPreviews.length, currentTexts.length);
-    if (!withPictures || base?.repxContent) {
+    /*
+     * A .repx attached is the report the person means (2026-11-11, the full
+     * audit's UI10, measured in the owner's Chrome), as a file attached in
+     * ChatGPT is the subject of its message: it is built from, with what was
+     * asked, in place of the report open (Undo and Revisions keep that one).
+     * With a report open it went to the agent, which could not change the open
+     * report in place and redesigned it from the words alone, the attached
+     * file left out.
+     */
+    const attachedReport = stagedTexts.some(isReportFile);
+    if (!withPictures || (base?.repxContent && !attachedReport)) {
       setIsChatting(true);
       setStreamingReply('');
       partialReplyRef.current = '';
@@ -5675,7 +5804,7 @@ export default function App() {
     setError(null);
 
     activeDescribeRef.current = undefined;
-    await runGeneration(designWords, currentPreviews, currentTexts, INITIAL_RUN, undefined, teamInput, { base, askId: newUserMsg.id });
+    await runGeneration(designWords, currentPreviews, currentTexts, INITIAL_RUN, undefined, teamInput, { base: attachedReport ? null : base, askId: newUserMsg.id });
   };
 
   /*
@@ -6037,7 +6166,11 @@ export default function App() {
    * but the viewer covers the screen and Escape is what a full-bleed overlay is
    * expected to answer to.
    */
-  useLayer(() => setFullScreenImage(null), !!fullScreenImage, 'image');
+  // A dialog (2026-11-11, the full audit's WS-26): focus moves into it, Tab
+  // stays inside, and closing it gives focus back to the chip that opened it.
+  // Focus stayed on the chip behind and Tab walked the page underneath.
+  const lightboxRef = useRef<HTMLElement>(null);
+  useFocusTrap(lightboxRef, () => setFullScreenImage(null), !!fullScreenImage);
   useEffect(() => {
     if (!fullScreenImage) return;
     const onKey = (e: KeyboardEvent) => {
@@ -6333,7 +6466,7 @@ export default function App() {
       handleClearChat();
       showRailPanel('review');
     } else if (shortcut === 'focusBox') {
-      document.querySelector<HTMLTextAreaElement>('.wb-composer [aria-label="Message"]')?.focus();
+      focusBox();
     } else {
       const last = [...messages].reverse().find((m) => m.role === 'assistant' && m.text);
       // Through lib/clipboard.ts (agent audit item 56): on plain HTTP this did nothing and said nothing.
@@ -6464,7 +6597,7 @@ export default function App() {
     );
     // Each project named with when it was last saved, so two of one name can
     // be told apart, and an archived one says so (2026-11-06).
-    for (const p of savedReports) {
+    for (const p of listedReports) {
       if (p.id === openProjectId) continue;
       const archived = archivedProjects.includes(p.id) ? ', archived' : '';
       list.push({ id: `project-${p.id}`, label: `Open ${p.name} (${formatSessionStamp(p.timestamp)}${archived})`, run: () => void handleLoadReport(p) });
@@ -6499,6 +6632,8 @@ export default function App() {
       } else if (tool.name === 'translate') void translateReport(tool.language ?? '', toolReplyRef.current);
     });
   };
+  /** The open project as it is saved, or nothing for unsaved work (WS-23). */
+  const openSaved = openProjectId ? savedReports.find((r) => r.id === openProjectId) : undefined;
   const railBtn = (panel: RailPanel, label: string, icon: React.ReactNode) => (
     <button
       data-panel={panel}
@@ -6546,7 +6681,7 @@ export default function App() {
       data-drawer={isStackedLayout && isRailDrawerOpen ? 'open' : undefined}
       data-clean={isClean ? 'true' : undefined}
       // A side panel floats in the chat's place while it is open (2026-11-08).
-      data-side={isReviewCollapsed || railPanel === 'review' ? undefined : 'open'}
+      data-side={sidePanel ? 'open' : undefined}
     >
       {/* ============================================================ top bar
           Stacked only (CSS hides it above 880px): the menu button that opens
@@ -6718,7 +6853,16 @@ export default function App() {
         className={`wb-review wb-rise wb-rise-1${isReviewCollapsed || railPanel === 'review' ? ' wb-hidden' : ''}`}
         aria-label="Session"
         onDragOver={handleDragOver}
-        onDrop={handleDrop}
+        // A file dropped on Projects or Revisions is attached, and the panel
+        // gives way to the chat so the file is seen in the box (2026-11-11,
+        // the full audit's WS-13): it went to the box hidden behind the panel.
+        // The library and Batch take their own drops; one that misses their
+        // lists, on the panel's heading, is not sent to the hidden box either.
+        onDrop={(e) => {
+          if (railPanel !== 'projects' && railPanel !== 'revisions') return e.preventDefault();
+          showRailPanel('review');
+          void handleDrop(e);
+        }}
       >
         {/* Back to the conversation (2026-11-08): the side panels float in the
             chat's place, as the chat floats, and close with its Collapse. */}
@@ -6762,174 +6906,34 @@ export default function App() {
               simply vanished; and Projects' `wb-is-open` marker, which Recent
               never had. The search box went with it — it was a `<span>`, not an
               input, so it looked like a capability and was not one. */}
-          <div className={`wb-panel-body${railPanel === 'projects' ? '' : ' wb-hidden'}`}>
-            <div className="wb-col-head">
-              <h2 className="wb-col-title">Projects</h2>
-              {/* Two-step, in place. A native confirm() is the one thing this app
-                  does not do — see the save notice — and "clear all" wiping every
-                  saved project on a single stray click is exactly the case a
-                  confirm exists for. */}
-              {confirmingClearAll ? (
-                <span className="wb-kicker wb-confirm">
-                  <span>Delete all {savedReports.length}?</span>
-                  <button
-                    className="wb-mini wb-danger"
-                    onClick={() => {
-                      removeReports(savedReports.map((r) => r.id));
-                      setConfirmingClearAll(false);
-                    }}
-                  >
-                    Delete
-                  </button>
-                  <button className="wb-mini" onClick={() => setConfirmingClearAll(false)}>
-                    Cancel
-                  </button>
-                </span>
-              ) : (
-                <span className="wb-kicker">
-                  {savedReports.length} saved
-                  {savedReports.length > 0 && (
-                    <button
-                      className="wb-mini"
-                      onClick={() => setConfirmingClearAll(true)}
-                      title="Delete every saved project"
-                    >
-                      Clear all
-                    </button>
-                  )}
-                </span>
-              )}
-            </div>
-            {/* The sidebar's Search (2026-11-05): the projects whose name or
-                chat holds what is typed, as ChatGPT's search finds chats. */}
-            {projectQuery !== null && (
-              <div className="wb-chat-search">
-                <IconSearch size={13} />
-                <input
-                  type="search"
-                  value={projectQuery}
-                  autoFocus
-                  placeholder="Search projects"
-                  aria-label="Search projects"
-                  onChange={(e) => setProjectQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') setProjectQuery(null);
-                  }}
-                />
-                <button type="button" title="Close the search" aria-label="Close the search" onClick={() => setProjectQuery(null)}>
-                  <IconClose size={13} />
-                </button>
-              </div>
-            )}
-            {/* Made here before signing in (2026-11-11, the full audit's SA-04):
-                said, and added when asked, never on its own, since a shared
-                browser's projects may be someone else's. */}
-            {user && deviceProjectCount > 0 && (
-              <p className="wb-empty" role="status">
-                {deviceProjectsLine(deviceProjectCount)}{' '}
-                <button type="button" className="wb-mini" disabled={addingDeviceProjects} onClick={() => void addDeviceProjects()}>
-                  {addingDeviceProjects ? 'Adding…' : deviceProjectCount === 1 ? 'Add it to your account' : 'Add them to your account'}
-                </button>
-              </p>
-            )}
-            <div className="wb-list">
-              {savedReports.length === 0 ? (
-                <div className="wb-empty">No saved projects yet.</div>
-              ) : projectQuery && !savedReports.some((r) => projectMatches(r, projectQuery)) ? (
-                <div className="wb-empty">No project holds that.</div>
-              ) : (
-                arrangeProjects(savedReports.filter((r) => projectMatches(r, projectQuery ?? '')), pinnedProjects, archivedProjects, showArchived).map((report) => {
-                  // Day and time. A bare clock time was the same six characters
-                  // for a session from this morning and one from last month.
-                  const stamp = formatSessionStamp(report.timestamp);
-                  const leaving = leavingReportIds.includes(report.id);
-                  const open = report.id === openProjectId;
-                  const pinned = pinnedProjects.includes(report.id);
-                  const archived = archivedProjects.includes(report.id);
-                  return (
-                    <div
-                      key={report.id}
-                      className={`wb-card${open ? ' wb-is-open' : ''}${leaving ? ' wb-leaving' : ''}`}
-                      onClick={() => { if (renaming?.id !== report.id) void handleLoadReport(report); }}
-                    >
-                      {/* A rename typed in place (2026-11-05): Enter keeps it, Escape or leaving puts it back. */}
-                      {renaming?.id === report.id ? (
-                        <input
-                          className="wb-ctl wb-rename"
-                          aria-label={`Rename ${report.name}`}
-                          value={renaming.name}
-                          autoFocus
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => setRenaming({ id: report.id, name: e.target.value })}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') void handleRenameProject(report.id, renaming.name);
-                            if (e.key === 'Escape') setRenaming(null);
-                          }}
-                          onBlur={() => setRenaming(null)}
-                        />
-                      ) : (
-                        <div className="wb-nm">
-                          {pinned && <IconPin size={11} />}
-                          {report.name}
-                        </div>
-                      )}
-                      <div className="wb-sub">
-                        {stamp && `${stamp} · `}
-                        {noteCountLabel(report.stub ? report.notes ?? 0 : report.messages.length)}
-                      </div>
-                      <div className="wb-row-actions">
-                        <button
-                          aria-label={pinned ? `Unpin ${report.name}` : `Pin ${report.name}`}
-                          aria-pressed={pinned}
-                          title={pinned ? 'Unpin' : 'Pin to the top (on this device)'}
-                          onClick={(e) => { e.stopPropagation(); togglePinned(report.id); }}
-                        >
-                          <IconPin size={14} />
-                        </button>
-                        <button
-                          aria-label={`Rename ${report.name}`}
-                          title="Rename"
-                          onClick={(e) => { e.stopPropagation(); setRenaming({ id: report.id, name: report.name }); }}
-                        >
-                          <IconPencil size={14} />
-                        </button>
-                        {/* As the title's menu has it (2026-11-06, the workspace audit). */}
-                        <button
-                          aria-label={`Duplicate ${report.name}`}
-                          title="Duplicate"
-                          onClick={(e) => { e.stopPropagation(); void duplicateProject(report.id); }}
-                        >
-                          <IconCopy size={14} />
-                        </button>
-                        <button
-                          aria-label={archived ? `Unarchive ${report.name}` : `Archive ${report.name}`}
-                          title={archived ? 'Back to projects' : 'Archive (on this device)'}
-                          onClick={(e) => { e.stopPropagation(); toggleArchived(report.id); }}
-                        >
-                          <IconArchive size={14} />
-                        </button>
-                        <button
-                          className="wb-danger"
-                          aria-label={`Delete ${report.name}`}
-                          title="Delete"
-                          onClick={(e) => { e.stopPropagation(); removeReports([report.id]); }}
-                        >
-                          <IconTrash size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-            {/* The archive, kept on this device (2026-11-05): out of the list until opened. */}
-            {(showArchived || savedReports.some((r) => archivedProjects.includes(r.id))) && (
-              <button type="button" className="wb-mini wb-archive-toggle" onClick={() => setShowArchived((open) => !open)}>
-                <IconArchive size={12} />
-                {showArchived ? 'Back to projects' : `Archived (${savedReports.filter((r) => archivedProjects.includes(r.id)).length})`}
-              </button>
-            )}
-          </div>
+          {/* Drawn by components/ProjectsPanel.tsx since 2026-11-11 (the full
+              audit's WSX1), lazy, while it is the panel open. The rows fade no
+              more: a delete takes the row at once and the corner offers Undo. */}
+          {railPanel === 'projects' && (
+            <Suspense fallback={null}>
+              <ProjectsPanel
+                projects={listedReports}
+                openId={openProjectId}
+                openingId={loadingProjectId}
+                query={projectQuery}
+                onQuery={setProjectQuery}
+                pinned={pinnedProjects}
+                archived={archivedProjects}
+                error={projectsError}
+                onDismissError={() => setProjectsError(null)}
+                device={user ? { count: deviceProjectCount, adding: addingDeviceProjects, onAdd: () => void addDeviceProjects() } : null}
+                onOpen={(id) => {
+                  const report = savedReports.find((r) => r.id === id);
+                  if (report) void handleLoadReport(report);
+                }}
+                onRename={(id, name) => void handleRenameProject(id, name)}
+                onDuplicate={(id) => void duplicateProject(id)}
+                onTogglePin={togglePinned}
+                onToggleArchive={toggleArchived}
+                onDelete={removeReports}
+              />
+            </Suspense>
+          )}
 
         {/* -------------------------------------------------------- recent */}
         <div className={`wb-panel-body${railPanel === 'revisions' ? '' : ' wb-hidden'}`}>
@@ -7073,34 +7077,38 @@ export default function App() {
                 Delete. It held the workspace's other options for a day, each a
                 repeat of its own place, and the owner asked for those to go. A
                 saved project shows its name, the one the projects list shows,
-                so a rename is seen where it was made. */}
-            <button
-              type="button"
-              className="wb-menu-btn"
-              data-project-toggle
-              aria-label="Project menu"
-              aria-haspopup="menu"
-              aria-expanded={isProjectMenuOpen}
-              title="Rename, duplicate, archive or delete this project"
-              onClick={() => setIsProjectMenuOpen((open) => !open)}
-            >
-              <IconMenu size={17} />
-            </button>
+                so a rename is seen where it was made. Only for a saved project
+                (2026-11-11, the full audit's WS-23): on unsaved work, the empty
+                home included, it opened with every item disabled. */}
+            {openSaved && (
+              <button
+                type="button"
+                className="wb-menu-btn"
+                data-project-toggle
+                aria-label="Project menu"
+                aria-haspopup="menu"
+                aria-expanded={isProjectMenuOpen}
+                title="Rename, duplicate, archive or delete this project"
+                onClick={() => setIsProjectMenuOpen((open) => !open)}
+              >
+                <IconMenu size={17} />
+              </button>
+            )}
             <h1>
               <span className="wb-title-btn wb-title-plain">
-                <span>{(openProjectId && savedReports.find((r) => r.id === openProjectId)?.name) || result?.title || 'Untitled report'}</span>
+                <span>{openSaved?.name || result?.title || 'Untitled report'}</span>
               </span>
             </h1>
-            {isProjectMenuOpen && (
+            {isProjectMenuOpen && openSaved && (
               <Suspense fallback={null}>
                 <ProjectMenu
-                  name={savedReports.find((r) => r.id === openProjectId)?.name || result?.title || 'Untitled report'}
-                  onRename={openProjectId && savedReports.some((r) => r.id === openProjectId) ? (name) => void handleRenameProject(openProjectId, name) : undefined}
-                  onDuplicate={openProjectId && savedReports.some((r) => r.id === openProjectId) ? () => void duplicateProject() : undefined}
-                  onArchive={openProjectId && savedReports.some((r) => r.id === openProjectId) ? () => toggleArchived(openProjectId) : undefined}
-                  archived={!!openProjectId && archivedProjects.includes(openProjectId)}
+                  name={openSaved.name}
+                  onRename={(name) => void handleRenameProject(openSaved.id, name)}
+                  onDuplicate={() => void duplicateProject()}
+                  onArchive={() => toggleArchived(openSaved.id)}
+                  archived={archivedProjects.includes(openSaved.id)}
                   start={projectMenuStart}
-                  onDelete={openProjectId && savedReports.some((r) => r.id === openProjectId) ? deleteOpenProject : undefined}
+                  onDelete={deleteOpenProject}
                   onClose={() => { setIsProjectMenuOpen(false); setProjectMenuStart(undefined); }}
                 />
               </Suspense>
@@ -7110,9 +7118,9 @@ export default function App() {
                 report is built, beside its name. */}
             {/* The project's pin, the list's own (2026-11-06); the thumbs are the
                 reply's, under it, as ChatGPT's and Gemini's are. */}
-            {result && openProjectId && savedReports.some((r) => r.id === openProjectId) && (
+            {result && openSaved && (
               <Suspense fallback={null}>
-                <PinProject pinned={pinnedProjects.includes(openProjectId)} onPin={() => togglePinned(openProjectId)} />
+                <PinProject pinned={pinnedProjects.includes(openSaved.id)} onPin={() => togglePinned(openSaved.id)} />
               </Suspense>
             )}
           </div>
@@ -7445,11 +7453,13 @@ export default function App() {
             /* Nothing said and nothing built: the home (2026-11-06), as
                Stitch's, with the recent projects and the starting points. */
             <Suspense fallback={null}>
+              {/* A project opened from the home says so while its content comes (WS-16). */}
+              {loadingProjectId && <div className="wb-empty" role="status">Opening…</div>}
               <HomeStart
                 // The projects whole: lib/startingPoints, which picks the recent
                 // ones, holds the six descriptions too, and importing it here
                 // put them all in the entry chunk (+3 kB, measured).
-                projects={savedReports}
+                projects={listedReports}
                 archived={archivedProjects}
                 showRecent={!(railPanel === 'projects' && !isReviewCollapsed)}
                 // The lazy component loses its generic, so the project is looked up by id.
@@ -7652,6 +7662,8 @@ export default function App() {
             // The box's Tools (2026-11-08): sentences for a report, so they wait for one.
             hasReport={!!result?.repxContent}
             houseStyle={{ on: houseStyleOn, onToggle: toggleHouseStyle }}
+            // What goes with each message, said where it is sent (WS-02).
+            database={databaseShared && activeDatabase ? { name: activeDatabase.database, onStop: () => setDatabaseShared(false) } : null}
                     />
                     </Suspense>
                   </>
@@ -7728,8 +7740,26 @@ export default function App() {
               "Restored the version from 10:15" or "8 sample rows generated" are
               not saves. A toast above the corner since 2026-11-06, as Stitch's,
               gone after four seconds or at its ×; inside the corner, so the
-              corner's menus open over it rather than under it. */}
-          {saveNotice && (
+              corner's menus open over it rather than under it. A project
+              deleted takes the toast while its Undo lasts (WS-03), and goes
+              with it once the deletion starts. */}
+          {/* While a deletion is under way its row stays hidden (`deletingIds`)
+              but there is nothing left to take back, so the Undo goes. */}
+          {undoDelete && deletingIds.length > 0 && undoDelete.ids.some((id) => deletes.pending().includes(id)) ? (
+            <div className="wb-toast" role="status">
+              <span>{undoDelete.label}</span>
+              <button
+                type="button"
+                style={{ width: 'auto', padding: '0 10px', fontWeight: 600 }}
+                onClick={() => {
+                  deletes.undo(undoDelete.ids);
+                  setUndoDelete(null);
+                }}
+              >
+                Undo
+              </button>
+            </div>
+          ) : saveNotice && (
             <div className="wb-toast" role="status">
               <IconCheck size={14} />
               {/* An edit's own reason starts lower case ("duplicated as label2"). */}
@@ -7905,8 +7935,16 @@ export default function App() {
         <div className="wb-backdrop" onMouseDown={() => setFullScreenImage(null)}>
           {/* stopPropagation so only the backdrop closes: the image itself is the
               thing being examined, and closing on a click into it makes zooming
-              or dragging feel broken. Escape closes too — see the effect above. */}
-          <figure className="wb-lightbox" onMouseDown={(e) => e.stopPropagation()}>
+              or dragging feel broken. Escape closes too — see the focus trap above. */}
+          <figure
+            ref={lightboxRef}
+            className="wb-lightbox"
+            role="dialog"
+            aria-modal="true"
+            aria-label={fullScreenImage.file}
+            tabIndex={-1}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             <img
               src={fullScreenImage.srcs[fullScreenImage.index]}
               alt={`${fullScreenImage.file}${

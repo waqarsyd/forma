@@ -38,6 +38,7 @@ import {
   IconChevronDown,
   IconClose,
   IconDoc,
+  IconGrid,
   IconKey,
   IconMic,
   IconPalette,
@@ -178,6 +179,13 @@ export interface ComposerProps {
    * off, the AI designs from the request alone. Absent, no switch.
    */
   houseStyle?: { on: boolean; onToggle: () => void } | null;
+  /**
+   * The database whose names and sample values go with each message
+   * (2026-11-11, the full audit's WS-02), shown as a chip over the box while
+   * they do, with a way to stop: it was ticked on the Data tab and nothing in
+   * the conversation said so. Absent while nothing is shared.
+   */
+  database?: { name: string; onStop: () => void } | null;
 }
 
 /** A model's name as the picker shows it: "2.5-flash" for "gemini-2.5-flash". */
@@ -222,6 +230,7 @@ export default function Composer({
   history = [],
   hasReport = false,
   houseStyle = null,
+  database = null,
 }: ComposerProps) {
   /* The "/" Tools menu (2026-11-08). */
   const [boxMenu, setBoxMenu] = useState<'tools' | null>(null);
@@ -528,6 +537,22 @@ export default function Composer({
           </span>
         </div>
       )}
+      {database && (
+        <div className="wb-chip-row">
+          <span className="wb-attach" role="status" title="Its table and column names and a few sample values go to the AI with each message">
+            <IconGrid size={12} />
+            Database: {database.name}, shared
+            <button
+              type="button"
+              onClick={database.onStop}
+              title="Stop sharing it with the AI"
+              aria-label={`Stop sharing ${database.name} with the AI`}
+            >
+              <IconClose size={11} />
+            </button>
+          </span>
+        </div>
+      )}
       {selection.length > 0 && (
         <div className="wb-chip-row">
           <span className="wb-attach" role="status" title="Selected on the Preview: “this” in your message means it">
@@ -581,7 +606,7 @@ export default function Composer({
             type="button"
             className="wb-tool"
             aria-label="Add photos and files"
-            title="Add photos and files: an image, a PDF, a .repx, or data (CSV, Excel, JSON, Word, text, SQL)"
+            title="Add photos and files: an image, a PDF, a .repx or SSRS report, or data (CSV, Excel, JSON, Word, text, SQL)"
             onClick={() => fileInputRef.current?.click()}
             disabled={!hasApiKey}
           >
@@ -609,7 +634,11 @@ export default function Composer({
           ref={fileInputRef}
           type="file"
           multiple
-          accept="image/*,application/pdf,.repx,.csv,.tsv,.json,.txt,.sql,.xlsx,.docx"
+          // A report from SQL Server Reporting Services (.rdl, .rdlc) and a
+          // Crystal Reports file (.rpt) too (2026-11-11, the full audit's
+          // CP-01a): they were taken from a drop and not from the picker. A
+          // .rpt is answered with how to export it as a PDF (lib/repxIntake.ts).
+          accept="image/*,application/pdf,.repx,.rdl,.rdlc,.rpt,.csv,.tsv,.json,.txt,.sql,.xlsx,.docx"
           onChange={onFileChange}
           className="wb-hidden"
         />

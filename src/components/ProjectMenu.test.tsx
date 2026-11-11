@@ -53,7 +53,9 @@ describe('ProjectMenu', () => {
     expect(h.onDelete).toHaveBeenCalledTimes(1);
   });
 
-  it('duplicates and archives, offers no download (Export has it), and greys what an unsaved project cannot do', () => {
+  // An unsaved project has no menu at all since 2026-11-11 (the full audit's
+  // WS-23, App.tsx's `openSaved`), so nothing in it is ever greyed.
+  it('duplicates and archives, offers no download (Export has it), and greys nothing', () => {
     const h = handlers();
     render(<ProjectMenu name="Invoice" {...h} />);
     expect(screen.queryByRole('menuitem', { name: /Download/ })).toBeNull();
@@ -64,11 +66,8 @@ describe('ProjectMenu', () => {
     cleanup();
     render(<ProjectMenu name="Invoice" {...handlers()} archived />);
     expect(screen.getByRole('menuitem', { name: 'Bring back from the archive' })).toBeTruthy();
-    cleanup();
-    render(<ProjectMenu name="Untitled report" onClose={vi.fn()} />);
-    expect((screen.getByRole('menuitem', { name: 'Rename' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('menuitem', { name: 'Delete' }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText(/Saved projects can be renamed/)).toBeTruthy();
+    expect(screen.getAllByRole('menuitem').every((item) => !(item as HTMLButtonElement).disabled)).toBe(true);
+    expect(screen.queryByText(/Saved projects can be renamed/)).toBeNull();
   });
 });
 

@@ -92,24 +92,20 @@ export default function LibraryPanel({
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
 
-  const chosen = useCallback(
-    async (event: React.ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(event.target.files ?? []);
-      // The picker is reset immediately so the same file can be chosen twice --
-      // after a failure, re-picking it is the obvious thing to try.
-      event.target.value = '';
+  const add = useCallback(
+    /** @param leftOut files dropped with these that are not reports, named in the notice. */
+    async (files: File[], leftOut: readonly string[] = []) => {
       if (files.length === 0) return;
-
       setBusy(true);
       setError('');
       setNotice('');
       const held = new Set(sources.map((s) => s.name));
       try {
         const result = await onImport(files);
-        setNotice(importNotice(files.map((f) => f.name), held, result));
-        if (result.empty.length) {
-          setError(`Nothing in ${result.empty.join(', ')} could be read as a report.`);
-        }
+        const left = leftOut.length ? ` Only .repx files go into the library, so ${leftOut.join(', ')} ${leftOut.length === 1 ? 'was' : 'were'} left out.` : '';
+        setNotice(importNotice(files.map((f) => f.name), held, result) + left);
+        // Also takes down a "Still adding" said to a drop made meanwhile.
+        setError(result.empty.length ? `Nothing in ${result.empty.join(', ')} could be read as a report.` : '');
       } catch (failure) {
         setError(failure instanceof Error ? failure.message : 'The reports could not be added.');
       } finally {
@@ -118,11 +114,52 @@ export default function LibraryPanel({
     },
     [onImport, sources],
   );
+  const chosen = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    // The picker is reset immediately so the same file can be chosen twice --
+    // after a failure, re-picking it is the obvious thing to try.
+    event.target.value = '';
+    void add(files);
+  };
+  /*
+   * Reports dropped on the panel go into the library (2026-11-11, the full
+   * audit's WS-13). The drop reached the workspace behind it, which attached
+   * the file to the message box the panel covers. Kept here, whatever was
+   * dropped: a file that is not a .repx is said so, not sent elsewhere.
+   */
+  const dropped = (event: React.DragEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const files = Array.from(event.dataTransfer.files);
+    if (!files.length) return;
+    // Said, not swallowed (the WSX1 review): a drop while reports are still
+    // going in, and the files of a mixed drop that are not reports.
+    if (busy) {
+      setError('Still adding the last reports. Drop these again in a moment.');
+      return;
+    }
+    const reportsOnly = files.filter((file) => /\.repx$/i.test(file.name));
+    if (!ready) {
+      onNeedKey();
+      return;
+    }
+    setNotice('');
+    setError(reportsOnly.length ? '' : 'Only .repx files go into the library.');
+    const leftOut = files.filter((file) => !reportsOnly.includes(file)).map((file) => file.name);
+    void add(reportsOnly, leftOut);
+  };
 
   const reading = readingNotice(sources);
 
   return (
-    <div className="lp-panel">
+    <div
+      className="lp-panel"
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onDrop={dropped}
+    >
       {/* Button above the prose, and the outline pill rather than the accent one:
           both match BatchPanel, which is the panel beside this one in the rail.
           An accent pill here would compete with "New report" in the same column. */}
