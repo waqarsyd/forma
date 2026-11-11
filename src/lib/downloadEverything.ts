@@ -18,8 +18,28 @@ import { fromFirestoreDocument, type SavedReportLike } from './savedReport';
 import { loadProjects } from './projectStore';
 import { saveBlob } from './download';
 
-/** Packs and saves the .zip for the account `uid`, or this browser's projects when null; resolves to how many projects went in. */
-export async function downloadEverything(uid: string | null): Promise<number> {
+/** What a download saved: how many projects went in, and whether a file was saved at all. */
+export interface DownloadedEverything {
+  projects: number;
+  saved: boolean;
+}
+
+/**
+ * Whether there is anything besides projects to put in the archive: what Forma
+ * remembers, the learning events, the shares. Versions belong to projects.
+ */
+export function holdsExtras(extras: AccountExtras): boolean {
+  return !!extras.memory || !!extras.learning?.length || !!extras.shares?.length;
+}
+
+/**
+ * Packs and saves the .zip for the account `uid`, or this browser's projects
+ * when null. Saved whenever there is anything to save (2026-11-11, the
+ * re-audit's R3-13): an account or a browser with no projects but with
+ * memories, learning events or shares got nothing, since an empty project
+ * list returned before the archive was built.
+ */
+export async function downloadEverything(uid: string | null): Promise<DownloadedEverything> {
   let projects: SavedReportLike[];
   let extras: AccountExtras = {};
   if (uid) {
@@ -32,12 +52,12 @@ export async function downloadEverything(uid: string | null): Promise<number> {
   }
   const remembered = readMemory(uid);
   if (remembered.memories.length || remembered.kept.length) extras.memory = remembered;
-  if (!projects.length) return 0;
+  if (!projects.length && !holdsExtras(extras)) return { projects: 0, saved: false };
   const now = new Date();
   // `keepPaths`: projectExport makes each part of a name safe and distinct
   // itself, and the versions sit in folders a second pass would flatten.
   const { bytes, reason } = buildZip(projectExportEntries(projects, now, extras), now, { keepPaths: true });
   if (!bytes) throw new Error(`The projects could not be packed: ${reason}.`);
   saveBlob(exportFileName(now), new Blob([bytes.slice()], { type: 'application/zip' }));
-  return projects.length;
+  return { projects: projects.length, saved: true };
 }

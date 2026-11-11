@@ -196,20 +196,25 @@ export interface SaveOutcome {
   /** The slots written. */
   written: string[];
   deleted: string[];
-  /** The revisions skipped for size, by `versionKey`. */
+  /** The revisions skipped, for size or a time the rules refuse, by `versionKey`. */
   tooLarge: string[];
 }
 
 /**
  * Persist a history: read what is stored, plan the difference, apply it.
  *
- * Writes and deletes go out together rather than in sequence — they touch
- * disjoint documents by construction, since `toDelete` is exactly the stored ids
- * that are *not* among the kept revisions.
+ * Writes first, then deletes (2026-11-11, the re-audit's R3-07). They went out
+ * together, which was safe while every delete was of a version no longer
+ * kept; since the slots, moving a version stored before them is a write into
+ * a slot and a delete of its old id, and a slot write the rules refuse (a
+ * timestamp of 0 read back from an old document, say) lost that version for
+ * good while its copy was being deleted. Now an old id is deleted only once
+ * the version it holds is in a slot (`movedFrom`), or when it is no longer
+ * kept at all.
  *
- * Throws on an I/O failure. The caller decides what that means; in `App.tsx` it
- * means the report still saved and its history did not, which is a notice rather
- * than an error.
+ * Throws on an I/O failure, after deleting what is safe to delete. The caller
+ * decides what that means; in `App.tsx` it means the report still saved and
+ * its history did not, which is a notice rather than an error.
  */
 export async function saveRevisions(
   io: VersionIo,
@@ -219,15 +224,17 @@ export async function saveRevisions(
   max = MAX_PERSISTED_REVISIONS,
 ): Promise<SaveOutcome> {
   const plan = planVersionWrites(revisions, await io.list(), reportId, userId, max);
-  await Promise.all([
-    ...plan.toWrite.map((document) => io.write(document)),
-    ...plan.toDelete.map((id) => io.remove(id)),
-  ]);
-  return {
-    written: plan.toWrite.map((document) => document.id),
-    deleted: plan.toDelete,
-    tooLarge: plan.tooLarge,
-  };
+  const writes = await Promise.allSettled(plan.toWrite.map((document) => io.write(document)));
+  const written = plan.toWrite.filter((_, i) => writes[i].status === 'fulfilled').map((document) => document.id);
+  const landed = new Set(written);
+  const deleted = plan.toDelete.filter((id) => {
+    const slot = plan.movedFrom[id];
+    return slot === undefined || landed.has(slot);
+  });
+  await Promise.all(deleted.map((id) => io.remove(id)));
+  const failed = writes.find((w): w is PromiseRejectedResult => w.status === 'rejected');
+  if (failed) throw failed.reason;
+  return { written, deleted, tooLarge: plan.tooLarge };
 }
 
 /** Read a history back, numbered so `pushRevision` can extend it — see below. */
@@ -238,9 +245,22 @@ export async function loadRevisions(io: VersionIo): Promise<Revision[]> {
 export interface VersionPlan {
   /** Documents to write: the ones not already stored, newest first, each in a free slot. */
   toWrite: VersionDocument[];
-  /** Stored ids to delete: slots holding a version no longer kept and not reused, and every older id. */
+  /**
+   * Stored ids to delete: slots holding a version no longer kept and not
+   * reused, and every older id whose version is no longer kept or is being
+   * written into a slot. An older id holding a kept version that is not being
+   * written (over budget, or with no time the rules take) stays.
+   */
   toDelete: string[];
-  /** Skipped for being over budget, by `versionKey`, so the caller can say so. */
+  /**
+   * The older ids among `toDelete` whose version is being written into a
+   * slot, and that slot: each is deleted only once that write has landed.
+   */
+  movedFrom: Record<string, string>;
+  /**
+   * Skipped, by `versionKey`, so the caller can say so: over budget, or (since
+   * 2026-11-12) with a time the rules refuse.
+   */
   tooLarge: string[];
 }
 
@@ -280,9 +300,19 @@ export function planVersionWrites(
 
   const toWrite: VersionDocument[] = [];
   const tooLarge: string[] = [];
+  /** Where each kept revision is being written, by `versionKey`. */
+  const slotOf = new Map<string, string>();
   for (const revision of keep) {
     const key = versionKey(revision);
     if (held.has(key)) continue;
+    // A time the rules refuse (one read back from an old document with none
+    // is 0): the write would fail, so it is not tried, and the old copy stays.
+    // Counted with the oversized ones (2026-11-12, the review of R3-07), so
+    // the save says this version was not kept in the account.
+    if (!storableTime(revision.at)) {
+      tooLarge.push(key);
+      continue;
+    }
     const slot = free[0];
     if (!slot) break;
     const document = toVersionDocument(revision, reportId, userId, slot);
@@ -292,15 +322,32 @@ export function planVersionWrites(
     }
     free.shift();
     toWrite.push(document);
+    slotOf.set(key, slot);
   }
 
   const written = new Set(toWrite.map((d) => d.id));
-  return {
-    toWrite,
-    // A slot holding what is no longer kept and not written over, and every
-    // id from before the slots: dropped off the end of the cap, or belonging
-    // to a history that has moved on.
-    toDelete: stored.map((s) => s.id).filter((id) => !taken.has(id) && !written.has(id)),
-    tooLarge,
-  };
+  const toDelete: string[] = [];
+  const movedFrom: Record<string, string> = {};
+  for (const s of stored) {
+    if (taken.has(s.id) || written.has(s.id)) continue;
+    // A slot holding what is no longer kept and not written over: dropped off
+    // the end of the cap, or belonging to a history that has moved on.
+    if (isVersionSlot(s.id)) {
+      toDelete.push(s.id);
+      continue;
+    }
+    // An id from before the slots: deleted when its version is no longer kept
+    // or already sits in a slot; once its slot's write lands when it is being
+    // moved there; and kept when its version is kept and cannot be moved.
+    const key = versionKey({ at: s.timestamp, label: s.label });
+    if (!wanted.has(key) || held.has(key)) toDelete.push(s.id);
+    else if (slotOf.has(key)) {
+      toDelete.push(s.id);
+      movedFrom[s.id] = slotOf.get(key)!;
+    }
+  }
+  return { toWrite, toDelete, movedFrom, tooLarge };
 }
+
+/** A version's time as the rules take it: after 1970 and before 2100 (`firestore.rules`, isValidReportVersion). */
+const storableTime = (at: number) => Number.isFinite(at) && at > 0 && at < 4102444800000;

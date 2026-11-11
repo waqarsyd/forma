@@ -30,7 +30,10 @@ namespace RepxDesigner
     /// the request, and the report's own SQL data source is replaced by them before
     /// anything runs), report scripts stay off as for every report this process
     /// loads, and the answer is a few numbers and names. The same origin, client
-    /// header, Host and same-user guards as /open apply (Program.Handle).
+    /// header, Host and same-user guards as /open apply (Program.Handle). Since the
+    /// re-audit's R5-03, a report naming a type outside DevExpress's own report types,
+    /// the plain value types and the SQL data source, or a file outside the report on
+    /// another computer or a drive, is refused before it is loaded (ReportGuard, below).
     ///
     /// Every method here names a DevExpress type, so each is NoInlining and called
     /// only once Program.Installed is known (Entry.cs says why).
@@ -142,6 +145,9 @@ namespace RepxDesigner
 
         private static XtraReport Load(string repx)
         {
+            // Read before DevExpress makes a single object of it (2026-11-11, the re-audit's R5-03).
+            string refused = ReportGuard.Refusal(repx, false);
+            if (refused != null) throw new ReportRefused(refused);
             var report = new XtraReport();
             using (var ms = new MemoryStream(Encoding.UTF8.GetBytes(repx))) report.LoadLayoutFromXml(ms);
             return report;
@@ -233,6 +239,118 @@ namespace RepxDesigner
             if (type == typeof(decimal)) return decimal.Parse(text, NumberStyles.Number, CultureInfo.InvariantCulture);
             if (type == typeof(DateTime)) return DateTime.Parse(text, CultureInfo.InvariantCulture);
             return text;
+        }
+    }
+
+    /// <summary>A report /inspect and /render will not load, with why; answered as a 422 by Program.Handle.</summary>
+    internal sealed class ReportRefused : Exception
+    {
+        public ReportRefused(string why) : base(why) { }
+    }
+
+    /// <summary>
+    /// What a report posted to /inspect or /render may name before DevExpress loads it
+    /// (2026-11-11, the re-audit's R5-03). Every generation is posted once Forma Designer
+    /// has answered in a page, with no click, and the report is the AI's answer to a
+    /// picture or a PDF someone else may have made. DevExpress's serializer makes an
+    /// object of every type a ControlType, an ObjectType or a parameter's Type names, and
+    /// a data source in ComponentStorage names more inside its Base64; and a picture's
+    /// ImageUrl, a StyleSheetPath, an XmlDataPath or a subreport's ReportSourceUrl is
+    /// opened when the report prints, from another computer if it names one, which sends
+    /// that computer this Windows sign-in to answer.
+    ///
+    /// So only DevExpress's own report types, the plain .NET value types and the SQL data
+    /// source Forma writes are taken, and no file outside the report. The same rules as
+    /// src/lib/inspectionGuard.ts, which asks before posting so an older Forma Designer
+    /// is never sent such a report either. Read with XmlReader, no DTD, no resolver.
+    /// </summary>
+    internal static class ReportGuard
+    {
+        private static readonly HashSet<string> ValueTypes = new HashSet<string>(
+            new[] { "String", "Boolean", "Byte", "SByte", "Char", "Int16", "Int32", "Int64", "UInt16", "UInt32", "UInt64", "Single", "Double", "Decimal", "DateTime", "DateTimeOffset", "TimeSpan", "Guid", "DBNull" }.Select(t => "System." + t),
+            StringComparer.Ordinal);
+
+        private static readonly string[] PathAttributes = { "ImageUrl", "StyleSheetPath", "XmlDataPath", "ReportSourceUrl" };
+
+        private const string SqlDataSource = "DevExpress.DataAccess.Sql.SqlDataSource";
+
+        private static string TypeOf(string written) { return written.Split(',')[0].Trim(); }
+
+        private static bool Bare(string name) { return Regex.IsMatch(name, "^[A-Za-z_]\\w*$"); }
+
+        private static bool IsValueTypeName(string name)
+        {
+            return name.StartsWith("#Ref-", StringComparison.Ordinal) || Bare(name) || ValueTypes.Contains(name) || name == "DevExpress.DataAccess.Expression";
+        }
+
+        /// <summary>Another computer (\\server, //server), a file: address or a drive (C:\).</summary>
+        private static bool ReachesOutside(string value)
+        {
+            string v = value.Trim();
+            return Regex.IsMatch(v, "^[\\\\/]{2}") || v.StartsWith("file:", StringComparison.OrdinalIgnoreCase) || Regex.IsMatch(v, "^[A-Za-z]:[\\\\/]");
+        }
+
+        /// <summary>Why the report must not be loaded, or null. <paramref name="nested"/>: a data source's own XML.</summary>
+        public static string Refusal(string xml, bool nested)
+        {
+            var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
+            using (var reader = XmlReader.Create(new StringReader(xml.TrimStart((char)0xFEFF)), settings))
+            {
+                while (reader.Read())
+                {
+                    if (reader.NodeType != XmlNodeType.Element) continue;
+                    string control = reader.GetAttribute("ControlType");
+                    if (control != null && !nested && !Bare(TypeOf(control)) && !TypeOf(control).StartsWith("DevExpress.XtraReports.", StringComparison.Ordinal))
+                    {
+                        return "it names the type \"" + TypeOf(control) + "\"";
+                    }
+                    string objectType = reader.GetAttribute("ObjectType");
+                    if (objectType != null)
+                    {
+                        string type = TypeOf(objectType);
+                        if (!type.StartsWith("DevExpress.XtraReports.", StringComparison.Ordinal) && type != SqlDataSource) return "it holds a \"" + type + "\"";
+                        string base64 = reader.GetAttribute("Base64");
+                        if (type == SqlDataSource && !string.IsNullOrEmpty(base64))
+                        {
+                            string inner;
+                            try
+                            {
+                                inner = Encoding.UTF8.GetString(Convert.FromBase64String(base64));
+                            }
+                            catch (FormatException)
+                            {
+                                return "its data source cannot be read";
+                            }
+                            string why;
+                            try
+                            {
+                                why = Refusal(inner, true);
+                            }
+                            catch (XmlException)
+                            {
+                                return "its data source cannot be read";
+                            }
+                            if (why != null) return "its data source: " + why;
+                        }
+                    }
+                    string written = reader.GetAttribute("Type");
+                    if (written != null)
+                    {
+                        if (TypeOf(written) == "System.Type")
+                        {
+                            string content = TypeOf(reader.GetAttribute("Content") ?? "");
+                            if (!IsValueTypeName(content)) return "it names the type \"" + content + "\"";
+                        }
+                        else if (!IsValueTypeName(TypeOf(written))) return "it names the type \"" + TypeOf(written) + "\"";
+                    }
+                    foreach (string path in PathAttributes)
+                    {
+                        string value = reader.GetAttribute(path);
+                        if (value != null && ReachesOutside(value)) return reader.LocalName + " reads \"" + value + "\" from outside the report";
+                    }
+                }
+            }
+            return null;
         }
     }
 }

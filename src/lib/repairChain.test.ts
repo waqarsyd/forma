@@ -97,4 +97,24 @@ describe('the repair chain', () => {
     expect(stripReportScripts(withBody)).toMatchObject({ applied: true, xml: '<Item1 Ref="3" ControlType="XRLabel" Name="a"></Item1>' });
     expect(stripReportScripts('<Item1 Ref="3" />')).toMatchObject({ applied: false, xml: '<Item1 Ref="3" />' });
   });
+
+  // The re-audit's R5-02: legal spellings the first patterns missed, so the code stayed in the answer.
+  it('removes them however XML spells them', () => {
+    const spelled =
+      `<XtraReportsLayoutSerializer Ref="1" ScriptsSource = 'void a() {}' Name="R">` +
+      `<ScriptsSource>void b() {}</ScriptsSource>` +
+      `<Item1 Ref="3" Name="a"><Scripts Ref="4" Note="x>y" OnBeforePrint = 'h' /></Item1>` +
+      `<Item2 Ref="5" Name="b"><Scripts Ref="6" OnPrintOnPage="g"></Scripts ></Item2></XtraReportsLayoutSerializer>`;
+    const out = stripReportScripts(spelled);
+    expect(out.applied).toBe(true);
+    expect(hasReportScripts(out.xml)).toBe(false);
+    expect(out.xml).toBe('<XtraReportsLayoutSerializer Ref="1" Name="R"><Item1 Ref="3" Name="a"></Item1><Item2 Ref="5" Name="b"></Item2></XtraReportsLayoutSerializer>');
+  });
+
+  // The review of R5-02 (2026-11-12): a label whose text quotes the attribute keeps its text.
+  it("leaves another attribute's words alone", () => {
+    const quoted = `<XtraReportsLayoutSerializer Ref="1" Name="R" ScriptsSource="void a() {}"><Item1 Ref="3" Text="see ScriptsSource='x'" /></XtraReportsLayoutSerializer>`;
+    const out = stripReportScripts(quoted);
+    expect(out.xml).toBe(`<XtraReportsLayoutSerializer Ref="1" Name="R"><Item1 Ref="3" Text="see ScriptsSource='x'" /></XtraReportsLayoutSerializer>`);
+  });
 });

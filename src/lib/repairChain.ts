@@ -98,11 +98,16 @@ type Result = { xml: string; applied: boolean; reason: string };
  * designer; the audit's `report-has-scripts` names one that is kept.
  */
 export function stripReportScripts(xml: string): Result {
-  if (!hasReportScripts(xml) && !/<Scripts\b/.test(xml)) return { xml, applied: false, reason: 'no scripts' };
+  if (!hasReportScripts(xml) && !/<Scripts(?:Source)?\b/.test(xml)) return { xml, applied: false, reason: 'no scripts' };
+  // However XML spells them (2026-11-11, the re-audit's R5-02): spaces around
+  // the `=`, single quotes, a `>` inside a quoted value, the element form. The
+  // attribute only as one of a tag's own (2026-11-12, the review of R5-02), so
+  // a label whose text quotes it keeps its text.
   const out = xml
-    .replace(/\sScriptsSource="[^"]*"/g, '')
-    .replace(/<Scripts\b[^>]*\/>/g, '')
-    .replace(/<Scripts\b[^>]*>[\s\S]*?<\/Scripts>/g, '');
+    .replace(/(<[^\s<>/!?]+(?:\s+[^\s=<>"'/]+\s*=\s*(?:"[^"]*"|'[^']*'))*?)\s+ScriptsSource\s*=\s*(?:"[^"]*"|'[^']*')/g, '$1')
+    .replace(/<ScriptsSource\b(?:[^>"'/]|"[^"]*"|'[^']*')*(?:\/>|>[\s\S]*?<\/ScriptsSource\s*>)/g, '')
+    .replace(/<Scripts\b(?:[^>"']|"[^"]*"|'[^']*')*\/>/g, '')
+    .replace(/<Scripts\b(?:[^>"'/]|"[^"]*"|'[^']*')*>[\s\S]*?<\/Scripts\s*>/g, '');
   return { xml: out, applied: out !== xml, reason: 'removed the code the answer carried; Forma writes none' };
 }
 

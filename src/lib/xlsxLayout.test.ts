@@ -76,6 +76,24 @@ describe('readXlsxTemplate', () => {
     expect(table.rows[1].cells.map((c) => c.text)).toEqual(['{{ItemName}}', '{{Warehouse}}', '[Qty]', '']);
   });
 
+  /**
+   * The re-audit's R5-07: each cell summed every column from A to place itself,
+   * and a reference past Excel's last column (XFD) asked for billions of them.
+   * Now a far cell is placed by the same widths, once, and an impossible one,
+   * or a merge reaching one, is not a cell.
+   */
+  it('places a cell in the last column by the same widths, and skips one past it', async () => {
+    const sheet = SHEET.replace('<row r="4">', `<row r="3"><c r="XFD3" t="inlineStr"><is><t>Far</t></is></c><c r="ZZZZZZZ3" t="inlineStr"><is><t>Impossible</t></is></c></row>\n<row r="4">`).replace(
+      '<mergeCell ref="A1:D1"/>',
+      '<mergeCell ref="A1:D1"/><mergeCell ref="XFD3:ZZZZZZZ3"/>',
+    );
+    const page = (await readXlsxTemplate(xlsx(sheet)))!;
+    expect(page.before.map((t) => t.text)).toEqual(['Stock on hand', 'By warehouse, as of today', 'Far']);
+    // A to D as before (525), then the 16,379 columns E to XFC at the default 8.43 characters (64 pixels: 67 hundredths).
+    expect(page.before[2]).toMatchObject({ x: 525 + 16_379 * 67, w: 67 });
+    expect(page.table?.rows[0].cells.map((c) => c.text)).toEqual(['Item', 'Warehouse', 'Quantity', 'Value']);
+  });
+
   it('is null for a workbook with no worksheet or nothing written on it', async () => {
     const empty = buildZip([{ name: 'xl/workbook.xml', content: '<workbook/>' }], new Date(), { keepPaths: true }).bytes!;
     expect(await readXlsxTemplate(empty)).toBeNull();

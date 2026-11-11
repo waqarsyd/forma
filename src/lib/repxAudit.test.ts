@@ -425,6 +425,19 @@ describe('auditRepx on scripts and expressions', () => {
     const handler = healthy.replace('Name="c2" Text="B" Weight="1" />', 'Name="c2" Text="B" Weight="1"><Scripts OnBeforePrint="c2_BeforePrint" /></Item2>');
     expect(codes(handler)).toContain('report-has-scripts');
     expect(codes(healthy)).not.toContain('report-has-scripts');
+    // However XML spells it (the re-audit's R5-02).
+    expect(codes(healthy.replace('Name="Report1"', "Name=\"Report1\" ScriptsSource = 'void a() { }'"))).toContain('report-has-scripts');
+    expect(codes(healthy.replace('Name="c2" Text="B" Weight="1" />', "Name=\"c2\" Text=\"B\" Weight=\"1\"><Scripts OnBeforePrint = 'h' /></Item2>"))).toContain('report-has-scripts');
+  });
+
+  // The re-audit's R5-03: a picture read from another computer each time the report prints.
+  it('names a file read from outside the report, as a warning', () => {
+    const shared = healthy.replace('Name="c2" Text="B" Weight="1" />', 'Name="c2" Text="B" Weight="1" ImageUrl="\\\\nas\\logos\\logo.png" />');
+    const finding = auditRepx(shared).findings.find((f) => f.code === 'reference-outside-report');
+    expect(finding?.severity).toBe('warning');
+    expect(finding?.message).toContain('"c2" reads \\\\nas\\logos\\logo.png');
+    expect(codes(healthy.replace('Name="c2" Text="B" Weight="1" />', 'Name="c2" Text="B" Weight="1" ImageUrl="https://example.com/logo.png" />'))).not.toContain('reference-outside-report');
+    expect(codes(healthy)).not.toContain('reference-outside-report');
   });
 
   it('reports an expression that cannot be read, as an error', () => {

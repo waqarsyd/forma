@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { deflateRawSync } from 'node:zlib';
 import { buildZip, crc32 } from './zip';
-import { isDataFile, MAX_ROWS, parseDelimited, readDataFile, unzip } from './dataFiles';
+import { firstSheet, isDataFile, MAX_ROWS, parseDelimited, readDataFile, unzip, zipNames } from './dataFiles';
 
 const bytes = (s: string) => new TextEncoder().encode(s);
 
@@ -101,6 +101,38 @@ describe('readDataFile', () => {
     expect(out.text).toContain('DOCUMENT (Brief.docx)');
     expect(out.text).toContain('Invoice for each customer');
     expect(out.text).toMatch(/Item\s*\|\s*Price/);
+  });
+
+  /**
+   * The re-audit's R5-07: an entry was inflated whole and measured after, so a
+   * small file inflating to gigabytes filled the tab first. Refused by the size
+   * it declares before anything is inflated, and, where it understates that,
+   * as soon as what it inflates to passes the limit.
+   */
+  it('refuses an entry that inflates past the limit, whatever size it declares', async () => {
+    const huge = '\0'.repeat(21 * 1024 * 1024);
+    expect((await readDataFile('bomb.docx', deflatedZip('word/document.xml', huge))).note).toBe('"bomb.docx" could not be read: an entry inflates past the limit.');
+    const lying = deflatedZip('word/document.xml', huge);
+    // The central directory's uncompressed size, at 24 past its signature, set to 10.
+    const central = lying.length - 22 - (46 + 'word/document.xml'.length);
+    new DataView(lying.buffer).setUint32(central + 24, 10, true);
+    await expect(unzip(lying, () => true)).rejects.toThrow('an entry inflates past the limit');
+  });
+
+  it('reads the first worksheet alone, and skips a cell past the last column a sheet has', async () => {
+    const zip = buildZip(
+      [
+        { name: 'xl/sharedStrings.xml', content: '<sst><si><t>Region</t></si></sst>' },
+        { name: 'xl/worksheets/sheet1.xml', content: '<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="ZZZZZZZ1"><v>9</v></c></row><row r="2"><c r="A2"><v>North</v></c></row></sheetData></worksheet>' },
+        { name: 'xl/worksheets/sheet10.xml', content: 'not even XML' },
+      ],
+      new Date(),
+      { keepPaths: true },
+    );
+    expect(firstSheet(zipNames(zip.bytes!))).toBe('xl/worksheets/sheet1.xml');
+    const out = await readDataFile('Sales.xlsx', zip.bytes!);
+    expect(out.text).toContain('Fields: Region\n');
+    expect(out.note).toBeUndefined();
   });
 
   it('says what went wrong rather than throwing: bad JSON, an empty file, a file that is not a zip', async () => {

@@ -84,9 +84,28 @@ export function inviteesOf(acl: Partial<ShareAcl> | null | undefined, legacy?: L
  * report is previewed or printed in a designer, Forma Designer included. Forma
  * never writes either. Here rather than in repxAudit so the shared-report page
  * can ask without loading the whole audit; the audit asks the same question.
+ *
+ * Read as XML may write it (2026-11-11, the re-audit's R5-02): spaces around
+ * the `=`, single quotes, a `>` inside another attribute's quotes, and
+ * `ScriptsSource` as an element of its own. Until then only
+ * `ScriptsSource="..."` and `On...="..."` exactly were seen, so a shared
+ * report written `ScriptsSource = '...'` reached its reader with no warning,
+ * and the audit and the repair that removes the code missed it too.
+ * tools/RepxDesigner/Program.cs asks the same question with this pattern
+ * (`REPORT_SCRIPTS_PATTERN`), and shares.test.ts holds the two together.
+ *
+ * The attribute is read only as an attribute of a tag, walking that tag's
+ * other attributes whole, so words in another attribute's value
+ * (`Text="see ScriptsSource='x'"`) are not taken for one; and the element's
+ * text counts when it is CDATA or opens with a comment (both 2026-11-12, the
+ * review of R5-02).
  */
+export const REPORT_SCRIPTS_PATTERN =
+  `<[^\\s<>/!?]+(?:\\s+[^\\s=<>"'/]+\\s*=\\s*(?:"[^"]*"|'[^']*'))*\\s+ScriptsSource\\s*=\\s*(?:"[^"]|'[^'])|<ScriptsSource\\b(?:[^>]*[^/>])?>\\s*(?:[^<\\s]|<!)|<Scripts\\b(?:[^>"']|"[^"]*"|'[^']*')*\\sOn\\w+\\s*=\\s*(?:"[^"]|'[^'])`;
+const REPORT_SCRIPTS = new RegExp(REPORT_SCRIPTS_PATTERN);
+
 export function hasReportScripts(xml: string): boolean {
-  return /\sScriptsSource="[^"]|<Scripts\b[^>]*\sOn\w+="[^"]/.test(xml);
+  return REPORT_SCRIPTS.test(xml);
 }
 
 /** The part of a report a shared copy carries. */

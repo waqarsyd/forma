@@ -28,9 +28,11 @@ import {
   fromVersionDocument,
   fromVersionDocuments,
   planVersionWrites,
+  saveRevisions,
   storedVersion,
   type StoredVersion,
   type VersionDocument,
+  type VersionIo,
 } from './revisionStore';
 
 const snapshot = (repx = '<XtraReportsLayoutSerializer />'): RevisionSnapshot => ({
@@ -242,6 +244,30 @@ describe('planVersionWrites', () => {
     const plan = planVersionWrites(list, [at('300-3', list[0]), at('100-1', list[2])], 'rep-1', 'uid-1');
     expect(writes(plan)).toEqual(['v0:300', 'v1:200', 'v2:100']);
     expect(plan.toDelete).toEqual(['300-3', '100-1']);
+    // Each only once its slot's write has landed (R3-07).
+    expect(plan.movedFrom).toEqual({ '300-3': 'v0', '100-1': 'v2' });
+  });
+
+  /**
+   * The re-audit's R3-07. An old id whose version is kept but cannot be
+   * written into a slot, over budget or with a time the rules refuse (a
+   * document read back with none has 0), is the only copy there is: it stays.
+   * One whose version is no longer kept, or already sits in a slot, goes.
+   */
+  it('keeps an old id whose kept version cannot move, and deletes one whose version is gone or moved already', () => {
+    const huge: Revision = { id: 9, label: 'Huge', at: 900, snapshot: snapshot('x'.repeat(VERSION_BUDGET_BYTES + 1)) };
+    const timeless: Revision = { ...revision(8, 0, 'Old'), at: 0 };
+    const plan = planVersionWrites(
+      [huge, timeless, ...list],
+      [at('900-9', huge), at('0-8', timeless), at('v4', list[0]), at('300-3', list[0]), at('50-0', revision(0, 50))],
+      'rep-1',
+      'uid-1',
+    );
+    expect(writes(plan)).toEqual(['v0:200', 'v1:100']);
+    expect(plan.toDelete).toEqual(['300-3', '50-0']);
+    expect(plan.movedFrom).toEqual({});
+    // The timeless one is not kept in the account either, and the save says so.
+    expect(plan.tooLarge).toEqual([versionKey(huge), versionKey(timeless)]);
   });
 
   /**
@@ -310,12 +336,40 @@ describe('planVersionWrites', () => {
 
   it('leaves an empty history planning nothing', () => {
     const plan = planVersionWrites([], [], 'rep-1', 'uid-1');
-    expect(plan).toEqual({ toWrite: [], toDelete: [], tooLarge: [] });
+    expect(plan).toEqual({ toWrite: [], toDelete: [], movedFrom: {}, tooLarge: [] });
   });
 
   it('deletes every stored version when the history is emptied', () => {
     expect(planVersionWrites([], [at('v0', list[0]), at('300-3', list[0])], 'rep-1', 'uid-1').toDelete)
       .toEqual(['v0', '300-3']);
+  });
+
+  /**
+   * The re-audit's R3-07: writes and deletes went out together, so a slot
+   * write that failed lost the old copy it was replacing. Now the writes
+   * settle first, and an old id goes only once its version's slot is written.
+   */
+  it('deletes after writing, and keeps the old copy of a version whose slot write failed', async () => {
+    const events: string[] = [];
+    const io: VersionIo = {
+      list: async () => [at('300-3', list[0]), at('200-2', list[1]), at('7-7', revision(7, 7))],
+      read: async () => [],
+      write: async (d) => {
+        events.push(`write ${d.id}`);
+        await Promise.resolve();
+        if (d.timestamp === 200) throw new Error('refused');
+        events.push(`wrote ${d.id}`);
+      },
+      remove: async (id) => {
+        events.push(`remove ${id}`);
+      },
+    };
+    await expect(saveRevisions(io, list, 'rep-1', 'uid-1')).rejects.toThrow('refused');
+    // The version at 200 failed to land in v1, so its only copy, 200-2, stays.
+    expect(events.filter((e) => e.startsWith('remove')).sort()).toEqual(['remove 300-3', 'remove 7-7']);
+    // Every remove after every write settled.
+    const lastWrite = Math.max(...events.map((e, i) => (e.startsWith('write') || e.startsWith('wrote') ? i : -1)));
+    expect(events.findIndex((e) => e.startsWith('remove'))).toBeGreaterThan(lastWrite);
   });
 
   it('reads a stored document as what it holds, whatever is missing', () => {

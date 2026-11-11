@@ -32,6 +32,7 @@
  */
 
 import { DESIGNER_RELEASE, designerIsOlder } from './designerRelease';
+import { inspectionRefusal } from './inspectionGuard';
 import type { RepxFinding } from './repxAudit';
 
 /** Loopback only. `--port` on the companion moves both sides; keep them equal. */
@@ -555,6 +556,14 @@ export async function inspectInDesigner(
   options: { signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<DesignerInspection | null> {
   if (!designerAnswered() || typeof fetch === 'undefined' || !repxContent) return null;
+  // A type or a file outside the report is not handed to DevExpress unasked
+  // (2026-11-11, the re-audit's R5-03, lib/inspectionGuard.ts): asked here as
+  // well as in Forma Designer, so an older one without the check is spared it.
+  const refused = inspectionRefusal(repxContent);
+  if (refused) {
+    console.info(`Forma Designer was not asked about this report: ${refused}.`);
+    return null;
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? INSPECT_TIMEOUT_MS);
   const stop = () => controller.abort();

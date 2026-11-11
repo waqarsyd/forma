@@ -51,6 +51,28 @@ describe.runIf(fakeIdb)('the projects kept in IndexedDB', () => {
     expect(localStorage.getItem(LOCAL_REPORTS_KEY)).toBeNull();
   });
 
+  /**
+   * The re-audit's R3-10: a tab still running a build from before the move
+   * saves to local storage. Where that save is the later one, it is the one
+   * kept, in the same transaction, before the key is removed.
+   */
+  it('keeps the later save when an old tab saved the same project after the move', async () => {
+    await putProjects([project('a', 'Project a', '2026-11-10T09:00:00.000Z'), project('b', 'Project b', '2026-11-10T09:00:00.000Z')]);
+    localStorage.setItem(
+      LOCAL_REPORTS_KEY,
+      JSON.stringify([project('b', 'Edited in the old tab', '2026-11-11T10:00:00.000Z'), project('a', 'Older', '2026-11-09T09:00:00.000Z')]),
+    );
+    const list = await loadProjects();
+    expect(list.map((r) => [r.id, r.name])).toEqual([
+      ['a', 'Project a'],
+      ['b', 'Edited in the old tab'],
+    ]);
+    expect(localStorage.getItem(LOCAL_REPORTS_KEY)).toBeNull();
+    // Stored, not only returned.
+    resetProjectStore();
+    expect((await loadProjects()).find((r) => r.id === 'b')?.name).toBe('Edited in the old tab');
+  });
+
   it('puts a save at the top, keeps a rename where it was, and deletes', async () => {
     await putProjects([project('a')]);
     await putProjects([project('b')]);

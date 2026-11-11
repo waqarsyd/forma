@@ -19,7 +19,7 @@
  * (a placeholder such as {{Name}} names its field, else the heading does).
  * Rows of data further down are data, not layout, and are left out.
  */
-import { unzip } from './dataFiles';
+import { MAX_SHEET_COLUMNS, firstSheet, unzip, zipNames } from './dataFiles';
 import { lineHeight, templateDraft, type TemplatePage, type TemplateText } from './docxLayout';
 import { pageSizeInUnits } from './reportGeometry';
 import { unescapeXml } from './xmlEscape';
@@ -61,10 +61,13 @@ function readStyles(styles: string): CellStyle[] {
 
 /** A workbook's first worksheet as a template, or null when it is not one Forma can read. */
 export async function readXlsxTemplate(bytes: Uint8Array): Promise<TemplatePage | null> {
-  const parts = await unzip(bytes, (n) => n === 'xl/sharedStrings.xml' || n === 'xl/styles.xml' || /^xl\/worksheets\/sheet\d+\.xml$/.test(n));
-  const decode = (name: string) => new TextDecoder().decode(parts.get(name) ?? new Uint8Array());
-  const sheetName = [...parts.keys()].filter((n) => n.startsWith('xl/worksheets/')).sort((a, b) => Number(/(\d+)\.xml$/.exec(a)![1]) - Number(/(\d+)\.xml$/.exec(b)![1]))[0];
+  // The first sheet alone is inflated (2026-11-11, the re-audit's R5-07): every
+  // sheet was, then all but one set aside, so a workbook of many large sheets
+  // cost the tab all of them to read one.
+  const sheetName = firstSheet(zipNames(bytes));
   if (!sheetName) return null;
+  const parts = await unzip(bytes, (n) => n === 'xl/sharedStrings.xml' || n === 'xl/styles.xml' || n === sheetName);
+  const decode = (name: string) => new TextDecoder().decode(parts.get(name) ?? new Uint8Array());
   const sheet = decode(sheetName);
   const shared = [...decode('xl/sharedStrings.xml').matchAll(/<si>([\s\S]*?)<\/si>/g)].map((m) => unescapeXml([...m[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((t) => t[1]).join('')));
   const styles = readStyles(decode('xl/styles.xml'));
@@ -79,11 +82,21 @@ export async function readXlsxTemplate(bytes: Uint8Array): Promise<TemplatePage 
     for (let c = min; c <= Math.min(max, min + 256); c++) widthOf.set(c - 1, charsWide(w));
   }
   const colWidth = (c: number) => widthOf.get(c) ?? charsWide(defaultChars);
-  const colX = (c: number) => Array.from({ length: c }, (_, i) => colWidth(i)).reduce((s, w) => s + w, 0);
+  // Where each column starts, summed once as far as asked (R5-07): summing
+  // from column A on every call made a wide sheet's cells cost the square of
+  // its width.
+  const starts = [0];
+  const colX = (c: number) => {
+    for (let i = starts.length - 1; i < c; i++) starts.push(starts[i] + colWidth(i));
+    return starts[c];
+  };
 
-  // Merged ranges, by their top left cell.
+  // Merged ranges, by their top left cell; a reference past Excel's last column is not one.
   const merges = new Map<string, number>();
-  for (const m of sheet.matchAll(/<mergeCell\s+ref="([A-Z]+)(\d+):([A-Z]+)(\d+)"/g)) merges.set(`${m[2]}:${columnIndex(m[1])}`, columnIndex(m[3]));
+  for (const m of sheet.matchAll(/<mergeCell\s+ref="([A-Z]+)(\d+):([A-Z]+)(\d+)"/g)) {
+    const [from, to] = [columnIndex(m[1]), columnIndex(m[3])];
+    if (from < MAX_SHEET_COLUMNS && to < MAX_SHEET_COLUMNS) merges.set(`${m[2]}:${from}`, to);
+  }
 
   // Rows with their cells' text and style.
   const rows: { r: number; height: number; cells: { col: number; text: string; style: CellStyle }[] }[] = [];
@@ -97,7 +110,7 @@ export async function readXlsxTemplate(bytes: Uint8Array): Promise<TemplatePage 
       const inner = c[2] ?? '';
       const raw = /<v>([\s\S]*?)<\/v>/.exec(inner)?.[1] ?? '';
       const text = (type === 's' ? shared[Number(raw)] ?? '' : type === 'inlineStr' ? unescapeXml(/<t[^>]*>([\s\S]*?)<\/t>/.exec(inner)?.[1] ?? '') : unescapeXml(raw)).trim();
-      if (!text || !ref) return [];
+      if (!text || !ref || columnIndex(ref) >= MAX_SHEET_COLUMNS) return [];
       return [{ col: columnIndex(ref), text, style: styles[Number(attr(c[1], 's'))] ?? plain }];
     });
     const ht = Number(attr(row[1], 'ht'));

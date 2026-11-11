@@ -1,6 +1,7 @@
 /** A shared report's copy, link and invitees (2026-11-06), as firestore.rules pins them. */
 import { describe, it, expect } from 'vitest';
-import { MAX_INVITED, hasReportScripts, inviteesOf, isEmail, makeShareId, normaliseEmail, readSharedReport, shareDocument, shareLink, splitShare, withInvitee } from './shares';
+import { readFileSync } from 'node:fs';
+import { MAX_INVITED, REPORT_SCRIPTS_PATTERN, hasReportScripts, inviteesOf, isEmail, makeShareId, normaliseEmail, readSharedReport, shareDocument, shareLink, splitShare, withInvitee } from './shares';
 import { sharedReportId } from './routes';
 
 describe('makeShareId', () => {
@@ -87,6 +88,51 @@ describe('hasReportScripts', () => {
     expect(hasReportScripts('<Item1 ControlType="XRLabel" Ref="2"><Scripts OnBeforePrint="label1_BeforePrint" /></Item1>')).toBe(true);
     expect(hasReportScripts('<XtraReportsLayoutSerializer Ref="1"><Item1 ControlType="XRLabel" Text="Scripts" /></XtraReportsLayoutSerializer>')).toBe(false);
     expect(hasReportScripts('<XtraReportsLayoutSerializer ScriptsSource="" Ref="1">')).toBe(false);
+  });
+
+  // The re-audit's R5-02: legal XML the first pattern missed, so a shared report carried code with no warning.
+  it('finds them however XML spells them', () => {
+    for (const scripted of [
+      `<XtraReportsLayoutSerializer ScriptsSource ="void x() {}" Ref="1">`,
+      `<XtraReportsLayoutSerializer ScriptsSource= 'void x() {}' Ref="1">`,
+      `<XtraReportsLayoutSerializer\nScriptsSource\n=\n"void x() {}">`,
+      `<XtraReportsLayoutSerializer Ref="1"><ScriptsSource>void x() {}</ScriptsSource></XtraReportsLayoutSerializer>`,
+      `<Item1 Ref="2"><Scripts OnBeforePrint = "h" /></Item1>`,
+      `<Item1 Ref="2"><Scripts OnBeforePrint='h' /></Item1>`,
+      `<Item1 Ref="2"><Scripts Ref="5" Note="a>b" OnBeforePrint="h" /></Item1>`,
+      // The review of R5-02 (2026-11-12): CDATA, or a comment first.
+      `<XtraReportsLayoutSerializer Ref="1"><ScriptsSource><![CDATA[void x(){}]]></ScriptsSource></XtraReportsLayoutSerializer>`,
+      `<XtraReportsLayoutSerializer Ref="1"><ScriptsSource> <!-- c -->void x(){}</ScriptsSource></XtraReportsLayoutSerializer>`,
+      `<XtraReportsLayoutSerializer Text="a>b" Note='c"d' ScriptsSource="void x() {}">`,
+    ]) {
+      expect(hasReportScripts(scripted), scripted).toBe(true);
+    }
+    for (const plain of [
+      `<XtraReportsLayoutSerializer ScriptsSource = '' Ref="1">`,
+      `<ScriptsSource />`,
+      `<ScriptsSource/>text`,
+      `<ScriptsSource>  </ScriptsSource>`,
+      `<Scripts Ref="5" />`,
+      `<Item1 Text="ScriptsSource='x'" />`,
+      // Words in another attribute's value, and in a text (the review of R5-02).
+      `<Item1 Text="see ScriptsSource='x'" />`,
+      `<Item1 Name="a" Text='see ScriptsSource="x"' />`,
+      `<Text>see ScriptsSource="x"</Text>`,
+    ]) {
+      expect(hasReportScripts(plain), plain).toBe(false);
+    }
+  });
+
+  /**
+   * Forma Designer asks the same question before it opens a file, and must
+   * ask it the same way, or it opens one with code without offering the
+   * choice. Its pattern is a C# string literal; read back, it is this one.
+   */
+  it('is asked in Forma Designer with the same pattern', () => {
+    const program = readFileSync('tools/RepxDesigner/Program.cs', 'utf8');
+    const literal = /Regex\.IsMatch\(File\.ReadAllText\(path\), "((?:[^"\\]|\\.)*)"\)/.exec(program)?.[1];
+    expect(literal).toBeDefined();
+    expect(literal!.replace(/\\(.)/g, '$1')).toBe(REPORT_SCRIPTS_PATTERN);
   });
 });
 

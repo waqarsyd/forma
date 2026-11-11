@@ -134,10 +134,20 @@ describe('SettingsDialog', () => {
 
   // The full audit's SA-10: everything the account holds, not the projects alone.
   it('offers everything as one .zip', async () => {
-    const onExportProjects = vi.fn().mockResolvedValue(2);
+    const onExportProjects = vi.fn().mockResolvedValue({ projects: 2, saved: true });
     render(<SettingsDialog {...props({ onExportProjects })} />);
     fireEvent.click(screen.getByRole('button', { name: 'Download everything (.zip)' }));
     expect(await screen.findByText('Downloaded 2 projects.')).toBeTruthy();
+  });
+
+  // The re-audit's R3-13: memories and the rest are saved with no projects, and said so.
+  it('says what it saved when there are no projects, and when there is nothing at all', async () => {
+    const onExportProjects = vi.fn().mockResolvedValueOnce({ projects: 0, saved: true }).mockResolvedValueOnce({ projects: 0, saved: false });
+    render(<SettingsDialog {...props({ onExportProjects })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Download everything (.zip)' }));
+    expect(await screen.findByText('Downloaded what Forma keeps for you. There are no saved projects yet.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Download everything (.zip)' }));
+    expect(await screen.findByText('There is nothing saved to download yet.')).toBeTruthy();
   });
 
   // The full audit's SE-16a: the encrypted copy is only as strong as its passphrase.

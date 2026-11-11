@@ -29,7 +29,7 @@
  */
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
-import { frxPageToRepx, parseXml } from '../../src/lib/importForeign';
+import { frxPageToRepx, frxTotals, parseXml } from '../../src/lib/importForeign';
 import { parseReportStructure } from '../../src/lib/reportPreview';
 import { skeletonOf } from '../../src/lib/reportSkeleton';
 
@@ -64,8 +64,7 @@ for (const file of files) {
     unreadable++;
     continue;
   }
-  const dictionary = root.children.find((c) => c.name === 'Dictionary');
-  const totals = new Set((dictionary?.children ?? []).filter((c) => c.name === 'Total').map((c) => c.attrs.Name).filter(Boolean));
+  const totals = frxTotals(root);
   const pages = root.children.filter((c) => c.name === 'ReportPage');
   for (const page of pages) {
     const made = frxPageToRepx(page, totals, `fr${written + 1}`);

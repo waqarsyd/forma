@@ -21,7 +21,8 @@
  *   out of room) is rolled back whole, so "could not save this one" never
  *   costs the projects already kept, as `saveReportsLocally` promised.
  * - **Moved once.** The first read finds the old local storage list, adds the
- *   projects it does not hold yet, and removes the key once they are stored.
+ *   projects it does not hold yet, replaces any it holds an earlier save of,
+ *   and removes the key once they are stored.
  * - **No IndexedDB** (a private window in some browsers, storage blocked): the
  *   same operations run on the local storage list, as before.
  *
@@ -147,10 +148,19 @@ function legacyKept(): boolean {
   }
 }
 
+/** A save's time in milliseconds; one that does not read as a time is older than any that does. */
+const savedAt = (r: { timestamp: string }) => {
+  const at = Date.parse(r.timestamp);
+  return Number.isNaN(at) ? -Infinity : at;
+};
+
 /**
  * The projects kept in this browser, newest first; never throws. The first
- * read moves the old local storage list in, keeping both where they differ,
- * and removes the key once that is stored.
+ * read moves the old local storage list in and removes the key once that is
+ * stored: a project IndexedDB lacks is added, and one both hold is kept as
+ * the later save of the two (2026-11-11, the re-audit's R3-10). Until then
+ * IndexedDB's copy always won, so the edits a tab still running a build from
+ * before the move saved to local storage were dropped with the key.
  */
 export async function loadProjects<M = unknown, R = unknown>(): Promise<SavedReportLike<M, R>[]> {
   const db = await database();
@@ -158,22 +168,27 @@ export async function loadProjects<M = unknown, R = unknown>(): Promise<SavedRep
   const stored = await readAll<M, R>(db);
   if (!stored) return loadReportsLocally<M, R>();
   if (!legacyKept()) return stored;
-  const have = new Set(stored.map((r) => r.id));
-  const moving = loadReportsLocally<M, R>().filter((r) => !have.has(r.id));
+  const have = new Map(stored.map((r) => [r.id, r]));
+  const moving = loadReportsLocally<M, R>().filter((r) => {
+    const held = have.get(r.id);
+    return !held || savedAt(r) > savedAt(held);
+  });
   const outcome = moving.length
     ? await change(db, (projects, order) => {
         for (const r of moving) projects.put(r, r.id);
-        // After what is stored, in the old list's own order.
+        // After what is stored, in the old list's own order; a project both held keeps its place.
         return [...order, ...moving.map((r) => r.id).filter((id) => !order.includes(id))];
       })
     : ({ ok: true } as const);
-  if (!outcome.ok) return [...stored, ...moving];
+  const newer = new Map(moving.map((r) => [r.id, r]));
+  const list = [...stored.map((r) => newer.get(r.id) ?? r), ...moving.filter((r) => !have.has(r.id))];
+  if (!outcome.ok) return list;
   try {
     localStorage.removeItem(LOCAL_REPORTS_KEY);
   } catch {
     /* blocked: moved again, harmlessly, next time */
   }
-  return [...stored, ...moving];
+  return list;
 }
 
 /**

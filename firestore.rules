@@ -99,7 +99,10 @@ service cloud.firestore {
     // when one existed — making a synced key impossible to restore.
     //
     // No `list` clause: the app only ever addresses the single `geminiKey` doc,
-    // so there is no reason to permit enumerating the collection.
+    // so there is no reason to permit enumerating the collection. And only
+    // that document is written (2026-11-11, the re-audit's R5-01): any id was
+    // taken, so an account could keep any number of vaults, none of which
+    // deleting the account, which deletes `geminiKey` by name, would reach.
     match /users/{userId}/vault/{vaultId} {
       allow get: if isSignedIn()
         && isValidId(userId)
@@ -113,7 +116,7 @@ service cloud.firestore {
 
       allow create, update: if isSignedIn()
         && isValidId(userId)
-        && isValidId(vaultId)
+        && vaultId == 'geminiKey'
         && userId == request.auth.uid
         && isValidKeyVault(incoming());
     }
@@ -159,6 +162,12 @@ service cloud.firestore {
     // The account's index of its projects (2026-11-08, site audit item 63):
     // what the list shows and searches, so the list no longer downloads every
     // project in full. Pinned like the report it describes, and owner-only.
+    // Written only for a project the account holds once the write lands
+    // (2026-11-11, the re-audit's R5-01): entries for made-up ids were
+    // uncounted, so the 1,000 projects cap did not bound the index. A save
+    // writes the entry after the project, and the weekly check and a copy
+    // from this browser write it for a project already there, so
+    // `existsAfter` takes them all.
     function isValidReportIndex(data) {
       return data.keys().hasOnly(['id', 'name', 'timestamp', 'search', 'notes', 'userId'])
         && data.keys().hasAll(['id', 'name', 'timestamp', 'search', 'notes', 'userId'])
@@ -178,7 +187,8 @@ service cloud.firestore {
         && isValidId(reportId)
         && userId == request.auth.uid
         && isValidReportIndex(incoming())
-        && incoming().id == reportId;
+        && incoming().id == reportId
+        && existsAfter(reportPath(userId, reportId));
 
       allow delete: if isSignedIn()
         && isValidId(reportId)
@@ -349,6 +359,19 @@ service cloud.firestore {
     // `eventDay`, `eventAt` and `event`, the learning events of the server's
     // day (at most 300, two seconds apart) and the last one. Until then one
     // account could write without bound into a free plan every visitor shares.
+    //
+    // These counts bound one account, not the plan (2026-11-11, the re-audit's
+    // R5-05): accounts are free to make, and the caps are sized for a person,
+    // so a thousand projects near the 900 kB budget is most of the free
+    // gigabyte, and a project's updates are not counted at all. The gate for
+    // the plan is App Check, enforced for Firestore in the console (Owner
+    // decision 5): it keeps every request to the two sites' own pages, which
+    // is what stops a script making accounts to fill it. The one cap here
+    // that did most of the worst case is the whole report a learning event
+    // may carry on the opt-in tier, up to 700,000 characters on each of 300
+    // events a day; only the first MAX_FULL_EVENTS_A_DAY (20) of a day may
+    // carry one now (`learning` below, and lib/accountData.ts, which sends
+    // the rest without it).
     function usagePath(uid) {
       return /databases/$(database)/documents/users/$(uid)/meta/usage;
     }
@@ -515,7 +538,9 @@ service cloud.firestore {
         && isValidId(eventId)
         && isValidLearning(incoming(), eventId, userId)
         && getAfter(usagePath(userId)).data.get('event', '') == eventId
-        && getAfter(usagePath(userId)).data.get('eventAt', null) == request.time;
+        && getAfter(usagePath(userId)).data.get('eventAt', null) == request.time
+        // A whole report on the first 20 events of the day only (R5-05).
+        && (incoming().full == '' || getAfter(usagePath(userId)).data.get('events', 0) <= 20);
 
       allow delete: if isSignedIn() && isValidId(userId) && userId == request.auth.uid;
     }
@@ -533,17 +558,20 @@ service cloud.firestore {
     // to remove what Firestore will not remove on its own. Scoped to the owner,
     // as everything under users/{uid} is.
     //
-    // Note the parent report document is NOT required to exist. Firestore
-    // subcollections are independent of their parent, and requiring existence
-    // via get() would cost a read on every write to buy nothing: the path is
-    // already owner-scoped, and a version under a report that has gone is
-    // deleted by `deleteReportAndVersions`, not prevented by a rule.
-    //
     // Written only to the ten slots v0..v9 (2026-11-11, the full audit's
     // SA-01; VERSION_SLOTS in lib/revisionStore.ts), so a report holds at
     // most ten versions whatever a client does: the cap was the client's
     // alone until then. Delete stays open to any id, so the versions stored
     // under their own ids before the slots can still be cleared.
+    //
+    // And only under a report the account holds once the write lands
+    // (2026-11-11, the re-audit's R5-01). The parent was not required to
+    // exist, on the grounds that a read per write bought nothing; once the
+    // cap was per report, it bought the cap itself: ten versions of up to a
+    // megabyte under each of any number of made-up report ids, which deleting
+    // the account, finding versions through the reports, never reached.
+    // `existsAfter`, so a version written in the batch that saves its report
+    // is taken too.
     match /users/{userId}/reports/{reportId}/versions/{versionId} {
       allow get, list: if isSignedIn()
         && isValidId(userId)
@@ -555,7 +583,8 @@ service cloud.firestore {
         && versionId in ['v0', 'v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8', 'v9']
         && userId == request.auth.uid
         && isValidReportVersion(incoming(), reportId)
-        && incoming().id == versionId;
+        && incoming().id == versionId
+        && existsAfter(reportPath(userId, reportId));
 
       allow delete: if isSignedIn()
         && isValidId(userId)

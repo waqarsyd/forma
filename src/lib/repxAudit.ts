@@ -53,6 +53,7 @@ import { parseReportStructure } from './reportPreview';
 import { parseCriteria } from './criteria';
 import { fieldsIn } from './expressions';
 import { hasReportScripts } from './shares';
+import { outsideReferences } from './inspectionGuard';
 import type { ReportLayout } from './reportTypes';
 
 export type RepxSeverity = 'error' | 'warning';
@@ -351,6 +352,25 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
       'report-has-scripts',
       'The report contains code that runs when it is previewed or printed in a designer. Forma never writes code into a report; ' +
         'remove it unless you wrote it yourself or trust whoever did.',
+    );
+  }
+
+  /*
+   * A file read from outside the report (2026-11-11, the re-audit's R5-03):
+   * a picture, style sheet, XML data or subreport named by a path on another
+   * computer (\\server\share), a file: address or a drive. A designer opens it
+   * each time the report prints, and asking another computer for a file
+   * sends it the Windows sign-in. A warning: it may be the person's own
+   * share, and the report still opens; Forma Designer is not asked about such
+   * a report unasked (lib/inspectionGuard.ts).
+   */
+  const outside = outsideReferences(text);
+  if (outside.length) {
+    add(
+      'warning',
+      'reference-outside-report',
+      `${outside.slice(0, 3).map((o) => `"${o.name}" reads ${o.value}`).join('; ')}${outside.length > 3 ? '; and more' : ''}: a file outside the report, ` +
+        'opened each time it prints, from another computer if the path names one. Put the picture or file into the report instead.',
     );
   }
 

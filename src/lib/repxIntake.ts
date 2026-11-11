@@ -543,8 +543,15 @@ export async function ingestFile(file: File, uploadId: string, reportUnit?: stri
     // (2026-11-11, the full audit's CP-08), then read as an uploaded .repx:
     // the base the request builds on, positions, fields and totals exact.
     // One that will not convert goes to the AI as its text, as an SSRS file
-    // did before.
-    const report = await importedReport(name, xml);
+    // did before. A conversion that throws is one that will not convert
+    // (2026-11-12, the re-audit's R5-07): until then the throw left the drop,
+    // and every file dropped after this one was lost with it.
+    let report: Awaited<ReturnType<typeof importedReport>> = null;
+    try {
+      report = await importedReport(name, xml);
+    } catch (err) {
+      console.error(`Could not convert ${name}:`, err);
+    }
     if (report) {
       const read = repxAttachment(name, report.xml);
       out.notices.push(...report.notices, ...read.notices);

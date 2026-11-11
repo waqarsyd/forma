@@ -19,7 +19,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc, deleteDoc, deleteField, updateDoc, collection, getDocs, query, where, writeBatch, setLogLevel, increment, serverTimestamp, Timestamp, type Firestore } from 'firebase/firestore';
 import fs from 'node:fs';
-import { deleteReportAndVersions, writeLearning, writeReport } from '../src/lib/accountData';
+import { MAX_FULL_EVENTS_A_DAY, deleteReportAndVersions, writeLearning, writeReport } from '../src/lib/accountData';
 import { learningEvent, LEARNING_AIS, LEARNING_DRAFTS, LEARNING_DROPPED, LEARNING_HOWS, LEARNING_KINDS, LEARNING_REQUESTS, LEARNING_SOURCES } from '../src/lib/learning';
 
 // Every denial this file expects is also logged by the SDK as a
@@ -276,6 +276,9 @@ const validIndex = (id: string, owner: string, extra: Record<string, unknown> = 
 });
 
 describe('the projects index (2026-11-08, site audit item 63)', () => {
+  // An entry is for a project the account holds (the re-audit's R5-01).
+  beforeEach(() => seed(['users', ALICE, 'reports', 'r1'], validReport('r1', ALICE)));
+
   it('lets the owner write, list and delete their entries, and nobody else touch them', async () => {
     await assertSucceeds(setDoc(doc(aliceDb(), 'users', ALICE, 'reportIndex', 'r1'), validIndex('r1', ALICE)));
     await assertSucceeds(getDocs(collection(aliceDb(), 'users', ALICE, 'reportIndex')));
@@ -297,6 +300,21 @@ describe('the projects index (2026-11-08, site audit item 63)', () => {
   it('renames a project by its name alone, keeping everything else the rules require', async () => {
     await seed(['users', ALICE, 'reports', 'r1'], { id: 'r1', name: 'Invoice', timestamp: Date.now(), messages: '[]', result: '{}', userId: ALICE });
     await assertSucceeds(updateDoc(doc(aliceDb(), 'users', ALICE, 'reports', 'r1'), { name: 'Renamed' }));
+  });
+
+  /**
+   * The re-audit's R5-01: entries for made-up ids were not counted, so the
+   * index was unbounded whatever the projects cap said. One is taken in the
+   * batch that saves its project, as well as after it.
+   */
+  it('refuses an entry for a project the account does not hold, and takes one saved with its project', async () => {
+    await assertFails(setDoc(doc(aliceDb(), 'users', ALICE, 'reportIndex', 'made-up'), validIndex('made-up', ALICE)));
+    const db = aliceDb();
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'users', ALICE, 'reports', 'r2'), validReport('r2', ALICE));
+    batch.set(doc(db, 'users', ALICE, 'meta', 'usage'), { reports: increment(1), report: 'r2' }, { merge: true });
+    batch.set(doc(db, 'users', ALICE, 'reportIndex', 'r2'), validIndex('r2', ALICE));
+    await assertSucceeds(batch.commit());
   });
 });
 
@@ -459,11 +477,23 @@ describe('report versions — isolation between accounts', () => {
 });
 
 describe('report versions — document shape', () => {
-  const write = (data: unknown, versionId = 'v2') =>
-    setDoc(doc(aliceDb(), 'users', ALICE, 'reports', 'r1', 'versions', versionId), data as any);
+  const write = (data: unknown, versionId = 'v2', reportId = 'r1') =>
+    setDoc(doc(aliceDb(), 'users', ALICE, 'reports', reportId, 'versions', versionId), data as any);
+
+  // A version is filed under a project the account holds (the re-audit's R5-01).
+  beforeEach(() => seed(['users', ALICE, 'reports', 'r1'], validReport('r1', ALICE)));
 
   it('accepts exactly what the app writes', async () => {
     await assertSucceeds(write(validVersion('v2', 'r1', ALICE)));
+  });
+
+  /**
+   * The re-audit's R5-01: the ten slots were per report and the report need
+   * not exist, so made-up report ids held ten versions each without end, and
+   * deleting the account, which finds versions through the reports, left them.
+   */
+  it('refuses a version under a report the account does not hold', async () => {
+    await assertFails(write(validVersion('v2', 'made-up', ALICE), 'v2', 'made-up'));
   });
 
   it('refuses an extra field, so this cannot become general storage', async () => {
@@ -603,6 +633,12 @@ describe('key vault', () => {
     );
   });
 
+  // The re-audit's R5-01: any id was taken, and account deletion removes geminiKey by name.
+  it('writes the one vault document the app uses, and no other', async () => {
+    await assertFails(setDoc(doc(aliceDb(), 'users', ALICE, 'vault', 'spare'), validVault()));
+    await assertSucceeds(setDoc(doc(aliceDb(), 'users', ALICE, 'vault', 'geminiKey'), validVault()));
+  });
+
   it("refuses to write into another user's vault", async () => {
     await assertFails(
       setDoc(doc(bobDb(), 'users', ALICE, 'vault', 'geminiKey'), validVault())
@@ -698,6 +734,34 @@ describe('learning events (2026-11-10, the full audit)', () => {
     await assertSucceeds(sendEvent(aliceMail(), validLearning(EVENT, ALICE), ALICE, { events: 4 }));
     await seed(['users', ALICE, 'meta', 'usage'], { events: 300, eventDay: '2020-01-01', eventAt: earlier, event: 'before' });
     await assertSucceeds(sendEvent(aliceMail(), validLearning('next-day-1', ALICE)));
+  });
+
+  /**
+   * The re-audit's R5-05: 300 events a day of up to 700,000 characters each
+   * was about 210 MB a day from one account on a free plan every visitor
+   * shares. The whole report rides on the first 20 of a day; the 21st goes
+   * as its shape alone, and lib/accountData.ts sends it that way.
+   */
+  it('takes a whole report on the first 20 events of a day only', async () => {
+    const earlier = Timestamp.fromMillis(Date.now() - 60_000);
+    const whole = (id: string) => validLearning(id, ALICE, { full: '<XtraReportsLayoutSerializer />' });
+    await seed(['users', ALICE, 'meta', 'usage'], { events: 19, eventDay: today(), eventAt: earlier, event: 'before' });
+    await assertSucceeds(sendEvent(aliceMail(), whole('full-20'), ALICE, { events: 20 }));
+    await seed(['users', ALICE, 'meta', 'usage'], { events: 20, eventDay: today(), eventAt: earlier, event: 'before' });
+    await assertFails(sendEvent(aliceMail(), whole('full-21'), ALICE, { events: 21 }));
+    await assertSucceeds(sendEvent(aliceMail(), validLearning('shape-21', ALICE, { dropped: 'full' }), ALICE, { events: 21 }));
+    // A new day starts the count again.
+    await seed(['users', ALICE, 'meta', 'usage'], { events: 200, eventDay: '2020-01-01', eventAt: earlier, event: 'before' });
+    await assertSucceeds(sendEvent(aliceMail(), whole('full-new-day')));
+  });
+
+  it('is sent without the whole report past the 20th event of the day', async () => {
+    const earlier = Timestamp.fromMillis(Date.now() - 60_000);
+    await seed(['users', ALICE, 'meta', 'usage'], { events: MAX_FULL_EVENTS_A_DAY, eventDay: today(), eventAt: earlier, event: 'before' });
+    const { userId: _added, ...event } = validLearning('late-1', ALICE, { full: '<XtraReportsLayoutSerializer />' });
+    await writeLearning(aliceMail() as unknown as Firestore, ALICE, event);
+    const stored = (await getDoc(doc(aliceDb(), 'users', ALICE, 'learning', 'late-1'))).data();
+    expect(stored).toMatchObject({ full: '', dropped: 'full' });
   });
 
   it('is listed and deleted by its owner only, and never changed', async () => {

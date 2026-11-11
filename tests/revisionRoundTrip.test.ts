@@ -47,7 +47,7 @@ import {
   type Firestore,
 } from 'firebase/firestore';
 import fs from 'node:fs';
-import { versionsCollectionRef, versionDocRef } from '../src/lib/accountData';
+import { reportDocRef, versionsCollectionRef, versionDocRef } from '../src/lib/accountData';
 import {
   saveRevisions,
   loadRevisions,
@@ -90,6 +90,11 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await testEnv.clearFirestore();
+  // A version is filed only under a report the account holds (2026-11-11, the
+  // re-audit's R5-01), as App writes the report before its history.
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(reportDocRef(ctx.firestore() as unknown as Firestore, ALICE, REPORT), { id: REPORT, name: 'Quarterly Invoice', timestamp: Date.now(), messages: '[]', result: '{}', userId: ALICE });
+  });
 });
 
 const asUser = (uid: string) =>

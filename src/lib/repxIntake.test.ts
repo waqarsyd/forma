@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   AI_PICTURE_TYPES,
   crystalNotice,
@@ -207,6 +207,30 @@ describe('Crystal Reports and SSRS (CP-01a)', () => {
     expect(made?.xml).toContain('Text="Orders"');
     expect(made?.notices).toEqual([]);
     expect(await importedReport('broken.rdl', '<Workbook/>')).toBeNull();
+  });
+
+  // The re-audit's R5-07: a conversion that threw left the drop, and the files after it were lost.
+  it('takes a conversion that throws as one that will not convert', async () => {
+    vi.resetModules();
+    vi.doMock('./importForeign', () => ({
+      importForeign: () => {
+        throw new Error('boom');
+      },
+    }));
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { ingestFile } = await import('./repxIntake');
+      const frx = await ingestFile(new File(['<Report/>'], 'Orders.frx'), 'u1');
+      expect(frx.notices).toEqual(['"Orders.frx" could not be read as a FastReport report.']);
+      expect(frx.texts).toEqual([]);
+      const rdl = await ingestFile(new File(['<Report/>'], 'Orders.rdl'), 'u2');
+      expect(rdl.notices).toEqual([]);
+      expect(rdl.texts[0].text).toMatch(/^An SSRS report definition \(Orders\.rdl\)/);
+    } finally {
+      quiet.mockRestore();
+      vi.doUnmock('./importForeign');
+      vi.resetModules();
+    }
   });
 });
 

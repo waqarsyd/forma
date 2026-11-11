@@ -101,6 +101,15 @@ export const USAGE_DOC_ID = 'usage';
 export const MAX_REPORTS = 1000;
 export const MAX_EVENTS_A_DAY = 300;
 export const EVENT_SPACING_MS = 2000;
+/**
+ * How many of a day's events may carry the whole report, on the opt-in tier
+ * (2026-11-11, the re-audit's R5-05): 300 a day of up to 700,000 characters
+ * each was about 210 MB a day from one account, on a plan whose free gigabyte
+ * every visitor shares. Past it an event goes as its shape alone, marked as
+ * having left the report out (`dropped: 'full'`), as one too large to fit is.
+ * `firestore.rules` holds the same number.
+ */
+export const MAX_FULL_EVENTS_A_DAY = 20;
 
 export function usageDocRef(db: Firestore, uid: string): DocumentReference {
   return doc(db, USERS_COLLECTION, uid, META_COLLECTION, USAGE_DOC_ID);
@@ -165,8 +174,10 @@ async function sendLearning(db: Firestore, uid: string, event: DocumentData & { 
     const day = at.slice(0, 10);
     const sameDay = usage.eventDay === day;
     if (sameDay && count(usage.events) >= MAX_EVENTS_A_DAY) throw new LearningLimitError();
+    const nth = sameDay ? count(usage.events) + 1 : 1;
+    const sent = nth > MAX_FULL_EVENTS_A_DAY && typeof event.full === 'string' && event.full ? { ...event, full: '', dropped: event.dropped || 'full' } : event;
     const batch = writeBatch(db);
-    batch.set(ref, { ...event, at, day, userId: uid });
+    batch.set(ref, { ...sent, at, day, userId: uid });
     batch.set(
       usageDocRef(db, uid),
       sameDay ? { events: increment(1), eventAt: serverTimestamp(), event: event.id } : { events: 1, eventDay: day, eventAt: serverTimestamp(), event: event.id },

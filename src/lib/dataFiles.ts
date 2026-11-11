@@ -134,22 +134,60 @@ export function plainText(name: string, raw: string, kind: 'DATA SOURCE' | 'DOCU
  * Zip archives (.xlsx, .docx)
  * ------------------------------------------------------------------ */
 
+/**
+ * What one archive may inflate to in all (2026-11-11, the re-audit's R5-07):
+ * the entries read from a workbook (its strings, its styles and one sheet)
+ * or a document, together.
+ */
+const MAX_ARCHIVE_INFLATED = 48 * 1024 * 1024;
+
 const u16 = (b: Uint8Array, at: number) => b[at] | (b[at + 1] << 8);
 const u32 = (b: Uint8Array, at: number) => (b[at] | (b[at + 1] << 8) | (b[at + 2] << 16) | (b[at + 3] << 24)) >>> 0;
 
-async function inflateRaw(data: Uint8Array): Promise<Uint8Array> {
-  const stream = new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-  const out = new Uint8Array(await new Response(stream).arrayBuffer());
-  if (out.length > MAX_INFLATED) throw new Error('an entry inflates past the limit');
+const TOO_BIG = 'an entry inflates past the limit';
+
+/**
+ * A deflated entry inflated, refused as soon as it passes `limit` bytes
+ * (2026-11-11, the re-audit's R5-07). It was inflated whole and measured
+ * after, so a small file that inflates to gigabytes (a zip bomb) filled the
+ * tab's memory before the limit was ever read.
+ */
+async function inflateRaw(data: Uint8Array, limit: number): Promise<Uint8Array> {
+  const reader = new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > limit) {
+      await reader.cancel().catch(() => undefined);
+      throw new Error(TOO_BIG);
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, at);
+    at += chunk.length;
+  }
   return out;
 }
 
-/**
- * The entries of a zip archive whose names `wanted` accepts, read through its
- * central directory: stored and deflated entries, which is what Office
- * writes. Throws on anything that is not a zip.
- */
-export async function unzip(bytes: Uint8Array, wanted: (name: string) => boolean): Promise<Map<string, Uint8Array>> {
+/** One entry of a zip's central directory: where its data starts and how it is stored. */
+interface ZipEntry {
+  name: string;
+  method: number;
+  /** Compressed size. */
+  size: number;
+  /** The size it says it inflates to, which a hostile file may understate. */
+  declared: number;
+  local: number;
+}
+
+/** The entries a zip's central directory lists. Throws on anything that is not a zip. */
+function* zipEntries(bytes: Uint8Array): Generator<ZipEntry> {
   let end = -1;
   for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65_557); i--) {
     if (u32(bytes, i) === 0x06054b50) {
@@ -160,37 +198,74 @@ export async function unzip(bytes: Uint8Array, wanted: (name: string) => boolean
   if (end < 0) throw new Error('not a zip archive');
   const count = u16(bytes, end + 10);
   let at = u32(bytes, end + 16);
-  const out = new Map<string, Uint8Array>();
   const names = new TextDecoder();
   for (let n = 0; n < count && u32(bytes, at) === 0x02014b50; n++) {
-    const method = u16(bytes, at + 10);
-    const size = u32(bytes, at + 20);
     const nameLength = u16(bytes, at + 28);
-    const skip = nameLength + u16(bytes, at + 30) + u16(bytes, at + 32);
-    const local = u32(bytes, at + 42);
-    const name = names.decode(bytes.subarray(at + 46, at + 46 + nameLength));
-    at += 46 + skip;
-    if (!wanted(name) || u32(bytes, local) !== 0x04034b50) continue;
-    const start = local + 30 + u16(bytes, local + 26) + u16(bytes, local + 28);
-    const data = bytes.subarray(start, start + size);
-    if (method === 0) out.set(name, data);
-    else if (method === 8) out.set(name, await inflateRaw(data));
+    const entry: ZipEntry = {
+      name: names.decode(bytes.subarray(at + 46, at + 46 + nameLength)),
+      method: u16(bytes, at + 10),
+      size: u32(bytes, at + 20),
+      declared: u32(bytes, at + 24),
+      local: u32(bytes, at + 42),
+    };
+    at += 46 + nameLength + u16(bytes, at + 30) + u16(bytes, at + 32);
+    yield entry;
+  }
+}
+
+/** The names of a zip archive's entries, read without inflating any. Throws on anything that is not a zip. */
+export function zipNames(bytes: Uint8Array): string[] {
+  return [...zipEntries(bytes)].map((e) => e.name);
+}
+
+/**
+ * The entries of a zip archive whose names `wanted` accepts, read through its
+ * central directory: stored and deflated entries, which is what Office
+ * writes. Throws on anything that is not a zip, and on an entry, or the
+ * entries together, past the limits above: by the size an entry declares
+ * before anything is inflated, and by what it does inflate to as it goes.
+ */
+export async function unzip(bytes: Uint8Array, wanted: (name: string) => boolean): Promise<Map<string, Uint8Array>> {
+  const out = new Map<string, Uint8Array>();
+  let budget = MAX_ARCHIVE_INFLATED;
+  for (const entry of zipEntries(bytes)) {
+    if (!wanted(entry.name) || u32(bytes, entry.local) !== 0x04034b50) continue;
+    const start = entry.local + 30 + u16(bytes, entry.local + 26) + u16(bytes, entry.local + 28);
+    const data = bytes.subarray(start, start + entry.size);
+    const limit = Math.min(MAX_INFLATED, budget);
+    if (entry.declared > limit || (entry.method === 0 && data.length > limit)) throw new Error(TOO_BIG);
+    let read: Uint8Array | null = null;
+    if (entry.method === 0) read = data;
+    else if (entry.method === 8) read = await inflateRaw(data, limit);
+    if (!read) continue;
+    budget -= read.length;
+    out.set(entry.name, read);
   }
   return out;
 }
+
+/** A workbook's first worksheet by number, sheet1 before sheet2, as an entry name; undefined when it has none. */
+export function firstSheet(names: readonly string[]): string | undefined {
+  const number = (n: string) => Number(/(\d+)\.xml$/.exec(n)![1]);
+  return names.filter((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n)).sort((a, b) => number(a) - number(b))[0];
+}
+
+/** The most columns a worksheet has (A to XFD); a reference past it is not a cell. */
+export const MAX_SHEET_COLUMNS = 16_384;
 
 /** A column's letters as its index: A is 0, Z 25, AA 26. */
 const columnIndex = (letters: string) => [...letters].reduce((n, c) => n * 26 + (c.charCodeAt(0) - 64), 0) - 1;
 
 /** The first worksheet of an Excel workbook, as rows of text. */
 export async function xlsxRows(bytes: Uint8Array): Promise<string[][]> {
-  const parts = await unzip(bytes, (n) => n === 'xl/sharedStrings.xml' || /^xl\/worksheets\/sheet\d+\.xml$/.test(n));
+  // The first sheet alone is inflated (R5-07): every sheet was, then all but one set aside.
+  const sheetName = firstSheet(zipNames(bytes));
+  if (!sheetName) return [];
+  const parts = await unzip(bytes, (n) => n === 'xl/sharedStrings.xml' || n === sheetName);
   const decode = new TextDecoder();
   const shared = [...decode.decode(parts.get('xl/sharedStrings.xml') ?? new Uint8Array()).matchAll(/<si>([\s\S]*?)<\/si>/g)].map((m) =>
     unescapeXml([...m[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((t) => t[1]).join('')),
   );
-  const sheetName = [...parts.keys()].filter((n) => n.startsWith('xl/worksheets/')).sort((a, b) => Number(/(\d+)\.xml$/.exec(a)![1]) - Number(/(\d+)\.xml$/.exec(b)![1]))[0];
-  if (!sheetName) return [];
   const sheet = decode.decode(parts.get(sheetName));
   const rows: string[][] = [];
   for (const row of sheet.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)) {
@@ -201,7 +276,10 @@ export async function xlsxRows(bytes: Uint8Array): Promise<string[][]> {
       const inner = c[2] ?? '';
       const raw = /<v>([\s\S]*?)<\/v>/.exec(inner)?.[1] ?? '';
       const value = type === 's' ? shared[Number(raw)] ?? '' : type === 'inlineStr' ? unescapeXml(/<t[^>]*>([\s\S]*?)<\/t>/.exec(inner)?.[1] ?? '') : unescapeXml(raw);
-      cells[ref ? columnIndex(ref) : cells.length] = value;
+      const at = ref ? columnIndex(ref) : cells.length;
+      // A reference past Excel's last column ("ZZZZZZ1") made an array billions long (R5-07).
+      if (at >= MAX_SHEET_COLUMNS) continue;
+      cells[at] = value;
     }
     rows.push(Array.from(cells, (v) => v ?? ''));
   }

@@ -240,14 +240,18 @@ namespace RepxDesigner
 
         /// <summary>
         /// Does the file carry code DevExpress runs? The same test as hasReportScripts
-        /// in src/lib/shares.ts: a ScriptsSource with text in it, or a control's
-        /// Scripts element naming an event handler. Read as text, before any load.
+        /// in src/lib/shares.ts (REPORT_SCRIPTS_PATTERN, held equal by shares.test.ts):
+        /// a ScriptsSource with text in it, or a control's Scripts element naming an
+        /// event handler, however XML spells them (2026-11-11, the re-audit's R5-02:
+        /// spaces around the =, single quotes, the element form; on 2026-11-12 the
+        /// attribute read only inside a tag, and CDATA counted). Read as text, before
+        /// any load.
         /// </summary>
         private static bool HasReportScripts(string path)
         {
             try
             {
-                return Regex.IsMatch(File.ReadAllText(path), "\\sScriptsSource=\"[^\"]|<Scripts\\b[^>]*\\sOn\\w+=\"[^\"]");
+                return Regex.IsMatch(File.ReadAllText(path), "<[^\\s<>/!?]+(?:\\s+[^\\s=<>\"'/]+\\s*=\\s*(?:\"[^\"]*\"|'[^']*'))*\\s+ScriptsSource\\s*=\\s*(?:\"[^\"]|'[^'])|<ScriptsSource\\b(?:[^>]*[^/>])?>\\s*(?:[^<\\s]|<!)|<Scripts\\b(?:[^>\"']|\"[^\"]*\"|'[^']*')*\\sOn\\w+\\s*=\\s*(?:\"[^\"]|'[^'])");
             }
             catch (Exception)
             {

@@ -104,8 +104,8 @@ export interface SettingsDialogProps {
   onClose: () => void;
   /** The section to open at: AI, from the box's model label (agent audit item 74); otherwise General, or the key when there is none. */
   start?: SettingsSection;
-  /** Every saved project as a .zip; resolves to how many went in (site audit item 59). */
-  onExportProjects?: () => Promise<number>;
+  /** Everything kept as a .zip; resolves to how many projects went in and whether a file was saved (site audit item 59, R3-13). */
+  onExportProjects?: () => Promise<{ projects: number; saved: boolean }>;
 }
 
 /** A line under a setting: what happened, or what to know. */
@@ -137,11 +137,14 @@ export default function SettingsDialog({ config, onChange, user, workedOut, onCl
     setExporting(true);
     setExportNote(null);
     try {
-      const count = await onExportProjects();
+      // A file is saved whenever there is anything to keep, projects or not (the re-audit's R3-13).
+      const { projects: count, saved } = await onExportProjects();
       setExportNote(
-        count
-          ? { tone: 'ok', text: `Downloaded ${count} ${count === 1 ? 'project' : 'projects'}.` }
-          : { tone: 'ok', text: 'There are no saved projects to download yet.' },
+        !saved
+          ? { tone: 'ok', text: 'There is nothing saved to download yet.' }
+          : count
+            ? { tone: 'ok', text: `Downloaded ${count} ${count === 1 ? 'project' : 'projects'}.` }
+            : { tone: 'ok', text: 'Downloaded what Forma keeps for you. There are no saved projects yet.' },
       );
     } catch (err) {
       setExportNote({ tone: 'error', text: err instanceof Error ? err.message : 'The projects could not be packed.' });
