@@ -95,9 +95,10 @@ export function setGroupField(xml: string, band: string, field: string): EditRes
   const at = (offset: number) => offset - header.openStart;
   if (header.firstField) {
     const tag = body.slice(at(header.firstField.start), at(header.firstField.end));
+    // Functions, not replacement strings: a field named with `$&` or `$1` is data, not a pattern (2026-11-11, PX-02b).
     const retagged = /\sFieldName\s*=\s*"[^"]*"/.test(tag)
-      ? tag.replace(/(\sFieldName\s*=\s*")[^"]*(")/, `$1${escapeXmlAttribute(wanted)}$2`)
-      : tag.replace(/\s*(\/?)>$/, ` FieldName="${escapeXmlAttribute(wanted)}" $1>`).replace(/ >$/, '>');
+      ? tag.replace(/(\sFieldName\s*=\s*")[^"]*(")/, (_m, a: string, b: string) => a + escapeXmlAttribute(wanted) + b)
+      : tag.replace(/\s*(\/?)>$/, (_m, slash: string) => ` FieldName="${escapeXmlAttribute(wanted)}" ${slash}>`).replace(/ >$/, '>');
     body = body.slice(0, at(header.firstField.start)) + retagged + body.slice(at(header.firstField.end));
   } else {
     const ref = Math.max(0, ...[...xml.matchAll(/\sRef="(\d+)"/g)].map((r) => Number(r[1]))) + 1;
@@ -111,7 +112,7 @@ export function setGroupField(xml: string, band: string, field: string): EditRes
   // The header's own bindings of the old field follow it, so its heading shows what it groups by.
   if (old) {
     const escaped = escapeXmlAttribute(old).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    body = body.replace(new RegExp(`\\[${escaped}\\]`, 'g'), `[${escapeXmlAttribute(wanted)}]`);
+    body = body.replace(new RegExp(`\\[${escaped}\\]`, 'g'), () => `[${escapeXmlAttribute(wanted)}]`);
   }
   return {
     xml: xml.slice(0, header.openStart) + body + xml.slice(header.end),

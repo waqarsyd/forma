@@ -496,7 +496,7 @@ export function bindFooterTotals(
 
     const rewritten = slice.endsWith('/>')
       ? `${slice.slice(0, -2).trimEnd()}>${children}</${cell.tag}>`
-      : slice.replace(new RegExp(`</${cell.tag}>$`), `${children}</${cell.tag}>`);
+      : slice.replace(new RegExp(`</${cell.tag}>$`), () => `${children}</${cell.tag}>`);
 
     out = out.slice(0, cell.start) + rewritten + out.slice(cell.end);
   }
@@ -657,8 +657,10 @@ export function bindDetailRow(
     const rewritten = slice.endsWith('/>')
       ? // `<Item1 … />` has to grow a body and a closing tag.
         `${slice.slice(0, -2).trimEnd()}>${children}</${cell.tag}>`
-      : // `<Item1 …>…</Item1>` already has one; go in at the end of it.
-        slice.replace(new RegExp(`</${cell.tag}>$`), `${children}</${cell.tag}>`);
+      : // `<Item1 …>…</Item1>` already has one; go in at the end of it. A
+        // function, not a replacement string: an expression entry holding
+        // `$&` or `$'` is data, and in a string it is a pattern (2026-11-11, PX-02b).
+        slice.replace(new RegExp(`</${cell.tag}>$`), () => `${children}</${cell.tag}>`);
 
     out = out.slice(0, cell.start) + rewritten + out.slice(cell.end);
   }

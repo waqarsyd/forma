@@ -293,7 +293,8 @@ function appendItems(xml: string, block: string, items: string[], before: RegExp
   const found = new RegExp(`<${block}>([\\s\\S]*?)</${block}>`).exec(xml);
   const count = found ? topLevelItems(found[1]) : 0;
   const numbered = items.map((it, i) => it.replace(/^<Item\d+/, `<Item${count + i + 1}`)).join('');
-  if (found) return xml.replace(`</${block}>`, `${numbered}</${block}>`);
+  // A function, not a replacement string: the items carry data, and `$&` or `$'` in one is a pattern there (2026-11-11, PX-02b).
+  if (found) return xml.replace(`</${block}>`, () => `${numbered}</${block}>`);
   const at = before.exec(xml);
   const index = at ? at.index : xml.lastIndexOf('</XtraReportsLayoutSerializer>');
   return `${xml.slice(0, index)}<${block}>${numbered}</${block}>${xml.slice(index)}`;
@@ -310,12 +311,30 @@ function appendItems(xml: string, block: string, items: string[], before: RegExp
  * each under a fresh `Ref` where the new report already uses its number. A
  * new report with a source of its own (the chat's data edit, or the query
  * the AI named) keeps that one.
+ *
+ * "Of its own" means one that names a connection and reads a query
+ * (2026-11-11, full audit SD-16). A garbled Base64 still decodes to
+ * something, and was counted as the new report's source until then, so the
+ * old one was never carried and the report opened bound to nothing. A source
+ * that says neither is removed, with anything that pointed at it pointed at
+ * the source carried instead.
  */
 export function carryDataSource(before: string, after: string): { xml: string; applied: boolean; reason: string } {
   const old = readRepxDataSources(before);
   if (!old.length) return { xml: after, applied: false, reason: 'the report had no data source' };
   if (!/<XtraReportsLayoutSerializer\b/.test(after)) return { xml: after, applied: false, reason: 'there is no new report' };
-  if (readRepxDataSources(after).length) return { xml: after, applied: false, reason: 'the new report has a data source of its own' };
+  if (readRepxDataSources(after).some((ds) => ds.connectionName && ds.queries.length)) return { xml: after, applied: false, reason: 'the new report has a data source of its own' };
+  const garbled: string[] = [];
+  after = after.replace(/<ComponentStorage>([\s\S]*?)<\/ComponentStorage>/, (_whole, inner: string) => {
+    const kept = inner.replace(/\s*<Item\d+\s[^>]*?ObjectType="DevExpress\.DataAccess\.Sql\.SqlDataSource[^>]*?(?:\/>|>[\s\S]*?<\/Item\d+>)/g, (item: string) => {
+      garbled.push(/\sRef="(\d+)"/.exec(item)?.[1] ?? '');
+      return '';
+    });
+    // What is left numbered Item1, Item2... again, as the serializer reads a collection; only flat items, the kind it holds.
+    let n = 0;
+    const flat = !/<\/Item\d+>/.test(kept);
+    return `<ComponentStorage>${flat ? kept.replace(/<Item\d+(?=\s)/g, () => `<Item${++n}`) : kept}</ComponentStorage>`;
+  });
   let next = Math.max(maxRefIn(after), maxRefIn(before)) + 1;
   const remap = new Map<string, string>();
   const fresh = (ref: string) => {
@@ -335,11 +354,14 @@ export function carryDataSource(before: string, after: string): { xml: string; a
   const member = /\sDataMember="([^"]*)"/.exec(rootBefore)?.[1];
   if (pointer) {
     xml = xml.replace(/<XtraReportsLayoutSerializer\b[^>]*>/, (open) =>
-      open.replace(/\sDataSource="[^"]*"/, '').replace(/\sDataMember="[^"]*"/, '').replace(/\s*>$/, `${member ? ` DataMember="${member}"` : ''} DataSource="#Ref-${fresh(pointer)}">`),
+      open.replace(/\sDataSource="[^"]*"/, '').replace(/\sDataMember="[^"]*"/, '').replace(/\s*>$/, () => `${member ? ` DataMember="${member}"` : ''} DataSource="#Ref-${fresh(pointer)}">`),
     );
   }
   // A detail report the redesign kept still names the old source by its old number.
   for (const ds of old) if (remap.get(ds.ref) !== ds.ref) xml = xml.split(`DataSource="#Ref-${ds.ref}"`).join(`DataSource="#Ref-${remap.get(ds.ref)}"`);
+  // And what named the garbled source by a number of its own now names the one carried.
+  const main = fresh(pointer ?? old[0].ref);
+  for (const ref of garbled) if (ref && !old.some((ds) => ds.ref === ref)) xml = xml.split(`DataSource="#Ref-${ref}"`).join(`DataSource="#Ref-${main}"`);
 
   // The parameters its queries use, and what they point at in ObjectStorage.
   const have = new Set(tagsOf(xml, 'Parameters').map((t) => /\sName="([^"]*)"/.exec(t)?.[1]));
@@ -365,8 +387,9 @@ export function stripStoredCredentials(repx: string): { xml: string; applied: bo
   for (const ds of sources) {
     const tag = new RegExp(`(<Item\\d+\\s[^>]*?Ref="${ds.ref}"[^>]*?Base64=")([^"]*)(")`).exec(xml);
     if (!tag) continue;
-    const decoded = decodeBase64(tag[2]).replace(/<Connection\s[^>]*?(?:\/>|>[\s\S]*?<\/Connection>)/, `<Connection Name="${attrOf(ds.connectionName || 'Database')}" FromAppConfig="true" />`);
-    xml = xml.replace(tag[0], `${tag[1]}${encodeBase64(decoded)}${tag[3]}`);
+    // Functions, not replacement strings: a connection named with `$&` or `$'` is data, not a pattern (2026-11-11, PX-02b).
+    const decoded = decodeBase64(tag[2]).replace(/<Connection\s[^>]*?(?:\/>|>[\s\S]*?<\/Connection>)/, () => `<Connection Name="${attrOf(ds.connectionName || 'Database')}" FromAppConfig="true" />`);
+    xml = xml.replace(tag[0], () => `${tag[1]}${encodeBase64(decoded)}${tag[3]}`);
   }
   return { xml, applied: true, reason: `the connection${sources.length === 1 ? '' : 's'} ${sources.map((s) => `"${s.connectionName}"`).join(', ')} now stored by name only, with no login or password` };
 }

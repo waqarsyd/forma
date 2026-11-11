@@ -31,8 +31,10 @@
  * second conversion site in the codebase, which is the thing that file exists
  * to prevent.
  */
-import { parseReportStructure, type PreviewControl } from './reportPreview';
+import { decodeXmlText, parseReportStructure, type PreviewBand, type PreviewControl } from './reportPreview';
 import { escapeXmlAttribute } from './xmlEscape';
+import { plainBand, plainKind } from './plainKind';
+import { unitsPerInch } from './reportGeometry';
 
 /** Which control, by its position in the parsed structure. */
 export interface ControlRef {
@@ -51,6 +53,30 @@ export interface EditResult {
 
 const decline = (xml: string, reason: string): EditResult => ({ xml, applied: false, reason });
 
+/*
+ * Every reason here is said in plain words (2026-11-11, full audit PX-06):
+ * it is shown as it is, as the Preview's toast and notice and in the chat's
+ * list of changes, so "moved XRLabel "title"" and "the control span does not
+ * look like an opening tag" reached the person until then. A part is named
+ * by its kind and its own name (`plainKind.ts`), a band by what it is, a
+ * length in the report's own inches or millimetres. Reasons stay lowercase
+ * fragments, as every caller finishes the sentence.
+ */
+
+/** The one refusal for a part the file no longer has where the screen said it was. */
+const STALE = 'that part changed a moment ago; try again';
+
+/** `the label "title"`, or `the label` when it has no name. */
+const partOf = (control: Pick<PreviewControl, 'type' | 'name'>): string =>
+  `the ${plainKind(control.type)}${control.name ? ` "${control.name}"` : ''}`;
+
+/** A band's length in the report's own measure: millimetres for a metric report, inches otherwise. */
+function plainLength(fileUnits: number, band: PreviewBand, reportUnit: string): string {
+  const inches = (fileUnits * (band.dpiScale ?? 1)) / unitsPerInch(reportUnit);
+  if (reportUnit === 'TenthsOfAMillimeter') return `${Math.round(inches * 25.4 * 10) / 10} mm`;
+  return `${Math.round(inches * 100) / 100} in`;
+}
+
 /** Attribute values go inside double quotes; the one copy is lib/xmlEscape.ts (2026-11-07). */
 export { escapeXmlAttribute };
 
@@ -61,6 +87,11 @@ export { escapeXmlAttribute };
  * `openTag` is everything from `<` to `>` inclusive. The trailing `/` of a
  * self-closing element is preserved, because turning `<Item1 … />` into
  * `<Item1 …>` silently swallows every following sibling into it as a child.
+ *
+ * The value goes in through a function, never a replacement string
+ * (2026-11-11, full audit PX-01): in a string `$&`, `$'`, `$$` and `$1` are
+ * patterns, so a label retyped as "Fee: $1,000" was written as
+ * `Text="Fee:  Text=",000"` and the control was lost from the file.
  */
 function withAttributes(openTag: string, attrs: Record<string, string>): string {
   const selfClosing = /\/>$/.test(openTag);
@@ -69,7 +100,7 @@ function withAttributes(openTag: string, attrs: Record<string, string>): string 
   for (const [name, value] of Object.entries(attrs)) {
     const existing = new RegExp(`(\\s${name}\\s*=\\s*")[^"]*(")`);
     if (existing.test(body)) {
-      body = body.replace(existing, `$1${escapeXmlAttribute(value)}$2`);
+      body = body.replace(existing, (_m, a: string, b: string) => a + escapeXmlAttribute(value) + b);
     } else {
       body += ` ${name}="${escapeXmlAttribute(value)}"`;
     }
@@ -88,18 +119,20 @@ function locate(xml: string, ref: ControlRef): PreviewControl | null {
 
 function applyAttributes(xml: string, ref: ControlRef, attrs: Record<string, string>, what: string): EditResult {
   const control = locate(xml, ref);
-  if (!control) return decline(xml, `no control at band ${ref.band}, control ${ref.control}`);
+  if (!control) return decline(xml, STALE);
+  return applyAt(xml, control, attrs, what);
+}
 
+/** `applyAttributes` on a control already located, so a caller that read it first does not parse the report again. */
+function applyAt(xml: string, control: PreviewControl, attrs: Record<string, string>, what: string): EditResult {
   const openTag = xml.slice(control.openStart, control.openEnd + 1);
-  if (!openTag.startsWith('<') || !openTag.endsWith('>')) {
-    return decline(xml, 'the control span does not look like an opening tag; the REPX may have changed underneath');
-  }
+  if (!openTag.startsWith('<') || !openTag.endsWith('>')) return decline(xml, STALE);
 
   const rewritten = withAttributes(openTag, attrs);
   return {
     xml: xml.slice(0, control.openStart) + rewritten + xml.slice(control.openEnd + 1),
     applied: true,
-    reason: `${what} ${control.type}${control.name ? ` "${control.name}"` : ''}`,
+    reason: `${what} ${partOf(control)}`,
   };
 }
 
@@ -141,9 +174,66 @@ export function resizeControl(xml: string, ref: ControlRef, width: number, heigh
  * A line break is written as the serializer writes one (`&#xD;&#xA;`, see
  * xmlEscape.ts) and turns `Multiline` on (2026-11-07, agent audit item 49),
  * without which DevExpress prints the lines run together.
+ *
+ * Declined when the control's own `ExpressionBindings` bind its `Text`
+ * (2026-11-11, full audit PX-08): the binding wins when it prints, so typed
+ * text would never be seen, and until then the retype was reported as made.
+ * `setCellText` already declined the same for a table's cell.
  */
 export function setControlText(xml: string, ref: ControlRef, text: string): EditResult {
-  return applyAttributes(xml, ref, { Text: text, ...(/[\r\n]/.test(text) ? { Multiline: 'true' } : {}) }, 'retyped');
+  // Located once and handed on: the report is parsed here, not again by each step.
+  const control = locate(xml, ref);
+  if (!control) return decline(xml, STALE);
+  const bound = noticeFor(xml, control);
+  if (bound) return decline(xml, bound);
+  return applyAt(xml, control, { Text: text, ...(/[\r\n]/.test(text) ? { Multiline: 'true' } : {}) }, 'retyped');
+}
+
+/**
+ * The expression a control's own `Text` binding prints, decoded; null when its
+ * text is its own. A binding whose expression is blank prints the text, so it
+ * counts as none: until the reviewer's pass of 2026-11-11 it declined the
+ * retype with "this label prints , not typed text". Decoded by
+ * `decodeXmlText`, the one decoder that reads decimal references as well.
+ */
+function boundTextOf(xml: string, control: PreviewControl): string | null {
+  const el = elementAt(xml, control.openStart);
+  if (!el || el.selfClosing) return null;
+  const bindings = childrenIn(xml, el.openEnd, el.end).find((c) => c.name === 'ExpressionBindings');
+  if (!bindings || bindings.selfClosing) return null;
+  for (const item of childrenIn(xml, bindings.openEnd, bindings.end)) {
+    const open = xml.slice(item.start, item.openEnd);
+    if (!/\sPropertyName="Text"/.test(open)) continue;
+    const expression = decodeXmlText(/\sExpression="([^"]*)"/.exec(open)?.[1] ?? '');
+    return expression.trim() ? expression : null;
+  }
+  return null;
+}
+
+function noticeFor(xml: string, control: PreviewControl): string | null {
+  const expression = boundTextOf(xml, control);
+  if (expression === null) return null;
+  const kind = plainKind(control.type);
+  const field = /^\s*\[([^[\]]+)\]\s*$/.exec(expression)?.[1];
+  return field
+    ? `this ${kind} prints the field [${field}], not typed text: bind another on the Data tab`
+    : `this ${kind} prints ${expression.length > 60 ? `${expression.slice(0, 57)}...` : expression}, not typed text: change it on the Data tab`;
+}
+
+/**
+ * True when a control prints a field or an expression rather than its own
+ * text, so the Preview opens no editor on it (2026-11-11, full audit PX-08;
+ * wired into the Preview by a later batch).
+ */
+export function isBoundText(xml: string, ref: ControlRef): boolean {
+  const control = locate(xml, ref);
+  return control ? boundTextOf(xml, control) !== null : false;
+}
+
+/** What to say when a bound control is asked to be retyped; null when it is not bound. */
+export function boundTextNotice(xml: string, ref: ControlRef): string | null {
+  const control = locate(xml, ref);
+  return control ? noticeFor(xml, control) : null;
 }
 
 /**
@@ -159,7 +249,7 @@ export function updateControl(
   what: string,
 ): EditResult {
   const control = locate(xml, ref);
-  if (!control) return decline(xml, `no control at band ${ref.band}, control ${ref.control}`);
+  if (!control) return decline(xml, STALE);
   const openTag = xml.slice(control.openStart, control.openEnd + 1);
   return applyAttributes(xml, ref, attrs(openTag, control), what);
 }
@@ -279,13 +369,13 @@ function withLeadingSpace(xml: string, start: number, end: number): [number, num
  */
 export function deleteControl(xml: string, ref: ControlRef): EditResult {
   const control = locate(xml, ref);
-  if (!control) return decline(xml, `no control at band ${ref.band}, control ${ref.control}`);
+  if (!control) return decline(xml, STALE);
   const el = elementAt(xml, control.openStart);
-  if (!el) return decline(xml, 'the control span does not look like an element; the REPX may have changed underneath');
+  if (!el) return decline(xml, STALE);
   const inside = xml.slice(el.start, el.end);
   const outside = xml.slice(0, el.start) + xml.slice(el.end);
   const named = [...inside.matchAll(/\sRef="(\d+)"/g)].map((r) => r[1]).find((n) => outside.includes(`"#Ref-${n}"`));
-  if (named) return decline(xml, `${control.name || control.type} is named elsewhere in the report (#Ref-${named}); remove what names it first`);
+  if (named) return decline(xml, `a line, a chart or a drill-down points at ${partOf(control)}; remove that first`);
   const parent = parentOf(xml, el.start);
   const [from, to] = withLeadingSpace(xml, el.start, el.end);
   let out = xml.slice(0, from) + xml.slice(to);
@@ -300,7 +390,7 @@ export function deleteControl(xml: string, ref: ControlRef): EditResult {
       }
     }
   }
-  return { xml: out, applied: true, reason: `deleted ${control.type}${control.name ? ` "${control.name}"` : ''}` };
+  return { xml: out, applied: true, reason: `deleted ${partOf(control)}` };
 }
 
 /**
@@ -316,11 +406,11 @@ export function deleteControl(xml: string, ref: ControlRef): EditResult {
  */
 export function duplicateControl(xml: string, ref: ControlRef): EditResult {
   const control = locate(xml, ref);
-  if (!control) return decline(xml, `no control at band ${ref.band}, control ${ref.control}`);
+  if (!control) return decline(xml, STALE);
   const el = elementAt(xml, control.openStart);
-  if (!el) return decline(xml, 'the control span does not look like an element; the REPX may have changed underneath');
+  if (!el) return decline(xml, STALE);
   const parent = parentOf(xml, el.start);
-  if (!parent || parent.name !== 'Controls') return decline(xml, `${control.name || control.type} is not in a band's controls`);
+  if (!parent || parent.name !== 'Controls') return decline(xml, `${partOf(control)} cannot be copied here; copy it in the DevExpress designer`);
   let copy = xml.slice(el.start, el.end);
   // Declined only when it names one of its own parts by Ref, which the fresh
   // Refs below would leave pointing at the original's. A link out of it, as
@@ -328,7 +418,7 @@ export function duplicateControl(xml: string, ref: ControlRef): EditResult {
   // follows the same rule. Until 2026-11-06 any link declined it.
   const own = new Set([...copy.matchAll(/\sRef="(\d+)"/g)].map((m) => m[1]));
   if ([...copy.matchAll(/"#Ref-(\d+)"/g)].some((m) => own.has(m[1]))) {
-    return decline(xml, `${control.name || control.type} refers to its own parts; copy it in the designer`);
+    return decline(xml, `${partOf(control)} has parts that point at each other; copy it in the DevExpress designer`);
   }
 
   let nextRef = Math.max(0, ...[...xml.matchAll(/\sRef="(\d+)"/g)].map((r) => Number(r[1]))) + 1;
@@ -360,7 +450,7 @@ export function duplicateControl(xml: string, ref: ControlRef): EditResult {
   return {
     xml: xml.slice(0, closeAt) + copy + xml.slice(closeAt),
     applied: true,
-    reason: `duplicated ${control.type}${control.name ? ` "${control.name}"` : ''} as "${firstName}"`,
+    reason: `duplicated ${partOf(control)} as "${firstName}"`,
   };
 }
 
@@ -491,7 +581,7 @@ export function addGroupBand(xml: string, field: string, options: { total?: stri
  * when it prints, so typed text would never be seen.
  */
 export function setCellText(xml: string, ref: ControlRef, row: number, cell: number, text: string): EditResult {
-  return updateCellElement(xml, ref, row, cell, (_, bound) => (bound ? null : { Text: text, ...(/[\r\n]/.test(text) ? { Multiline: 'true' } : {}) }), 'retyped', 'the cell prints a field, not typed text: bind another in the Data tab');
+  return updateCellElement(xml, ref, row, cell, (_, bound) => (bound ? null : { Text: text, ...(/[\r\n]/.test(text) ? { Multiline: 'true' } : {}) }), 'retyped', 'the cell prints a field, not typed text: bind another on the Data tab');
 }
 
 /**
@@ -501,20 +591,22 @@ export function setCellText(xml: string, ref: ControlRef, row: number, cell: num
  * band anyway and the report no longer reads as designed.
  */
 export function setBandHeight(xml: string, bandIndex: number, height: number): EditResult {
-  const band = parseReportStructure(xml).bands[bandIndex];
-  if (!band) return decline(xml, `no band at ${bandIndex}`);
+  const structure = parseReportStructure(xml);
+  const band = structure.bands[bandIndex];
+  if (!band) return decline(xml, STALE);
   if (band.sub) return decline(xml, 'a detail report has no height of its own; set one of its bands');
   const el = bandElement(xml, band.name);
-  if (!el) return decline(xml, `band "${band.name}" was not found in the file`);
+  if (!el) return decline(xml, STALE);
   const scale = band.dpiScale ?? 1;
   const lowest = Math.max(0, ...band.controls.filter((c) => c.panel === undefined).map((c) => (c.y + c.height) / scale));
+  const said = plainBand(band.kind !== 'Unknown' ? band.kind : band.name);
   if (!(height > 0)) return decline(xml, 'no height was given');
-  if (height < lowest) return decline(xml, `${band.name} holds a control reaching ${unit(lowest)}; move or shrink it first`);
+  if (height < lowest) return decline(xml, `something in ${said} reaches ${plainLength(lowest, band, structure.unit)} down; move or shrink it first`);
   const openTag = xml.slice(el.start, el.openEnd);
   return {
     xml: xml.slice(0, el.start) + withAttributes(openTag, { HeightF: String(unit(height)) }) + xml.slice(el.openEnd),
     applied: true,
-    reason: `set the height of ${band.name} to ${unit(height)}`,
+    reason: `set ${said}'s height to ${plainLength(unit(height), band, structure.unit)}`,
   };
 }
 
@@ -533,10 +625,10 @@ function insertControl(
   wantedName?: string,
 ): EditResult {
   const band = parseReportStructure(xml).bands[bandIndex];
-  if (!band) return decline(xml, `no band at ${bandIndex}`);
-  if (band.sub) return decline(xml, 'a detail report holds bands, not controls');
+  if (!band) return decline(xml, STALE);
+  if (band.sub) return decline(xml, 'a detail report holds bands, not parts of its own; add it to one of its bands');
   const el = bandElement(xml, band.name);
-  if (!el) return decline(xml, `band "${band.name}" was not found in the file`);
+  if (!el) return decline(xml, STALE);
   const openTag = xml.slice(el.start, el.openEnd);
   const dpi = Number(/\sDpi="([\d.]+)"/.exec(openTag)?.[1] ?? 100);
   const ref = Math.max(0, ...[...xml.matchAll(/\sRef="(\d+)"/g)].map((r) => Number(r[1]))) + 1;
@@ -564,7 +656,7 @@ function insertControl(
   } else {
     out = xml.slice(0, el.openEnd) + `<Controls><Item1 ${attrs} /></Controls>` + xml.slice(el.openEnd);
   }
-  return { xml: out, applied: true, reason: `added ${type} "${name}"` };
+  return { xml: out, applied: true, reason: `added ${partOf({ type, name })}` };
 }
 
 /**
@@ -609,25 +701,30 @@ export function addPageInfo(
  */
 export function bindText(xml: string, ref: ControlRef, expression: string, row?: number, cell?: number): EditResult {
   const control = locate(xml, ref);
-  if (!control) return decline(xml, `no control at band ${ref.band}, control ${ref.control}`);
+  if (!control) return decline(xml, STALE);
   let target: Element | null = elementAt(xml, control.openStart);
-  if (!target) return decline(xml, 'the control span does not look like an element');
+  if (!target) return decline(xml, STALE);
   if (control.type === 'XRTable') {
-    if (row === undefined || cell === undefined) return decline(xml, `${control.name} is a table: name the row and the cell`);
+    if (row === undefined || cell === undefined) return decline(xml, `${partOf(control)} has rows and cells: say which cell`);
     const rows = childrenIn(xml, target.openEnd, target.end).find((c) => c.name === 'Rows');
     const rowEl = rows && childrenIn(xml, rows.openEnd, rows.end).filter((c) => /^Item\d+$/.test(c.name))[row];
     const cells = rowEl && childrenIn(xml, rowEl.openEnd, rowEl.end).find((c) => c.name === 'Cells');
     target = (cells && childrenIn(xml, cells.openEnd, cells.end).filter((c) => /^Item\d+$/.test(c.name))[cell]) ?? null;
-    if (!target) return decline(xml, `no cell ${cell + 1} in row ${row + 1} of ${control.name || 'the table'}`);
+    if (!target) return decline(xml, `no cell ${cell + 1} in row ${row + 1} of ${partOf(control)}`);
   }
   const value = escapeXmlAttribute(expression);
   const bindings = target.selfClosing ? undefined : childrenIn(xml, target.openEnd, target.end).find((c) => c.name === 'ExpressionBindings');
   const textItem = bindings && childrenIn(xml, bindings.openEnd, bindings.end).find((c) => /\sPropertyName="Text"/.test(xml.slice(c.start, c.openEnd)));
-  const what = `bound ${control.type === 'XRTable' ? `row ${(row ?? 0) + 1}, cell ${(cell ?? 0) + 1} of ` : ''}${control.name || control.type} to ${expression}`;
+  const what = `bound ${control.type === 'XRTable' ? `row ${(row ?? 0) + 1}, cell ${(cell ?? 0) + 1} of ` : ''}${partOf(control)} to ${expression}`;
   if (textItem) {
     const open = xml.slice(textItem.start, textItem.openEnd);
-    const rewritten = open.replace(/(\sExpression=")[^"]*(")/, `$1${value}$2`);
-    return { xml: xml.slice(0, textItem.start) + rewritten + xml.slice(textItem.openEnd), applied: rewritten !== open, reason: what };
+    // A function, as in withAttributes: `'$' + [Amount]` is an expression, not a pattern (PX-01).
+    const rewritten = open.replace(/(\sExpression=")[^"]*(")/, (_m, a: string, b: string) => a + value + b);
+    // Said as a refusal, not as "bound ... to [X]": the reason reaches the person, and a declined edit must not read as made (2026-11-11).
+    if (rewritten === open) {
+      return decline(xml, `${control.type === 'XRTable' ? `row ${(row ?? 0) + 1}, cell ${(cell ?? 0) + 1} of ` : ''}${partOf(control)} already prints ${expression}`);
+    }
+    return { xml: xml.slice(0, textItem.start) + rewritten + xml.slice(textItem.openEnd), applied: true, reason: what };
   }
   const item = `<Item1 EventName="BeforePrint" PropertyName="Text" Expression="${value}" />`;
   const tag = /^<([A-Za-z_][\w.:-]*)/.exec(xml.slice(target.start, target.openEnd))![1];
@@ -665,22 +762,21 @@ function updateCellElement(
   refusal: string,
 ): EditResult {
   const control = locate(xml, ref);
-  if (!control) return decline(xml, `no control at band ${ref.band}, control ${ref.control}`);
-  if (control.type !== 'XRTable') return decline(xml, `${control.name || control.type} is not a table`);
+  if (!control) return decline(xml, STALE);
+  if (control.type !== 'XRTable') return decline(xml, `${partOf(control)} is not a table`);
   const table = elementAt(xml, control.openStart);
-  if (!table) return decline(xml, 'the table span does not look like an element');
+  if (!table) return decline(xml, STALE);
   const rows = childrenIn(xml, table.openEnd, table.end).find((c) => c.name === 'Rows');
   const rowEl = rows && childrenIn(xml, rows.openEnd, rows.end).filter((c) => /^Item\d+$/.test(c.name))[row];
   const cells = rowEl && childrenIn(xml, rowEl.openEnd, rowEl.end).find((c) => c.name === 'Cells');
   const cellEl = cells && childrenIn(xml, cells.openEnd, cells.end).filter((c) => /^Item\d+$/.test(c.name))[cell];
-  if (!cellEl) return decline(xml, `no cell ${cell + 1} in row ${row + 1} of ${control.name || 'the table'}`);
+  if (!cellEl) return decline(xml, `no cell ${cell + 1} in row ${row + 1} of ${partOf(control)}`);
   const openTag = xml.slice(cellEl.start, cellEl.openEnd);
   const wanted = attrs(openTag, /PropertyName="Text"/.test(xml.slice(cellEl.start, cellEl.end)));
   if (!wanted) return decline(xml, refusal);
-  const name = /\sName="([^"]*)"/.exec(openTag)?.[1];
   return {
     xml: xml.slice(0, cellEl.start) + withAttributes(openTag, wanted) + xml.slice(cellEl.openEnd),
     applied: true,
-    reason: `${what} XRTableCell${name ? ` "${name}"` : ''}`,
+    reason: `${what} a cell of ${partOf(control)}`,
   };
 }

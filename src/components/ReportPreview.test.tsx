@@ -420,7 +420,7 @@ describe('editing in the pane', () => {
     fireEvent.pointerDown(hits()[0]);
     fireEvent.click(screen.getByText('Add label'));
     const [xml, reason] = onEdit.mock.calls[0];
-    expect(reason).toBe('added XRLabel "label1"');
+    expect(reason).toBe('added the label "label1"');
     expect(xml).toContain('Name="label1" Text="New label" TextAlignment="TopLeft" LocationFloat="0, 24"');
   });
 
@@ -434,7 +434,7 @@ describe('editing in the pane', () => {
     fireEvent.change(field, { target: { value: 'FIRST' } });
     fireEvent.blur(field);
     const [xml, reason] = onEdit.mock.calls[0];
-    expect(reason).toBe('retyped XRTableCell "c1"');
+    expect(reason).toBe('retyped a cell of the table "t"');
     expect(xml).toContain('Name="c1" Text="FIRST"');
   });
 
@@ -447,7 +447,7 @@ describe('editing in the pane', () => {
     const field = screen.getByLabelText("Edit the control's text") as HTMLInputElement;
     fireEvent.change(field, { target: { value: 'FIRST' } });
     fireEvent.blur(field);
-    expect(onEdit.mock.calls[0][1]).toBe('retyped XRLabel "a"');
+    expect(onEdit.mock.calls[0][1]).toBe('retyped the label "a"');
   });
 
   it('says why when an edit is declined', () => {
@@ -457,7 +457,7 @@ describe('editing in the pane', () => {
     fireEvent.pointerDown(hits()[0]);
     fireEvent.keyDown(window, { key: 'Delete' });
     expect(onEdit).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain('is named elsewhere in the report (#Ref-4)');
+    expect(document.body.textContent).toContain('a line, a chart or a drill-down points at the label "a"; remove that first');
   });
 });
 

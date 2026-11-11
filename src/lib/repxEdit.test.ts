@@ -20,6 +20,13 @@ import {
   addLabel,
   setCellText,
   duplicateControl,
+  bindText,
+  setBandHeight,
+  addLine,
+  addPageInfo,
+  updateCell,
+  isBoundText,
+  boundTextNotice,
 } from './repxEdit';
 
 const report = `<?xml version="1.0" encoding="utf-8"?>
@@ -53,7 +60,7 @@ describe('moving a control', () => {
   it('writes the new position and reports what it moved', () => {
     const result = moveControl(report, TITLE, 120, 55);
     expect(result.applied).toBe(true);
-    expect(result.reason).toBe('moved XRLabel "title"');
+    expect(result.reason).toBe('moved the label "title"');
     expect(controlAt(result.xml, TITLE)).toMatchObject({ x: 120, y: 55 });
   });
 
@@ -104,7 +111,7 @@ describe('moving a control', () => {
 
   it('edits a control in a different band by the same reference scheme', () => {
     const { xml, reason } = moveControl(report, LINE, 15, 5);
-    expect(reason).toBe('moved XRLabel "line"');
+    expect(reason).toBe('moved the label "line"');
     expect(controlAt(xml, LINE)).toMatchObject({ x: 15, y: 5 });
     expect(controlAt(xml, TITLE)).toMatchObject({ x: 20, y: 20 });
   });
@@ -135,7 +142,7 @@ describe('preserving the tag shape', () => {
 describe('resizing a control', () => {
   it('writes the new size', () => {
     const { xml, reason } = resizeControl(report, TITLE, 500, 60);
-    expect(reason).toBe('resized XRLabel "title"');
+    expect(reason).toBe('resized the label "title"');
     expect(controlAt(xml, TITLE)).toMatchObject({ width: 500, height: 60 });
   });
 
@@ -155,7 +162,7 @@ describe('resizing a control', () => {
 describe('retyping a control', () => {
   it('replaces the text', () => {
     const { xml, reason } = setControlText(report, TITLE, 'CREDIT NOTE');
-    expect(reason).toBe('retyped XRLabel "title"');
+    expect(reason).toBe('retyped the label "title"');
     expect(controlAt(xml, TITLE).text).toBe('CREDIT NOTE');
   });
 
@@ -207,7 +214,7 @@ describe('declining rather than corrupting', () => {
       const result = moveControl(report, ref, 10, 10);
       expect(result.applied).toBe(false);
       expect(result.xml).toBe(report);
-      expect(result.reason).toMatch(/no control at band/);
+      expect(result.reason).toBe('that part changed a moment ago; try again');
     }
   });
 
@@ -238,7 +245,7 @@ describe('overflowsBand', () => {
 describe('deleting a control', () => {
   it('takes the control out and numbers the items after it again', () => {
     const out = deleteControl(report, TITLE);
-    expect(out).toMatchObject({ applied: true, reason: 'deleted XRLabel "title"' });
+    expect(out).toMatchObject({ applied: true, reason: 'deleted the label "title"' });
     expect(out.xml).not.toContain('Name="title"');
     // "subtitle" was Item2 with a closing tag; it is Item1 now, both ends.
     expect(out.xml).toContain('<Item1 Ref="4" ControlType="XRLabel" Name="subtitle"');
@@ -258,7 +265,7 @@ describe('deleting a control', () => {
     const named = report.replace('Name="Detail" HeightF="40"', 'Name="Detail" HeightF="40" DrillDownControl="#Ref-3"');
     const out = deleteControl(named, TITLE);
     expect(out.applied).toBe(false);
-    expect(out.reason).toContain('#Ref-3');
+    expect(out.reason).toBe('a line, a chart or a drill-down points at the label "title"; remove that first');
     expect(out.xml).toBe(named);
   });
 });
@@ -268,7 +275,7 @@ describe('duplicating a control', () => {
   it('copies it to the end of its band, shifted, with a fresh Ref and a free name, and keeps every attribute', () => {
     const result = duplicateControl(report, TITLE);
     expect(result.applied).toBe(true);
-    expect(result.reason).toBe('duplicated XRLabel "title" as "title1"');
+    expect(result.reason).toBe('duplicated the label "title" as "title1"');
     const header = parseReportStructure(result.xml).bands[1].controls;
     expect(header.map((c) => c.name)).toEqual(['title', 'subtitle', 'title1']);
     expect(header[2]).toMatchObject({ x: 28, y: 28, text: 'INVOICE' });
@@ -312,7 +319,7 @@ describe('duplicating a control', () => {
 describe('adding a label', () => {
   it('adds one with a fresh Ref and name, at the place given', () => {
     const out = addLabel(report, LINE.band, 100, 10);
-    expect(out).toMatchObject({ applied: true, reason: 'added XRLabel "label1"' });
+    expect(out).toMatchObject({ applied: true, reason: 'added the label "label1"' });
     const added = parseReportStructure(out.xml).bands[LINE.band].controls[1];
     expect(added).toMatchObject({ name: 'label1', text: 'New label', x: 100, y: 10, width: 100, height: 23 });
     expect(out.xml).toContain('<Item2 Ref="8" ControlType="XRLabel" Name="label1"');
@@ -344,14 +351,155 @@ describe('retyping a table cell', () => {
 
   it('sets the text of the cell named by row and place', () => {
     const out = setCellText(table, LINE, 0, 0, 'Product & code');
-    expect(out).toMatchObject({ applied: true, reason: 'retyped XRTableCell "c1"' });
+    expect(out).toMatchObject({ applied: true, reason: 'retyped a cell of the table "t"' });
     expect(out.xml).toContain('Name="c1" Text="Product &amp; code"');
     expect(parseReportStructure(out.xml).bands[LINE.band].controls[0].rows[0].cells[0].text).toBe('Product & code');
   });
 
   it('declines a bound cell, a missing one, and a control that is not a table', () => {
-    expect(setCellText(table, LINE, 0, 1, 'x')).toMatchObject({ applied: false, reason: 'the cell prints a field, not typed text: bind another in the Data tab' });
+    expect(setCellText(table, LINE, 0, 1, 'x')).toMatchObject({ applied: false, reason: 'the cell prints a field, not typed text: bind another on the Data tab' });
     expect(setCellText(table, LINE, 2, 0, 'x').applied).toBe(false);
     expect(setCellText(report, TITLE, 0, 0, 'x').applied).toBe(false);
+  });
+});
+
+/*
+ * A typed `$` (2026-11-11, full audit PX-01). The value went into a
+ * `String.replace` replacement string, where `$&`, `$'`, `$$` and `$1` are
+ * patterns: "Fee: $1,000" was written as `Text="Fee:  Text=",000"` and the
+ * label was lost from the file.
+ */
+describe('a dollar sign in what is typed', () => {
+  const texts = ['Fee: $1,000', 'Total in US$', "Paid $'s only", '$&', '$$', 'Price $1 and $2', 'Line one\nends in $'];
+
+  for (const text of texts) {
+    it(`retypes a label as ${JSON.stringify(text)} and the file keeps it`, () => {
+      const out = setControlText(report, TITLE, text);
+      expect(out.applied).toBe(true);
+      const controls = parseReportStructure(out.xml).bands[TITLE.band].controls;
+      expect(controls.map((c) => c.name)).toEqual(['title', 'subtitle']);
+      expect(controls[0].text).toBe(text.replace(/\n/g, '\r\n'));
+      // Nothing else in the file changed but the text, and Multiline for two lines.
+      expect(out.xml.replace(/ Text="[^"]*"/, '').replace(' Multiline="true" />', ' />')).toBe(report.replace(' Text="INVOICE"', ''));
+    });
+  }
+
+  it('retypes a table cell with one too', () => {
+    const table = report.replace(
+      '<Item1 Ref="6" ControlType="XRLabel" Name="line" Text="Widget" LocationFloat="0,0" SizeF="600,25" />',
+      '<Item1 Ref="6" ControlType="XRTable" Name="t" LocationFloat="0,0" SizeF="600,25"><Rows><Item1 Ref="10" ControlType="XRTableRow" Name="r1" Weight="1"><Cells><Item1 Ref="11" ControlType="XRTableCell" Name="c1" Text="Item" Weight="1" /></Cells></Item1></Rows></Item1>',
+    );
+    const out = setCellText(table, LINE, 0, 0, "Fee: $1,000 ($&, $')");
+    expect(parseReportStructure(out.xml).bands[LINE.band].controls[0].rows[0].cells[0].text).toBe("Fee: $1,000 ($&, $')");
+  });
+
+  it("binds an expression holding one, first and when a binding is already there", () => {
+    const first = bindText(report, LINE, `'$' + [Amount]`);
+    expect(first.applied).toBe(true);
+    expect(first.xml).toContain(`Expression="&apos;$&apos; + [Amount]"`);
+    const again = bindText(first.xml, LINE, `'$$' + [Total] + '$&'`);
+    expect(again.applied).toBe(true);
+    expect(again.xml).toContain(`Expression="&apos;$$&apos; + [Total] + &apos;$&amp;&apos;"`);
+    expect(parseReportStructure(again.xml).bands[LINE.band].controls.map((c) => c.name)).toEqual(['line']);
+  });
+});
+
+/* A label bound to a field is not retyped (2026-11-11, full audit PX-08). */
+describe('retyping a label that prints a field', () => {
+  const bound = report.replace(
+    '<Item1 Ref="6" ControlType="XRLabel" Name="line" Text="Widget" LocationFloat="0,0" SizeF="600,25" />',
+    '<Item1 Ref="6" ControlType="XRLabel" Name="line" Text="Widget" LocationFloat="0,0" SizeF="600,25"><ExpressionBindings><Item1 Ref="9" EventName="BeforePrint" PropertyName="Text" Expression="[CustomerName]" /></ExpressionBindings></Item1>',
+  );
+
+  it('declines, says which field it prints, and leaves the file as it was', () => {
+    const out = setControlText(bound, LINE, 'Acme');
+    expect(out).toEqual({ xml: bound, applied: false, reason: 'this label prints the field [CustomerName], not typed text: bind another on the Data tab' });
+  });
+
+  it('says what an expression prints when it is not one field', () => {
+    const expr = bound.replace('Expression="[CustomerName]"', 'Expression="[First] + &apos; &apos; + [Last]"');
+    expect(setControlText(expr, LINE, 'Acme').reason).toBe(`this label prints [First] + ' ' + [Last], not typed text: change it on the Data tab`);
+  });
+
+  it('is told apart from a label whose only binding is not its text, and from a plain one', () => {
+    expect(isBoundText(bound, LINE)).toBe(true);
+    expect(isBoundText(report, LINE)).toBe(false);
+    expect(boundTextNotice(report, TITLE)).toBeNull();
+    const visible = bound.replace('PropertyName="Text"', 'PropertyName="Visible"');
+    expect(isBoundText(visible, LINE)).toBe(false);
+    expect(setControlText(visible, LINE, 'Acme').applied).toBe(true);
+  });
+
+  // A blank expression prints the label's own text, so it is no binding (the reviewer's pass, 2026-11-11).
+  it('counts a binding with a blank expression as none', () => {
+    const blank = bound.replace('Expression="[CustomerName]"', 'Expression="  "');
+    expect(isBoundText(blank, LINE)).toBe(false);
+    expect(boundTextNotice(blank, LINE)).toBeNull();
+    expect(setControlText(blank, LINE, 'Acme').applied).toBe(true);
+  });
+
+  it('reads a decimal character reference in the expression as the character', () => {
+    const expr = bound.replace('Expression="[CustomerName]"', 'Expression="[First] + &#39; &#39; + [Last]"');
+    expect(boundTextNotice(expr, LINE)).toBe(`this label prints [First] + ' ' + [Last], not typed text: change it on the Data tab`);
+  });
+
+  it('says it already prints a field when bound to the same one, and changes nothing', () => {
+    const out = bindText(bound, LINE, '[CustomerName]');
+    expect(out).toEqual({ xml: bound, applied: false, reason: 'the label "line" already prints [CustomerName]' });
+  });
+});
+
+/*
+ * Every reason in plain words (2026-11-11, full audit PX-06): they are shown
+ * as they are, in the Preview's toast and notice and the chat's list of
+ * changes, so no class name, Ref, file jargon or parser term may reach one.
+ */
+describe('what an edit says it did', () => {
+  const MACHINERY = /XR[A-Z]|#Ref|REPX|span|opening tag/;
+  const table = report.replace(
+    '<Item1 Ref="6" ControlType="XRLabel" Name="line" Text="Widget" LocationFloat="0,0" SizeF="600,25" />',
+    '<Item1 Ref="6" ControlType="XRTable" Name="t" LocationFloat="0,0" SizeF="600,25"><Rows><Item1 Ref="10" ControlType="XRTableRow" Name="r1" Weight="1"><Cells><Item1 Ref="11" ControlType="XRTableCell" Name="c1" Text="Item" Weight="1" /></Cells></Item1></Rows></Item1>',
+  );
+  const STALE = { band: 1, control: 42 };
+
+  it('names no machinery, whether it was made or declined', () => {
+    const reasons = [
+      moveControl(report, TITLE, 1, 1),
+      resizeControl(report, TITLE, 10, 10),
+      setControlText(report, TITLE, 'x'),
+      deleteControl(report, TITLE),
+      duplicateControl(report, TITLE),
+      addLabel(report, LINE.band, 0, 0),
+      addLine(report, LINE.band, 0, 0, 100),
+      addPageInfo(report, LINE.band, 0, 0),
+      setCellText(table, LINE, 0, 0, 'x'),
+      updateCell(table, LINE, 0, 0, () => ({ ForeColor: 'Red' }), 'recoloured'),
+      bindText(report, LINE, '[Amount]'),
+      bindText(table, LINE, '[Amount]', 0, 0),
+      bindText(table, LINE, '[Amount]'),
+      setBandHeight(report, LINE.band, 60),
+      setBandHeight(report, LINE.band, 10),
+      setBandHeight(report, 99, 10),
+      moveControl(report, STALE, 1, 1),
+      deleteControl(report, STALE),
+      duplicateControl(report, STALE),
+      bindText(report, STALE, '[A]'),
+      setCellText(report, TITLE, 0, 0, 'x'),
+      deleteControl(report.replace('Name="Detail" HeightF="40"', 'Name="Detail" HeightF="40" DrillDownControl="#Ref-3"'), TITLE),
+      duplicateControl(report.replace('Name="line" Text="Widget"', 'Name="line" Text="Widget" Series="#Ref-6"'), LINE),
+    ].map((r) => r.reason);
+    for (const reason of reasons) expect(reason).not.toMatch(MACHINERY);
+    expect(reasons).toContain('retyped a cell of the table "t"');
+    expect(reasons).toContain('added the line "line1"');
+    expect(reasons).toContain('added the page number "pageInfo1"');
+    expect(reasons).toContain('bound row 1, cell 1 of the table "t" to [Amount]');
+  });
+
+  it("says a band's height in the report's own measure, and what stops it going lower", () => {
+    expect(setBandHeight(report, LINE.band, 50).reason).toBe("set the detail band's height to 0.5 in");
+    expect(setBandHeight(report, 1, 125).reason).toBe("set the report header's height to 1.25 in");
+    expect(setBandHeight(report, LINE.band, 10).reason).toBe('something in the detail band reaches 0.25 in down; move or shrink it first');
+    const mm = report.replace('ReportUnit="HundredthsOfAnInch"', 'ReportUnit="TenthsOfAMillimeter" Dpi="254"').replace('Name="Detail" HeightF="40"', 'Name="Detail" HeightF="102" Dpi="254"');
+    expect(setBandHeight(mm, LINE.band, 254).reason).toBe("set the detail band's height to 25.4 mm");
   });
 });

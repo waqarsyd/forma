@@ -10,6 +10,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { parseParameters, parameterReferences, liftParameterTypes } from './repxParameters';
+import { normalizeItemNames } from './repxItems';
 
 const report = (params: string, extra = '') => `<?xml version="1.0"?>
 <XtraReportsLayoutSerializer Ref="0" Name="Report1" PageWidth="850" PageHeight="1100" Version="20.1"${extra}>
@@ -169,6 +170,22 @@ describe('lifting a type into ObjectStorage', () => {
     expect((result.xml.match(/<ObjectStorage>/g) ?? [])).toHaveLength(1);
     expect(result.xml).toContain('Content="System.Guid"');
     expect(result.xml).toContain('Content="System.DateTime"');
+  });
+
+  // 2026-11-11, full audit PL-10: the lifted type was written as a second <Item1>.
+  it('numbers what it adds after the items already there, so no two share a name', () => {
+    const withStorage = report(
+      '    <Item1 Ref="1" Name="DateFrom" Type="System.DateTime" />\n' +
+      '    <Item2 Ref="2" Name="Count" Type="System.Int32" />',
+    ).replace(
+      '</XtraReportsLayoutSerializer>',
+      '  <ObjectStorage>\n    <Item1 ObjectType="DevExpress.XtraReports.Parameters.DynamicListLookUpSettings, DevExpress.Printing.v20.1.Core" Ref="90" DataSource="#Ref-91" DataMember="List" ValueMember="Region" DisplayMember="Region" />\n  </ObjectStorage>\n</XtraReportsLayoutSerializer>',
+    );
+    const result = liftParameterTypes(withStorage);
+    expect(result.applied).toBe(true);
+    const storage = /<ObjectStorage>([\s\S]*?)<\/ObjectStorage>/.exec(result.xml)![1];
+    expect([...storage.matchAll(/<(Item\d+)\s/g)].map((m) => m[1])).toEqual(['Item1', 'Item2', 'Item3']);
+    expect(normalizeItemNames(result.xml).applied).toBe(false);
   });
 
   it('declines on a type it does not recognise rather than inventing an entry', () => {

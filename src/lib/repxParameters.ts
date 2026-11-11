@@ -44,6 +44,7 @@
  * `repxMargins.ts`: arithmetic applied to the model's output rather than a
  * request for the model to do it.
  */
+import { topLevelItems } from './repxSqlDataSource';
 
 /** The four types a generated report has any business declaring. */
 const KNOWN_TYPES = [
@@ -220,13 +221,17 @@ export function liftParameterTypes(
   // string parameters.
   if (distinct.length) {
     const objectType = `DevExpress.XtraReports.Serialization.ObjectStorageInfo, DevExpress.XtraReports.${assemblySuffix(version)}`;
-    const items = distinct
-      .map((type, i) => `    <Item${i + 1} ObjectType="${objectType}" Ref="${refFor.get(type)}" Content="${type}" Type="System.Type" />`)
-      .join('\n');
-
     // Merge into an existing ObjectStorage rather than emitting a second one --
     // two blocks is not a shape the serializer ever writes.
     const existing = /<ObjectStorage>([\s\S]*?)<\/ObjectStorage>/.exec(out);
+    // Numbered on from the items already there (2026-11-11, full audit PL-10):
+    // a lookup list the SQL writer stored came first, and the lifted type was
+    // written as a second <Item1>, which the loader reads as one item.
+    const start = existing ? topLevelItems(existing[1]) : 0;
+    const items = distinct
+      .map((type, i) => `    <Item${start + i + 1} ObjectType="${objectType}" Ref="${refFor.get(type)}" Content="${type}" Type="System.Type" />`)
+      .join('\n');
+
     if (existing) {
       const merged = existing[1].trimEnd() + '\n' + items + '\n  ';
       out = out.slice(0, existing.index) + `<ObjectStorage>${merged}</ObjectStorage>` + out.slice(existing.index + existing[0].length);

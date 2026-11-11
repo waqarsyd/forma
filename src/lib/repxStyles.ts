@@ -219,7 +219,10 @@ export function liftStyles(xml: string | undefined | null): StyleLift {
       attrs = attrs.replace(new RegExp(`\\s${attribute.control}\\s*=\\s*"[^"]*"`), '');
     }
     const whole = out.slice(tag.start, tag.end);
-    const rebuilt = whole.replace(tag.attrs, `${attrs} StyleName="${name}"`);
+    // A function, not a replacement string: the attributes are the model's text,
+    // and `$&` in one ("Amount ($&...") is a pattern there, which wrote every
+    // attribute twice (2026-11-11, full audit PX-02b).
+    const rebuilt = whole.replace(tag.attrs, () => `${attrs} StyleName="${name}"`);
     out = out.slice(0, tag.start) + rebuilt + out.slice(tag.end);
   }
 

@@ -21,7 +21,8 @@ import { escapeXmlAttribute } from './xmlEscape';
 import { liftParameterTypes, parameterReferences } from './repxParameters';
 import { ensureUniqueRefs } from './repxRefs';
 import { encodeBase64, readRepxDataSources, sourceParameters, topLevelItems } from './repxSqlDataSource';
-export { connectionStringsSnippet, encodeBase64, stripStoredCredentials } from './repxSqlDataSource';
+// The re-export of connectionStringsSnippet, encodeBase64 and stripStoredCredentials
+// went on 2026-11-11 (full audit RH-06a): every caller imports them from repxSqlDataSource.
 
 /** What a report reads, to be written into it as a SqlDataSource. */
 export interface DataSourceSpec {
@@ -252,7 +253,7 @@ export function sqlDataSourceXml(spec: DataSourceSpec, name = 'sqlDataSource1'):
   const body = [
     `<Connection Name="${attrOf(spec.connectionName)}" FromAppConfig="true" />`,
     ...queries.map((q) => queryXml(spec, q, needs)),
-    ...lookupQueries.map((l) => queryXml(spec, l.query, needs).replace(/^<Query Type="SelectQuery" Name="[^"]*"/, `<Query Type="SelectQuery" Name="${attrOf(l.name)}"`)),
+    ...lookupQueries.map((l) => queryXml(spec, l.query, needs).replace(/^<Query Type="SelectQuery" Name="[^"]*"/, () => `<Query Type="SelectQuery" Name="${attrOf(l.name)}"`)),
     ...relations.map((r) => r.inner),
     `<ResultSchema><DataSet Name="${attrOf(name)}">${[...queries.map((q) => viewXml(spec, q)), ...lookupQueries.map((l) => viewXml(spec, l.query, l.name)), ...relations.map((r) => r.schema)].join('')}</DataSet></ResultSchema>`,
     '<ConnectionOptions CloseConnection="true" />',
@@ -297,11 +298,18 @@ export function writeSqlDataSource(repx: string, spec: DataSourceSpec, version =
   const b64 = encodeBase64(sqlDataSourceXml({ ...spec, connectionName: connection }));
   const item = `<Item1 Ref="${ref}" ObjectType="DevExpress.DataAccess.Sql.SqlDataSource,DevExpress.DataAccess.v20.1" Name="sqlDataSource1" Base64="${b64}" />`;
 
+  /*
+   * Every splice below that carries data takes a function, never a
+   * replacement string (2026-11-11, full audit PX-02b): in a string, `$&`,
+   * `$'`, `$$` and `$1` are patterns, so a parameter named or described with
+   * one wrote a copy of the matched text into the report. A function's
+   * return is taken literally.
+   */
   if (existing) {
-    xml = xml.replace(new RegExp(`(<Item\\d+\\s[^>]*?Ref="${ref}"[^>]*?)Base64="[^"]*"`), `$1Base64="${b64}"`);
+    xml = xml.replace(new RegExp(`(<Item\\d+\\s[^>]*?Ref="${ref}"[^>]*?)Base64="[^"]*"`), (_m, head: string) => `${head}Base64="${b64}"`);
   } else if (/<ComponentStorage>/.test(xml)) {
     const count = (/<ComponentStorage>([\s\S]*?)<\/ComponentStorage>/.exec(xml)?.[1].match(/<Item\d+\s/g) ?? []).length;
-    xml = xml.replace('</ComponentStorage>', `${item.replace('<Item1', `<Item${count + 1}`)}</ComponentStorage>`);
+    xml = xml.replace('</ComponentStorage>', () => `${item.replace('<Item1', `<Item${count + 1}`)}</ComponentStorage>`);
   } else {
     const at = xml.indexOf('<ObjectStorage>') >= 0 ? xml.indexOf('<ObjectStorage>') : xml.lastIndexOf('</XtraReportsLayoutSerializer>');
     xml = `${xml.slice(0, at)}<ComponentStorage>${item}</ComponentStorage>${xml.slice(at)}`;
@@ -310,7 +318,7 @@ export function writeSqlDataSource(repx: string, spec: DataSourceSpec, version =
   // The report reads the source by reference and the query by name.
   xml = xml.replace(/<XtraReportsLayoutSerializer\b[^>]*>/, (open) => {
     let tag = open.replace(/\sDataSource="[^"]*"/, '').replace(/\sDataMember="[^"]*"/, '');
-    tag = tag.replace(/\s*>$/, ` DataMember="${attrOf(queryName(spec.query))}" DataSource="#Ref-${ref}">`);
+    tag = tag.replace(/\s*>$/, () => ` DataMember="${attrOf(queryName(spec.query))}" DataSource="#Ref-${ref}">`);
     return tag;
   });
 
@@ -331,14 +339,14 @@ export function writeSqlDataSource(repx: string, spec: DataSourceSpec, version =
     const current = tag ? /ValueSourceSettings="#Ref-(\d+)"/.exec(tag)?.[1] : undefined;
     const entry = current ? new RegExp(`<Item(\\d+)(?=[^>]*\\sRef="${current}")[^>]*?DynamicListLookUpSettings[^>]*?/>`).exec(xml) : null;
     if (entry) {
-      xml = xml.replace(entry[0], `<Item${entry[1]} Ref="${current}" ${settings} />`);
+      xml = xml.replace(entry[0], () => `<Item${entry[1]} Ref="${current}" ${settings} />`);
       continue;
     }
     const r = next++;
     lookupRefs.set(l.parameter, r);
     objectStorage.push(`<Item1 Ref="${r}" ${settings} />`);
     // One ValueSourceSettings, whatever the tag held: a second is an XML error the loader refuses (measured 2026-11-09).
-    if (tag) xml = xml.replace(tag, tag.replace(/\sValueSourceSettings="[^"]*"/, '').replace(/\s*\/>$/, ` ValueSourceSettings="#Ref-${r}" />`));
+    if (tag) xml = xml.replace(tag, () => tag.replace(/\sValueSourceSettings="[^"]*"/, '').replace(/\s*\/>$/, ` ValueSourceSettings="#Ref-${r}" />`));
   }
   const items: string[] = [];
   for (const p of needs) {
@@ -361,13 +369,13 @@ export function writeSqlDataSource(repx: string, spec: DataSourceSpec, version =
     const block = /<Parameters>([\s\S]*?)<\/Parameters>/.exec(xml);
     const count = block ? (block[1].match(/<Item\d+\s/g) ?? []).length : 0;
     const numbered = items.map((it, i) => it.replace('<Item1', `<Item${count + i + 1}`)).join('');
-    xml = block ? xml.replace('</Parameters>', `${numbered}</Parameters>`) : xml.replace(/(<XtraReportsLayoutSerializer\b[^>]*>)/, `$1<Parameters>${numbered}</Parameters>`);
+    xml = block ? xml.replace('</Parameters>', () => `${numbered}</Parameters>`) : xml.replace(/<XtraReportsLayoutSerializer\b[^>]*>/, (open) => `${open}<Parameters>${numbered}</Parameters>`);
   }
   if (objectStorage.length) {
     const block = /<ObjectStorage>([\s\S]*?)<\/ObjectStorage>/.exec(xml);
     const count = block ? (block[1].match(/<Item\d+\s/g) ?? []).length : 0;
     const numbered = objectStorage.map((it, i) => it.replace('<Item1', `<Item${count + i + 1}`)).join('');
-    xml = block ? xml.replace('</ObjectStorage>', `${numbered}</ObjectStorage>`) : xml.replace('</XtraReportsLayoutSerializer>', `<ObjectStorage>${numbered}</ObjectStorage></XtraReportsLayoutSerializer>`);
+    xml = block ? xml.replace('</ObjectStorage>', () => `${numbered}</ObjectStorage>`) : xml.replace('</XtraReportsLayoutSerializer>', () => `<ObjectStorage>${numbered}</ObjectStorage></XtraReportsLayoutSerializer>`);
   }
 
   // Calculated fields on the source (the emit-calc measurement).
@@ -375,9 +383,9 @@ export function writeSqlDataSource(repx: string, spec: DataSourceSpec, version =
     if (!cf.name.trim() || new RegExp(`<CalculatedFields>[\\s\\S]*?\\sName="${cf.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`).test(xml)) continue;
     const entry = `<Item1 Ref="${maxRef(xml) + 1}" Name="${attrOf(cf.name)}" FieldType="${cf.type}" Expression="${attrOf(cf.expression)}" DataMember="${attrOf(cf.dataMember ?? queryName(spec.query))}" />`;
     const block = /<CalculatedFields>([\s\S]*?)<\/CalculatedFields>/.exec(xml);
-    if (block) xml = xml.replace('</CalculatedFields>', `${entry.replace('<Item1', `<Item${topLevelItems(block[1]) + 1}`)}</CalculatedFields>`);
-    else if (xml.includes('</Parameters>')) xml = xml.replace('</Parameters>', `</Parameters><CalculatedFields>${entry}</CalculatedFields>`);
-    else xml = xml.replace(/(<XtraReportsLayoutSerializer\b[^>]*>)/, `$1<CalculatedFields>${entry}</CalculatedFields>`);
+    if (block) xml = xml.replace('</CalculatedFields>', () => `${entry.replace('<Item1', `<Item${topLevelItems(block[1]) + 1}`)}</CalculatedFields>`);
+    else if (xml.includes('</Parameters>')) xml = xml.replace('</Parameters>', () => `</Parameters><CalculatedFields>${entry}</CalculatedFields>`);
+    else xml = xml.replace(/<XtraReportsLayoutSerializer\b[^>]*>/, (open) => `${open}<CalculatedFields>${entry}</CalculatedFields>`);
   }
 
   // A detail band for each master-detail relation the report does not print yet.
