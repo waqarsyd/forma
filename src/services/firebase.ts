@@ -16,11 +16,13 @@ import {
   updatePassword,
   verifyBeforeUpdateEmail,
   deleteUser,
+  type ActionCodeSettings,
   type User,
 } from 'firebase/auth';
 import { OperationType, type FirestoreErrorInfo } from '../lib/firestoreOps';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { authDomainFor, canRedirectSignIn } from '../lib/authDomain';
+import { startAppCheck } from '../lib/appCheck';
 
 /*
  * Auth only: Firestore is not imported here (2026-11-01). It was, with `db`
@@ -42,6 +44,38 @@ export const firestoreDatabaseId = firebaseConfig.firestoreDatabaseId;
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
+/**
+ * Where the link in an account email brings the person back to (2026-11-11,
+ * the full audit, SA-09). Without it Firebase's own page on the project's
+ * firebaseapp.com domain verified the address or set the password and then
+ * stopped, with no button back, on a domain some people read as phishing.
+ * A reset returns to the sign-in page, a verification or an address change
+ * to the workspace. What the email itself says, and from whom, is set in the
+ * Firebase console (the owner's; see the README's Firebase steps).
+ */
+function returnTo(path: '/login' | '/workspace'): ActionCodeSettings | undefined {
+  if (typeof window === 'undefined') return undefined;
+  return { url: `${window.location.origin}${path}` };
+}
+
+/**
+ * Send an account email with the way back, and without it when Firebase
+ * refuses this host as a destination: a self-hosted copy whose domain is not
+ * on the project's authorised list still gets its email, as before, rather
+ * than a sign-up that cannot verify and a reset that never arrives.
+ */
+async function sendWithReturn(path: '/login' | '/workspace', send: (settings?: ActionCodeSettings) => Promise<void>): Promise<void> {
+  const settings = returnTo(path);
+  if (!settings) return send();
+  try {
+    await send(settings);
+  } catch (error) {
+    const code = (error as { code?: string })?.code;
+    if (code !== 'auth/unauthorized-continue-uri' && code !== 'auth/invalid-continue-uri') throw error;
+    await send();
+  }
+}
+
 export const signInWithEmail = async (email: string, password: string) => {
   const result = await signInWithEmailAndPassword(auth, email, password);
   return result.user;
@@ -57,7 +91,7 @@ export const signUpWithEmail = async (email: string, password: string, displayNa
   // this app gets one. Deliberately not awaited into the failure path: a mail
   // service having a bad minute must not turn a successful sign-up into an
   // error, and the account page can resend.
-  sendEmailVerification(result.user).catch((error) => {
+  sendWithReturn('/workspace', (settings) => sendEmailVerification(result.user, settings)).catch((error) => {
     console.warn('Could not send the verification email:', error);
   });
 
@@ -66,7 +100,30 @@ export const signUpWithEmail = async (email: string, password: string, displayNa
 
 /** Resend, from the account panel, when the first one never arrived. */
 export const sendVerificationEmail = async (user: User) => {
-  await sendEmailVerification(user);
+  await sendWithReturn('/workspace', (settings) => sendEmailVerification(user, settings));
+};
+
+/**
+ * Whether the account's address is verified, as the database will see it
+ * (2026-11-11, the full audit, SA-08).
+ *
+ * Two copies of that fact go stale on their own. `emailVerified` on the User
+ * changes only when the user is reloaded, so someone who clicks the link in
+ * another tab and comes back is still "unverified" here; and the rules read
+ * `email_verified` from the ID token, which is refreshed hourly, so even after
+ * a page reload the first share is refused for up to an hour. So: reload the
+ * user when it says unverified, and when it is verified but the token still
+ * says otherwise, fetch a fresh token. A verified account whose token already
+ * agrees costs nothing but a local decode.
+ */
+export const refreshVerification = async (user: User | null = auth.currentUser): Promise<boolean> => {
+  if (!user) return false;
+  // reload() updates this same object in place, as auth.currentUser is.
+  if (!user.emailVerified) await user.reload();
+  if (!user.emailVerified) return false;
+  const token = await user.getIdTokenResult();
+  if (token.claims.email_verified !== true) await user.getIdToken(true);
+  return true;
 };
 
 /**
@@ -107,7 +164,7 @@ export const changePassword = async (user: User, currentPassword: string, nextPa
  */
 export const requestEmailChange = async (user: User, newEmail: string, password?: string) => {
   await reauthenticate(user, password);
-  await verifyBeforeUpdateEmail(user, newEmail);
+  await sendWithReturn('/workspace', (settings) => verifyBeforeUpdateEmail(user, newEmail, settings));
 };
 
 export const setDisplayName = async (user: User, displayName: string) => {
@@ -134,6 +191,11 @@ export const deleteAccountAndData = async (user: User, password?: string) => {
   await reauthenticate(user, password);
   // Loaded here rather than at import: see the note on `app` above.
   const [{ getFirestore }, { deleteAccountData }] = await Promise.all([import('firebase/firestore'), import('../lib/accountData')]);
+  // App Check before the database (2026-11-11, the full audit, SA-25), as
+  // loadFirebase starts it: this path opens Firestore on its own, and once
+  // enforcement is on a deletion run before anything else had loaded the
+  // database would be refused.
+  await startAppCheck(app);
   await deleteAccountData(getFirestore(app, firestoreDatabaseId), user.uid);
   await deleteUser(user);
 };
@@ -166,7 +228,7 @@ export const signInWithGoogle = async () => {
  * exists…" wording either way.
  */
 export const sendPasswordReset = async (email: string) => {
-  await sendPasswordResetEmail(auth, email);
+  await sendWithReturn('/login', (settings) => sendPasswordResetEmail(auth, email, settings));
 };
 
 export const logOut = async () => {

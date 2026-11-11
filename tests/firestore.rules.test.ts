@@ -10,7 +10,7 @@
  * Deliberately not part of `npm test`: that suite must stay dependency-free and
  * instant, while this one needs Java and a running emulator.
  */
-import { describe, it, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import {
   initializeTestEnvironment,
   assertFails,
@@ -85,7 +85,10 @@ const seed = (path: string[], data: unknown) =>
     await setDoc(doc(ctx.firestore(), path.join('/')), data as any);
   });
 
-/** Exactly what lib/shares.ts's shareDocument writes (2026-11-06). */
+/**
+ * Exactly the document lib/accountData.ts's writeShare writes (2026-11-06):
+ * since 2026-11-11 (SE-04) without the invitees, which go to the access list.
+ */
 const validShare = (id: string, owner: string, extra: Record<string, unknown> = {}) => ({
   id,
   ownerId: owner,
@@ -93,11 +96,15 @@ const validShare = (id: string, owner: string, extra: Record<string, unknown> = 
   name: 'Quarterly Invoice',
   result: '{"title":"Quarterly Invoice","repxContent":"<x/>"}',
   access: 'restricted',
-  emails: ['bob@example.com'],
   timestamp: Date.now(),
   ...extra,
 });
+/** A share written before 2026-11-11, its invitees in the document itself. */
+const legacyShare = (id: string, owner: string, extra: Record<string, unknown> = {}) => ({ ...validShare(id, owner), emails: ['bob@example.com'], ...extra });
+/** The access list beside it, as writeShare writes it. */
+const validAcl = (owner: string, list: string[] = ['bob@example.com']) => ({ ownerId: owner, list });
 const SHARE = 'Sh4r3dR3p0rtIdOfTwentyTwo';
+const aclOf = (db: ReturnType<typeof aliceDb>, id: string) => doc(db, 'shares', id, 'acl', 'emails');
 /** Bob signed in with an email address, verified or not. */
 const bobWithEmail = (email: string, verified: boolean) =>
   testEnv.authenticatedContext(BOB, { email, email_verified: verified }).firestore();
@@ -107,11 +114,12 @@ const aliceVerified = () => testEnv.authenticatedContext(ALICE, { email: 'alice@
 /** Her project r1, which a share must name (item 57). */
 const seedAliceReport = () =>
   seed(['users', ALICE, 'reports', 'r1'], { id: 'r1', name: 'Invoice', timestamp: Date.now(), messages: '[]', result: '{}', userId: ALICE });
-/** A share and the raised count in one batch, as lib/accountData.ts's writeShare writes them. */
+/** A share, its access list and the raised count in one batch, as lib/accountData.ts's writeShare writes them. */
 const createShare = (db: ReturnType<typeof aliceDb>, id: string, data: unknown, countBefore = 0, owner = ALICE) => {
   const batch = writeBatch(db);
-  batch.set(doc(db, 'shares', id), data as any);
   batch.set(doc(db, 'users', owner, 'meta', 'quota'), { shares: countBefore + 1, last: id });
+  batch.set(doc(db, 'shares', id), data as any);
+  batch.set(aclOf(db, id), validAcl(owner));
   return batch.commit();
 };
 
@@ -128,7 +136,8 @@ describe('shares (2026-11-06)', () => {
     await assertFails(createShare(aliceVerified(), SHARE, validShare(SHARE, ALICE, { userId: ALICE })));
     await assertFails(createShare(aliceVerified(), SHARE, validShare(SHARE, ALICE, { access: 'public' })));
     await assertFails(createShare(aliceVerified(), SHARE, validShare('SomeOtherId', ALICE)));
-    await assertFails(createShare(aliceVerified(), SHARE, validShare(SHARE, ALICE, { emails: 'bob@example.com' })));
+    // The invitees never go back into the document anyone may read (SE-04).
+    await assertFails(createShare(aliceVerified(), SHARE, validShare(SHARE, ALICE, { emails: ['bob@example.com'] })));
   });
 
   it('needs a verified address, a project of the account and the count raised in the same batch (site audit item 57)', async () => {
@@ -160,19 +169,28 @@ describe('shares (2026-11-06)', () => {
     const db = aliceDb();
     const batch = writeBatch(db);
     batch.delete(doc(db, 'shares', SHARE));
+    batch.delete(aclOf(db, SHARE));
     batch.set(doc(db, 'users', ALICE, 'meta', 'quota'), { shares: 0, last: SHARE });
     await assertSucceeds(batch.commit());
     await assertSucceeds(deleteDoc(doc(aliceDb(), 'users', ALICE, 'meta', 'quota')));
   });
 
-  it('lets anyone read a link share, signed in or not', async () => {
-    await seed(['shares', SHARE], validShare(SHARE, ALICE, { access: 'link', emails: [] }));
-    await assertSucceeds(getDoc(doc(anonDb(), 'shares', SHARE)));
+  it('lets anyone read a link share, signed in or not, and hands them no invitee', async () => {
+    await seedAliceReport();
+    await assertSucceeds(createShare(aliceVerified(), SHARE, validShare(SHARE, ALICE, { access: 'link' })));
+    const read = await assertSucceeds(getDoc(doc(anonDb(), 'shares', SHARE)));
+    expect(read.data()).not.toHaveProperty('emails');
+    expect(JSON.stringify(read.data())).not.toContain('bob@example.com');
     await assertSucceeds(getDoc(doc(bobDb(), 'shares', SHARE)));
+    // The access list is the owner's: not a link holder's, not an invitee's.
+    await assertFails(getDoc(aclOf(anonDb(), SHARE)));
+    await assertFails(getDoc(aclOf(bobWithEmail('bob@example.com', true), SHARE)));
+    await assertSucceeds(getDoc(aclOf(aliceDb(), SHARE)));
   });
 
   it('lets only the owner and a verified invitee read a restricted share, whatever the letter case', async () => {
     await seed(['shares', SHARE], validShare(SHARE, ALICE));
+    await seed(['shares', SHARE, 'acl', 'emails'], validAcl(ALICE));
     await assertSucceeds(getDoc(doc(aliceDb(), 'shares', SHARE)));
     await assertFails(getDoc(doc(anonDb(), 'shares', SHARE)));
     await assertFails(getDoc(doc(bobDb(), 'shares', SHARE)));
@@ -180,6 +198,42 @@ describe('shares (2026-11-06)', () => {
     // An email-and-password account can claim any address until it is verified.
     await assertFails(getDoc(doc(bobWithEmail('bob@example.com', false), 'shares', SHARE)));
     await assertFails(getDoc(doc(bobWithEmail('carol@example.com', true), 'shares', SHARE)));
+  });
+
+  it('still opens a restricted share from before the access list, for its invitee only (Owner decision 7)', async () => {
+    await seed(['shares', SHARE], legacyShare(SHARE, ALICE));
+    await assertSucceeds(getDoc(doc(bobWithEmail('bob@example.com', true), 'shares', SHARE)));
+    await assertFails(getDoc(doc(bobWithEmail('carol@example.com', true), 'shares', SHARE)));
+    await assertFails(getDoc(doc(anonDb(), 'shares', SHARE)));
+    // Its owner may read the list it does not have yet, so the dialog opens it.
+    await assertSucceeds(getDoc(aclOf(aliceDb(), SHARE)));
+    await assertFails(getDoc(aclOf(bobDb(), SHARE)));
+    // And the owner's next write moves the addresses out of the document.
+    const db = aliceVerified();
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'shares', SHARE), validShare(SHARE, ALICE));
+    batch.set(aclOf(db, SHARE), validAcl(ALICE));
+    await assertSucceeds(batch.commit());
+    await assertSucceeds(getDoc(doc(bobWithEmail('bob@example.com', true), 'shares', SHARE)));
+  });
+
+  it("writes an access list only for the caller's own share, verified, in its shape", async () => {
+    await seed(['shares', SHARE], validShare(SHARE, ALICE));
+    await assertSucceeds(setDoc(aclOf(aliceVerified(), SHARE), validAcl(ALICE, ['bob@example.com', 'carol@example.com'])));
+    // Unverified, as changing who may read a share needs (item 57).
+    await assertFails(setDoc(aclOf(aliceDb(), SHARE), validAcl(ALICE)));
+    // Not someone else's share, under either owner's name.
+    await assertFails(setDoc(aclOf(bobWithEmail('bob@example.com', true), SHARE), validAcl(BOB)));
+    await assertFails(setDoc(aclOf(bobWithEmail('bob@example.com', true), SHARE), validAcl(ALICE)));
+    // Nothing but the owner and the list, at most 50, and at no other id.
+    await assertFails(setDoc(aclOf(aliceVerified(), SHARE), { ...validAcl(ALICE), note: 'x' }));
+    await assertFails(setDoc(aclOf(aliceVerified(), SHARE), validAcl(ALICE, Array.from({ length: 51 }, (_, i) => `p${i}@example.com`))));
+    await assertFails(setDoc(doc(aliceVerified(), 'shares', SHARE, 'acl', 'other'), validAcl(ALICE)));
+    // Not without a share to belong to.
+    await assertFails(setDoc(aclOf(aliceVerified(), 'NoSuchShareIdOfTwentyTwo'), validAcl(ALICE)));
+    // Deleted by its owner alone.
+    await assertFails(deleteDoc(aclOf(bobDb(), SHARE)));
+    await assertSucceeds(deleteDoc(aclOf(aliceDb(), SHARE)));
   });
 
   it("lists the owner's own shares only, by a query that says so", async () => {

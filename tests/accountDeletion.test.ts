@@ -31,7 +31,7 @@ import {
   assertSucceeds,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, setDoc, getDoc, collection, getDocs, type Firestore } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, getDocs, writeBatch, type Firestore } from 'firebase/firestore';
 import fs from 'node:fs';
 import {
   deleteAccountData,
@@ -43,10 +43,15 @@ import {
   VERSIONS_COLLECTION,
   SHARES_COLLECTION,
   shareDocRef,
+  shareAclRef,
   writeShare,
+  readShareEmails,
+  SHARE_ACL_COLLECTION,
+  SHARE_ACL_DOC_ID,
   learningCollectionRef,
   writeLearning,
   deleteLearning,
+  LEARNING_PAGE,
 } from '../src/lib/accountData';
 
 const ALICE = 'alice-uid';
@@ -300,8 +305,8 @@ const validShare = (id: string, owner: string, reportId: string) => ({
   reportId,
   name: 'Quarterly Invoice',
   result: '{"title":"Q","repxContent":"<x/>"}',
-  access: 'link',
-  emails: [],
+  access: 'link' as const,
+  emails: [] as string[],
   timestamp: Date.now(),
 });
 
@@ -380,6 +385,14 @@ describe('shared copies go with what they were shared from', () => {
     expect(await shareExists('CountedShareOneXxxxxxxx')).toBe(false);
     expect(await shareExists('CountedShareTwoXxxxxxxx')).toBe(false);
     expect(await shareExists('LegacyShareXxxxxxxxxxxx')).toBe(false);
+    // And each counted share's access list with it (2026-11-11, SE-04).
+    for (const id of ['CountedShareOneXxxxxxxx', 'CountedShareTwoXxxxxxxx']) {
+      let aclLeft = true;
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        aclLeft = (await getDoc(doc(ctx.firestore(), SHARES_COLLECTION, id, SHARE_ACL_COLLECTION, SHARE_ACL_DOC_ID))).exists();
+      });
+      expect(aclLeft).toBe(false);
+    }
     let quotaLeft = true;
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
       quotaLeft = (await getDoc(doc(ctx.firestore(), 'users', ALICE, 'meta', 'quota'))).exists();
@@ -440,5 +453,81 @@ describe('the account document layout', () => {
     await deleteAccountData(asUser(ALICE), ALICE);
     expect(await count(ALICE)).toBe(0);
     expect(await count(BOB)).toBe(1);
+  });
+});
+
+const learningEvent = (id: string, uid: string) => ({
+  id, userId: uid, at: '2026-11-11T09:00:00.000Z', day: '2026-11-11', kind: 'edit', source: 'none', request: 'edit', ai: 'gemini',
+  skeleton: '', ops: ['font'], errors: 0, warnings: 0, rating: '', full: '', prompt: '',
+});
+
+const countLearning = async (uid: string) => {
+  let size = -1;
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    size = (await getDocs(collection(ctx.firestore(), 'users', uid, 'learning'))).size;
+  });
+  return size;
+};
+
+describe('learning goes first, and its failure stops the deletion (2026-11-11, the full audit, LM-02)', () => {
+  it('deletes more events than one page holds', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const batch = writeBatch(ctx.firestore());
+      for (let i = 0; i <= LEARNING_PAGE; i++) batch.set(doc(ctx.firestore(), 'users', ALICE, 'learning', `ev-${i}`), learningEvent(`ev-${i}`, ALICE));
+      await batch.commit();
+    });
+    expect(await countLearning(ALICE)).toBe(LEARNING_PAGE + 1);
+    await deleteLearning(asUser(ALICE), ALICE);
+    expect(await countLearning(ALICE)).toBe(0);
+  });
+
+  it('leaves the account and all its data in place when the learning events cannot be deleted', async () => {
+    // The one way to have the emulator refuse the learning delete alone: the
+    // learning rule also requires the uid to be a valid id, the reports rule
+    // does not, and a uid with a dot is not one. Real uids are 28 letters and
+    // digits; what matters is that a refusal of that one delete stops the rest.
+    const ODD = 'carol.odd';
+    await seed(['users', ODD, 'reports', 'r1'], validReport('r1', ODD));
+    await seed(['users', ODD, 'vault', VAULT_DOC_ID], validVault());
+    await seed(['users', ODD, 'learning', 'ev-1'], learningEvent('ev-1', ODD));
+
+    await expect(deleteAccountData(asUser(ODD), ODD)).rejects.toMatchObject({
+      name: 'LearningNotDeletedError',
+      code: 'forma/learning-not-deleted',
+      message: expect.stringMatching(/nothing else was removed/),
+    });
+
+    expect(await countReports(ODD)).toBe(1);
+    expect(await vaultExists(ODD)).toBe(true);
+    expect(await countLearning(ODD)).toBe(1);
+  });
+});
+
+describe("a share's invitees live in its access list (2026-11-11, SE-04)", () => {
+  it('writes them beside the share, never in it, reads them back, and deletes them with it', async () => {
+    const verified = testEnv.authenticatedContext(ALICE, { email: 'alice@example.com', email_verified: true }).firestore() as unknown as Firestore;
+    await seed(['users', ALICE, 'reports', 'r1'], validReport('r1', ALICE));
+    const id = 'AclShareXxxxxxxxxxxxxxx';
+    await writeShare(verified, ALICE, { ...validShare(id, ALICE, 'r1'), access: 'restricted', emails: ['Bob@Example.com'] }, true);
+
+    let stored: Record<string, unknown> | undefined;
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      stored = (await getDoc(doc(ctx.firestore(), SHARES_COLLECTION, id))).data();
+    });
+    expect(stored).not.toHaveProperty('emails');
+    expect(shareAclRef(verified, id).path).toBe(`shares/${id}/acl/emails`);
+    expect(await readShareEmails(verified, { id })).toEqual(['bob@example.com']);
+
+    // A share from before the list is read from its own field.
+    await seed([SHARES_COLLECTION, 'OldShareXxxxxxxxxxxxxxx'], { ...validShare('OldShareXxxxxxxxxxxxxxx', ALICE, 'r1'), emails: ['carol@example.com'] });
+    expect(await readShareEmails(verified, { id: 'OldShareXxxxxxxxxxxxxxx', emails: ['carol@example.com'] })).toEqual(['carol@example.com']);
+
+    await deleteAccountData(verified, ALICE);
+    expect(await shareExists(id)).toBe(false);
+    let aclLeft = true;
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      aclLeft = (await getDoc(doc(ctx.firestore(), SHARES_COLLECTION, id, SHARE_ACL_COLLECTION, SHARE_ACL_DOC_ID))).exists();
+    });
+    expect(aclLeft).toBe(false);
   });
 });

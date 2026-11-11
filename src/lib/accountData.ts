@@ -32,6 +32,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   query,
   setDoc,
   where,
@@ -42,7 +43,7 @@ import {
   type Firestore,
   type Query,
 } from 'firebase/firestore';
-import { MAX_SHARES } from './shares';
+import { MAX_SHARES, inviteesOf, splitShare, type LegacyShareFields, type StoredShare } from './shares';
 
 /** Everything for one account hangs off `users/{uid}`. */
 export const USERS_COLLECTION = 'users';
@@ -75,10 +76,40 @@ export async function writeLearning(db: Firestore, uid: string, event: DocumentD
   await setDoc(learningDocRef(db, uid, event.id), { ...event, userId: uid });
 }
 
-/** Every event the account holds, removed; tolerated when there are none. */
+/**
+ * How many events one pass reads and deletes (2026-11-11, the full audit,
+ * SA-12). The whole collection in one read, then one request per document,
+ * meant a heavy account's delete downloaded every event at once, whole
+ * reports on the opt-in tier, and sent hundreds of writes in parallel; a
+ * page in one batch is one commit, well under Firestore's 500 a batch.
+ *
+ * 50 rather than the 300 first written: the web SDK cannot read a page's refs
+ * without its documents, and on the opt-in tier an event may hold up to
+ * 400,000 characters (firestore.rules), so 300 could be one read of about
+ * 120 MB. 50 bounds it near 20 MB at the cost of more round trips, which only
+ * an account with thousands of events will notice.
+ */
+export const LEARNING_PAGE = 50;
+
+/** Every event the account holds, removed a page at a time; tolerated when there are none. */
 export async function deleteLearning(db: Firestore, uid: string): Promise<void> {
-  const events = await getDocs(learningCollectionRef(db, uid));
-  await Promise.all(events.docs.map((entry) => deleteDoc(entry.ref)));
+  for (;;) {
+    const page = await getDocs(query(learningCollectionRef(db, uid), limit(LEARNING_PAGE)));
+    if (page.empty) return;
+    const batch = writeBatch(db);
+    for (const entry of page.docs) batch.delete(entry.ref);
+    await batch.commit();
+    if (page.size < LEARNING_PAGE) return;
+  }
+}
+
+/** Thrown by `deleteAccountData` when the learning events could not be removed, before anything else was. */
+export class LearningNotDeletedError extends Error {
+  readonly code = 'forma/learning-not-deleted';
+  constructor(cause: unknown) {
+    super('Your learning data could not be deleted yet; nothing else was removed. Try again in a moment.', { cause });
+    this.name = 'LearningNotDeletedError';
+  }
 }
 
 /**
@@ -120,6 +151,26 @@ export function shareDocRef(db: Firestore, shareId: string): DocumentReference {
   return doc(db, SHARES_COLLECTION, shareId);
 }
 
+/**
+ * Who a share opens for (2026-11-11, the full audit, SE-04), beneath the share
+ * at `shares/{id}/acl/emails` as `{ ownerId, list }`: out of the document a
+ * link share hands to anyone, and read and written by the owner alone, while
+ * the rules read it to let an invitee in. Written and deleted in the same
+ * batch as its share, by `writeShare` and `deleteShare`.
+ */
+export const SHARE_ACL_COLLECTION = 'acl';
+export const SHARE_ACL_DOC_ID = 'emails';
+
+export function shareAclRef(db: Firestore, shareId: string): DocumentReference {
+  return doc(db, SHARES_COLLECTION, shareId, SHARE_ACL_COLLECTION, SHARE_ACL_DOC_ID);
+}
+
+/** The invitees of one of the owner's shares: its access list, or the `emails` a share from before it still carries. */
+export async function readShareEmails(db: Firestore, share: { id: string } & LegacyShareFields): Promise<string[]> {
+  const acl = await getDoc(shareAclRef(db, share.id));
+  return inviteesOf(acl.exists() ? acl.data() : null, share);
+}
+
 /** The owner's shares, of one project or of all of them; the rules allow `list` only by a query naming the owner. */
 export function ownedShares(db: Firestore, uid: string, reportId?: string): Query {
   const owned = where('ownerId', '==', uid);
@@ -156,30 +207,37 @@ async function sharesCounted(db: Firestore, uid: string): Promise<number> {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-/** Write a share: a new one with the count raised in the same batch, an existing one as it is. */
-export async function writeShare(db: Firestore, uid: string, share: DocumentData & { id: string }, isNew: boolean): Promise<void> {
-  if (!isNew) {
-    await setDoc(shareDocRef(db, share.id), share);
-    return;
-  }
-  const count = await sharesCounted(db, uid);
-  if (count >= MAX_SHARES) throw new ShareLimitError();
+/**
+ * Write a share and who it opens for, in one batch: a new one with the count
+ * raised in the same batch, an existing one as it is. The addresses go to the
+ * access list and never into the document (SE-04), and rewriting a share made
+ * before that moves its `emails` out, since the document is replaced whole.
+ */
+export async function writeShare(
+  db: Firestore,
+  uid: string,
+  share: StoredShare & { emails?: readonly string[] },
+  isNew: boolean,
+): Promise<void> {
+  const { stored, acl } = splitShare(share);
   const batch = writeBatch(db);
-  batch.set(shareDocRef(db, share.id), share);
-  batch.set(quotaDocRef(db, uid), { shares: count + 1, last: share.id });
+  if (isNew) {
+    const count = await sharesCounted(db, uid);
+    if (count >= MAX_SHARES) throw new ShareLimitError();
+    batch.set(quotaDocRef(db, uid), { shares: count + 1, last: share.id });
+  }
+  batch.set(shareDocRef(db, share.id), stored);
+  batch.set(shareAclRef(db, share.id), acl);
   await batch.commit();
 }
 
-/** Delete a share, lowering the count in the same batch while there is one to lower. */
+/** Delete a share and its access list, lowering the count in the same batch while there is one to lower. */
 export async function deleteShare(db: Firestore, uid: string, shareId: string): Promise<void> {
   const count = await sharesCounted(db, uid);
-  if (count === 0) {
-    await deleteDoc(shareDocRef(db, shareId));
-    return;
-  }
   const batch = writeBatch(db);
   batch.delete(shareDocRef(db, shareId));
-  batch.set(quotaDocRef(db, uid), { shares: count - 1, last: shareId });
+  batch.delete(shareAclRef(db, shareId));
+  if (count > 0) batch.set(quotaDocRef(db, uid), { shares: count - 1, last: shareId });
   await batch.commit();
 }
 
@@ -281,9 +339,24 @@ export async function deleteReportAndVersions(
  * `deleteDoc` on a missing document is a no-op rather than an error — but a
  * rules edge on one optional document must not block the erasure the user
  * actually asked for. The reports delete is not tolerated: if those fail, the
- * caller needs to know before the account disappears.
+ * caller needs to know before the account disappears. Nor, since 2026-11-11,
+ * is the learning delete, which runs first; see the note at its call.
  */
 export async function deleteAccountData(db: Firestore, uid: string): Promise<void> {
+  // What the account let Forma learn from, FIRST and not tolerated (2026-11-11,
+  // the full audit, LM-02). It was last and its failure was swallowed, "as
+  // the owner pulls it to their own PC" -- which is the reason it must not be:
+  // the account was then deleted, and the owner's pull went on collecting
+  // events of someone who had asked to be forgotten, under an account nobody
+  // could sign in to and delete them from. Retried once, then the deletion
+  // stops here, before anything else has gone, so trying again later starts
+  // from a whole account rather than half of one.
+  try {
+    await deleteLearning(db, uid).catch(() => deleteLearning(db, uid));
+  } catch (error) {
+    throw new LearningNotDeletedError(error);
+  }
+
   const reports = await getDocs(reportsCollectionRef(db, uid));
   // Through deleteReportAndVersions, not deleteDoc: a report's version history
   // is a subcollection, and Firestore does not remove those with the parent.
@@ -305,11 +378,6 @@ export async function deleteAccountData(db: Firestore, uid: string): Promise<voi
   // The count itself, at zero now (2026-11-08); tolerated like the vault.
   await deleteDoc(quotaDocRef(db, uid)).catch((error) => {
     console.warn('Could not remove the share count while deleting the account:', error);
-  });
-  // What the account let Forma learn from (2026-11-10); tolerated, as the
-  // owner pulls it to their own PC and nothing in the app reads it back.
-  await deleteLearning(db, uid).catch((error) => {
-    console.warn('Could not remove the learning events while deleting the account:', error);
   });
 
   await deleteDoc(vaultDocRef(db, uid)).catch((error) => {

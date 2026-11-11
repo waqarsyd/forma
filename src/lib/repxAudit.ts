@@ -47,8 +47,11 @@ import { findSummaryProblems } from './repxSummaries';
 import { crossTabsWithoutData, findCrossTabProblems } from './repxCrossTabs';
 import { findDpiProblem } from './repxDpi';
 import { findPaperProblem } from './repxPaper';
-import { auditDataSources, readRepxDataSources } from './repxSqlDataSource';
+import { auditDataSources, decodeEntities, readRepxDataSources } from './repxSqlDataSource';
 import { parseReportStructure } from './reportPreview';
+import { parseCriteria } from './criteria';
+import { fieldsIn } from './expressions';
+import { hasReportScripts } from './shares';
 import type { ReportLayout } from './reportTypes';
 
 export type RepxSeverity = 'error' | 'warning';
@@ -141,6 +144,74 @@ function biggestGrid(layout: ReportLayout | null | undefined): { rows: number; s
 }
 
 /**
+ * Every expression the report evaluates, as DevExpress reads it: a binding's or
+ * a calculated field's `Expression`, a `FilterString`, a formatting rule's
+ * `Condition`. Decoded from the attribute, since `&gt;` is `>` to the parser.
+ */
+function expressionsOf(xml: string): string[] {
+  return [...xml.matchAll(/\s(?:Expression|FilterString|Condition)="([^"]*)"/g)].map((m) => decodeEntities(m[1]).trim()).filter(Boolean);
+}
+
+/**
+ * Collection syntax (`[Orders][[Qty] > 1].Sum([Qty])`, `[^.Id]`) is valid
+ * DevExpress the Preview's parser does not read; it is left alone rather
+ * than called broken, as the header asks of a check that could cry wolf.
+ */
+const COLLECTION_SYNTAX = /\]\s*[.[]|\[\^/;
+
+/**
+ * The rest of DevExpress's language the Preview's parser lacks, looked for
+ * once string literals and field names are blanked (2026-11-11, the full
+ * audit's review of CP-07): the bitwise `~`, `&` and `|`, and a char literal
+ * (`'a'c`, which blanks to `''c`). Each is valid, so each is left alone like
+ * collection syntax. Calling one broken would be worse than a missed finding:
+ * an error makes a described report retry, and every retry is a paid call.
+ */
+const BEYOND_PARSER = /~|(?:^|[^&])&(?!&)|(?:^|[^|])\|(?!\|)|''c\b/i;
+
+/** An expression with its string literals emptied, `'it''s'` included. */
+const withoutStrings = (expression: string) => expression.replace(/'(?:[^']|'')*'/g, "''");
+
+/** The expressions `parseCriteria` refuses: a stray bracket, quote or operator. */
+function unreadableExpressions(xml: string): string[] {
+  const out: string[] = [];
+  const flag = (expression: string) => {
+    if (!out.includes(expression)) out.push(expression);
+  };
+  for (const expression of expressionsOf(xml)) {
+    if (COLLECTION_SYNTAX.test(expression)) continue;
+    const bare = withoutStrings(expression);
+    // A field opened inside a field, `[Qty * [Price]`: the parser reads it as
+    // one field named `Qty * [Price` and does not object, and DevExpress
+    // prints it blank. Collection syntax, which nests brackets legitimately,
+    // has already been passed over.
+    if (/\[[^\]]*\[/.test(bare)) {
+      flag(expression);
+      continue;
+    }
+    if (BEYOND_PARSER.test(bare.replace(/\[[^\]]*\]/g, '[]'))) continue;
+    try {
+      parseCriteria(expression);
+    } catch {
+      flag(expression);
+    }
+  }
+  return out;
+}
+
+/** Shown in a finding: an expression as written, cut to a readable length. */
+const quoted = (expression: string) => `"${expression.length > 60 ? `${expression.slice(0, 57)}...` : expression}"`;
+
+export interface AuditOptions {
+  /**
+   * The fields the report's data has, when the caller knows them (the Data
+   * tab's schema). Without them, and when the report's own SQL source has a
+   * schema (`field-not-in-schema` checks that), no field is called unknown.
+   */
+  fields?: readonly string[];
+}
+
+/**
  * Audit a finished report.
  *
  * Runs after the repair passes, so the errors it can still report are the ones
@@ -168,7 +239,7 @@ function biggestGrid(layout: ReportLayout | null | undefined): { rows: number; s
  * own layout of the source instead (`sourceLayoutOf`), which is independent of
  * the AI, so the grid checks keep their evidence where there was a picture.
  */
-export function auditRepx(xml: string | undefined | null, layout?: ReportLayout | null): RepxAudit {
+export function auditRepx(xml: string | undefined | null, layout?: ReportLayout | null, options: AuditOptions = {}): RepxAudit {
   const text = xml ?? '';
   const findings: RepxFinding[] = [];
   const add = (severity: RepxSeverity, code: string, message: string) =>
@@ -210,6 +281,70 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
   // a query or DataMember the source lacks, a parameter nothing supplies, a
   // field its band's query does not return, no result schema.
   for (const f of auditDataSources(text)) add(f.severity, f.code, f.message);
+
+  /*
+   * Code DevExpress runs (2026-11-11, the full audit, SE-02). `ScriptsSource`
+   * holds C#, and `<Scripts OnBeforePrint=...>` hooks it to an event; a
+   * designer compiles and runs it when the report is previewed or printed.
+   * Forma never writes either, so in a generated report it came from the
+   * model and nobody asked for it, and in an uploaded or shared one the
+   * person should know before they open it in a designer. An error, so a
+   * generation retries without it; the shared page says it in its own words.
+   */
+  if (hasReportScripts(text)) {
+    add(
+      'error',
+      'report-has-scripts',
+      'The report contains code that runs when it is previewed or printed in a designer. Forma never writes code into a report; ' +
+        'remove it unless you wrote it yourself or trust whoever did.',
+    );
+  }
+
+  /*
+   * Expressions that cannot be read (2026-11-11, the full audit, CP-07). A
+   * binding, a calculated field, a filter or a formatting condition with a
+   * stray bracket, quote or operator loads without a word and prints blank,
+   * or filters nothing, in DevExpress. Checked with the Preview's own parser,
+   * for syntax only: a function it does not know is not an error here, so a
+   * valid report gains no finding. An error, so a generation retries it.
+   */
+  const unreadable = unreadableExpressions(text);
+  if (unreadable.length) {
+    add(
+      'error',
+      'expression-invalid',
+      `${unreadable.length} expression(s) cannot be read (${unreadable.slice(0, 3).map(quoted).join(', ')}${unreadable.length > 3 ? ', ...' : ''}), ` +
+        'so DevExpress prints nothing where they are used. Check the brackets, quotes and parentheses.',
+    );
+  }
+
+  /*
+   * A field the data does not have, named in an expression (CP-07). Only when
+   * the caller passes the data's fields and the report's own SQL source has no
+   * schema of its own, which `field-not-in-schema` already checks band by
+   * band. Calculated fields count as the data's, and a qualified name
+   * (`[Orders.Amount]`) is known by its last part.
+   */
+  const knownFields = options.fields ?? [];
+  if (knownFields.length && !readRepxDataSources(text).some((d) => d.views.length)) {
+    const calculated = [...(/<CalculatedFields>([\s\S]*?)<\/CalculatedFields>/.exec(text)?.[1] ?? '').matchAll(/\sName="([^"]*)"/g)].map((m) => m[1]);
+    const known = new Set([...knownFields, ...calculated]);
+    const unknown = [
+      ...new Set(
+        expressionsOf(text)
+          .flatMap(fieldsIn)
+          .filter((f) => !/^(DataSource|ReportItems)\./.test(f) && !known.has(f) && !known.has(f.split('.').pop()!)),
+      ),
+    ];
+    if (unknown.length) {
+      add(
+        'warning',
+        'expression-field-unknown',
+        `${unknown.map((f) => `[${f}]`).join(', ')} ${unknown.length === 1 ? 'is not a field' : 'are not fields'} in the data, ` +
+          'so every place that prints it prints blank. It may be misspelt.',
+      );
+    }
+  }
 
   // --- warnings: it opens, but it is a worse report than it should be --------
 

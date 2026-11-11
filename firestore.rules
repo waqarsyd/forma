@@ -182,27 +182,54 @@ service cloud.firestore {
     // the others, so the one collection anyone may read cannot be repurposed
     // as storage. `id` is the document id, `ownerId` the writer, and
     // `reportId` the project it was shared from (its own owner-scoped id).
-    // `emails` are the people invited, lower-cased by the client; rules cannot
-    // walk a list, so only its length is bounded.
+    //
+    // No `emails` since 2026-11-11 (the full audit, SE-04): this document is
+    // what a link share hands to anyone, so the invitees' addresses went to
+    // everyone the link reached. They live in the share's access list below,
+    // which only its owner reads. A share written before then keeps its
+    // `emails` until its owner next writes it, which replaces the document
+    // whole in this shape (Owner decision 7: no migration script).
     function isValidShare(data, shareId) {
-      return data.keys().hasOnly(['id', 'ownerId', 'reportId', 'name', 'result', 'access', 'emails', 'timestamp'])
-        && data.keys().hasAll(['id', 'ownerId', 'reportId', 'name', 'result', 'access', 'emails', 'timestamp'])
+      return data.keys().hasOnly(['id', 'ownerId', 'reportId', 'name', 'result', 'access', 'timestamp'])
+        && data.keys().hasAll(['id', 'ownerId', 'reportId', 'name', 'result', 'access', 'timestamp'])
         && data.id == shareId
         && data.ownerId == request.auth.uid
         && isValidId(data.reportId)
         && data.name is string && data.name.size() <= 256
         && data.result is string && data.result.size() <= 1000000
         && data.access in ['restricted', 'link']
-        && data.emails is list && data.emails.size() <= 50
         && data.timestamp is number && data.timestamp > 0 && data.timestamp < 4102444800000;
+    }
+
+    // A share's access list, `shares/{id}/acl/emails`: `ownerId` and `list`,
+    // the people invited, lower-cased by the client. Rules cannot walk a
+    // list, so only its length is bounded.
+    function shareAclPath(shareId) {
+      return /databases/$(database)/documents/shares/$(shareId)/acl/emails;
+    }
+    function isValidShareAcl(data) {
+      return data.keys().hasOnly(['ownerId', 'list'])
+        && data.keys().hasAll(['ownerId', 'list'])
+        && data.ownerId == request.auth.uid
+        && data.list is list && data.list.size() <= 50;
+    }
+
+    // Whether the caller's VERIFIED address is one the share was opened to:
+    // in its access list, or in the `emails` a share from before the list
+    // still carries. The verification is load-bearing: an email-and-password
+    // account can be created with any address unverified, so without it
+    // anyone could read a restricted share by signing up as an invitee.
+    function isInvited(shareId) {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && (('emails' in resource.data && request.auth.token.email.lower() in resource.data.emails)
+          || (exists(shareAclPath(shareId))
+            && request.auth.token.email.lower() in get(shareAclPath(shareId)).data.list));
     }
 
     // Shared reports. Read by its owner; by anyone at all when its access is
     // 'link' (the random id is the secret, as "anyone with the link" says);
-    // and otherwise only by a signed-in account whose VERIFIED email is in
-    // `emails`. The verification is load-bearing: an email-and-password
-    // account can be created with any address unverified, so without it
-    // anyone could read a restricted share by signing up as an invitee.
+    // and otherwise only by an invitee, as `isInvited` says.
     //
     // `list` only for the owner's own, which the app needs to find the share
     // of a project and to delete a project's or an account's shares; the
@@ -211,9 +238,7 @@ service cloud.firestore {
       allow get: if isValidId(shareId) && (
         resource.data.access == 'link'
         || (isSignedIn() && resource.data.ownerId == request.auth.uid)
-        || (isSignedIn()
-          && request.auth.token.email_verified == true
-          && request.auth.token.email.lower() in resource.data.emails)
+        || isInvited(shareId)
       );
 
       allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
@@ -250,6 +275,30 @@ service cloud.firestore {
         && (sharesCounted(request.auth.uid) == 0
           || (getAfter(quotaPath(request.auth.uid)).data.shares == sharesCounted(request.auth.uid) - 1
             && getAfter(quotaPath(request.auth.uid)).data.last == shareId));
+    }
+
+    // A share's access list (2026-11-11, SE-04): the owner's alone, never
+    // read by an invitee or a link holder; the rules read it for them. Written
+    // only for a share the caller owns once the batch lands, with a verified
+    // address as changing a share needs. Reading a list not written yet is
+    // the owner's too, so the dialog can open a share made before lists
+    // existed. Deleted by its owner, or when it was never there, which is how
+    // deleting such a share deletes "its list" in the same batch.
+    match /shares/{shareId}/acl/{aclId} {
+      allow get: if isSignedIn() && isValidId(shareId) && aclId == 'emails'
+        && ((resource == null && exists(sharePath(shareId)) && get(sharePath(shareId)).data.ownerId == request.auth.uid)
+          || (resource != null && resource.data.ownerId == request.auth.uid));
+
+      allow create, update: if isSignedIn()
+        && request.auth.token.email_verified == true
+        && isValidId(shareId)
+        && aclId == 'emails'
+        && isValidShareAcl(incoming())
+        && existsAfter(sharePath(shareId))
+        && getAfter(sharePath(shareId)).data.ownerId == request.auth.uid;
+
+      allow delete: if isSignedIn() && aclId == 'emails'
+        && (resource == null || resource.data.ownerId == request.auth.uid);
     }
 
     // An account's share count (2026-11-08, site audit item 57): `shares`, and

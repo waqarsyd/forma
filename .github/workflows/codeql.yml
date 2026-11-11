@@ -23,7 +23,9 @@ permissions:
 jobs:
   analyze:
     name: Analyze (javascript-typescript)
-    runs-on: ubuntu-latest
+    # Pinned as checks.yml pins its image (2026-11-11, the full audit, TC-16):
+    # `ubuntu-latest` moves to Ubuntu 26, and a failure then names no commit.
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       security-events: write

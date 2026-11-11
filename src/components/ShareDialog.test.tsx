@@ -9,9 +9,18 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 
 const sdk = { getDocs: vi.fn(), setDoc: vi.fn(), deleteDoc: vi.fn() };
-// The counted writes since 2026-11-08 (site audit item 57, lib/accountData.ts).
-const paths = { ownedShares: vi.fn(() => 'query'), shareDocRef: vi.fn((_db: unknown, id: string) => `shares/${id}`), writeShare: vi.fn(), deleteShare: vi.fn() };
-vi.mock('../lib/firebaseClient', () => ({ loadFirebase: () => Promise.resolve({ sdk, paths, db: {} }) }));
+// The counted writes since 2026-11-08 (site audit item 57, lib/accountData.ts),
+// and the invitees read from the share's access list since 2026-11-11 (SE-04).
+const paths = {
+  ownedShares: vi.fn(() => 'query'),
+  shareDocRef: vi.fn((_db: unknown, id: string) => `shares/${id}`),
+  writeShare: vi.fn(),
+  deleteShare: vi.fn(),
+  readShareEmails: vi.fn(async (_db: unknown, share: { emails?: unknown }) => (Array.isArray(share.emails) ? share.emails : [])),
+};
+// The verification as the rules see it (2026-11-11, SA-08): false unless a case says otherwise.
+const service = { refreshVerification: vi.fn() };
+vi.mock('../lib/firebaseClient', () => ({ loadFirebase: () => Promise.resolve({ sdk, paths, db: {}, service }) }));
 
 import ShareDialog from './ShareDialog';
 
@@ -22,6 +31,7 @@ beforeEach(() => {
   sdk.deleteDoc.mockReset().mockResolvedValue(undefined);
   paths.writeShare.mockReset().mockResolvedValue(undefined);
   paths.deleteShare.mockReset().mockResolvedValue(undefined);
+  service.refreshVerification.mockReset().mockResolvedValue(false);
 });
 
 const props = (over: Partial<React.ComponentProps<typeof ShareDialog>> = {}) => ({
@@ -101,6 +111,38 @@ describe('ShareDialog', () => {
     await waitFor(() => expect(screen.getByText(/Verify your email address to share a report/)).toBeTruthy());
     expect(screen.queryByLabelText('Add people by email')).toBeNull();
     expect(paths.writeShare).not.toHaveBeenCalled();
+  });
+
+  // The full audit, 2026-11-11 (SA-08): the link clicked in another tab used
+  // to leave this saying "verify" until a reload, and the rules refusing the
+  // share for up to an hour after it.
+  it('opens the share form once the address is verified elsewhere, when the window regains focus', async () => {
+    render(<ShareDialog {...props({ user: { uid: 'alice', email: 'alice@example.com', emailVerified: false } })} />);
+    await waitFor(() => expect(service.refreshVerification).toHaveBeenCalledTimes(1));
+    expect(screen.getByText(/Verify your email address to share a report/)).toBeTruthy();
+    service.refreshVerification.mockResolvedValue(true);
+    fireEvent.focus(window);
+    await waitFor(() => expect(screen.getByLabelText('Add people by email')).toBeTruthy());
+    expect(screen.queryByText(/Verify your email address/)).toBeNull();
+  });
+
+  it("checks again on I've verified it, and says so when it still is not", async () => {
+    render(<ShareDialog {...props({ user: { uid: 'alice', email: 'alice@example.com', emailVerified: false } })} />);
+    await waitFor(() => expect(service.refreshVerification).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: "I've verified it" }));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('not verified yet'));
+    service.refreshVerification.mockResolvedValue(true);
+    fireEvent.click(screen.getByRole('button', { name: "I've verified it" }));
+    await waitFor(() => expect(screen.getByLabelText('Add people by email')).toBeTruthy());
+  });
+
+  it('reads the invitees from the access list, not from the share everyone may read', async () => {
+    const existing = { id: 'Sh4r3dR3p0rtIdOfTwentyTwo', ownerId: 'alice', reportId: 'r1', name: 'Invoice', result: '{}', access: 'restricted', timestamp: 1_790_000_000_000 };
+    sdk.getDocs.mockResolvedValue({ docs: [{ data: () => existing }] });
+    paths.readShareEmails.mockResolvedValueOnce(['carol@example.com']);
+    render(<ShareDialog {...props()} />);
+    await waitFor(() => expect(screen.getByText('carol@example.com')).toBeTruthy());
+    expect(paths.readShareEmails).toHaveBeenCalledWith({}, existing);
   });
 
   it('says when the account has shared as many reports as it may', async () => {

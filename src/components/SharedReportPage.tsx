@@ -10,7 +10,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { loadFirebase } from '../lib/firebaseClient';
 import { APP_CHECK_SITE_KEY } from '../lib/appCheck';
-import { readSharedReport, type SharedReport } from '../lib/shares';
+import { hasReportScripts, readSharedReport, type SharedReport } from '../lib/shares';
 import type { ReportLayout } from '../lib/reportTypes';
 import { IconDownload } from './landing/icons';
 import Logo from './Logo';
@@ -73,6 +73,25 @@ export default function SharedReportPage({ id, user, onSignIn, onHome }: Props) 
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   };
 
+  // A shared report that carries code says so before it is downloaded
+  // (2026-11-11, the full audit, SE-02): anyone with a verified account can
+  // share one, and DevExpress runs that code when the report is previewed in
+  // a designer, Forma Designer included. Forma never writes it; nothing is
+  // stripped here, since the viewer may trust the sender and need the report
+  // as it is. The notice sits above the download, so for such a report the
+  // button moves from the bar to beneath the notice: in the bar it would be
+  // read, and pressed, before the warning.
+  const shown = state.kind === 'shown' ? state : null;
+  const repx = shown?.report.repxContent ?? '';
+  const scripted = !!repx && hasReportScripts(repx);
+  const downloadButton =
+    shown && repx ? (
+      <button type="button" className="wb-pill wb-pill--accent" onClick={() => download(shown.name, repx)}>
+        <IconDownload size={14} />
+        Download .repx
+      </button>
+    ) : null;
+
   return (
     // `sheet` supplies the palette and `wb-root` the type and ground, as on the workspace's shell.
     <div className="sheet wb-root wb-shared">
@@ -80,15 +99,10 @@ export default function SharedReportPage({ id, user, onSignIn, onHome }: Props) 
         <button type="button" className="wb-shared-home" onClick={onHome} aria-label="Forma home">
           <Logo />
         </button>
-        {state.kind === 'shown' && (
+        {shown && (
           <>
-            <h1>{state.name}</h1>
-            {state.report.repxContent && (
-              <button type="button" className="wb-pill wb-pill--accent" onClick={() => download(state.name, state.report.repxContent!)}>
-                <IconDownload size={14} />
-                Download .repx
-              </button>
-            )}
+            <h1>{shown.name}</h1>
+            {!scripted && downloadButton}
           </>
         )}
       </header>
@@ -103,6 +117,12 @@ export default function SharedReportPage({ id, user, onSignIn, onHome }: Props) 
             <button type="button" className="wb-pill wb-pill--accent" onClick={() => setAttempt((n) => n + 1)}>
               Try again
             </button>
+          </div>
+        )}
+        {scripted && (
+          <div className="wb-shared-say">
+            <p role="note">This report contains code that runs when it is previewed. Open it only if you trust whoever shared it.</p>
+            {downloadButton}
           </div>
         )}
         {state.kind === 'shown' && !state.report.repxContent && (

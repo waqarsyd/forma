@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
 import {
   changePassword,
   deleteAccountAndData,
   hasPasswordProvider,
+  refreshVerification,
   requestEmailChange,
   sendVerificationEmail,
   setDisplayName,
@@ -79,6 +80,9 @@ const AUTH_MESSAGES: Record<string, string> = {
   // unreachable — but an unmapped code renders as "That did not work. Please
   // try again.", which is how the empty-name case used to report itself.
   'forma/name-too-short': 'Use at least 2 characters.',
+  // The deletion stops before anything is removed when the learning events
+  // cannot be (2026-11-11, the full audit, LM-02; lib/accountData.ts).
+  'forma/learning-not-deleted': 'Your learning data could not be deleted yet; nothing else was removed. Try again in a moment.',
 };
 
 const messageFor = (error: unknown) => {
@@ -140,6 +144,31 @@ export default function AccountDialog({
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [verificationSent, setVerificationSent] = useState(false);
   const [section, setSection] = useState<AccountSection>('profile');
+
+  /*
+   * Whether the address is verified, checked rather than trusted (2026-11-11,
+   * the full audit, SA-08). `user.emailVerified` does not change when the link
+   * is opened in another tab, so this said "not verified yet" until a reload,
+   * and the token the database reads stayed stale an hour after that.
+   * `refreshVerification` reloads the user and refreshes the token; it runs
+   * once when the dialog opens on an unverified account, and on "I've
+   * verified it". A failure leaves the notice as it was, which is what it
+   * showed before the check existed.
+   */
+  const [verified, setVerified] = useState(user.emailVerified);
+  const recheckVerified = async (): Promise<boolean> => {
+    try {
+      const ok = await refreshVerification(user);
+      if (ok) setVerified(true);
+      return ok;
+    } catch (error) {
+      console.warn('Could not check whether the address is verified:', error);
+      return false;
+    }
+  };
+  useEffect(() => {
+    if (withPassword && !user.emailVerified) void recheckVerified();
+  }, [user]);
 
   const sections: DialogSection<AccountSection>[] = [
     { id: 'profile', label: 'Profile', Icon: IconUser },
@@ -239,6 +268,15 @@ export default function AccountDialog({
       'Verification email sent.',
     );
 
+  /** "I've verified it": the same check, at once, saying what it found. */
+  const confirmVerified = async () => {
+    setBusy('recheck');
+    setFeedback(null);
+    const ok = await recheckVerified();
+    setBusy(null);
+    setFeedback(ok ? { tone: 'ok', text: 'Your address is verified.' } : { tone: 'error', text: 'It is not verified yet. Open the link in the email from Forma, then try again.' });
+  };
+
   /*
    * An empty box is too short too.
    *
@@ -271,7 +309,7 @@ export default function AccountDialog({
 
           {/* Only password accounts can be unverified: Google has already
               proved the address by the time the popup closes. */}
-          {withPassword && !user.emailVerified && (
+          {withPassword && !verified && (
             <div className="wb-set-row is-stack">
               <p className="wb-set-note is-bad">
                 <IconWarn size={13} />
@@ -279,6 +317,9 @@ export default function AccountDialog({
                   <b>This address is not verified yet.</b> Check your inbox for the link we sent when the account was created.{' '}
                   <button type="button" className="wb-set-link" onClick={resend} disabled={busy !== null || verificationSent}>
                     {verificationSent ? 'Sent' : busy === 'verify' ? 'Sending…' : 'Send it again'}
+                  </button>{' '}
+                  <button type="button" className="wb-set-link" onClick={() => void confirmVerified()} disabled={busy !== null}>
+                    {busy === 'recheck' ? 'Checking…' : "I've verified it"}
                   </button>
                 </span>
               </p>

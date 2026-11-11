@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { copyText } from '../lib/clipboard';
 import { loadFirebase } from '../lib/firebaseClient';
-import { isEmail, makeShareId, shareDocument, shareLink, withInvitee, type ShareAccess, type ShareDocument, type SharedReport } from '../lib/shares';
+import { isEmail, makeShareId, shareDocument, shareLink, withInvitee, type LegacyShareFields, type ShareAccess, type ShareDocument, type SharedReport, type StoredShare } from '../lib/shares';
 import { IconClose } from './landing/icons';
 import './overlays.css';
 import { useFocusTrap } from './useFocusTrap';
@@ -42,6 +42,36 @@ export default function ShareDialog({ user, name, report, ensureSaved, onSignIn,
   const [emails, setEmails] = useState<string[]>([]);
   const [typed, setTyped] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
+  // Whether the address is verified, as the rules will see it (2026-11-11,
+  // the full audit, SA-08). App passes the User's flag, which does not change
+  // when the link is clicked in another tab, and the token the rules read
+  // lags an hour behind that; `refreshVerification` brings both up to date.
+  // Checked on open, again whenever the window comes back into focus while
+  // unverified (the person has been to their inbox), and on "I've verified it".
+  const [verified, setVerified] = useState(user?.emailVerified !== false);
+  const [stillUnverified, setStillUnverified] = useState(false);
+  const verifiedRef = useRef(verified);
+  verifiedRef.current = verified;
+  const recheck = async (): Promise<boolean> => {
+    try {
+      const { service } = await loadFirebase();
+      const ok = await service.refreshVerification();
+      if (ok) setVerified(true);
+      return ok;
+    } catch (err) {
+      console.warn('Could not check whether the address is verified:', err);
+      return false;
+    }
+  };
+  useEffect(() => {
+    if (!user) return;
+    void recheck();
+    const onFocus = () => {
+      if (!verifiedRef.current) void recheck();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [user?.uid]);
 
   // A modal's keyboard (2026-11-06, the workspace audit): focus into it, Tab
   // kept inside, Escape (its layer), and focus back to Share. It said
@@ -66,11 +96,15 @@ export default function ShareDialog({ user, name, report, ensureSaved, onSignIn,
         const { sdk, paths, db } = await loadFirebase();
         const found = await sdk.getDocs(paths.ownedShares(db, user.uid, id));
         if (gone) return;
-        const existing = found.docs[0]?.data() as ShareDocument | undefined;
+        const existing = found.docs[0]?.data() as (StoredShare & LegacyShareFields) | undefined;
         if (existing) {
-          setShare(existing);
+          // The invitees from the share's access list, which only its owner
+          // reads (2026-11-11, SE-04), or from a share made before the list.
+          const invited = await paths.readShareEmails(db, existing);
+          if (gone) return;
+          setShare({ ...existing, emails: invited });
           setAccess(existing.access);
-          setEmails(existing.emails);
+          setEmails(invited);
         }
       } catch (err) {
         onFailure(err, 'shares', 'Forma could not check whether this report is shared. Try again in a moment.');
@@ -177,16 +211,30 @@ export default function ShareDialog({ user, name, report, ensureSaved, onSignIn,
             <p>Sign in to share a report. A shared report lives in your account, so only you can change or stop sharing it.</p>
             <button type="button" className="wb-pill wb-pill--accent" onClick={onSignIn}>Sign in</button>
           </div>
-        ) : user.emailVerified === false && !share ? (
+        ) : !verified && !share ? (
           /* A verified address first (2026-11-08, site audit item 57): a share
              puts a report on this site for others to read, so it is not for an
              account nobody has confirmed. A share made before then can still
-             be changed back and stopped below once verified, and stopped now. */
+             be changed back and stopped below once verified, and stopped now.
+             "I've verified it" checks again at once (SA-08); it asks nothing,
+             and the dialog also checks by itself when the window regains focus. */
           <div className="wb-share-body">
             <p>
               Verify your email address to share a report. Forma sent a link when the account was made; Account
               settings, under Profile, sends it again. Then come back and share.
             </p>
+            <button
+              type="button"
+              className="wb-pill wb-pill--outline"
+              onClick={() => void recheck().then((ok) => setStillUnverified(!ok))}
+            >
+              I&apos;ve verified it
+            </button>
+            {stillUnverified && (
+              <p className="wb-share-problem" role="alert">
+                It is not verified yet. Open the link in the email from Forma, then try again.
+              </p>
+            )}
           </div>
         ) : loading ? (
           <div className="wb-share-body"><p>Checking whether it is shared…</p></div>

@@ -1,6 +1,6 @@
 /** A shared report's copy, link and invitees (2026-11-06), as firestore.rules pins them. */
 import { describe, it, expect } from 'vitest';
-import { MAX_INVITED, isEmail, makeShareId, normaliseEmail, readSharedReport, shareDocument, shareLink, withInvitee } from './shares';
+import { MAX_INVITED, hasReportScripts, inviteesOf, isEmail, makeShareId, normaliseEmail, readSharedReport, shareDocument, shareLink, splitShare, withInvitee } from './shares';
 import { sharedReportId } from './routes';
 
 describe('makeShareId', () => {
@@ -49,6 +49,44 @@ describe('shareDocument', () => {
     expect(readSharedReport('{"title":"no repx"}')).toBeNull();
     expect(readSharedReport('not json')).toBeNull();
     expect(readSharedReport(42)).toBeNull();
+  });
+});
+
+// The full audit, 2026-11-11 (SE-04): the document a link share hands anyone
+// carries no invitee; they go to the access list only the owner reads.
+describe('splitShare and inviteesOf', () => {
+  const base = { id: 'Sh4r3dR3p0rtIdOfTwentyTwo', ownerId: 'alice', reportId: 'r1', name: 'Invoice', access: 'link' as const, emails: ['Bob@Example.com'], now: 1_790_000_000_000 };
+
+  it('writes the document in the shape the rules pin, with no address in it', () => {
+    const { stored, acl } = splitShare(shareDocument({ ...base, report: { repxContent: '<x/>' } })!);
+    expect(Object.keys(stored).sort()).toEqual(['access', 'id', 'name', 'ownerId', 'reportId', 'result', 'timestamp']);
+    expect(JSON.stringify(stored)).not.toContain('example.com');
+    expect(acl).toEqual({ ownerId: 'alice', list: ['bob@example.com'] });
+  });
+
+  it('keeps a legacy share\'s own emails out of the document it rewrites', () => {
+    const legacy = { ...shareDocument({ ...base, report: { repxContent: '<x/>' } })!, emails: ['carol@example.com'], extra: 'x' };
+    const { stored, acl } = splitShare(legacy);
+    expect(stored).not.toHaveProperty('emails');
+    expect(stored).not.toHaveProperty('extra');
+    expect(acl.list).toEqual(['carol@example.com']);
+  });
+
+  it('reads the invitees from the list, or from a share made before it, or none', () => {
+    expect(inviteesOf({ ownerId: 'alice', list: ['a@x.io'] }, { emails: ['old@x.io'] })).toEqual(['a@x.io']);
+    expect(inviteesOf(null, { emails: ['old@x.io', 7] })).toEqual(['old@x.io']);
+    expect(inviteesOf(null, {})).toEqual([]);
+    expect(inviteesOf(undefined)).toEqual([]);
+  });
+});
+
+// The full audit, 2026-11-11 (SE-02): code DevExpress runs when a report is previewed.
+describe('hasReportScripts', () => {
+  it('finds a script source and an event handler, and nothing in a plain report', () => {
+    expect(hasReportScripts('<XtraReportsLayoutSerializer ScriptsSource="void x() {}" Ref="1">')).toBe(true);
+    expect(hasReportScripts('<Item1 ControlType="XRLabel" Ref="2"><Scripts OnBeforePrint="label1_BeforePrint" /></Item1>')).toBe(true);
+    expect(hasReportScripts('<XtraReportsLayoutSerializer Ref="1"><Item1 ControlType="XRLabel" Text="Scripts" /></XtraReportsLayoutSerializer>')).toBe(false);
+    expect(hasReportScripts('<XtraReportsLayoutSerializer ScriptsSource="" Ref="1">')).toBe(false);
   });
 });
 

@@ -404,6 +404,82 @@ describe('auditRepx on parameters', () => {
   });
 });
 
+/*
+ * The full audit, 2026-11-11: code in a report (SE-02), and expressions that
+ * cannot be read or name a field the data lacks (CP-07). Each prints blank or
+ * runs something nobody asked for, and none of it stops the file loading.
+ */
+describe('auditRepx on scripts and expressions', () => {
+  /** The healthy report with one binding on its first cell. */
+  const bound = (expression: string) =>
+    healthy.replace(
+      '<Item1 Ref="5" ControlType="XRTableCell" Name="c1" Text="A" Weight="1" />',
+      `<Item1 Ref="5" ControlType="XRTableCell" Name="c1" Text="A" Weight="1"><ExpressionBindings><Item1 Ref="20" EventName="BeforePrint" PropertyName="Text" Expression="${expression}" /></ExpressionBindings></Item1>`,
+    );
+
+  it('names a report that carries code, as an error', () => {
+    const scripted = healthy.replace('Name="Report1"', 'Name="Report1" ScriptsSource="private void Detail_BeforePrint(object sender) { }"');
+    const finding = auditRepx(scripted).findings.find((f) => f.code === 'report-has-scripts');
+    expect(finding?.severity).toBe('error');
+    expect(finding?.message).toMatch(/contains code that runs when it is previewed/);
+    const handler = healthy.replace('Name="c2" Text="B" Weight="1" />', 'Name="c2" Text="B" Weight="1"><Scripts OnBeforePrint="c2_BeforePrint" /></Item2>');
+    expect(codes(handler)).toContain('report-has-scripts');
+    expect(codes(healthy)).not.toContain('report-has-scripts');
+  });
+
+  it('reports an expression that cannot be read, as an error', () => {
+    const audit = auditRepx(bound('[Qty] * [Price'));
+    const finding = audit.findings.find((f) => f.code === 'expression-invalid');
+    expect(finding?.severity).toBe('error');
+    expect(finding?.message).toContain('"[Qty] * [Price"');
+    expect(codes(bound("Iif([Qty] &gt; 1, 'many', 'one'"))).toContain('expression-invalid');
+    expect(codes(healthy.replace('Name="Report1"', 'Name="Report1" FilterString="[Region] = = ?Region"'))).toContain('expression-invalid');
+    // A field opened inside a field: the parser reads `Qty * [Price` as one
+    // field name and does not object, so the audit looks for it itself.
+    expect(auditRepx(bound('[Qty * [Price]')).findings.find((f) => f.code === 'expression-invalid')?.message).toContain('"[Qty * [Price]"');
+  });
+
+  it('adds nothing for a valid report, whatever its expressions say', () => {
+    for (const expression of [
+      '[Qty] * [Price]',
+      "Iif([Qty] &gt; 10, 'Bulk', 'Single')",
+      "FormatString('{0:c2}', [Amount])",
+      '[Parameters.Region]',
+      'sumSum([Amount])',
+      'SomeFunctionFormaDoesNotKnow([Amount], 2)',
+      '[Date] &gt;= #2026-01-01# And Not IsNullOrEmpty([Name])',
+      // Collection syntax the parser does not read: left alone, not called broken.
+      '[Orders][[Qty] &gt; 1].Sum([Qty])',
+      '[^.CustomerId]',
+      // DevExpress's bitwise operators and char literal, which the parser
+      // lacks: valid, so no error and no paid retry. A bracket, `&` or quote
+      // inside a string or a field name is not syntax at all.
+      '[Flags] &amp; 4',
+      '[Flags] | 2',
+      '~[Flags]',
+      "[Initial] = 'A'c",
+      "[Name] = 'Smith &amp; Sons [UK]'",
+      '[R&amp;D Cost] * 2',
+    ]) {
+      // An undeclared parameter is another check's finding; these two are this one's.
+      expect(codes(bound(expression)).filter((c) => c.startsWith('expression-')), expression).toEqual([]);
+    }
+    expect(codes(bound('[Qty] * [Price]'))).toEqual([]);
+  });
+
+  it('warns of a misspelt field when the data\'s fields are known, and only then', () => {
+    const misspelt = bound('[Qty] * [Prise]');
+    expect(codes(misspelt)).toEqual([]);
+    const finding = auditRepx(misspelt, null, { fields: ['Qty', 'Price'] }).findings.find((f) => f.code === 'expression-field-unknown');
+    expect(finding?.severity).toBe('warning');
+    expect(finding?.message).toContain('[Prise]');
+    expect(finding?.message).not.toContain('[Qty]');
+    // Parameters, the data source's own fields and qualified names are not misspellings.
+    const others = auditRepx(bound('[Orders.Qty] + [DataSource.RowCount] + [Parameters.Rate]'), null, { fields: ['Qty'] });
+    expect(others.findings.map((f) => f.code)).not.toContain('expression-field-unknown');
+  });
+});
+
 describe('auditRepx cross-checked against the layout', () => {
   it('says nothing extra when the report and the mockup agree', () => {
     // One section, one content band (Detail), and a table in both.

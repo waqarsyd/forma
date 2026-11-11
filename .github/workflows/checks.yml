@@ -44,6 +44,18 @@
 # so pinning that label keeps CI on the image it is known to pass on. Moving to a newer image is still worth doing,
 # but as a commit that changes this line, so a failure points at a cause.
 
+#
+# ON PERMISSIONS, CONCURRENCY AND TIME (2026-11-11, the full audit, SE-19/TC-16)
+#
+# The token is read-only, as codeql.yml and live.yml already had it: nothing
+# here writes to the repository, and `npm ci` runs dependency install scripts
+# while the token is in reach. For the same reason checkout does not leave its
+# credentials in .git/config. On a pull request a newer push cancels the run it
+# supersedes; on a branch push it does not, because each commit pushed to main
+# in a burst should end green or red, never "cancelled", for the read of the
+# runs after a push to mean anything. Each job stops at 20 minutes rather than
+# GitHub's six hours (a green run takes about two, the rules job about three).
+
 name: checks
 
 on:
@@ -52,12 +64,24 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  # Per run on a push (a unique group, so nothing queues behind it), per ref on
+  # a pull request, where the newer push cancels the older.
+  group: checks-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   checks:
     name: lint, types, encoding, tests, build
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       # Node 20, 22 and >=24 only: vitest declares ^20 || ^22 || >=24, so the
       # odd lines 21 and 23 are outside the supported range despite being newer
@@ -93,6 +117,16 @@ jobs:
       - name: Doc pointers
         run: npm run lint:links
 
+      # Two scripts no tsc file list reads: the opt-in pre-commit hook and the
+      # run-forma skill's browser driver. A syntax error in either would surface
+      # only when someone next commits or drives the app (2026-11-11, TC-16).
+      # One file per `node --check`: it checks its first argument and hands the
+      # rest to the script as arguments, so a second file would pass unread.
+      - name: Script syntax
+        run: |
+          node --check .githooks/pre-commit.mjs
+          node --check .claude/skills/run-forma/drive.mjs
+
       # --coverage rather than plain `npm test`: same suite, same pass/fail, and
       # the summary lands in the log so a drop is visible in the diff of a run
       # rather than only when someone thinks to look.
@@ -115,8 +149,11 @@ jobs:
   rules:
     name: firestore rules
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:

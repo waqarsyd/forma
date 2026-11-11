@@ -88,10 +88,15 @@ export interface EmbedOptions {
 export async function resolveEmbeddingModel(apiKey: string, signal?: AbortSignal): Promise<string> {
   let entries: CatalogEntry[] | undefined;
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
-      { signal },
-    );
+    // The key in the x-goog-api-key header, as geminiService's catalogue read
+    // sends it (2026-11-11, the full audit, SE-11): it was in the query
+    // string, which puts it in the console's network log, in screenshots of
+    // that log and in any proxy's access log. pageSize as that read asks too,
+    // so an embedding model past the first page of 50 is still found.
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', {
+      headers: { 'x-goog-api-key': apiKey },
+      signal,
+    });
     if (!response.ok) throw new Error(`The model catalogue could not be read (HTTP ${response.status}).`);
     const body = (await response.json()) as { models?: CatalogEntry[] };
     entries = body.models;
