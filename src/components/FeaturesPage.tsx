@@ -74,7 +74,7 @@ const FORMATS = [
     Icon: IconGrid,
     kind: 'SQL Server',
     title: 'Your SQL Server database',
-    body: 'Its layout, from a read-only script you run in SSMS, and a few sample rows if you like; on your own PC its companion reads them straight from the database. Forma in the browser never connects to your server: the report reads your database by connection name, as your application’s config knows it, never with a password.',
+    body: 'Its layout, from a read-only script you run in SSMS, and a few sample rows if you like; with Forma on your own PC and Forma Designer installed, it reads them straight from the database. Forma in the browser never connects to your server: the report reads your database by connection name, as your application’s config knows it, never with a password.',
   },
 ];
 
@@ -272,12 +272,12 @@ const CONTROLS = [
   {
     Icon: IconRedo,
     title: 'Edits in place, not a regenerate',
-    body: 'With a report open, the chat reads its outline and answers a question, edits the file in place (a move, a font, a colour, a border, a number format, a binding, a page number, a table’s row or column), or asks before a redesign for what an edit cannot reach. Each reply lists what changed, with Undo and Redo.',
+    body: 'With a report open, the chat reads its outline and answers a question, edits the file in place (a move, a font, a colour, a border, a number format, a binding, a page number, a table’s row or column), or redesigns it when an edit cannot reach. Each reply lists what changed, with Undo and Redo.',
   },
   {
     Icon: IconShieldCheck,
     title: 'It recovers on its own',
-    body: 'Google retires models and runs out of capacity. If the model you were using disappears, Forma re-detects and retries once. If Google is briefly overloaded, it waits and tries the same model again. You see a result, not an error to interpret.',
+    body: 'Google retires models and runs out of capacity. A retired model is found and replaced by itself; an overloaded one is tried again, then another model your key can reach. When Gemini’s free allowance is used up, the next AI you set up answers (OpenRouter, then a local AI), and when none can, Forma’s own quicker version of the page is your report, ready to send again later.',
   },
   {
     Icon: IconLayout,
@@ -779,7 +779,7 @@ export default function FeaturesPage({
             <SectionHead
               eyebrow="Control"
               title="The run stays out of your way."
-              lede="A generation takes real time. The chat shows that Forma is working and how to stop it, and keeps every step behind the scenes."
+              lede="A generation takes real time. The chat shows that Forma is working and how to stop it, and nothing more."
             />
             <RevealGroup className="grid gap-px overflow-hidden rounded-xl border border-outline-variant bg-outline-variant sm:grid-cols-2" stagger={0.09}>
               {CONTROLS.map((c) => (
@@ -832,7 +832,7 @@ export default function FeaturesPage({
                 },
                 {
                   k: 'Stop and retry mean what they say',
-                  d: 'Stop cancels what has not started and leaves the request in flight alone, since it is billed either way. Retry requeues only what failed. A quota or key failure halts the run rather than producing forty identical errors.',
+                  d: 'Stop cancels what has not started and leaves the request in flight alone, since it counts against your key’s allowance either way. Retry requeues only what failed. A limit or a key failure halts the run rather than producing forty identical errors; a limit pauses the batch, kept in this browser, and Retry carries on from where it stopped.',
                 },
                 {
                   k: 'Out in one archive',
@@ -983,7 +983,7 @@ export default function FeaturesPage({
             <SectionHead
               eyebrow="Custody"
               title="Your key, and your saved work."
-              lede="Forma ships with no API key and cannot be given one. Yours is a working copy in this tab, and leaves it only encrypted, if you ask it to."
+              lede="Forma ships with no API key and cannot be given one. Forma keeps yours in your open Forma tabs, gone when the last one closes, unless you ask it to save an encrypted copy."
             />
 
             <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-[60px] [&>*]:min-w-0 lg:grid-cols-[minmax(0,532px)_minmax(0,1fr)]">
@@ -1112,7 +1112,7 @@ export default function FeaturesPage({
                 {
                   k: 'Your queue',
                   v: 'yours alone',
-                  d: 'No shared quota means nobody else’s traffic slows you down, and nothing runs out halfway through a busy afternoon.',
+                  d: 'No shared quota: nobody else’s traffic uses your allowance. Google’s free tier has a daily limit per model; when one runs out, Forma moves to another, then to the next AI you set up.',
                 },
               ].map((c) => (
                 <RevealItem

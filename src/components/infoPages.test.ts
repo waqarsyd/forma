@@ -41,6 +41,23 @@ describe('the pages SJ added', () => {
   });
 
   /*
+   * Self-hosting builds what the site serves (2026-11-11, full audit PS-14):
+   * without fetch:paddle a build reads pictures with Tesseract alone, and
+   * without its own App Check key a fork loads this site's, which reCAPTCHA
+   * refuses on any other domain. Both commands are package.json's.
+   */
+  it('has a self-hoster fetch the picture reader and set their own App Check key', () => {
+    const src = readFileSync('src/components/infoPages.tsx', 'utf8');
+    const page = src.slice(src.indexOf('export const SELF_HOST'), src.indexOf('export const DOWNLOAD'));
+    const scripts = (JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Record<string, string> }).scripts;
+    expect(scripts['fetch:paddle']).toBeTruthy();
+    expect(page.match(/npm run fetch:paddle/g)).toHaveLength(2);
+    expect(page.indexOf('npm run fetch:paddle\nnpm run build')).toBeGreaterThan(0);
+    expect(page).toContain('APP_CHECK_SITE_KEY');
+    expect(readFileSync('src/lib/appCheck.ts', 'utf8')).toMatch(/export const APP_CHECK_SITE_KEY = /);
+  });
+
+  /*
    * security.txt (item 110). RFC 9116 makes Contact and Expires required, and
    * an expired file is one a scanner ignores. This fails once the date has
    * passed, on purpose: that is the only way anyone hears it is due. Renew by

@@ -190,7 +190,7 @@ const RULES = [
  */
 const XML = `<?xml version="1.0"?>
 <XtraReportsLayoutSerializer
-  SerializerVersion="24.1.3"
+  SerializerVersion="23.2.3.0"
   PageWidth="${PAGE.w}" PageHeight="${PAGE.h}">
  <Bands>
   <Item1 ControlType="DetailBand"
@@ -449,7 +449,7 @@ export default function HeroScanner() {
         {/* the XML coming out */}
         <div className="flex flex-col gap-2.5 bg-[color:var(--code-bg)] px-[15px] pt-[15px] pb-4 min-w-0">
           <div className="flex items-center gap-2 border-b border-[color:var(--code-rule)] pb-[9px] font-code-sm text-[9.5px] leading-[1.62] font-medium tracking-[0.13em] uppercase text-[#6b87a6]">
-            repxContent
+            .repx
             <span
               className={`ml-auto inline-flex items-center gap-[5px] text-[#34d399] u-transition ${done ? 'opacity-100' : 'opacity-0'}`}
             >

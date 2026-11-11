@@ -36,7 +36,15 @@ const visible = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^
 // With the FAQ and the pages SJ added (2026-11-08), which make claims too.
 const faqs = readFileSync('src/components/faqs.tsx', 'utf8');
 const info = readFileSync('src/components/infoPages.tsx', 'utf8');
-const all = [landing, features, docs, figures, faqs, info].map(visible).join('\n');
+// And the hero's drawn file, whose pane label was a variable name (2026-11-11, full audit PS-22).
+const hero = readFileSync('src/components/landing/HeroScanner.tsx', 'utf8');
+const all = [landing, features, docs, figures, faqs, info, hero].map(visible).join('\n');
+/** One Docs article's source, from its opening tag to its close. */
+const article = (id: string) => {
+  const start = docs.indexOf(`<Article id="${id}"`);
+  expect(start, id).toBeGreaterThan(0);
+  return visible(docs.slice(start, docs.indexOf('</Article>', start)));
+};
 
 describe('the public pages do not claim what Forma no longer does', () => {
   it.each([
@@ -61,8 +69,25 @@ describe('the public pages do not claim what Forma no longer does', () => {
     ['a project saved only when you choose to', /Projects you choose to save|Save the session to your account|sign in and save a project/],
     // The SQL Server programme (2026-11-09): Forma reads a layout you export; it never connects.
     ['a connection to your database', /Forma (connects|logs in) to your (SQL Server|database|server)|live connection to your/i],
+    /*
+     * The full audit (2026-11-11, batch PSA). The chat carries a request out
+     * at once (the owner's rule of 2026-11-10), and it answers "how does Forma
+     * work" from the Docs page, so a page that promised a button or a question
+     * first was a promise the chat then repeated.
+     */
+    ['a button to proceed, or a question before a redesign', /offers a button|asks? before (a )?redesign|asks before redesigning/i],
+    ['a questionnaire before a described report', /a question or two first/i],
+    ['the reply narrating every step', /every step behind the scenes/i],
+    ['recovery as it was before the free chain', /re-detects and retries once\. If Google|nothing runs out halfway/i],
+    ['a chat that changes the DevExpress version', /ask in the chat for another/i],
+    ['a command line or a companion where Forma Designer is installed', /--serve|\bcompanion\b/i],
+    ['one host alone asking to reach the PC', /(on|whether) (openforma|forma-201ba)\.web\.app/i],
+    ['the key kept in one tab', /\bin this tab\b/i],
+    ['a bill for a free-tier request', /\bbilled\b/i],
+    ['the code’s own names as copy', /analyzeReportDesign|repxContent|temperature['",\s]+0/],
   ])('no longer claims %s', (_what, pattern) => {
-    expect(all).not.toMatch(pattern);
+    // On one line, so a sentence the source wraps between two words is still found (2026-11-11).
+    expect(all.replace(/\s+/g, ' ')).not.toMatch(pattern);
   });
 });
 
@@ -158,6 +183,44 @@ describe('what the pages state, the code answers', () => {
     expect(download).toContain('commercial product of Developer Express Inc');
     expect(download).not.toMatch(/<form|<input|mailto:|utm_/i);
     expect([...download.matchAll(/devexpress\.com[^'"`\s]*/gi)].map((m) => m[0])).toEqual([]);
+  });
+
+  /*
+   * The full audit (2026-11-11, batch PSA): what sharing needs, what happens
+   * at a limit, and the file the hero draws, each as the code has it.
+   */
+  it('says sharing needs a verified address and a project of your own, and the limit the rules hold', () => {
+    const share = article('share');
+    expect(share).toMatch(/verified\s+address/);
+    expect(share).toMatch(/project\s+of\s+your\s+own/);
+    expect(share).toContain('{MAX_SHARES}');
+    expect(share).toContain('{MAX_INVITED}');
+    expect(docs).toContain("import { MAX_INVITED, MAX_SHARES } from '../lib/shares'");
+    expect(visible(docs)).not.toMatch(/one\s+thing\s+a\s+verified\s+address\s+unlocks/i);
+  });
+
+  it('describes the free chain and the page reader, and quotes the reply a stand-in report gets', () => {
+    const ai = article('ai');
+    expect(ai).toContain('<Def t="When the AI you chose reaches its limit">');
+    expect(ai).toContain('<Def t="Page reader">');
+    expect(article('trouble')).toContain(`<Def t={'"So here is a quicker version of the page"'}>`);
+    expect(article('trouble')).toContain('<Def t="A model was retired">');
+  });
+
+  it('lists every article in the footer, from the list the sidebar draws', () => {
+    expect(docs).toMatch(/onThisPage=\{SECTIONS\.map\(/);
+  });
+
+  it('names data files among the uploads', () => {
+    expect(article('upload')).toContain('<Def t="Data files">');
+  });
+
+  it('draws the hero’s file at the version Forma writes by default, its title where the table says', () => {
+    const version = (src: string) => /SerializerVersion=(?:<\/P><P c=\{T\.s\}>)?"([\d.]+)"/.exec(src)?.[1];
+    expect(version(hero)).toBe('23.2.3.0');
+    expect(version(docs)).toBe(version(hero));
+    const title = /const TITLE = \{ x: (\d+), y: (\d+)/.exec(hero)!;
+    expect(landing).toContain(`{ label: 'INVOICE', guess: '~208, ~44', exact: '${title[1]}, ${title[2]}' }`);
   });
 
   it('counts the examples it offers', () => {

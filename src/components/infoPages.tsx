@@ -76,7 +76,7 @@ export const SECURITY: InfoDoc = {
           <p className={P}>
             Every page carries a Content Security Policy whose <code className="doc-code">connect-src</code> lists the
             only places it may talk to: Google’s Gemini, sign-in and database, the contact form’s relay, OpenRouter, a
-            local AI on your own computer and the designer companion on it. So even a script that got into the page could
+            local AI on your own computer and Forma Designer on it. So even a script that got into the page could
             not send your key anywhere else. Scripts load only from this site and Google’s sign-in helper; nothing can
             frame the page; and the browser is told to keep it isolated from other sites’ windows.
           </p>
@@ -167,7 +167,7 @@ export const PRICING: InfoDoc = {
       body: (
         <p className={P}>
           Forma does its work in your browser and with your own key, so the site has almost nothing to pay for: the
-          pages are static, the database holds only what signed-in people save, and the AI is billed, if at all, to
+          pages are static, the database holds only what signed-in people save, and the AI is paid for, if at all, by
           whoever owns the key. Even the OCR and Forma’s own models run on your machine.
         </p>
       ),
@@ -177,6 +177,8 @@ export const PRICING: InfoDoc = {
       body: (
         <ul className={UL}>
           <li>The AI writes the .repx alone, and Forma reads the mockup and the spec off it, which cut what each report asks the AI to write by about three quarters.</li>
+          <li>Forma drafts the report from what it read and the AI corrects the draft, so most of each answer is not written from nothing.</li>
+          <li>When Gemini’s allowance runs out, the next AI you set up answers.</li>
           <li>A rate-limited model is set aside until Google says its limit lifts, and the next request starts on another model your key can reach.</li>
           <li>Batch runs one file at a time by default, so a folder of reports does not spend a minute’s quota in a second.</li>
         </ul>
@@ -417,7 +419,12 @@ export const SELF_HOST: InfoDoc = {
           <pre className={CODE}>{`git clone ${REPO}.git
 cd forma
 npm ci
+npm run fetch:paddle
 npm run dev`}</pre>
+          <p className={P}>
+            <code className="doc-code">fetch:paddle</code> downloads the picture reader&apos;s models (12.7 MB); without
+            it Forma reads pictures with Tesseract alone.
+          </p>
           <p className={P}>
             Open <code className="doc-code">http://localhost:3000</code> and add your Gemini key in Settings. Signed
             out, projects are kept in your browser, and everything works. Open in designer works here as it does on the website, with Forma Designer installed, and from here Forma Designer can also read your SQL Server.
@@ -436,9 +443,18 @@ npm run dev`}</pre>
             <li>Create a Firestore database in production mode.</li>
             <li>Put your web app’s config into <code className="doc-code">firebase-applet-config.json</code>, and set your project in <code className="doc-code">.firebaserc</code>.</li>
             <li>Restrict the browser API key to your sites by HTTP referrer, including your <code className="doc-code">authDomain</code>.</li>
+            {/* Before the build, since the key is built into the page and its CSP
+                (2026-11-11, full audit PS-14): left as it was, a fork loads this
+                site's key, which reCAPTCHA refuses on any other domain. */}
+            <li>
+              App Check: put your own reCAPTCHA Enterprise key in <code className="doc-code">APP_CHECK_SITE_KEY</code>{' '}
+              in <code className="doc-code">src/lib/appCheck.ts</code>, or set it to <code className="doc-code">''</code>{' '}
+              to run without App Check.
+            </li>
             <li>Deploy the rules and the site with Firebase Hosting.</li>
           </ol>
           <pre className={CODE}>{`npx firebase deploy --only firestore:rules
+npm run fetch:paddle
 npm run build
 npx firebase deploy --only hosting`}</pre>
           <p className={P}>
@@ -571,7 +587,7 @@ export const DOWNLOAD: InfoDoc = {
           </li>
           <li>
             In Forma, choose <strong className={STRONG}>Open in designer</strong>. The first time, your browser asks
-            whether openforma.web.app may reach apps on your device: allow it, and the report opens in the designer.
+            whether this site may reach apps on your device: allow it, and the report opens in the designer.
           </li>
         </ol>
       ),

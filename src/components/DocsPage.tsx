@@ -8,6 +8,7 @@ import { articleMatches, docsIssueUrl, DOCS_SECTIONS as SECTIONS } from '../lib/
 import { shortcutGroups } from '../lib/shortcuts';
 import { FAQS } from './faqs';
 import { DESIGNER_REQUIREMENTS, DEVEXPRESS_TRIAL_URL } from '../lib/designerRelease';
+import { MAX_INVITED, MAX_SHARES } from '../lib/shares';
 import {
   IconSearch, IconChevronDown, IconThumbUp, IconThumbDown, IconCheck, IconArrowRight,
 } from './landing/icons';
@@ -396,8 +397,8 @@ export default function DocsPage({
               </div>
               <Note label="Good to know">
                 Words alone can build a report: describe what it should show ("a sales report by region, with
-                a total per region") and Forma designs it, asking a question or two first when something is
-                open, each with a suggestion you can keep. A question is answered as a conversation, and with a
+                a total per region") and Forma designs it straight away. Only when there is too little to start
+                from does it ask one short question first. A question is answered as a conversation, and with a
                 report open the chat changes that report rather than starting another.
               </Note>
             </Article>
@@ -504,6 +505,21 @@ export default function DocsPage({
                 <Def t="A vision model">
                   Optional, on Ollama or LM Studio: Forma's own vision model reads a picture's layout and OCR places
                   its words in it. The AI designs from that draft, and if it cannot answer, the draft is your report.
+                </Def>
+                {/* The free chain and the page reader shipped in 1.4.0 and had no
+                    words here (2026-11-11, full audit PS-12). */}
+                <Def t="When the AI you chose reaches its limit">
+                  Gemini first moves to another model your key can reach. When its free allowance is used up,
+                  the next AI you have set up answers on its own, OpenRouter and then a local AI. A request you
+                  sent to a local AI is never sent on to another, since you chose that nothing leaves your
+                  computer. When none can answer, Forma&apos;s own quicker version of the page is your report,
+                  and you can send the request again later.
+                </Def>
+                <Def t="Page reader">
+                  Optional, on Ollama or LM Studio: a model that reads a picture&apos;s text, such as glm-ocr. Its
+                  reading goes to the AI beside the text OCR read, so a word the two read differently is checked
+                  against the picture. With Local AI chosen, Settings → AI suggests one sized for this
+                  computer&apos;s memory.
                 </Def>
               </dl>
               <Note label="A local AI needs room">
@@ -613,10 +629,9 @@ export default function DocsPage({
 
               <Note label="Verifying your email">
                 Accounts created with an email and password get a verification link when they are made, and the
-                workspace shows a reminder until it is used. Your own work is never withheld in the meantime. The
-                one thing a verified address unlocks is a report someone shared with you as Restricted: it opens
-                only for the people added, signed in with that address verified, so nobody can read it by signing
-                up under someone else's address.
+                workspace reminds you until it is used. Your own work is never held back. A verified address is
+                needed to share a report, and to open one shared with you as Restricted, so nobody can share or
+                read under someone else's address.
               </Note>
             </Article>
 
@@ -639,6 +654,10 @@ export default function DocsPage({
                 <Def t=".repx">
                   Read as text and validated as XML in your browser before a request is spent, then sent as
                   exact markup so a refinement edits what is really there.
+                </Def>
+                <Def t="Data files">
+                  CSV, TSV, JSON, text, SQL, Excel or Word, read for their columns; and your{' '}
+                  <a href="#sql" className={LINK}>SQL Server layout script</a>.
                 </Def>
                 <Def t="Per request">
                   Up to <strong className="font-semibold text-on-surface">12 attachments</strong>, each up to{' '}
@@ -745,15 +764,14 @@ y_top = pageHeight − (baseline + height)`}
                 Asking for changes
               </h3>
               <p className={`mt-2 ${PROSE}`}>
-                Say what is wrong rather than describing the whole report again. With a report open, the chat reads
-                its outline and does one of three things: answers a question about it; edits the file in place (a
-                move, a font, a colour, a border, a number format, a binding, a page number, a table's row or
-                column, a duplicate, a band's height); or, for what an edit cannot reach, asks before redesigning
-                it. Each reply lists what changed, with Undo and Redo, and "undo that" in the chat takes the last
-                change back. Ask for the report in another language ("translate it into German") and Forma offers
-                a button that translates every typed caption and title in one request, the layout as it was, as a
-                revision beside the original. A question about the data (which row is highest, what the amounts
-                add up to) is held the first time while Forma asks whether the rows the Preview prints may go to the
+                Say what is wrong rather than describing the whole report again. With a report open, the chat
+                answers a question about it, or makes the change: an edit in place (a move, a font, a colour, a
+                border, a number format, a binding, a page number, a table's row or column, a duplicate, a band's
+                height), or, where an edit cannot reach, a redesign that starts straight away. Each reply lists
+                what changed, with Undo and Redo, and "undo that" takes the last change back. Ask for the report
+                in another language ("translate it into German") and it is translated: every typed caption and
+                title, the layout as it was, kept as a revision beside the original. A question about the data
+                (which row is highest, what the amounts add up to) is held the first time while Forma asks whether the rows the Preview prints may go to the
                 AI; nothing of them goes until you say so, and the reply says when they went. Right-click a control on
                 the Preview and choose Describe for the AI to say in a sentence what it is for; the AI reads it with
                 the report, so "make the tax line bold" finds the control you described as the tax line.
@@ -957,16 +975,17 @@ report.ExportToPdf("report.pdf");`}
                 and binds to your real columns; Forma checks every name it uses and writes the data source itself.
               </Note>
               <Note label="On your own PC, straight from the database">
-                Run Forma on your own computer with its companion,{' '}
-                <code className="doc-code">RepxDesigner.exe --serve</code>, and add your connection from the
-                companion’s tray menu, <em className="not-italic text-on-surface">SQL Server connections</em>: a
-                login’s password is typed there, encrypted for your Windows user, and never reaches the browser.{' '}
+                With Forma running on your own computer and{' '}
+                <a href="#designer" className={LINK}>Forma Designer</a> installed (
+                <a href="/download" className={LINK}>download</a>), add your connection from Forma Designer’s tray
+                menu, <em className="not-italic text-on-surface">SQL Server connections</em>: a login’s password
+                is typed there, encrypted for your Windows user, and never reaches the browser.{' '}
                 <strong className="font-semibold text-on-surface">Read from my SQL Server</strong> on the Data view
                 then reads the layout and sample rows with no script to copy,{' '}
                 <strong className="font-semibold text-on-surface">Live rows</strong> on the Preview prints the report
                 from your database with the values you type, a stored procedure only when you press the button that
-                names it, and the designer opens with the connection set, saving still only its name. The site on
-                the web never reaches your PC, so there it is the scripts.
+                names it, and the designer opens with the connection set, saving still only its name. On the
+                website, Forma Designer opens reports but does not read your database, so there it is the scripts.
               </Note>
               <Note label="A report that already has one">
                 Its data source shows on the Data view, a redesign keeps it, and with a newer export it is checked
@@ -1125,10 +1144,10 @@ report.ExportToPdf("report.pdf");`}
 
               <h3 className={H3}>What happens when you choose it</h3>
               <p className={`mt-2 ${PROSE}`}>
-                Forma asks Forma Designer on your PC whether it is there, and only then. On openforma.web.app your
-                browser asks the first time whether the site may reach apps on your device: allow it. If Forma Designer
-                is installed but not running, Forma asks Windows to start it, and your browser asks to open
-                RepxDesigner. Then the report opens in the designer.
+                Forma asks Forma Designer on your PC whether it is there, and only then. On the website your
+                browser asks the first time whether this site may reach apps on your device: allow it. If Forma
+                Designer is installed but not running, Forma asks Windows to start it; if your browser asks to open
+                Forma Designer, choose Open. Then the report opens in the designer.
               </p>
 
               <h3 className={H3}>If something is missing</h3>
@@ -1231,14 +1250,15 @@ report.ExportToPdf("report.pdf");`}
 
             <Article id="share" kicker="Guide" title="Sharing a report" hidden={!matches('share')}>
               <p className={PROSE}>
-                Share a report as you would a document: sign in, open it and choose{' '}
-                <strong className="font-semibold text-on-surface">Share</strong> above the report. What you share
-                is a copy of the report; the conversation is never part of it.
+                Share a report as you would a document: sign in with a verified address, open a project of your
+                own and choose <strong className="font-semibold text-on-surface">Share</strong> above the report.
+                An account can share up to {MAX_SHARES} reports at once. What you share is a copy of the report;
+                the conversation is never part of it.
               </p>
               <dl className="mt-4 border-t border-outline-variant">
                 <Def t="Restricted">
-                  Only the people you add by email address, up to fifty, can open it, signed in with that address
-                  verified.
+                  Only the people you add by email address, up to {MAX_INVITED}, can open it, signed in with that
+                  address verified.
                 </Def>
                 <Def t="Anyone with the link">Opens for anyone who has the link, without signing in.</Def>
                 <Def t="Sending it">
@@ -1318,9 +1338,10 @@ report.ExportToPdf("report.pdf");`}
                 </Def>
                 <Def t="Stop and retry">
                   Stop cancels what has not started and leaves the request already in flight alone, since it
-                  is billed to your key either way. Retry requeues the failed and cancelled files and keeps
-                  what succeeded. A quota, key or permission failure stops the whole run rather than
-                  producing forty identical errors.
+                  counts against your key&apos;s allowance either way. Retry requeues the failed and cancelled
+                  files and keeps what succeeded. A limit, or a key or permission failure, stops the whole run
+                  rather than producing forty identical errors; a limit pauses the batch, kept in this browser,
+                  and Retry carries on from where it stopped.
                 </Def>
                 <Def t="Taking them away">
                   A finished row opens in the workspace or downloads on its own, and Download as .zip takes
@@ -1405,7 +1426,7 @@ report.ExportToPdf("report.pdf");`}
                   work kept in this browser — and{' '}
                   <a href="#account" className={LINK}>Your account</a> has the rest.
                 </Def>
-                <Def t={'"No longer available"'}>
+                <Def t="A model was retired">
                   A model your key could once reach has been retired. Forma clears its cached choice,
                   re-detects and retries once, by itself. If it persists, the key has access to no supported
                   model.
@@ -1436,11 +1457,13 @@ report.ExportToPdf("report.pdf");`}
                   pause, then moves to another model your key can reach. Editing the prompt does not help;
                   waiting does.
                 </Def>
-                <Def t={'"Forma built this draft without it"'}>
-                  The AI could not answer, and the reply says why: offline, out of quota, overloaded, not
-                  reachable, or a context window too small. A draft Forma built itself, from the text OCR read
-                  and its own models, stands in so you are not left with nothing; send the request again when the
-                  AI is back to have it designed in full.
+                {/* Quotes the reply as it reads since the full audit (2026-11-11,
+                    PS-12): a heading nobody saw on screen is one nobody finds. */}
+                <Def t={'"So here is a quicker version of the page"'}>
+                  The AI could not answer, and the reply says why: you are offline, its free limit is used up for
+                  now, it is busy, or it could not be reached. A quicker version Forma made from what it read on
+                  the page stands in, so you are not left with nothing; check its figures and fonts, and send the
+                  request again later to have it designed in full.
                 </Def>
                 <Def t="A local AI does not answer">
                   Check that Ollama or LM Studio is running at the server address in Settings → AI, and that the
@@ -1594,16 +1617,9 @@ report.ExportToPdf("report.pdf");`}
       </main>
 
       <SiteFooter
-        onThisPage={[
-          ['Getting started', '#start'],
-          ['Your API key', '#key'],
-          ['Choosing your AI', '#ai'],
-          ['The workspace', '#workspace'],
-          ['Data and binding', '#data'],
-          ['Sharing a report', '#share'],
-          ['Keyboard shortcuts', '#shortcuts'],
-          ['FAQ', '#faq'],
-        ]}
+        // Every article, from the list the sidebar draws (2026-11-11, full
+        // audit PS-32): a hand-kept copy named 8 of the 21.
+        onThisPage={SECTIONS.map((s): [string, string] => [s.title, `#${s.id}`])}
       />
     </div>
   );

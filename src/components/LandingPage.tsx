@@ -91,7 +91,8 @@ const SPECS = [
 
 /** Same page, same model — the difference is what it was given to work from. */
 const COORD_ROWS = [
-  { label: 'INVOICE', guess: '~40, ~44', exact: '40, 45' },
+  // Where the hero draws it (landing/HeroScanner.tsx, TITLE), 2026-11-11 full audit PS-21.
+  { label: 'INVOICE', guess: '~208, ~44', exact: '210, 45' },
   { label: 'Bill To', guess: '~40, ~228', exact: '40, 225' },
   { label: 'Acme Industrial', guess: '~41, ~252', exact: '40, 250' },
   { label: 'Subtotal', guess: '~566, ~772', exact: '570, 770' },
@@ -121,8 +122,8 @@ const STEPS = [
     title: 'Let it work',
     body: (
       <>
-        While Forma works the reply shows three dots, every step behind the scenes, and Stop aborts the request in
-        flight. With a report open, the chat edits it in place rather than starting again.
+        While Forma works, the reply shows three dots and the send button becomes Stop. With a report open, the
+        chat edits it in place rather than starting again.
       </>
     ),
     points: [
@@ -276,7 +277,7 @@ const LandingPage = ({
                 <Reveal delay={0.26}>
                   <p className="mt-[22px] flex max-w-[54ch] items-baseline gap-[9px] font-code-sm text-[12px] leading-[1.7] text-[color:var(--ink-faint)]">
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-secondary-container ring-[3px] ring-secondary-container/10" />
-                    Bring your own Gemini key — Forma ships with none, and keeps yours in this tab unless you ask it to save an encrypted copy.
+                    Bring your own Gemini key — Forma ships with none, and keeps yours in your open Forma tabs, gone when the last one closes, unless you ask it to save an encrypted copy.
                   </p>
                 </Reveal>
               </div>
@@ -317,10 +318,11 @@ const LandingPage = ({
               <Reveal>
                 <div className="reg-marks rounded-xl border border-outline-variant bg-surface-container-lowest dark:bg-card p-[22px] shadow-[var(--shadow-md),var(--inset-hi)]">
                   {[
-                    ['request', 'analyzeReportDesign()'],
-                    ['attachments', '2 images · 1 text layer'],
-                    ['answer', 'the .repx, as raw XML'],
-                    ['temperature', '0'],
+                    // In a visitor's words, not the code's (2026-11-11, full audit PS-22).
+                    ['you send', 'an invoice, two pages'],
+                    ['Forma reads', 'the words and where they sit'],
+                    ['the AI writes', 'the .repx, nothing else'],
+                    ['comes back', 'file, Preview, mockup, spec'],
                   ].map(([k, v], i) => (
                     <div key={k} className={i ? 'mt-3.5 border-t border-outline-variant pt-3.5' : undefined}>
                       <div className="font-code-sm text-[9.5px] leading-[1.62] font-medium tracking-[0.14em] uppercase text-[color:var(--ink-faint)]">

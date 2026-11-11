@@ -53,8 +53,8 @@ export const FAQS: Array<{ q: string; a: ReactNode }> = [
     a: (
       <p>
         Yes. The output is standard <code className="doc-code">XtraReportsLayoutSerializer</code> XML and
-        opens in the Visual Studio report designer or an end-user designer. The version is read from a
-        report you bring; ask in the chat for another if your SDK needs it.
+        opens in the Visual Studio report designer or an end-user designer from DevExpress 20.1 up. The version
+        written in it is a label, not a gate: the designer opens the file and rewrites it when it saves.
       </p>
     ),
   },
@@ -85,9 +85,9 @@ export const FAQS: Array<{ q: string; a: ReactNode }> = [
     a: (
       <>
         <p>
-          Ask for it explicitly in the conversation — say the region is a table and should be one control
-          with rows and cells. With a report open the chat edits it in place where it can, and asks before a
-          redesign where it cannot, so you keep everything else.
+          Ask for it in the chat: say the region is a table and should be one control with rows and cells.
+          With a report open the chat edits it in place, or redesigns it when an edit cannot reach, and Undo
+          takes either back.
         </p>
         <p className="mt-2.5">
           Projects saved before tables were supported still contain the older split-label form and will keep
