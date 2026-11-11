@@ -7,7 +7,7 @@
  * 12 items" to someone who had attached one. That is the case this file pins.
  */
 import { describe, it, expect } from 'vitest';
-import { countStagedUploads, admitFiles } from './attachmentBudget';
+import { countStagedUploads, admitFiles, MAX_REQUEST_PAGES, pagesPerFile } from './attachmentBudget';
 
 const rows = (uploadId: string, count: number) =>
   Array.from({ length: count }, () => ({ uploadId }));
@@ -88,5 +88,24 @@ describe('admitting a drop', () => {
 
   it('keeps the order of the drop', () => {
     expect(admitFiles(files(4), 10, 12).accepted).toEqual(['f0', 'f1']);
+  });
+});
+
+// One report from many files takes twenty pages at most (2026-11-11, the full audit's PL-22).
+describe('the pages one report keeps', () => {
+  const file = (uploadId: string, pages: number) => ({ uploadId, pages });
+
+  it('keeps every page while they fit', () => {
+    expect([...pagesPerFile([file('a', 8), file('b', 8)]).values()]).toEqual([8, 8]);
+  });
+
+  it('keeps the first pages of each file, a page from each in turn', () => {
+    const kept = pagesPerFile([file('a', 8), file('b', 8), file('c', 8)]);
+    expect(Object.fromEntries(kept)).toEqual({ a: 7, b: 7, c: 6 });
+    expect([...kept.values()].reduce((n, k) => n + k, 0)).toBe(MAX_REQUEST_PAGES);
+  });
+
+  it('gives a short file all of its pages and the long ones the rest', () => {
+    expect(Object.fromEntries(pagesPerFile([file('a', 2), file('b', 8), file('c', 8), file('d', 0), file('e', 8)]))).toEqual({ a: 2, b: 6, c: 6, d: 0, e: 6 });
   });
 });

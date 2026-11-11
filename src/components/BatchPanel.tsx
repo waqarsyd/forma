@@ -24,32 +24,42 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  createQueue, nextPending, markRunning, markDone, markFailed,
-  cancelPending, retryUnfinished, summarise, verdict, outputName,
+  createQueue, appendQueue, keepsWork, nextPending, markRunning, markDone, markFailed,
+  cancelPending, retryUnfinished, summarise, verdict, outputName, updateItem,
   BATCH_PARALLEL, type BatchItem, type BatchOutcome,
 } from '../lib/batchQueue';
-import { filesFromDrop, filesFromPicker, forBatch, MAX_BATCH_FILES, type GivenFile } from '../lib/folderDrop';
+import { crystalNote, filesFromDrop, filesFromPicker, forBatch, MAX_BATCH_FILES, type GivenFile } from '../lib/folderDrop';
 import { buildZip } from '../lib/zip';
-import { clearKept, keepFiles, keepItems, keptNote, readKept, restoredQueue, stopsTheBatch } from '../lib/batchCheckpoint';
+import { clearKept, keepFiles, keepItems, keepQueue, keptNote, readKept, restoredQueue, stopsTheBatch, type KeptChange } from '../lib/batchCheckpoint';
 import { isLimit } from '../lib/fallbackChain';
+import { batchReadyNote } from '../lib/jobPlan';
+import { saveBlob } from '../lib/download';
 
 interface Props {
   /**
-   * Runs one file through the ordinary generation path. Supplied by App.
+   * Runs one file through the same steps a single report is made by
+   * (2026-11-11, the full audit's PL-15). Supplied by App.
    *
-   * Takes the item's id so App can keep the FULL result — markdown, layout and
-   * all — under it. `BatchOutcome` deliberately carries only what a row shows,
-   * because `batchQueue.ts` is a pure module and has no business knowing what a
-   * workspace result looks like; "Open" then asks App for the rest by id.
+   * `words` is what the request asked of each file beyond making it, empty for
+   * files added here. `BatchOutcome` carries only what a row shows, because
+   * `batchQueue.ts` is a pure module and has no business knowing what a
+   * workspace result looks like; "Open" reads the rest off the row's REPX
+   * (`resultFromKept`).
    */
-  runOne: (file: File, signal: AbortSignal, id: string) => Promise<BatchOutcome>;
+  runOne: (file: File, signal: AbortSignal, id: string, words: string) => Promise<BatchOutcome>;
   /** Loads a finished item into the workspace. */
   onOpen: (item: BatchItem) => void;
   /** False when there is no API key; the panel explains rather than failing. */
   ready: boolean;
   onNeedKey: () => void;
-  /** Files a plan in the chat sent here, each its own report, started at once (2026-11-10, batch AG item 22). */
-  incoming?: { files: File[]; id: number } | null;
+  /**
+   * Files a plan in the chat sent here, each its own report, started at once
+   * (2026-11-10, batch AG item 22), with what else the request asked of each
+   * (`words`, PL-15).
+   */
+  incoming?: { files: File[]; id: number; words?: string } | null;
+  /** What to say in the thread once the files the chat sent are all made or given up on (PL-14). */
+  onFinished?: (note: string) => void;
 }
 
 const STATUS_DOT: Record<string, string> = {
@@ -60,9 +70,17 @@ const STATUS_DOT: Record<string, string> = {
   cancelled: 'var(--ink-faint, #7a8592)',
 };
 
-export default function BatchPanel({ runOne, onOpen, ready, onNeedKey, incoming }: Props) {
+export default function BatchPanel({ runOne, onOpen, ready, onNeedKey, incoming, onFinished }: Props) {
   const [queue, setQueue] = useState<BatchItem[]>([]);
   const [running, setRunning] = useState(false);
+  /** The same, for the hand-over from the chat, which must not read a stale render's. */
+  const runningRef = useRef(false);
+  /** Files the chat sent while a batch ran, or before the kept one was read: added once it is (PL-14). */
+  const pendingIncoming = useRef<{ files: File[]; words: string }[]>([]);
+  /** Whether the batch this browser kept has been read, so files handed over never replace it unread. */
+  const [keptRead, setKeptRead] = useState(false);
+  /** The items the chat sent, whose outcome the thread is told (PL-14). */
+  const fromChat = useRef<Set<string>>(new Set());
   const [notice, setNotice] = useState('');
   /** How many files run at once (2026-11-04); one unless the person chooses more. */
   const [parallel, setParallel] = useState<number>(BATCH_PARALLEL[0]);
@@ -76,21 +94,43 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey, incoming 
      was when the run started and overwrite every result but the last. */
   const queueRef = useRef<BatchItem[]>([]);
 
-  // Each change kept in this browser, so the batch carries on after a limit or a reload (batch AG item 23).
-  const setBoth = (next: BatchItem[]) => {
+  /*
+   * Each change kept in this browser, so the batch carries on after a limit
+   * or a reload (batch AG item 23): only the items that changed, each its own
+   * record, and a REPX once, when its item is done (2026-11-11, the full
+   * audit's PL-13). The whole queue, every REPX in it, was written on every
+   * change. `replace` is a new batch in place of the kept one.
+   */
+  const setBoth = (next: BatchItem[], replace = false) => {
+    const before = new Map(queueRef.current.map((item) => [item.id, item]));
     queueRef.current = next;
     setQueue(next);
-    if (next.length) void keepItems(next);
+    if (replace) {
+      void keepQueue(next);
+      return;
+    }
+    const changes: KeptChange[] = next.flatMap((item, order) => {
+      const was = before.get(item.id);
+      if (was === item) return [];
+      return [{ item, order, repx: item.status === 'done' && item.repxContent !== '' && was?.repxContent !== item.repxContent }];
+    });
+    void keepItems(changes);
   };
 
   // The batch this browser kept, opened again when the panel has none of its own.
   useEffect(() => {
     let gone = false;
     void readKept().then((kept) => {
-      if (gone || !kept || queueRef.current.length) return;
-      filesRef.current = kept.files;
-      setBoth(restoredQueue(kept.items));
-      setNotice(keptNote(kept.items, kept.savedAt));
+      if (gone) return;
+      if (kept && !queueRef.current.length) {
+        filesRef.current = kept.files;
+        // Set as kept first, so only what opening changes is written again;
+        // a batch kept in the old shape is written in the new one (PL-13).
+        if (!kept.legacy) queueRef.current = kept.items;
+        setBoth(restoredQueue(kept.items), kept.legacy);
+        setNotice(keptNote(kept.items, kept.savedAt));
+      }
+      setKeptRead(true);
     });
     return () => {
       gone = true;
@@ -100,6 +140,7 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey, incoming 
   const clear = () => {
     filesRef.current = new Map();
     queueRef.current = [];
+    fromChat.current = new Set();
     setQueue([]);
     setNotice('');
     void clearKept();
@@ -108,32 +149,49 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey, incoming 
   const summary = summarise(queue);
 
   /**
-   * Files from the picker, the folder picker or a drop, as the queue. What
-   * the batch cannot take (a spreadsheet, a hidden file) is left out and
-   * counted, and a folder's files queue in path order.
+   * Files from the picker, the folder picker, a drop or the chat, as the
+   * queue. What the batch cannot take (a spreadsheet, a hidden file) is left
+   * out and counted, a Crystal Reports file with the way in (2026-11-11), and
+   * a folder's files queue in path order.
+   *
+   * A batch with work left (a file not made, a report never downloaded) is
+   * added to rather than replaced (2026-11-11, the full audit's PL-14): the
+   * chat's hand-over replaced it, files and all, without a word.
    */
-  const addFiles = (given: readonly GivenFile[]) => {
-    if (!given.length || running) return;
-    const { files, skipped, truncated } = forBatch(given);
+  const addFiles = (given: readonly GivenFile[], words = '', chat = false): boolean => {
+    if (!given.length || runningRef.current) return false;
+    const { files, skipped, crystal, truncated } = forBatch(given);
+    const crystalSaid = crystal > 0 ? ` ${crystalNote(crystal)}` : '';
     if (!files.length) {
-      setNotice(`Nothing here the batch can take: it reads images, PDFs and .repx files.`);
-      return;
+      setNotice(`Nothing here the batch can take: it reads images, PDFs, .repx files and SSRS reports.${crystalSaid}`);
+      return false;
     }
-    const next = createQueue(files.map((f) => f.path));
-    filesRef.current = new Map(next.map((item, i) => [item.id, files[i].file]));
-    void keepFiles(filesRef.current);
-    setBoth(next);
+    const join = keepsWork(queueRef.current);
+    const paths = files.map((f) => f.path);
+    const next = join ? appendQueue(queueRef.current, paths, words) : createQueue(paths, words);
+    const added = next.slice(next.length - files.length);
+    const addedFiles = new Map(added.map((item, i) => [item.id, files[i].file]));
+    filesRef.current = join ? new Map([...filesRef.current, ...addedFiles]) : addedFiles;
+    if (!join) fromChat.current = new Set();
+    if (chat) for (const item of added) fromChat.current.add(item.id);
+    void keepFiles(addedFiles, !join);
+    setBoth(next, !join);
+    const other = skipped - crystal;
     const left = [
-      skipped > 0 ? `${skipped} other file${skipped === 1 ? '' : 's'} left out` : '',
+      other > 0 ? `${other} other file${other === 1 ? '' : 's'} left out` : '',
       truncated ? `only the first ${MAX_BATCH_FILES} taken` : '',
     ].filter(Boolean);
-    setNotice(
-      `${files.length} file${files.length === 1 ? '' : 's'} ready${left.length ? ` (${left.join('; ')})` : ''}. Nothing is sent until you start.`,
-    );
+    const count = `${files.length} file${files.length === 1 ? '' : 's'}`;
+    const what = chat
+      ? `${count} from the chat${join ? ', after the ones already here' : ''}`
+      : `${count} ${join ? 'added after the ones already here' : 'ready'}`;
+    setNotice(`${what}${left.length ? ` (${left.join('; ')})` : ''}.${chat ? '' : ' Nothing is sent until you start.'}${crystalSaid}`);
+    return true;
   };
 
   const run = useCallback(async () => {
     if (!ready) { onNeedKey(); return; }
+    runningRef.current = true;
     setRunning(true);
     setNotice('');
     const controller = new AbortController();
@@ -155,7 +213,7 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey, incoming 
           continue;
         }
         try {
-          const outcome = await runOne(file, controller.signal, item.id);
+          const outcome = await runOne(file, controller.signal, item.id, item.words ?? '');
           setBoth(markDone(queueRef.current, item.id, outcome));
         } catch (error) {
           const message = controller.signal.aborted
@@ -182,18 +240,37 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey, incoming 
     };
     await Promise.all(Array.from({ length: Math.max(1, parallel) }, worker));
 
-    abortRef.current = null;
-    setRunning(false);
-  }, [ready, onNeedKey, runOne, parallel]);
+    // The thread is told once every file the chat sent is made or given up
+    // on (PL-14): the request was answered "in Batch", and ended there.
+    const asked = queueRef.current.filter((item) => fromChat.current.has(item.id));
+    if (asked.length && asked.every((item) => item.status !== 'pending' && item.status !== 'running')) {
+      fromChat.current = new Set();
+      onFinished?.(batchReadyNote(asked));
+    }
 
-  // Files a plan in the chat sent here (batch AG item 22): queued as any are, and started.
+    abortRef.current = null;
+    runningRef.current = false;
+    setRunning(false);
+  }, [ready, onNeedKey, runOne, parallel, onFinished]);
+
+  /*
+   * Files a plan in the chat sent here (batch AG item 22): queued as any are,
+   * and started. Never lost (2026-11-11, the full audit's PL-14): a hand-over
+   * while a batch ran was dropped, and the plan still said it had started;
+   * now it waits for the run, and for the kept batch to be read, and goes in.
+   */
   const startNow = useRef(false);
   useEffect(() => {
-    if (!incoming?.files.length || running) return;
-    addFiles(incoming.files.map((file) => ({ file, path: file.name })));
-    startNow.current = true;
+    if (!incoming?.files.length) return;
+    pendingIncoming.current.push({ files: incoming.files, words: incoming.words ?? '' });
     // Once for each hand-over, by its id.
   }, [incoming?.id]);
+  useEffect(() => {
+    if (running || !keptRead || !pendingIncoming.current.length) return;
+    for (const handed of pendingIncoming.current.splice(0)) {
+      if (addFiles(handed.files.map((file) => ({ file, path: file.name })), handed.words, true)) startNow.current = true;
+    }
+  }, [incoming?.id, running, keptRead]);
   useEffect(() => {
     if (!startNow.current || running || !queue.length) return;
     startNow.current = false;
@@ -219,25 +296,18 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey, incoming 
     const { bytes, reason } = buildZip(entries);
     if (!bytes) { setNotice(reason); return; }
     // A fresh ArrayBuffer, because the Blob must not alias a view whose buffer
-    // the writer may still be sized against.
-    const blob = new Blob([bytes.slice()], { type: 'application/zip' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'forma-reports.zip';
-    link.click();
-    URL.revokeObjectURL(url);
+    // the writer may still be sized against. Through lib/download.ts
+    // (2026-11-11, the full audit's PR-17): a link never put in the page, its
+    // address let go at once, saved nothing in some browsers.
+    saveBlob('forma-reports.zip', new Blob([bytes.slice()], { type: 'application/zip' }));
+    // Downloaded, a batch may be replaced by the next (PL-14).
+    setBoth(queueRef.current.map((i) => (i.status === 'done' && i.repxContent && !i.downloaded ? { ...i, downloaded: true } : i)));
     setNotice(`Downloaded ${entries.length} file${entries.length === 1 ? '' : 's'} as forma-reports.zip.`);
   };
 
   const downloadOne = (item: BatchItem) => {
-    const blob = new Blob([item.repxContent], { type: 'application/xml' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = outputName(item);
-    link.click();
-    URL.revokeObjectURL(url);
+    saveBlob(outputName(item), new Blob([item.repxContent], { type: 'application/xml' }));
+    if (!item.downloaded) setBoth(updateItem(queueRef.current, item.id, { downloaded: true }));
   };
 
   return (
@@ -301,7 +371,7 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey, incoming 
         ref={inputRef}
         type="file"
         multiple
-        accept="image/*,application/pdf,.repx"
+        accept="image/*,application/pdf,.repx,.rdl,.rdlc,.rpt"
         className="wb-hidden"
         onChange={(e) => { addFiles(filesFromPicker(e.target.files ?? [])); e.target.value = ''; }}
       />

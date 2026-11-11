@@ -47,6 +47,7 @@ import {
   IconSave,
   IconTune,
   IconWarn,
+  IconAlert,
 } from './components/landing/icons';
 import { applyDetected, detectSettings, repxFacts, type DetectInput, type DetectedSettings, type SourcePage } from './lib/autoConfig';
 import {
@@ -261,10 +262,13 @@ import {
   requestsOf,
   truncateFrom,
   withdrawTurn,
+  noticeDuration,
   type ChatMessage as ChatSessionMessage,
 } from './lib/chatSession';
 import { packChanges, unpackChanges, REPLY_CHANGES_KEY } from './lib/replyChanges';
 import { copyText } from './lib/clipboard';
+import { safeFileName, saveBlob, saveText } from './lib/download';
+import type { BatchOutcome } from './lib/batchQueue';
 import { DRAFTS_KEY, keepQueue, keptQueueFor, LEGACY_DRAFT_KEY, movedDraft, NEW_DRAFT, parseDrafts, QUEUE_KEY, queuedFiles, withDraft, withoutFiles, type Drafts } from './lib/composerStore';
 import { firstReply, isPlainBuild, isRememberMessage, isVagueReportAsk, needsRowsConsent, pendingQuestions, pendingReplyKind, queueStep, resumed, steered, turnBase, turnEnding, vagueReportReply, vagueReportWord, withSelection, type ReplyKind } from './lib/chatTurn';
 import { formatSessionStamp } from './lib/datetime';
@@ -619,6 +623,9 @@ type TeamPlan = {
 
 const NO_TEAM: TeamPlan = { brief: '', draft: null };
 
+/** The bench's view tabs, in their order (2026-11-11, WS-37: the arrows walk them). */
+const PLATE_TABS: readonly (readonly [Plate, string])[] = [['proof', 'Mockup'], ['print', 'Preview'], ['data', 'Data'], ['spec', 'Spec'], ['xml', 'REPX']];
+
 /**
  * The staged pages Forma's vision model reads, by index (2026-11-04): the
  * first, when it is an image, and the same upload's last page when it has
@@ -778,7 +785,13 @@ export default function App() {
    * shows beside Save in the bench's bar and clears itself; until 2026-11-04 it
    * also sat under the composer, which now holds problems only.
    */
-  const [saveNotice, setSaveNotice] = useState<string | null>(null);
+  const [saveNotice, setNotice] = useState<{ text: string; tone: 'done' | 'alert' } | null>(null);
+  /*
+   * With its tone (2026-11-11, the full audit's WS-32): a notice of something
+   * that did not happen ("Could not copy", nothing to download) showed the
+   * same tick as one that did. Stable, since panels are handed it.
+   */
+  const setSaveNotice = useCallback((text: string | null, tone: 'done' | 'alert' = 'done') => setNotice(text ? { text, tone } : null), []);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   /**
    * The whole progress bar, as one value.
@@ -1004,6 +1017,12 @@ export default function App() {
      widens past the stack. */
   const isStackedLayout = isStacked(viewportWidth);
   const [isRailDrawerOpen, setIsRailDrawerOpen] = useState(false);
+  /*
+   * The page behind the phone's drawer takes no focus and no clicks while it
+   * is open (2026-11-11, the full audit's WS-37), as behind any modal: Tab
+   * walked out of the drawer into the report it covers.
+   */
+  const behindDrawer = isStackedLayout && isRailDrawerOpen ? true : undefined;
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const railToggleRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -1553,14 +1572,7 @@ export default function App() {
     // itself, and the versions sit in folders a second pass would flatten.
     const { bytes, reason } = buildZip(projectExportEntries(projects, now, extras), now, { keepPaths: true });
     if (!bytes) throw new Error(`The projects could not be packed: ${reason}.`);
-    const url = URL.createObjectURL(new Blob([bytes.slice()], { type: 'application/zip' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = exportFileName(now);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    saveBlob(exportFileName(now), new Blob([bytes.slice()], { type: 'application/zip' }));
     return projects.length;
   };
 
@@ -2094,12 +2106,21 @@ export default function App() {
   }, [isWorking]);
 
   // Save confirmations are transient — they replace an alert the user had to
-  // dismiss, so they must not need dismissing either.
+  // dismiss, so they must not need dismissing either. As long as the words
+  // take to read, and not while the pointer or the keyboard is on the toast
+  // (2026-11-11, the full audit's WS-32): every notice went after four seconds.
+  const [noticeHeld, setNoticeHeld] = useState(false);
+  /** The verify-your-email line's own Send it again (WS-35): sent once per visit. */
+  const [verifyResend, setVerifyResend] = useState<'idle' | 'sending' | 'sent'>('idle');
   useEffect(() => {
-    if (!saveNotice) return;
-    const t = setTimeout(() => setSaveNotice(null), 4000);
+    if (!saveNotice) {
+      setNoticeHeld(false);
+      return;
+    }
+    if (noticeHeld) return;
+    const t = setTimeout(() => setSaveNotice(null), noticeDuration(saveNotice.text));
     return () => clearTimeout(t);
-  }, [saveNotice]);
+  }, [saveNotice, noticeHeld]);
 
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -2196,7 +2217,16 @@ export default function App() {
   /** The pages, texts and files of each plan not yet answered, by the plan's message id. */
   const plannedJobs = useRef(new Map<string, { images: string[]; imageMeta: PreviewMeta[]; texts: TextAttachment[]; base: DesignResult | null; files: Map<string, File> }>());
   /** Files a plan sent to Batch, which the panel takes and starts. */
-  const [batchIncoming, setBatchIncoming] = useState<{ files: File[]; id: number } | null>(null);
+  const [batchIncoming, setBatchIncoming] = useState<{ files: File[]; id: number; words: string } | null>(null);
+  /*
+   * The message that handed them over, and the thread open now (2026-11-11):
+   * the batch's "ready" note is posted only while that message is in it, and
+   * is a toast after New report or another project, where it was an answer
+   * to nothing and, in an empty session, a project of its own.
+   */
+  const batchAsk = useRef<string | undefined>(undefined);
+  const threadNow = useRef(messages);
+  threadNow.current = messages;
 
   const ingestFiles = useCallback(async (incoming: File[]) => {
     if (incoming.length === 0) return;
@@ -2584,36 +2614,32 @@ export default function App() {
     words: read.flatMap(({ read: r }) => r.ocr.lines.map((l) => l.text)).join('\n'),
   });
 
-  const batchResults = useRef<Map<string, DesignResult>>(new Map());
-  const runOneBatchFile = useCallback(async (file: File, signal: AbortSignal, id: string) => {
-    const { ingestFile, inUnit } = await loadIntake();
-    const ingested = await ingestFile(file, `batch-${id}`, config.unit);
-    const { analyzeReportDesign } = await loadGemini();
-    // Worked out per file and not kept, since up to three files run at once,
-    // and from the file alone: the report open on the bench is not its source.
-    const fileConfig = applyDetected(config, detectSettings(detectionInput({ texts: ingested.texts, metas: ingested.imageMeta }, false)));
-    // A PDF's strings in the unit worked out for it (2026-11-11, PL-18).
-    const parts = toAttachmentParts(ingested.images, inUnit(ingested.texts, fileConfig.unit));
-    // On a limit the next AI set up designs it (2026-11-10, batch AG item 23, lib/fallbackChain.ts);
-    // when every one gives out, the batch pauses on that error and is kept.
-    const { askWithChain } = await import('./lib/fallbackChain');
-    const response = (await askWithChain(fileConfig, (asked) => analyzeReportDesign('', parts, asked, undefined, signal), signal)).value;
-    const { auditRepx } = await import('./lib/repxAudit');
-    const audit = auditRepx(response.repxContent, response.layout);
-    batchResults.current.set(id, {
-      content: response.markdown,
-      layout: response.layout,
-      repxContent: response.repxContent,
-      title: response.layout?.title || file.name,
-    } as DesignResult);
-    return {
-      title: response.layout?.title || '',
-      repxContent: response.repxContent || '',
-      bands: response.layout?.sections?.length ?? 0,
-      errors: audit.errors,
-      warnings: audit.warnings,
-    };
-  }, [config]);
+  /*
+   * One Batch file, made the way a single report is (2026-11-11, the full
+   * audit's PL-15, CV-10 and ARCH-B), in lib/batchRun.ts, loaded on the first
+   * batch run: it took this chunk past its size budget. App hands in its own
+   * parts, each told the settings worked out for that file. Read through a
+   * ref, so the panel's stable callback runs the latest render's (the
+   * settings, the memory, the house style switch).
+   */
+  const runOneBatchRef = useRef<(file: File, signal: AbortSignal, id: string, words: string) => Promise<BatchOutcome>>(null!);
+  runOneBatchRef.current = async (file, signal, id, words) =>
+    (await import('./lib/batchRun')).runBatchFile(file, signal, id, words, {
+      config,
+      detectInput: (sources) => detectionInput(sources, false),
+      visionPages,
+      prepareTeam,
+      ocrAttachments,
+      asConfigured,
+      translateXml,
+      recordLearning,
+      aiKindOf,
+      uid: previousUidRef.current,
+    });
+  const runOneBatchFile = useCallback(
+    (file: File, signal: AbortSignal, id: string, words: string) => runOneBatchRef.current(file, signal, id, words),
+    [],
+  );
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     await ingestFiles(Array.from(e.target.files || []));
@@ -2776,9 +2802,10 @@ export default function App() {
    * AI's answer does first (2026-11-11, the full audit's ARCH-1b,
    * lib/repairChain.ts); it had three of them.
    */
-  const asConfigured = async (xml: string, asSeen = false, built = false): Promise<string> => {
-    if (built && xml) xml = (await import('./lib/repairChain')).repairRepx(xml, { version: effectiveConfig().version }).xml;
-    if (!effectiveConfig().rtl || !xml) return xml;
+  const asConfigured = async (xml: string, asSeen = false, built = false, worked?: ReportConfig): Promise<string> => {
+    const settings = worked ?? effectiveConfig();
+    if (built && xml) xml = (await import('./lib/repairChain')).repairRepx(xml, { version: settings.version }).xml;
+    if (!settings.rtl || !xml) return xml;
     const { makeRightToLeft, toLogicalRtl } = await import('./lib/repxRtl');
     return makeRightToLeft(asSeen ? toLogicalRtl(xml) : xml);
   };
@@ -2847,10 +2874,10 @@ export default function App() {
   };
 
   /** Forma's box reader's report from the pages read, or null when it cannot load or finds no text. */
-  const readerBuild = async (read: readonly { meta: PreviewMeta; read: ReadPage }[]): Promise<ReaderBuiltReport | null> => {
+  const readerBuild = async (read: readonly { meta: PreviewMeta; read: ReadPage }[], worked?: ReportConfig): Promise<ReaderBuiltReport | null> => {
     try {
       const [{ loadBoxReader }, { buildWithReader }] = await Promise.all([import('./lib/boxReader'), import('./lib/ocrAttach')]);
-      return buildWithReader(read, await loadBoxReader(), effectiveConfig().pageSize);
+      return buildWithReader(read, await loadBoxReader(), (worked ?? effectiveConfig()).pageSize);
     } catch (err) {
       console.warn("Forma's box reader could not read the page.", err);
       return null;
@@ -2858,11 +2885,11 @@ export default function App() {
   };
 
   /** The text read from the sent pages, as attachments for the message. */
-  const ocrAttachments = async (read: readonly { meta: PreviewMeta; read: ReadPage }[]): Promise<TextAttachment[]> => {
+  const ocrAttachments = async (read: readonly { meta: PreviewMeta; read: ReadPage }[], worked?: ReportConfig): Promise<TextAttachment[]> => {
     if (!read.length) return [];
     const { ocrTexts } = await import('./lib/ocrAttach');
     const stamp = Date.now();
-    const { unit, pageSize } = effectiveConfig();
+    const { unit, pageSize } = worked ?? effectiveConfig();
     return ocrTexts(read, unit, pageSize).map((t, i) => ({ ...t, id: `${stamp}-${i}-ocr-${t.file}-p${t.page ?? 1}`, readByOcr: true as const }));
   };
 
@@ -3957,10 +3984,11 @@ export default function App() {
    * - A description: the house style Forma's own model learned is the brief,
    *   and that model's own design is the stand-in.
    */
-  const prepareTeam = async (input: TeamInput | undefined, signal: AbortSignal): Promise<TeamPlan> => {
+  const prepareTeam = async (input: TeamInput | undefined, signal: AbortSignal, worked?: ReportConfig): Promise<TeamPlan> => {
     if (!input) return NO_TEAM;
-    // The settings worked out for this request, not the stored ones (lib/autoConfig.ts).
-    const config = effectiveConfig();
+    // The settings worked out for this request, not the stored ones
+    // (lib/autoConfig.ts); a Batch file's own, since three run at once (PL-15).
+    const config = worked ?? effectiveConfig();
     let brief = '';
     let draft: TeamPlan['draft'] = null;
     let evidence: ReportLayout | null = null;
@@ -3975,34 +4003,10 @@ export default function App() {
     const vision = input.firstImage ? visionModelOf(config) : null;
     if (vision && input.firstImage) {
       try {
-        const [{ readSkeleton }, { skeletonToDesign, pageTextsOf, mergePageSkeletons }, { detectLayout }, { pageForImage }, { draftBrief }] = await Promise.all([
-          import('./services/formaVision'),
-          import('./lib/skeletonRepx'),
-          import('./lib/ocrLayout'),
-          import('./lib/reportGeometry'),
-          import('./lib/formaTeam'),
-        ]);
-        const first = input.firstImage.meta;
-        // The first page, and the upload's last when it has more (2026-11-04),
-        // whose footers and totals the first does not show.
-        const [firstReading, lastReading] = await (async () => {
-          const one = await readSkeleton(vision, input.firstImage!.src, signal);
-          const two = input.lastImage ? await readSkeleton(vision, input.lastImage.src, signal).catch(() => null) : null;
-          return [one, two] as const;
-        })();
-        if (!firstReading.skeleton) throw new Error('its answer had no page line');
-        const reading = { skeleton: mergePageSkeletons(firstReading.skeleton, ...(lastReading?.skeleton ? [lastReading.skeleton] : [])) };
-        const paper = reading.skeleton.paper === 'Custom' ? config.pageSize : reading.skeleton.paper;
-        const page = input.read.find(({ meta }) => meta.uploadId === first.uploadId && (meta.page ?? 0) === (first.page ?? 0));
-        const texts = page
-          ? pageTextsOf(detectLayout([{ ocr: page.read.ocr, page: pageForImage(page.read.ocr, 'HundredthsOfAnInch', paper) }], { unit: 'HundredthsOfAnInch' }))
-          : [];
-        const design = skeletonToDesign(reading.skeleton, { texts, title: first.file.replace(/\.[^.]+$/, '') });
-        brief = draftBrief(reading.skeleton, design.layout, config.unit);
-        const { draftToText } = await import('./lib/draftText');
-        correct = { text: draftToText(reading.skeleton, design.used), texts, title: design.title };
-        const visionResult: DesignResult = { content: design.markdown, timestamp: new Date(), title: design.title, layout: design.layout, repxContent: design.repx, usage: null };
-        draft = async () => ({ result: visionResult, source: 'vision' });
+        // The first page and the upload's last, in lib/visionDraft.ts since 2026-11-11 (BW).
+        const made = await (await import('./lib/visionDraft')).visionDraft(vision, input.firstImage, input.lastImage, input.read, config, signal);
+        ({ brief, correct } = made);
+        draft = async () => ({ result: made.result, source: 'vision' });
       } catch (err) {
         if (signal.aborted) throw err;
         console.warn("Forma's vision model could not read the page; the AI designs without its draft.", err);
@@ -4012,7 +4016,7 @@ export default function App() {
     // in their bands (2026-11-04, lib/boxReader.ts), and that is the brief and
     // the stand-in. It needs no AI and no GPU, so it is there for every picture.
     if (!draft && input.read.length) {
-      const built = await readerBuild(input.read);
+      const built = await readerBuild(input.read, config);
       if (built && !signal.aborted) {
         const [{ draftBrief }, { draftToText }] = await Promise.all([import('./lib/formaTeam'), import('./lib/draftText')]);
         brief = draftBrief(built.skeleton, built.layout, config.unit, 'reader');
@@ -4685,7 +4689,9 @@ export default function App() {
     const jobs = await import('./lib/jobPlan');
     settlePlan(id, true, plan);
     if (plan.mode === 'each' && jobs.keptFiles(plan).length > 1) {
-      setBatchIncoming({ files: await jobs.filesForBatch(plan, job), id: Date.now() });
+      // With what else the words asked of each file, less the words that sent it here (PL-15).
+      batchAsk.current = plan.askId;
+      setBatchIncoming({ files: await jobs.filesForBatch(plan, job), id: Date.now(), words: jobs.batchWords(plan.prompt) });
       showRailPanel('batch');
       return;
     }
@@ -4747,15 +4753,8 @@ export default function App() {
   /** The conversation downloaded as Markdown (2026-11-05, `conversationMarkdown`), named after the report. */
   const exportConversation = () => {
     const title = result?.title || savedReports.find((r) => r.id === openProjectId)?.name || 'Forma conversation';
-    const blob = new Blob([conversationMarkdown(messages, title, (ms) => formatSessionStamp(ms))], { type: 'text/markdown;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${title.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'conversation'} - chat.md`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    // Through lib/download.ts (2026-11-11, PR-17): the address was let go at once.
+    saveText(`${safeFileName(title, 'conversation')} - chat.md`, conversationMarkdown(messages, title, (ms) => formatSessionStamp(ms)), 'text/markdown;charset=utf-8');
   };
 
   /**
@@ -4888,8 +4887,30 @@ export default function App() {
       const kept = withdrawTurn(messages, id);
       if (!kept.some((m) => m.id === pending.messageId)) pendingClarifyRef.current = null;
     }
+    /*
+     * What its answer changed goes with it (2026-11-11, the full audit's
+     * WS-41), as that reply's Undo would take it back: the answer left the
+     * thread and its change stayed in the report. Only while that change is
+     * still the report's last; after a later one, Revisions holds it.
+     */
+    const undoing = withdrawUndoReply(id);
+    if (undoing) {
+      const change = chatChanges[undoing];
+      if (reportPast.current[reportPast.current.length - 1]?.repxContent === change.before.repxContent) undoReport();
+      else setResult(change.before);
+      recordRevision('Withdrawn in the chat', change.before);
+      const undone = messages.find((m) => m.id === undoing)?.learning;
+      if (undone) recordLearning({ kind: 'undo', request: 'edit', ref: undone.id, ai: undone.ai });
+    }
     setMessages((prev) => withdrawTurn(prev, id));
   };
+  /** The reply of request `id` whose change a withdrawal undoes, if any (WS-41). */
+  const withdrawUndoReply = (id: string): string | undefined =>
+    [...(requests.find((r) => r.id === id)?.replies ?? [])].reverse().find((m) => undoableIds.has(m.id))?.id;
+  const withdrawUndoes = useMemo(
+    () => new Set(requests.filter((r) => r.replies.some((m) => undoableIds.has(m.id))).map((r) => r.id)),
+    [requests, undoableIds],
+  );
 
   /* `designOffline`, the chat box with no key, went on 2026-11-05: the owner
      made the key the entry point to any work again, and the composer locks
@@ -6081,11 +6102,12 @@ export default function App() {
    * untouched. Shared by a translation asked for in the chat and a first
    * report whose words name a language (2026-11-11, the full audit's CV-14).
    */
-  const translateXml = async (xml: string, language: string, signal: AbortSignal) => {
+  const translateXml = async (xml: string, language: string, signal: AbortSignal, worked?: ReportConfig) => {
     const [{ collectTexts, applyTranslations }, { translateTexts }, { askWithChain }] = await Promise.all([import('./lib/repxTranslate'), loadGemini(), import('./lib/fallbackChain')]);
     const texts = collectTexts(xml);
     if (!texts.length) return { xml, changed: 0, any: false, note: '', by: null };
-    const answered = await askWithChain(effectiveConfig(), (asked) => translateTexts(texts.map((t) => t.text), language, asked, signal), signal);
+    // A Batch file's own settings when it is one (lib/batchRun.ts).
+    const answered = await askWithChain(worked ?? effectiveConfig(), (asked) => translateTexts(texts.map((t) => t.text), language, asked, signal), signal);
     const out = applyTranslations(xml, answered.value);
     return { xml: out.xml, changed: out.changed, any: true, note: answered.note, by: answered.by };
   };
@@ -6274,18 +6296,21 @@ export default function App() {
     return true;
   };
 
+  /*
+   * The .repx, through lib/download.ts (2026-11-11, the full audit's PR-17):
+   * its blob address was never let go. A result with no file is said, not
+   * saved: it downloaded the Spec as a .txt from a row that says .repx.
+   */
   const downloadDesign = () => {
     if (!result) return;
+    if (!result.repxContent) {
+      setSaveNotice('This report has no .repx file yet. Send the request again to make one.', 'alert');
+      return;
+    }
     if (blockedByInvalidRepx()) return;
     rememberKept(result.repxContent, openReportId.current);
     recordKept('repx', result.repxContent);
-    const element = document.createElement("a");
-    const file = new Blob([result.repxContent || result.content], { type: result.repxContent ? 'application/xml' : 'text/plain' });
-    element.href = URL.createObjectURL(file);
-    element.download = `${result.title ? result.title.replace(/\s+/g, '_') : 'report-design'}${result.repxContent ? '.repx' : '.txt'}`;
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
+    saveBlob(`${result.title ? result.title.replace(/\s+/g, '_') : 'report-design'}.repx`, new Blob([result.repxContent], { type: 'application/xml' }));
   };
 
   /**
@@ -6515,7 +6540,7 @@ export default function App() {
     const done = agent.applyEdits(now.repxContent, make(agent, now.repxContent));
     if (!done.changed) {
       // Without the edit's name (2026-11-11, the full audit's CV-15).
-      setSaveNotice(done.declined[0] ? agent.plainDeclined(done.declined[0]) : 'Nothing needed changing');
+      setSaveNotice(done.declined[0] ? agent.plainDeclined(done.declined[0]) : 'Nothing needed changing', done.declined[0] ? 'alert' : 'done');
       return null;
     }
     setResult({ ...now, repxContent: done.xml });
@@ -6555,7 +6580,7 @@ export default function App() {
     } else {
       const last = [...messages].reverse().find((m) => m.role === 'assistant' && m.text);
       // Through lib/clipboard.ts (agent audit item 56): on plain HTTP this did nothing and said nothing.
-      if (last) void copyText(last.text).then((ok) => setSaveNotice(ok ? 'Copied the last reply.' : 'Could not copy: this browser refused the clipboard.'));
+      if (last) void copyText(last.text).then((ok) => setSaveNotice(ok ? 'Copied the last reply.' : 'Could not copy: this browser refused the clipboard.', ok ? 'done' : 'alert'));
     }
   };
 
@@ -6621,7 +6646,8 @@ export default function App() {
     list.push({ id: 'card', label: isPanelCollapsed ? 'Expand the conversation' : 'Collapse the conversation', run: () => setIsPanelCollapsed((c) => !c) });
     // Stop, the search and a paused queue, in the menu too (2026-11-07, agent audit item 66).
     if (isAnalyzing || isChatting) list.push({ id: 'stop', label: 'Stop what Forma is doing', keys: 'Esc', run: () => handleStop() });
-    if (requests.length) list.push({ id: 'search', label: 'Search the conversation', run: () => { setIsPanelCollapsed(false); setSearchReveal((n) => n + 1); } });
+    // Its own id (2026-11-11, WS-31): it shared 'search' with the projects' search, and the menu keys rows by id.
+    if (requests.length) list.push({ id: 'search-convo', label: 'Search the conversation', run: () => { setIsPanelCollapsed(false); setSearchReveal((n) => n + 1); } });
     if (queuePaused && queue.length && !isAnalyzing && !isChatting) list.push({ id: 'resume', label: 'Resume the queue', run: resumeQueue });
     if (result) {
       const panes: [Plate, string][] = [['proof', 'Mockup'], ['print', 'Preview'], ['data', 'Data'], ['spec', 'Spec'], ['xml', 'REPX']];
@@ -6630,8 +6656,13 @@ export default function App() {
       if (historyDepth.forward) list.push({ id: 'redo', label: 'Redo', keys: keysFor('Ctrl+Shift+Z'), run: redoReport });
       list.push(
         { id: 'save', label: 'Save the project', run: handleSaveReport },
-        { id: 'repx', label: 'Export the .repx', run: downloadDesign },
-        { id: 'designer', label: 'Open in the DevExpress designer', run: () => void openInDesigner() },
+        // Only a report with a file has one to export or open (PR-17).
+        ...(result.repxContent
+          ? [
+              { id: 'repx', label: 'Export the .repx', run: downloadDesign },
+              { id: 'designer', label: 'Open in the DevExpress designer', run: () => void openInDesigner() },
+            ]
+          : []),
       );
       /* What has a button and had no command (2026-11-06, the workspace
          audit): every format, Share, the project's menu, the pin, Test data. */
@@ -6769,7 +6800,7 @@ export default function App() {
       {/* ============================================================ top bar
           Stacked only (CSS hides it above 880px): the menu button that opens
           the sidebar as a drawer, and the mark, as Gemini's phone layout has. */}
-      <div className="wb-topbar">
+      <div className="wb-topbar" inert={behindDrawer}>
         <button
           ref={menuButtonRef}
           className="wb-menu-btn"
@@ -6857,9 +6888,10 @@ export default function App() {
         {railBtn('revisions', 'Revisions', <IconRedo size={19} />)}
         {railBtn('batch', 'Batch', <IconStack size={19} />)}
         {railBtn('library', 'Report library', <IconDoc size={19} />)}
-        <button data-open-config title="Configure" aria-label="Configure" onClick={() => { setIsRailDrawerOpen(false); setIsConfigOpen(true); }}>
+        {/* "Settings", the name of what it opens (2026-11-11, the full audit's WS-36): it said "Configure". */}
+        <button data-open-config title="Settings" aria-label="Settings" onClick={() => { setIsRailDrawerOpen(false); setIsConfigOpen(true); }}>
           <IconTune size={19} />
-          <span className="wb-rail-label">Configure</span>
+          <span className="wb-rail-label">Settings</span>
         </button>
 
         {/* The "Hide panel" chevrons stood here until 2026-11-08, a third way to
@@ -6888,6 +6920,8 @@ export default function App() {
             <button
               className="wb-avatar"
               aria-label="Account"
+              // It opens a menu, and says so (2026-11-11, WS-37).
+              aria-haspopup="menu"
               aria-expanded={showWorkspaceProfile}
               title={`${accountName} — account`}
               onClick={(e) => { e.stopPropagation(); setShowWorkspaceProfile(!showWorkspaceProfile); }}
@@ -6935,6 +6969,7 @@ export default function App() {
         id="wb-review-panel"
         className={`wb-review wb-rise wb-rise-1${isReviewCollapsed || railPanel === 'review' ? ' wb-hidden' : ''}`}
         aria-label="Session"
+        inert={behindDrawer}
         onDragOver={handleDragOver}
         // A file dropped on Projects or Revisions is attached, and the panel
         // gives way to the chat so the file is seen in the box (2026-11-11,
@@ -7071,15 +7106,28 @@ export default function App() {
                 ready={hasApiKey}
                 onNeedKey={() => setIsConfigOpen(true)}
                 runOne={runOneBatchFile}
+                onFinished={(note) =>
+                  threadNow.current.some((m) => m.id === batchAsk.current)
+                    ? setMessages((prev) => [...prev, { id: nextMessageId(), role: 'assistant', text: note }])
+                    : setSaveNotice(note)}
                 onOpen={async (item) => {
-                  // A batch kept from an earlier visit has its REPX alone, and the rest is read off it (batch AG item 23).
-                  const full: DesignResult | null = batchResults.current.get(item.id) ?? (await import('./lib/batchCheckpoint')).resultFromKept(item);
+                  // Read off its REPX, as a kept row's always was (batch AG item 23);
+                  // App's second, full copy of each went (2026-11-11, PL-13).
+                  const full: DesignResult | null = (await import('./lib/batchCheckpoint')).resultFromKept(item);
                   if (!full) return;
                   // A new, unsaved session, never the project that was open
                   // (2026-11-06): it used to keep that project's id, so the
                   // next save wrote the batch report over it.
                   handleClearChat();
                   setResult(full);
+                  /*
+                   * Said in the thread, which is also what saves it
+                   * (2026-11-11, the full audit's WS-17): the autosave waits
+                   * for a message, so a report opened from Batch, dragged on
+                   * the Preview and left for New report was never kept.
+                   */
+                  setMessages((prev) => [...prev, { id: nextMessageId(), role: 'assistant', text: `Opened ${full.title || item.sourceName.split('/').pop()} from Batch.`, result: full }]);
+                  recordRevision('Opened from Batch', full);
                   showRailPanel('review');
                 }}
               />
@@ -7142,6 +7190,7 @@ export default function App() {
           dropped anywhere on it is attached, as on the chat column it replaced. */}
       <main
         className="wb-bench"
+        inert={behindDrawer}
         data-panel={isPanelCollapsed ? 'folded' : 'open'}
         onDragOver={handleDragOver}
         onDragEnter={handleDragEnter}
@@ -7162,7 +7211,15 @@ export default function App() {
                 saved project shows its name, the one the projects list shows,
                 so a rename is seen where it was made. Only for a saved project
                 (2026-11-11, the full audit's WS-23): on unsaved work, the empty
-                home included, it opened with every item disabled. */}
+                home included, it opened with every item disabled. A chevron
+                after the name since the same day (WS-22): it was a second
+                hamburger, and on a phone it sat beside the top bar's, which
+                opens the sidebar, so two identical buttons did two things. */}
+            <h1>
+              <span className="wb-title-btn wb-title-plain">
+                <span>{openSaved?.name || result?.title || 'Untitled report'}</span>
+              </span>
+            </h1>
             {openSaved && (
               <button
                 type="button"
@@ -7174,14 +7231,9 @@ export default function App() {
                 title="Rename, duplicate, archive or delete this project"
                 onClick={() => setIsProjectMenuOpen((open) => !open)}
               >
-                <IconMenu size={17} />
+                <IconChevronDown size={15} />
               </button>
             )}
-            <h1>
-              <span className="wb-title-btn wb-title-plain">
-                <span>{openSaved?.name || result?.title || 'Untitled report'}</span>
-              </span>
-            </h1>
             {isProjectMenuOpen && openSaved && (
               <Suspense fallback={null}>
                 <ProjectMenu
@@ -7210,15 +7262,44 @@ export default function App() {
 
           {/* The panes stay whatever is selected (2026-11-06): the selection's
               toolbar floats over the report, drawn by the Preview. */}
+          {/* Tabs as a keyboard expects them (2026-11-11, the full audit's
+              WS-37): the arrows, Home and End move between them and show the
+              pane, Tab goes past them to the pane, and each names the panel it
+              controls. Five buttons a Tab apart, with no panel, until then.
+              Between the picture and the file, Preview, because that is what
+              it is: the REPX laid out as it prints (components/ReportPreview). */}
           {result && (
-            <div className="wb-plates" role="tablist" aria-label="View">
-              <button role="tab" aria-selected={plate === 'proof'} onClick={() => showPlate('proof')}>Mockup</button>
-              {/* Between the picture and the file, because that is what it is:
-                  the REPX laid out as it prints. See components/ReportPreview. */}
-              <button role="tab" aria-selected={plate === 'print'} onClick={() => showPlate('print')}>Preview</button>
-              <button role="tab" aria-selected={plate === 'data'} onClick={() => showPlate('data')}>Data</button>
-              <button role="tab" aria-selected={plate === 'spec'} onClick={() => showPlate('spec')}>Spec</button>
-              <button role="tab" aria-selected={plate === 'xml'} onClick={() => showPlate('xml')}>REPX</button>
+            <div
+              className="wb-plates"
+              role="tablist"
+              aria-label="View"
+              onKeyDown={(e) => {
+                const order = PLATE_TABS.map(([p]) => p);
+                const at = order.indexOf(plate);
+                const to = e.key === 'ArrowRight' ? (at + 1) % order.length
+                  : e.key === 'ArrowLeft' ? (at - 1 + order.length) % order.length
+                  : e.key === 'Home' ? 0
+                  : e.key === 'End' ? order.length - 1
+                  : -1;
+                if (to < 0) return;
+                e.preventDefault();
+                showPlate(order[to]);
+                document.getElementById(`wb-tab-${order[to]}`)?.focus();
+              }}
+            >
+              {PLATE_TABS.map(([p, name]) => (
+                <button
+                  key={p}
+                  id={`wb-tab-${p}`}
+                  role="tab"
+                  aria-selected={plate === p}
+                  aria-controls="wb-plate-panel"
+                  tabIndex={plate === p ? 0 : -1}
+                  onClick={() => showPlate(p)}
+                >
+                  {name}
+                </button>
+              ))}
             </div>
           )}
 
@@ -7250,7 +7331,13 @@ export default function App() {
                 widened the bar onto two lines while it waited. */}
             {/* Share, as Stitch's beside its Export (2026-11-06): a copy of the
                 report for people added by email or anyone with the link. */}
-            <button className="wb-pill wb-pill--outline" onClick={() => setIsShareOpen(true)} disabled={!result?.repxContent}>
+            {/* A greyed button says why (2026-11-11, the full audit's WS-31). */}
+            <button
+              className="wb-pill wb-pill--outline"
+              onClick={() => setIsShareOpen(true)}
+              disabled={!result?.repxContent}
+              title={result?.repxContent ? 'Share a copy of this report' : 'There is no report to share yet. Ask Forma for one first.'}
+            >
               Share
             </button>
             {/* Its dialog is drawn with the command menu, not here: the bar's blur
@@ -7265,6 +7352,7 @@ export default function App() {
                 aria-expanded={isExportOpen}
                 onClick={() => setIsExportOpen((open) => !open)}
                 disabled={!result}
+                title={result ? 'Export the report' : 'There is no report to export yet. Ask Forma for one first.'}
               >
                 <IconDownload size={14} />
                 Export
@@ -7292,7 +7380,10 @@ export default function App() {
         <div className="wb-stage">
         {/* A click on the empty ground folded the card until 2026-11-08; the
             panel holds the box now, and Stitch's stays open on such a click. */}
-        <div className="wb-bench-body">
+        <div
+          className="wb-bench-body"
+          {...(result ? { id: 'wb-plate-panel', role: 'tabpanel', 'aria-labelledby': `wb-tab-${plate}` } : {})}
+        >
           {result ? (
             <>
               {plate === 'proof' && (
@@ -7410,7 +7501,7 @@ export default function App() {
                         if (!now?.repxContent || !bindTarget.length) return;
                         const done = agent.applyEdits(now.repxContent, bindTarget.map((control) => ({ op: 'bind' as const, control, field })));
                         if (!done.changed) {
-                          setSaveNotice(done.declined[0] ? agent.plainDeclined(done.declined[0]) : 'Nothing needed changing');
+                          setSaveNotice(done.declined[0] ? agent.plainDeclined(done.declined[0]) : 'Nothing needed changing', done.declined[0] ? 'alert' : 'done');
                           return;
                         }
                         const bound = { ...now, repxContent: done.xml };
@@ -7593,6 +7684,7 @@ export default function App() {
                   handleEditMessage(id, text);
                   focusBox();
                 }}
+                undoes={withdrawUndoes}
                 onWithdraw={(id) => {
                   handleWithdrawMessage(id);
                   focusBox();
@@ -7637,12 +7729,29 @@ export default function App() {
                         <span className="wb-ic"><IconWarn size={13} /></span>
                         <span>
                           <b>Verify your email.</b> We sent a link when you created the account.{' '}
+                          {/* Sends it, as it says (2026-11-11, the full audit's
+                              WS-35): it opened Account settings, where a second
+                              "Send it again" sent it. */}
                           <button
                             type="button"
-                            onClick={() => setIsAccountOpen(true)}
-                            style={{ background: 'none', border: 0, padding: 0, font: 'inherit', color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline' }}
+                            disabled={verifyResend !== 'idle'}
+                            onClick={() => {
+                              setVerifyResend('sending');
+                              void loadAuth()
+                                .then(({ service }) => service.sendVerificationEmail(user))
+                                .then(() => {
+                                  setVerifyResend('sent');
+                                  setSaveNotice(`Sent a new link to ${user.email ?? 'your address'}.`);
+                                })
+                                .catch((err) => {
+                                  console.warn('Could not send the verification email:', err);
+                                  setVerifyResend('idle');
+                                  setSaveNotice('The link could not be sent just now. Try again in a minute.', 'alert');
+                                });
+                            }}
+                            style={{ background: 'none', border: 0, padding: 0, font: 'inherit', color: 'var(--accent)', cursor: verifyResend === 'idle' ? 'pointer' : 'default', textDecoration: 'underline' }}
                           >
-                            Send it again
+                            {verifyResend === 'sent' ? 'Sent' : verifyResend === 'sending' ? 'Sending…' : 'Send it again'}
                           </button>
                         </span>
                       </div>
@@ -7825,11 +7934,19 @@ export default function App() {
               </button>
             </div>
           ) : saveNotice && (
-            <div className="wb-toast" role="status">
-              <IconCheck size={14} />
+            <div
+              className="wb-toast"
+              role="status"
+              data-tone={saveNotice.tone}
+              onPointerEnter={() => setNoticeHeld(true)}
+              onPointerLeave={() => setNoticeHeld(false)}
+              onFocus={() => setNoticeHeld(true)}
+              onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setNoticeHeld(false); }}
+            >
+              {saveNotice.tone === 'alert' ? <IconAlert size={14} /> : <IconCheck size={14} />}
               {/* An edit's own reason starts lower case ("duplicated as label2"). */}
-              <span>{saveNotice.charAt(0).toUpperCase() + saveNotice.slice(1)}</span>
-              <button type="button" aria-label="Dismiss" title="Dismiss" onClick={() => setSaveNotice(null)}>
+              <span>{saveNotice.text.charAt(0).toUpperCase() + saveNotice.text.slice(1)}</span>
+              <button type="button" aria-label="Dismiss" title="Dismiss" onClick={() => { setNoticeHeld(false); setSaveNotice(null); }}>
                 <IconClose size={12} />
               </button>
             </div>

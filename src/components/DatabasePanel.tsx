@@ -23,6 +23,7 @@ import { checkSqlAgainstSchema, layoutFor } from '../lib/databaseAi';
 import { driftOf, mainQueryOf, mergeLayouts, queryFromRepx, refreshDataSource } from '../lib/sqlDrift';
 import { schemaFromRepx, type RepxQuery } from '../lib/repxSqlDataSource';
 import { parseParameters } from '../lib/repxParameters';
+import { saveText } from '../lib/download';
 import {
   companionConnections,
   companionLayout,
@@ -341,14 +342,9 @@ function CompanionCard({ onLayoutText, sampleObjects, onRead }: {
   );
 }
 
-function download(name: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+// Through lib/download.ts (2026-11-11, the full audit's PR-17): a link never
+// put in the page saved nothing in Firefox.
+const download = (name: string, text: string) => saveText(name, text);
 
 // Drawn again only when its props change (2026-11-11, PR-05; App's `Steady`
 // keeps the functions it is handed the same between draws).

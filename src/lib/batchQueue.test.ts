@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   createQueue, nextPending, markRunning, markDone, markFailed,
   cancelPending, retryUnfinished, summarise, verdict, outputName,
+  appendQueue, keepsWork, updateItem,
   type BatchItem,
 } from './batchQueue';
 
@@ -167,5 +168,37 @@ describe('naming the output', () => {
 
   it('falls back again when there is nothing to go on', () => {
     expect(outputName({ ...fresh()[0], sourceName: '' })).toBe('report.repx');
+  });
+});
+
+// Files handed to a batch with work left join it (2026-11-11, the full audit's PL-14).
+describe('adding to a batch', () => {
+  it('numbers the new files on from the last, keeping their own words', () => {
+    let queue = markDone(markRunning(fresh(), fresh()[0].id), fresh()[0].id, ok);
+    queue = appendQueue(queue, ['a.png', 'b.png'], 'in German');
+    expect(queue.map((i) => i.id)).toEqual(['0:invoice.png', '1:delivery-note.pdf', '2:old-report.repx', '3:a.png', '4:b.png']);
+    expect(queue.slice(3).map((i) => i.words)).toEqual(['in German', 'in German']);
+    expect(queue[0].words).toBeUndefined();
+    expect(new Set(appendQueue(queue, ['a.png']).map((i) => i.id)).size).toBe(6);
+  });
+
+  it('keeps a batch with a file not made, or a report never downloaded', () => {
+    const id = fresh()[0].id;
+    expect(keepsWork(fresh())).toBe(true);
+    const made = createQueue(['invoice.png']);
+    const done = markDone(markRunning(made, id), id, ok);
+    expect(keepsWork(done)).toBe(true);
+    expect(keepsWork(updateItem(done, id, { downloaded: true }))).toBe(false);
+    expect(keepsWork([])).toBe(false);
+  });
+});
+
+// What reading the file left out is said on its row (PL-15).
+describe('a row with notes', () => {
+  it('says them after the audit\'s word', () => {
+    const id = fresh()[0].id;
+    const done = markDone(markRunning(fresh(), id), id, { ...ok, notes: 'Only the first 8 pages were read.' })[0];
+    expect(verdict(done)).toBe('clean · Only the first 8 pages were read.');
+    expect(verdict({ ...done, warnings: 2 })).toBe('2 warnings · Only the first 8 pages were read.');
   });
 });

@@ -16,7 +16,9 @@ import {
   nextMessageId,
   messageMatches,
   noteCountLabel,
+  noticeDuration,
   projectMatches,
+  projectSearchNote,
   requestAnnouncement,
   requestMatches,
   requestState,
@@ -546,14 +548,41 @@ describe('projectMatches', () => {
   });
 });
 
+// "Messages", what it counts (2026-11-11, the full audit's WS-34).
 describe('noteCountLabel', () => {
   it('singularises exactly one', () => {
-    expect(noteCountLabel(1)).toBe('1 note');
+    expect(noteCountLabel(1)).toBe('1 message');
   });
 
   it('pluralises none and many', () => {
-    expect(noteCountLabel(0)).toBe('0 notes');
-    expect(noteCountLabel(2)).toBe('2 notes');
-    expect(noteCountLabel(11)).toBe('11 notes');
+    expect(noteCountLabel(0)).toBe('0 messages');
+    expect(noteCountLabel(2)).toBe('2 messages');
+    expect(noteCountLabel(11)).toBe('11 messages');
+  });
+});
+
+// WS-34: a search whose only match is archived says where it is.
+describe('projectSearchNote', () => {
+  const p = (id: string, name: string) => ({ id, name, messages: [] });
+  const projects = [p('1', 'Sales by region'), p('2', 'Old invoice'), p('3', 'Old statement')];
+
+  it('says nothing while a row shows', () => {
+    expect(projectSearchNote(projects, 'sales', [], false)).toBeNull();
+    expect(projectSearchNote(projects, 'invoice', ['2'], true)).toBeNull();
+  });
+
+  it('names an archived match, and says when nothing holds the words', () => {
+    expect(projectSearchNote(projects, 'invoice', ['2'], false)).toBe('Only in the archive: Old invoice. Open Archived below to see it.');
+    expect(projectSearchNote(projects, 'old', ['2', '3'], false)).toBe('Only in the archive: 2 projects. Open Archived below to see them.');
+    expect(projectSearchNote(projects, 'chart', [], false)).toBe('No project holds that.');
+  });
+});
+
+// WS-32: a notice stays long enough to be read.
+describe('noticeDuration', () => {
+  it('is four seconds and fifty milliseconds a character', () => {
+    expect(noticeDuration('')).toBe(4000);
+    expect(noticeDuration('Undone')).toBe(4300);
+    expect(noticeDuration('x'.repeat(120))).toBe(10_000);
   });
 });

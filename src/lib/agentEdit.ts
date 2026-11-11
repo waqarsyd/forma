@@ -1157,6 +1157,55 @@ function introduced(key: string, type: string | undefined): string {
   return `${/^[aeiou]/.test(kind) ? 'an' : 'a'} ${kind}`;
 }
 
+/** The words of a control's name that say what it is for, less the ones that say its kind ("labelTitle" is "title"). */
+const KIND_WORDS = new Set(['xr', 'label', 'lbl', 'table', 'tbl', 'cell', 'row', 'txt', 'text', 'textbox', 'pic', 'picture', 'image', 'img', 'line', 'panel', 'pnl', 'box', 'page', 'info', 'fld', 'field', 'control', 'ctl', 'ctrl']);
+function roleOf(name: string): string {
+  return name
+    .replace(/#\d+$/, '')
+    .replace(/([a-z\d])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .split(/[\s_.-]+/)
+    .map((w) => w.toLowerCase().replace(/\d+$/, ''))
+    .filter((w) => w && !KIND_WORDS.has(w))
+    .map((w) => (w === 'head' || w === 'header' ? 'heading' : w))
+    .join(' ');
+}
+
+/**
+ * Each control of a report in the words of the reply's "Changed" list
+ * (2026-11-11, the full audit's UI9): by what it is for, taken from its name
+ * ("the title" for `labelTitle`), else by its kind and caption ('the label
+ * "Invoice No"'), and a table as "the table", or by what its name says it is
+ * for when a report has more than one ("the heading table"). The list said
+ * the names the designer keeps ("retyped labelTitle", "row 1, cell 1 of
+ * tableHead"), which nobody reading the reply knows. A name is kept only
+ * where two parts would read the same.
+ */
+function plainNames(...reports: ReadonlyMap<string, Seen>[]): Map<string, string> {
+  const all = new Map<string, PreviewControl>();
+  for (const report of reports) for (const [key, { c }] of report) if (!all.has(key)) all.set(key, c);
+  const tables = [...all.values()].filter((c) => plainKind(c.type) === 'table').length;
+  const said = new Map<string, string>();
+  for (const [key, c] of all) {
+    const kind = plainKind(c.type);
+    if (key.includes('@')) {
+      said.set(key, `the ${kind}`);
+      continue;
+    }
+    const role = roleOf(key);
+    if (kind === 'table') {
+      said.set(key, tables > 1 && role ? `the ${role} table` : 'the table');
+      continue;
+    }
+    const caption = !c.field && c.text.trim() ? c.text.trim().split(/\r?\n/)[0] : '';
+    said.set(key, role ? `the ${role}` : caption ? `the ${kind} "${clip(caption)}"` : c.field ? `the ${kind} for [${c.field}]` : `the ${kind}`);
+  }
+  const uses = new Map<string, number>();
+  for (const phrase of said.values()) uses.set(phrase, (uses.get(phrase) ?? 0) + 1);
+  for (const [key, phrase] of said) if (!key.includes('@') && (uses.get(phrase) ?? 0) > 1) said.set(key, `**${key}**`);
+  return said;
+}
+
 /** A choice in the selection toolbar's Format menu (2026-11-05). */
 export type FormatAction = 'bold' | 'italic' | 'larger' | 'smaller' | 'left' | 'center' | 'right';
 
@@ -1294,7 +1343,7 @@ const AT = '\u0000';
  * row made blue read as four lines, "recoloured row 1, cell N of ...", one a
  * cell. More than six lines are one count.
  */
-function cellChanges(name: string, was: PreviewControl, now: PreviewControl): string[] {
+function cellChanges(name: string, was: PreviewControl, now: PreviewControl, heading = false): string[] {
   const grid: (string[] | null)[][] = now.rows.map((row, r) =>
     row.cells.map((cell, k) => {
       const old = was.rows[r]?.cells[k];
@@ -1324,11 +1373,21 @@ function cellChanges(name: string, was: PreviewControl, now: PreviewControl): st
     lines.push(...say(column[0]!, `column ${k + 1} of ${name}`));
     grid.forEach((_, r) => done.add(`${r},${k}`));
   }
+  /*
+   * A cell on its own by what it is (UI9): a cell of a heading table's first
+   * row is "a heading cell", any other "the cell in row 2, column 3", and
+   * the place by number again wherever two lines would read the same.
+   */
+  const single: { said: string[]; r: number; k: number }[] = [];
   grid.forEach((row, r) =>
     row.forEach((cell, k) => {
-      if (cell && !done.has(`${r},${k}`)) lines.push(...say(cell, `row ${r + 1}, cell ${k + 1} of ${name}`));
+      if (cell && !done.has(`${r},${k}`)) single.push({ said: cell, r, k });
     }),
   );
+  const at = (r: number, k: number) => `the cell in row ${r + 1}, column ${k + 1} of ${name}`;
+  const plain = single.map(({ said, r, k }) => say(said, heading && r === 0 ? `a heading cell of ${name}` : at(r, k)));
+  const seen = plain.flat().reduce((m, l) => m.set(l, (m.get(l) ?? 0) + 1), new Map<string, number>());
+  single.forEach(({ said, r, k }, i) => lines.push(...(plain[i].some((l) => (seen.get(l) ?? 0) > 1) ? say(said, at(r, k)) : plain[i])));
   // A whole table restyled in different ways is one line, not one per cell.
   return lines.length > 6 ? [`changed ${changed} cells of ${name}`] : lines;
 }
@@ -1344,16 +1403,18 @@ export function describeChanges(before: string, after: string, limit = 10): stri
   const lines: string[] = [];
   const a = controlsOf(before);
   const b = controlsOf(after);
+  // Each part by what it is, not by the name the designer keeps (UI9).
+  const plain = plainNames(a, b);
   for (const [key, { c, band }] of b) {
-    if (!a.has(key)) lines.push(`added ${introduced(key, c.type)} to ${plainBand(band)}${says(c) ? `, ${says(c)}` : ''}`);
+    if (!a.has(key)) lines.push(`added ${introduced('@', c.type)} to ${plainBand(band)}${says(c) ? `, ${says(c)}` : ''}`);
   }
   for (const [key, { c }] of a) {
-    if (!b.has(key)) lines.push(`removed ${introduced(key, c.type)}`);
+    if (!b.has(key)) lines.push(`removed ${key.includes('@') ? introduced(key, c.type) : plain.get(key) ?? introduced(key, c.type)}`);
   }
-  for (const [key, { c: was }] of a) {
+  for (const [key, { c: was, band }] of a) {
     const now = b.get(key)?.c;
     if (!now) continue;
-    const name = named(key, was.type);
+    const name = plain.get(key) ?? named(key, was.type);
     if (was.text !== now.text && !now.field) lines.push(`retyped ${name} to "${clip(now.text)}"`);
     const [p, q] = [fileBox(was), fileBox(now)];
     if (p.x !== q.x || p.y !== q.y) lines.push(`moved ${name} to ${q.x}, ${q.y}`);
@@ -1363,7 +1424,9 @@ export function describeChanges(before: string, after: string, limit = 10): stri
     // appearance having changed and the font not.
     lines.push(...lookChanges(name, was, now));
     if (was.visible !== now.visible) lines.push(`${now.visible ? 'showed' : 'hid'} ${name}`);
-    lines.push(...cellChanges(name, was, now));
+    // A heading table: one on the page header, or named for its headings. Not
+    // any table on a group header (2026-11-11), whose first row is often data.
+    lines.push(...cellChanges(name, was, now, /pageheader/i.test(band) || /head/i.test(key)));
   }
   const [ra, rb] = [ROOT.exec(before)?.[1] ?? '', ROOT.exec(after)?.[1] ?? ''];
   const paper = (attrs: string) => `${attrOf(attrs, 'PaperKind') ?? 'Letter'}${(attrOf(attrs, 'Landscape') ?? '').toLowerCase() === 'true' ? ' landscape' : ''}`;

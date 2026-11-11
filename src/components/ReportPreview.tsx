@@ -51,6 +51,7 @@ import {
   type PaginatedReport,
 } from '../lib/reportPreview';
 import { parseParameters } from '../lib/repxParameters';
+import { saveBlob } from '../lib/download';
 import { choicesFor, parameterLookups, sqlPreview } from '../lib/sqlPreview';
 import { companionFill, companionReachableFrom, previewFromFill } from '../lib/sqlCompanion';
 import { readRepxDataSources } from '../lib/repxSqlDataSource';
@@ -1742,15 +1743,10 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
     console.error(`Forma could not write the ${what}.`, err);
     setExportNote(`Forma could not write the ${what}${err instanceof Error && err.message ? `: ${err.message}` : '.'}`);
   };
+  // Through lib/download.ts (2026-11-11, the full audit's PR-17): the address
+  // was let go straight after the click, before some browsers read it.
   const download = useCallback((data: BlobPart, type: string, extension: string) => {
-    const url = URL.createObjectURL(new Blob([data], { type }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = exportFileName(title, extension);
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    saveBlob(exportFileName(title, extension), new Blob([data], { type }));
   }, [title]);
   const exportCsv = useCallback(() => {
     setExportNote(null);

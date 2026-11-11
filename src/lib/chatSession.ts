@@ -585,8 +585,40 @@ export function requestMatches(request: ChatRequest, query: string): boolean {
  * The review column's own count, and the same wording on a saved project's row.
  *
  * Two call sites had this ternary written out; they are the kind that drift into
- * saying "1 notes" one release apart.
+ * saying "1 notes" one release apart. "Messages" since 2026-11-11 (the full
+ * audit's WS-34): what it counts are the conversation's messages, and "notes"
+ * is a word the workspace uses for nothing else.
  */
 export function noteCountLabel(count: number): string {
-  return count === 1 ? '1 note' : `${count} notes`;
+  return count === 1 ? '1 message' : `${count} messages`;
+}
+
+/**
+ * What the projects list says when a search shows no row (2026-11-11, the
+ * full audit's WS-34): "No project holds that." said the same when the only
+ * match was an archived project the list was hiding, so the person concluded
+ * it was gone. Null while some row shows.
+ */
+export function projectSearchNote(
+  projects: readonly { id: string; name: string; messages: readonly { text: string; clarify?: { questions: { question: string }[] } }[]; search?: string }[],
+  query: string,
+  archived: readonly string[],
+  showArchived: boolean,
+): string | null {
+  const found = projects.filter((p) => projectMatches(p, query));
+  const shown = showArchived ? found : found.filter((p) => !archived.includes(p.id));
+  if (shown.length) return null;
+  if (found.length) return found.length === 1 ? `Only in the archive: ${found[0].name}. Open Archived below to see it.` : `Only in the archive: ${found.length} projects. Open Archived below to see them.`;
+  return 'No project holds that.';
+}
+
+/**
+ * How long a workspace notice (the toast at the bottom right) stays
+ * (2026-11-11, the full audit's WS-32): four seconds, and fifty milliseconds
+ * more for each character, so a sentence is read before it goes. Every notice
+ * stayed four seconds, the longest ones too. The toast also waits while the
+ * pointer or the keyboard is on it.
+ */
+export function noticeDuration(text: string): number {
+  return 4000 + 50 * text.length;
 }

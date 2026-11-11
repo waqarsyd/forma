@@ -27,7 +27,7 @@ import { formatSessionStamp } from '../lib/datetime';
 import ErrorBoundary from './ErrorBoundary';
 import { IconChevronDown, IconCollapse, IconDownload, IconExpand, IconEye, IconPencil, IconSearch, IconTrash } from './landing/icons';
 
-export interface ConversationPanelProps<R> extends Omit<ChatThreadProps<R>, 'messages' | 'showWorking' | 'turns' | 'renderAsk' | 'currentTurn'> {
+export interface ConversationPanelProps<R> extends Omit<ChatThreadProps<R>, 'messages' | 'showWorking' | 'turns' | 'renderAsk' | 'currentTurn' | 'searchAt'> {
   /** Every request, oldest first (`requestsOf`). */
   requests: ReadonlyArray<ChatRequest<R, PreviewMeta>>;
   /** Folded to its mark, the box with it, as Stitch's panel folds. */
@@ -56,6 +56,12 @@ export interface ConversationPanelProps<R> extends Omit<ChatThreadProps<R>, 'mes
   busy?: boolean;
   /** The requests whose change to the report can be shown, outlined on the Preview, as the log's pick did. */
   changed?: ReadonlySet<string>;
+  /**
+   * The requests whose answer's change is still the report's last, which a
+   * withdrawal undoes as the reply's Undo would (2026-11-11, the full audit's
+   * WS-41), and whose question says so.
+   */
+  undoes?: ReadonlySet<string>;
   onShowChange?: (id: string) => void;
   /** The request whose change is shown, marked current. */
   currentId?: string | null;
@@ -107,10 +113,13 @@ function AskPill<R>({
   onRetry,
   onShowChange,
   query,
+  undoes = false,
 }: {
   ask: ChatMessage<R, PreviewMeta>;
   initials: string;
   disabled: boolean;
+  /** Withdrawing it undoes what its answer changed (WS-41). */
+  undoes?: boolean;
   onEdit?: (id: string, text: string) => void;
   onWithdraw?: (id: string) => void;
   onShowVersion?: (id: string, to: number) => void;
@@ -170,7 +179,10 @@ function AskPill<R>({
         */}
       {!editing && (withdrawing ? (
         <div className="wb-note-actions wb-ask-foot" role="group" aria-label="Withdraw this message">
-          <span className="wb-note-ask">Withdraw this message and Forma's answer?</span>
+          {/* Says what it does (2026-11-11, the full audit's WS-41): a
+              withdrawal took the answer out of the thread and left the change
+              it made in the report, so the report no longer matched the thread. */}
+          <span className="wb-note-ask">{undoes ? 'Withdraw this message and undo what Forma changed?' : "Withdraw this message and Forma's answer?"}</span>
           <button
             type="button"
             className="wb-note-act wb-danger"
@@ -213,7 +225,7 @@ function AskPill<R>({
             </button>
           )}
           {onWithdraw && (
-            <button type="button" className="wb-note-act wb-note-icon" title="Withdraw this message and Forma's answer" aria-label="Withdraw" disabled={disabled} onClick={() => setWithdrawing(true)}>
+            <button type="button" className="wb-note-act wb-note-icon" title={undoes ? 'Withdraw this message and undo what Forma changed' : "Withdraw this message and Forma's answer"} aria-label="Withdraw" disabled={disabled} onClick={() => setWithdrawing(true)}>
               <IconTrash size={13} />
             </button>
           )}
@@ -262,18 +274,33 @@ function AskPill<R>({
  */
 function useSearchJump(threadHost: React.RefObject<HTMLDivElement | null>, query: string) {
   const at = useRef(-1);
+  /** Which message Enter is on, from 1, for the thread's "2 of 5"; 0 before any. */
+  const [shown, setShown] = useState(0);
+  /*
+   * A message at a time, what was asked as well as the replies (2026-11-11,
+   * the full audit's WS-34): it stepped through each marked word, so a reply
+   * holding the word five times took five presses, and the count could not
+   * say where Enter was. ChatThread marks each message holding the search
+   * with `data-hit`.
+   */
   const go = (step: number) => {
-    const hits = threadHost.current ? [...threadHost.current.querySelectorAll<HTMLElement>('mark.wb-hit')] : [];
-    if (!hits.length) return;
+    const hits = threadHost.current ? [...threadHost.current.querySelectorAll<HTMLElement>('[data-hit]')] : [];
+    if (!hits.length) {
+      setShown(0);
+      return;
+    }
     at.current = (at.current + step + hits.length) % hits.length;
-    hits[at.current].scrollIntoView?.({ block: 'center' });
+    setShown(at.current + 1);
+    const target = hits[at.current].querySelector<HTMLElement>('mark.wb-hit') ?? hits[at.current];
+    target.scrollIntoView?.({ block: 'center' });
   };
   useEffect(() => {
     at.current = -1;
+    setShown(0);
     if (query.trim()) requestAnimationFrame(() => go(1));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- a new query starts at its first match
   }, [query]);
-  return go;
+  return { go, shown };
 }
 
 /**
@@ -306,6 +333,7 @@ export default function ConversationPanel<R>({
   onRetry,
   busy = false,
   changed,
+  undoes,
   onShowChange,
   currentId = null,
   onQuery,
@@ -321,7 +349,7 @@ export default function ConversationPanel<R>({
   const [searching, setSearching] = useState(query.trim().length > 0);
   const searchRef = useRef<HTMLInputElement>(null);
   const threadHost = useRef<HTMLDivElement>(null);
-  const jump = useSearchJump(threadHost, query);
+  const { go: jump, shown: searchAt } = useSearchJump(threadHost, query);
   useEffect(() => {
     if (!revealSearch) return;
     setSearching(true);
@@ -417,6 +445,7 @@ export default function ConversationPanel<R>({
             messages={requests.flatMap((r) => r.replies)}
             turns={requests}
             currentTurn={currentId}
+            searchAt={searchAt || undefined}
             isChatting={isChatting}
             isAnalyzing={isAnalyzing}
             // Between a turn's steps too (2026-11-11, the full audit's WS-19): Try again,
@@ -434,6 +463,7 @@ export default function ConversationPanel<R>({
                 onOpenAttachment={onOpenAttachment}
                 onRetry={onRetry}
                 onShowChange={changed?.has(id) && onShowChange ? () => onShowChange(id) : undefined}
+                undoes={undoes?.has(id) ?? false}
                 query={query}
               />
             )}

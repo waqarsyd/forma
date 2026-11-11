@@ -20,6 +20,8 @@
  * eight (`MAX_PDF_PAGES`), so one document never asks first.
  */
 
+import { pagesPerFile } from './attachmentBudget';
+
 /** One attached file, as the plan lists it. */
 export interface PlanFile {
   uploadId: string;
@@ -57,9 +59,36 @@ export function planFiles(images: readonly { uploadId: string; file: string }[],
  * "separate reports", "a report per file", "in batch"), else one report from
  * all of them, as the box has always meant (2026-11-10, the full audit: the
  * plan starts at once, so the words decide what Start used to).
+ *
+ * Only words about reports or files (2026-11-11, the full audit's PL-08):
+ * any "each", "every" or "per page" did it, so "Rebuild these pages as one
+ * invoice, keep every line" made three reports in Batch, and so did "make
+ * each customer a group" and "show the totals per page". "Separate" only of
+ * reports or files ("keep the logo separate" is one report), and "one per
+ * file" and a bare "per file" still send it, as they did before.
  */
+const EACH_WORDS = /\b(one|a|separate)\s+reports?\s+(for\s+)?(each|every|per)\b|\breports?\s+(for\s+)?(each|every)\s+(file|page|picture|one)\b|\b(each|every)\s+(file|page|picture|one)\s+(as|into)\s+(its\s+own|a\s+separate)\b|\beach\s+(as\s+)?its\s+own\s+report\b|\bone\s+per\s+(file|picture)\b|\bper\s+file\b|\bseparate\s+(reports?|files?)\b|\bseparately\b|\bin\s+batch\b|\bas\s+a\s+batch\b/i;
 export function modeFromWords(words: string): PlanMode {
-  return /\b(each|every|separate(ly)?|per file|per page|one per|in batch|as a batch)\b/i.test(words) ? 'each' : 'one';
+  return EACH_WORDS.test(words) ? 'each' : 'one';
+}
+
+/**
+ * The words a request sends to Batch with, less the words that sent it there
+ * (2026-11-11, the full audit's PL-15): "one report each, in German,
+ * landscape" asks each file for "in German, landscape". Batch made each
+ * report from the file alone, with no words, so whatever else was asked
+ * was lost.
+ */
+export function batchWords(words: string): string {
+  const left = words
+    .replace(/\b(one\s+report\s+each|each\s+(as\s+)?its\s+own\s+report|(a|one|separate)\s+reports?\s+(for\s+)?(each|every|per)(\s+(file|page|picture|one))?|separate\s+reports?(\s+(for|of)\s+(these|them|those))?|separately|(make\s+)?one\s+per\s+(file|picture)|per\s+file|in\s+batch|as\s+a\s+batch)\b/gi, ' ')
+    .replace(/\s+([,.;:!?])/g, '$1')
+    .replace(/([,;:])(?:\s*[,;:])+/g, '$1')
+    .replace(/^[\s,.;:]+|[\s,;:]+$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  // A bare "Make" or "Please create them" left is no request of its own.
+  return /^(please\s+)?(make|create|build|do|generate|design)(\s+(them|these|those|it))?(\s+please)?[.!]?$/i.test(left) ? '' : left;
 }
 
 /** The plan a message needs before it is sent, or null when it is light enough to go straight on. */
@@ -96,13 +125,52 @@ export function planSteps(plan: JobPlan, ai: string): string[] {
   ];
 }
 
-/** What Forma says with the plan. */
+/** "these 3 pictures", "these 2 PDFs", "these 4 files": what the files are, in the person's words. */
+function theseFiles(files: readonly PlanFile[]): string {
+  const n = files.length;
+  const kind = files.every((f) => /\.(png|jpe?g|gif|webp|bmp|tiff?|heic)$/i.test(f.file))
+    ? ['picture', 'pictures']
+    : files.every((f) => /\.pdf$/i.test(f.file)) ? ['PDF', 'PDFs'] : ['file', 'files'];
+  return n === 1 ? `this ${kind[0]}` : `these ${n} ${kind[1]}`;
+}
+
+/**
+ * What Forma says with the plan: what it is making, from what (2026-11-11,
+ * the full audit's PL-14). It counted the files and the pages and ended
+ * "Stop pauses it", which is how, not what. One report from more pages than
+ * one report takes (`MAX_REQUEST_PAGES`, PL-22) says which it used.
+ */
 export function planReply(plan: JobPlan): string {
-  const pages = plan.files.reduce((n, f) => n + f.pages, 0);
-  const what = `${count(plan.files.length, 'file')}${pages ? ` and ${count(pages, 'page')}` : ''}`;
-  return plan.mode === 'each' && plan.files.length > 1
-    ? `That is ${what}: I'm making a report from each, in Batch. Stop pauses it.`
-    : `That is ${what}: I'm making one report from all of them. Say "one report each" if they are different reports. Stop stops it.`;
+  const files = keptFiles(plan);
+  if (plan.mode === 'each' && files.length > 1) {
+    return `Making a report from each of ${theseFiles(files)}, one after another, in Batch.`;
+  }
+  const pages = files.reduce((n, f) => n + f.pages, 0);
+  const used = [...pagesPerFile(files).values()].reduce((n, k) => n + k, 0);
+  const capped = used < pages ? ` I used the first ${used} pages of the ${pages}, the first pages of each file.` : '';
+  const each = files.length > 1 ? ` If they're different reports, say "one report each".` : '';
+  return `Making one report from ${theseFiles(files)}.${capped}${each}`;
+}
+
+/**
+ * What the thread says when the reports a request sent to Batch are made
+ * (2026-11-11, the full audit's PL-14): which are ready and what to do with
+ * them, and what was not made. Batch said nothing to the chat, so a request
+ * answered "in Batch" ended there.
+ */
+export function batchReadyNote(items: readonly { title: string; sourceName: string; status: string }[]): string {
+  const name = (i: { title: string; sourceName: string }) => i.title || (i.sourceName.split('/').pop() ?? '').replace(/\.[^.]+$/, '') || 'report';
+  const made = items.filter((i) => i.status === 'done');
+  const missed = items.length - made.length;
+  const names = made.length > 6 ? `${made.slice(0, 5).map(name).join(', ')} and ${made.length - 5} more` : made.map(name).join(', ');
+  if (!made.length) {
+    return items.length === 1 ? 'The report was not made. Retry in Batch makes it.' : `None of the ${items.length} reports was made. Retry in Batch makes them.`;
+  }
+  const ready = made.length === 1
+    ? `1 report is ready in Batch: ${names}. Open it, or download it as a .repx.`
+    : `${made.length} reports are ready in Batch: ${names}. Open one, or download them all as a .zip.`;
+  const other = missed === 1 ? ' One was not made; Retry in Batch makes it.' : missed > 1 ? ` ${missed} were not made; Retry in Batch makes them.` : '';
+  return `${ready}${other}`;
 }
 
 /** What the thread says once the plan was answered. */
@@ -126,11 +194,28 @@ export interface PlannedJob<M extends { uploadId: string }, T extends { uploadId
   files: ReadonlyMap<string, File>;
 }
 
-/** The pages and texts of the files a plan keeps, for one report from them. */
-export function keptAttachments<M extends { uploadId: string }, T extends { uploadId: string }>(plan: JobPlan, job: PlannedJob<M, T>) {
-  const keep = new Set(keptFiles(plan).map((f) => f.uploadId));
-  const at = job.imageMeta.flatMap((m, i) => (keep.has(m.uploadId) ? [i] : []));
-  return { images: at.map((i) => job.images[i]), imageMeta: at.map((i) => job.imageMeta[i]), texts: job.texts.filter((t) => keep.has(t.uploadId)) };
+/**
+ * The pages and texts of the files a plan keeps, for one report from them:
+ * at most `MAX_REQUEST_PAGES` pages, the first pages of each file (2026-11-11,
+ * the full audit's PL-22). A page's text goes with its page; a text with no
+ * page (a .repx, a document) goes with its file.
+ */
+export function keptAttachments<M extends { uploadId: string; page?: number }, T extends { uploadId: string; page?: number }>(plan: JobPlan, job: PlannedJob<M, T>) {
+  const files = keptFiles(plan);
+  const room = pagesPerFile(files);
+  const seen = new Map<string, number>();
+  const pageKeys = new Set<string>();
+  const capped = new Set(files.filter((f) => (room.get(f.uploadId) ?? 0) < f.pages).map((f) => f.uploadId));
+  const at = job.imageMeta.flatMap((m, i) => {
+    if (!room.has(m.uploadId)) return [];
+    const n = seen.get(m.uploadId) ?? 0;
+    seen.set(m.uploadId, n + 1);
+    if (n >= (room.get(m.uploadId) ?? 0) && capped.has(m.uploadId)) return [];
+    pageKeys.add(`${m.uploadId}#${m.page ?? 0}`);
+    return [i];
+  });
+  const texts = job.texts.filter((t) => room.has(t.uploadId) && (!capped.has(t.uploadId) || t.page === undefined || pageKeys.has(`${t.uploadId}#${t.page}`)));
+  return { images: at.map((i) => job.images[i]), imageMeta: at.map((i) => job.imageMeta[i]), texts };
 }
 
 /**

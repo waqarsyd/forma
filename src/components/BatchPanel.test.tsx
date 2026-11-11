@@ -216,6 +216,60 @@ describe('running the queue', () => {
     expect(screen.queryByText('2/2 done')).toBeNull();
   });
 
+  // 2026-11-11, the full audit's PL-14 and PL-15: files the chat hands over while a batch runs wait
+  // for it and join it, each with the words it was sent with, and the thread is told when they are made.
+  it('adds files the chat sends while a batch runs, after it, and says when they are made', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    const runOne = vi.fn(async (f: File, _signal: AbortSignal, _id: string, _words: string) => {
+      if (f.name === 'a.png') await gate;
+      return outcome(f.name.replace('.png', '').toUpperCase());
+    });
+    const onFinished = vi.fn();
+    const props = { ready: true, runOne, onOpen: vi.fn(), onNeedKey: vi.fn(), onFinished };
+    const { rerender } = render(<BatchPanel {...props} incoming={{ files: [file('a.png')], id: 1, words: 'in German' }} />);
+    await waitFor(() => expect(runOne).toHaveBeenCalledTimes(1));
+    rerender(<BatchPanel {...props} incoming={{ files: [file('b.png'), file('c.png')], id: 2, words: 'landscape' }} />);
+    expect(document.querySelectorAll('.bp-row')).toHaveLength(1);
+    release();
+    await waitFor(() => expect(screen.getByText('3/3 done')).toBeTruthy());
+    expect(runOne.mock.calls.map((c) => [c[0].name, c[3]])).toEqual([['a.png', 'in German'], ['b.png', 'landscape'], ['c.png', 'landscape']]);
+    expect(onFinished.mock.calls.map((c) => c[0])).toEqual([
+      '1 report is ready in Batch: A. Open it, or download it as a .repx.',
+      '2 reports are ready in Batch: B, C. Open one, or download them all as a .zip.',
+    ]);
+  });
+
+  it('adds to a batch whose reports were never downloaded, and replaces one that was', async () => {
+    const runOne = vi.fn(async (f: File) => outcome(f.name));
+    render(<BatchPanel ready runOne={runOne} onOpen={vi.fn()} onNeedKey={vi.fn()} />);
+    choose(['a.png']);
+    fireEvent.click(screen.getByText('Generate 1'));
+    await waitFor(() => expect(screen.getByText('1/1 done')).toBeTruthy());
+    choose(['b.png']);
+    expect(screen.getByText(/1 file added after the ones already here\./)).toBeTruthy();
+    expect(document.querySelectorAll('.bp-row')).toHaveLength(2);
+    fireEvent.click(screen.getByText('Continue'));
+    await waitFor(() => expect(screen.getByText('2/2 done')).toBeTruthy());
+    vi.stubGlobal('URL', Object.assign(Object.create(URL), { createObjectURL: vi.fn(() => 'blob:zip'), revokeObjectURL: vi.fn() }));
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    fireEvent.click(screen.getByText('Download 2 as .zip'));
+    expect(click).toHaveBeenCalledTimes(1);
+    choose(['c.png']);
+    expect(document.querySelectorAll('.bp-row')).toHaveLength(1);
+    click.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it('says how a Crystal Reports file gets in', () => {
+    render(<BatchPanel ready runOne={vi.fn()} onOpen={vi.fn()} onNeedKey={vi.fn()} />);
+    const input = document.querySelector('input[type=file]') as HTMLInputElement;
+    const given = [file('a.png'), new File(['x'], 'old.rpt', { type: '' })];
+    Object.defineProperty(input, 'files', { configurable: true, value: Object.assign(given, { item: (i: number) => given[i] }) });
+    fireEvent.change(input);
+    expect(screen.getByText(/^1 file ready\. Nothing is sent until you start\. 1 Crystal Reports file: export it/)).toBeTruthy();
+  });
+
   it('offers to retry what did not finish', async () => {
     const runOne = vi.fn(async (f: File) => {
       if (f.name === 'b.png') throw new Error('network');

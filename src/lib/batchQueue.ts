@@ -55,6 +55,17 @@ export interface BatchItem {
   warnings: number;
   /** Why it failed, or why it was skipped. Empty on success. */
   message: string;
+  /**
+   * What the request asked of this file beyond making a report of it, as the
+   * chat said it ("in German, landscape"), with the words that sent it to
+   * Batch taken out (2026-11-11, the full audit's PL-15). Empty for files
+   * added in the panel itself.
+   */
+  words?: string;
+  /** What reading the file left out or could not read, said on its row (PL-15). */
+  notes?: string;
+  /** Saved as a .repx or in the .zip, so a new batch may replace it (PL-14). */
+  downloaded?: boolean;
 }
 
 export interface BatchSummary {
@@ -80,9 +91,9 @@ export interface BatchSummary {
  * files is identical, which keeps the component's keys stable across a re-run
  * and makes the tests deterministic. Nothing here needs unguessability.
  */
-export function createQueue(names: readonly string[]): BatchItem[] {
+export function createQueue(names: readonly string[], words = '', start = 0): BatchItem[] {
   return names.map((sourceName, index) => ({
-    id: `${index}:${sourceName}`,
+    id: `${start + index}:${sourceName}`,
     sourceName,
     status: 'pending' as BatchStatus,
     title: '',
@@ -91,7 +102,28 @@ export function createQueue(names: readonly string[]): BatchItem[] {
     errors: 0,
     warnings: 0,
     message: '',
+    ...(words ? { words } : {}),
   }));
+}
+
+/**
+ * Files added to a batch that has work left (2026-11-11, the full audit's
+ * PL-14): after it, numbered on from its last, so no id is used twice.
+ * Handing Batch more files replaced the queue and the files kept with it,
+ * so a batch paused at a limit with thirty done was lost without a word.
+ */
+export function appendQueue(queue: readonly BatchItem[], names: readonly string[], words = ''): BatchItem[] {
+  const next = queue.reduce((n, item) => Math.max(n, (Number.parseInt(item.id, 10) || 0) + 1), queue.length);
+  return [...queue, ...createQueue(names, words, next)];
+}
+
+/**
+ * Whether a batch still holds work someone would miss: a file not made yet,
+ * or a report made and never saved. Such a batch is added to; one whose every
+ * report is made and downloaded is replaced (PL-14).
+ */
+export function keepsWork(queue: readonly BatchItem[]): boolean {
+  return queue.some((item) => item.status !== 'done' || (item.repxContent !== '' && !item.downloaded));
 }
 
 /** The next item to run, or null when there is nothing left to start. */
@@ -118,6 +150,8 @@ export interface BatchOutcome {
   bands: number;
   errors: number;
   warnings: number;
+  /** What reading the file left out (a PDF's later pages, a scan), said on the row (PL-15). */
+  notes?: string;
 }
 
 export function markDone(queue: readonly BatchItem[], id: string, outcome: BatchOutcome): BatchItem[] {
@@ -185,11 +219,15 @@ export function verdict(item: BatchItem): string {
     case 'running': return 'generating…';
     case 'cancelled': return item.message || 'cancelled';
     case 'failed': return item.message || 'failed';
-    case 'done':
+    case 'done': {
+      // What reading the file left out goes after the audit's word (PL-15):
+      // it was dropped, so a PDF read to its eighth page said "clean".
+      const note = item.notes ? ` · ${item.notes}` : '';
       if (!item.repxContent) return 'no REPX was produced';
-      if (item.errors) return `${item.errors} error${item.errors > 1 ? 's' : ''} — content will be lost`;
-      if (item.warnings) return `${item.warnings} warning${item.warnings > 1 ? 's' : ''}`;
-      return 'clean';
+      if (item.errors) return `${item.errors} error${item.errors > 1 ? 's' : ''} — content will be lost${note}`;
+      if (item.warnings) return `${item.warnings} warning${item.warnings > 1 ? 's' : ''}${note}`;
+      return `clean${note}`;
+    }
   }
 }
 

@@ -118,6 +118,8 @@ export interface ChatThreadProps<R> {
    * the card being one request.
    */
   query?: string;
+  /** Which match the search's Enter is on, from 1, for "2 of 5" (2026-11-11, WS-34); absent before any. */
+  searchAt?: number;
   /**
    * Whether a reply being written shows here (2026-11-05). The card shows a
    * request at a time, and an older one, read while a newer one runs, shows
@@ -516,7 +518,8 @@ const ChatNote = memo(function ChatNote<R>({
    * was ever reached. `git log -S"wb-note--me"` finds it.
    */
   return (
-    <article className="wb-note">
+    // `data-hit` while it holds the search (WS-34), for the panel's Enter to step through.
+    <article className="wb-note" data-hit={query ? 'true' : undefined}>
       <div>
         <div className="wb-who">Forma</div>
         {message.text && <MessageText text={message.text} query={query} markdown />}
@@ -587,6 +590,7 @@ export default function ChatThread<R>({
   aiName,
   busy = false,
   query = '',
+  searchAt,
   showWorking = true,
   children,
   turns,
@@ -615,7 +619,11 @@ export default function ChatThread<R>({
   const retryDisabled = isChatting || isAnalyzing || busy;
   const searching = query.trim().length > 0;
   // Marked, not filtered (agent audit item 30): the card is one request.
-  const hits = searching ? messages.filter((m) => messageMatches(m, query)).length : 0;
+  // Over every message, what was asked as well as the replies (2026-11-11, WS-34).
+  const askHit = (ask: ChatMessage<R, PreviewMeta> | null) => !!ask && searching && messageMatches(ask, query);
+  const hits = searching
+    ? messages.filter((m) => messageMatches(m, query)).length + (turns ?? []).filter((t) => askHit(t.ask)).length
+    : 0;
   const lastReplyId = [...messages].reverse().find((m) => m.role === 'assistant')?.id;
 
   /*
@@ -735,9 +743,13 @@ export default function ChatThread<R>({
           saying what the box takes and six predefined descriptions as chips,
           until the owner asked for all of that to go behind the scenes, as the
           chat apps people know do it; `git log -S"wb-note--start"` finds it. */}
-      {searching && hits > 0 && (
+      {/* Said whatever it finds (2026-11-11, the full audit's WS-34): nothing
+          was said when no reply held the words, and the count was of the
+          replies alone while Enter stepped through every message. "2 of 5"
+          once Enter has gone to one, as a browser's find says it. */}
+      {searching && (
         <p className="wb-search-count" role="status">
-          {hits === 1 ? '1 reply holds that' : `${hits} replies hold that`}
+          {hits === 0 ? 'No match' : searchAt ? `${Math.min(searchAt, hits)} of ${hits}` : hits === 1 ? '1 message holds that' : `${hits} messages hold that`}
         </p>
       )}
       {turns ? (
@@ -753,7 +765,7 @@ export default function ChatThread<R>({
               aria-current={turn.id === currentTurn ? 'true' : undefined}
               aria-label={turn.ask ? undefined : 'From Forma'}
             >
-              {turn.ask && renderAsk ? <div className="wb-turn-ask">{renderAsk({ id: turn.id, ask: turn.ask })}</div> : null}
+              {turn.ask && renderAsk ? <div className="wb-turn-ask" data-hit={askHit(turn.ask) ? 'true' : undefined}>{renderAsk({ id: turn.id, ask: turn.ask })}</div> : null}
               {turn.replies.map(note)}
               {i === turns.length - 1 ? working : null}
             </section>

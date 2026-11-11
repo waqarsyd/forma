@@ -52,7 +52,7 @@ const draw = (props: Partial<React.ComponentProps<typeof Composer>> = {}) =>
   );
 
 const field = () => screen.getByLabelText('Message') as HTMLTextAreaElement;
-const send = () => screen.getByLabelText('Send note') as HTMLButtonElement;
+const send = () => screen.getByLabelText('Send') as HTMLButtonElement;
 
 // The workspace audit, 2026-11-06: as ChatGPT's and Gemini's, the button waits for words or a file.
 describe('an empty box', () => {
@@ -209,7 +209,7 @@ describe('when sending is not possible', () => {
     expect(field().disabled).toBe(true);
     expect(field().placeholder).toBe('Add your API key to start');
     expect(screen.getByRole('button', { name: 'Add photos and files' })).toHaveProperty('disabled', true);
-    expect(screen.queryByRole('button', { name: 'Send note' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
     fireEvent.keyDown(field(), { key: 'Enter' });
     expect(onSend).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Add your API key' }));
@@ -244,7 +244,7 @@ describe('a clean composer', () => {
   it('turns the send into a Stop while a generation runs, and back', () => {
     const onStop = vi.fn();
     const { rerender } = draw({ isAnalyzing: true, onStop });
-    expect(screen.queryByLabelText('Send note')).toBeNull();
+    expect(screen.queryByLabelText('Send')).toBeNull();
     fireEvent.click(screen.getByLabelText('Stop'));
     expect(onStop).toHaveBeenCalledTimes(1);
     rerender(
@@ -516,7 +516,7 @@ describe('a clean composer', () => {
   it('turns the send into a Stop while a reply is written', () => {
     const onStop = vi.fn();
     draw({ isChatting: true, onStop });
-    expect(screen.queryByLabelText('Send note')).toBeNull();
+    expect(screen.queryByLabelText('Send')).toBeNull();
     fireEvent.click(screen.getByLabelText('Stop'));
     expect(onStop).toHaveBeenCalledTimes(1);
   });

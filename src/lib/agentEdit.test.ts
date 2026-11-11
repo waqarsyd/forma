@@ -306,9 +306,9 @@ describe('the new edits, and edits that do what they say', () => {
       { op: 'format', control: 'title', format: '{0:N0}' },
     ]).xml;
     const lines = describeChanges(before, after);
-    expect(lines).toContain('made **title** red');
-    expect(lines).toContain('formatted **title** as "{0:N0}"');
-    expect(lines).toContain('filled row 1, cell 1 of **grid2** with yellow');
+    expect(lines).toContain('made the title red');
+    expect(lines).toContain('formatted the title as "{0:N0}"');
+    expect(lines).toContain('filled the cell in row 1, column 1 of the table with yellow');
     expect(lines.some((l) => l.startsWith('restyled'))).toBe(false);
   });
 
@@ -324,13 +324,13 @@ describe('the new edits, and edits that do what they say', () => {
 
   it("merges a table's cells changed alike into one line for the row, the column or the table", () => {
     const header = applyEdits(doc(grid), [{ op: 'color', control: 'grid', row: 1, foreColor: 'Blue' }]).xml;
-    expect(describeChanges(doc(grid), header)).toEqual(['made row 1 of **grid** blue']);
+    expect(describeChanges(doc(grid), header)).toEqual(['made row 1 of the table blue']);
     const column = applyEdits(doc(grid), [{ op: 'color', control: 'grid', cell: 2, backColor: '#eeeeee' }]).xml;
-    expect(describeChanges(doc(grid), column)).toEqual(['filled column 2 of **grid** with #EEEEEE']);
+    expect(describeChanges(doc(grid), column)).toEqual(['filled column 2 of the table with #EEEEEE']);
     const all = applyEdits(doc(grid), [{ op: 'font', control: 'grid', bold: true }]).xml;
     const lines = describeChanges(doc(grid), all);
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatch(/^restyled every cell of \*\*grid\*\* \(/);
+    expect(lines[0]).toMatch(/^restyled every cell of the table \(/);
     for (const line of [...lines, ...describeChanges(doc(grid), header)]) expect(line).not.toMatch(/\d+, \d+, \d+|cell \d of/);
   });
 
@@ -642,9 +642,9 @@ describe('describeChanges: what the reply says changed', () => {
   it('reads the change off the file, not off what was asked', () => {
     const out = edit({ op: 'text', control: 'title', text: 'TAX INVOICE' }, { op: 'font', control: 'title', bold: true }, { op: 'delete', control: 'subtitle' }, { op: 'paper', paper: 'A4' });
     expect(describeChanges(report, out.xml)).toEqual([
-      'removed label **subtitle**',
-      'retyped **title** to "TAX INVOICE"',
-      'restyled **title** (Arial 14pt bold)',
+      'removed the subtitle',
+      'retyped the title to "TAX INVOICE"',
+      'restyled the title (Arial 14pt bold)',
       'the paper is now A4',
     ]);
   });
@@ -661,10 +661,27 @@ describe('describeChanges: what the reply says changed', () => {
     expect([...said, ...describeChanges(added, report)].join('\n')).not.toMatch(/XR[A-Z]/);
   });
 
+  // UI9 (2026-11-11, measured in the owner's Chrome): "retyped labelTitle to", "row 1, cell 1 of tableHead".
+  it('names each part by what it is, never by the name the designer keeps', () => {
+    const head = '<Item1 Ref="2" ControlType="XRTable" Name="tableHead" LocationFloat="0,0" SizeF="600,25"><Rows><Item1 Ref="3" ControlType="XRTableRow" Name="r1" Weight="1"><Cells><Item1 Ref="4" ControlType="XRTableCell" Name="h1" Text="Item" Weight="1" /><Item2 Ref="5" ControlType="XRTableCell" Name="h2" Text="Qty" Weight="1" /></Cells></Item1></Rows></Item1>';
+    const labels = '<Item2 Ref="6" ControlType="XRLabel" Name="labelTitle" Text="Invoice" LocationFloat="0,40" SizeF="200,20" /><Item3 Ref="7" ControlType="XRLabel" Name="xrLabel3" Text="Bill to" LocationFloat="0,70" SizeF="200,20" />';
+    const before = `<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer SerializerVersion="20.1.8.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="R" PageWidth="850" PageHeight="1100" Version="20.1"><Bands><Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="100"><Controls>${head}${labels}</Controls></Item1></Bands></XtraReportsLayoutSerializer>`;
+    const after = applyEdits(before, [
+      { op: 'text', control: 'labelTitle', text: 'TAX INVOICE' },
+      { op: 'text', control: 'xrLabel3', text: 'Customer' },
+      { op: 'text', control: 'tableHead', row: 1, cell: 1, text: 'Product' },
+    ]).xml;
+    const lines = describeChanges(before, after);
+    expect(lines).toContain('retyped the title to "TAX INVOICE"');
+    expect(lines).toContain('retyped the label "Bill to" to "Customer"');
+    expect(lines).toContain('retyped a heading cell of the table to "Product"');
+    expect(lines.join('\n')).not.toMatch(/labelTitle|xrLabel3|tableHead|\*\*/);
+  });
+
   it('says nothing for no change, and counts what is past the limit', () => {
     expect(describeChanges(report, report)).toEqual([]);
     const out = edit({ op: 'move', control: 'title', x: 1 }, { op: 'move', control: 'subtitle', x: 1 }, { op: 'move', control: 'customer', x: 1 });
-    expect(describeChanges(report, out.xml, 2)).toEqual(['moved **title** to 1, 20', 'moved **subtitle** to 1, 70', 'and 1 more changes']);
+    expect(describeChanges(report, out.xml, 2)).toEqual(['moved the title to 1, 20', 'moved the subtitle to 1, 70', 'and 1 more changes']);
   });
 
   // The checks said aloud (2026-11-05).

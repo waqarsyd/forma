@@ -326,6 +326,51 @@ describe('the workspace says results, never machinery', () => {
   });
 });
 
+/**
+ * What a drawn panel puts in front of the person: its text and the words of
+ * its titles, labels and placeholders, the markup's class names and the rest
+ * left out (`wb-ocr` is a class, not a word anyone reads).
+ */
+function wordsShown(html: string): string {
+  const attributes = [...html.matchAll(/\s(?:title|aria-label|placeholder|alt)="([^"]*)"/g)].map((m) => m[1]);
+  const text = html.replace(/<[^>]*>/g, ' ');
+  return [text, ...attributes].join('\n').replace(/&#x27;|&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+}
+
+/*
+ * The panels whose words are their own markup rather than a speaker's call
+ * (2026-11-11, the full audit's wave 8 follow-up for BW): the source scan
+ * above reads calls and replies, so what LibraryPanel and the OCR review draw
+ * as text, a title or a label was not read at all. They are drawn here and
+ * their words held to the same rule.
+ */
+describe('the panels that draw their own words', () => {
+  it('the report library says what it holds, never how it searches', async () => {
+    const { default: LibraryPanel } = await import('../components/LibraryPanel');
+    const sources = [{ name: 'Invoice.repx', chunks: 4, embedded: 1 }, { name: 'Statement.repx', chunks: 2, embedded: 2 }] as unknown as Parameters<typeof LibraryPanel>[0]['sources'];
+    for (const ready of [true, false]) {
+      const html = renderToString(createElement(LibraryPanel, { sources, canonical: new Set(['Invoice.repx']), onImport: async () => ({ added: 0, empty: [] }) as never, onRemove: () => {}, onToggleCanonical: () => {}, ready, onNeedKey: () => {} }));
+      expect(html).toContain('Invoice.repx');
+      expect(wordsShown(html)).not.toMatch(MACHINERY);
+      expect(wordsShown(html)).not.toMatch(/\b(embed|embedding|chunks?|fragments?|vectors?)\b/i);
+    }
+  });
+
+  it('the review of the text read says what was read, never what read it', async () => {
+    const { default: OcrDialog } = await import('../components/OcrDialog');
+    const html = renderToString(createElement(OcrDialog, {
+      pages: [{ src: 'data:image/png;base64,iVBORw0KGgo=', meta: { uploadId: 'u1', file: 'scan.png' } }],
+      unit: 'HundredthsOfAnInch',
+      pageSize: 'Letter',
+      onBuild: () => {},
+      onClose: () => {},
+    }));
+    expect(html).toContain('The text read from the page');
+    expect(wordsShown(html)).not.toMatch(MACHINERY);
+    expect(wordsShown(html)).not.toMatch(/\b(Tesseract|PaddleOCR|recogni[sz]e[rd]?)\b/i);
+  });
+});
+
 describe("a revision's label", () => {
   const revision = (id: number, label: string): Revision => ({
     id,

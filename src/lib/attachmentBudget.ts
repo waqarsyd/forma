@@ -28,6 +28,39 @@ export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 /** Pages past this are reported to the user rather than silently dropped. */
 export const MAX_PDF_PAGES = 8;
 
+/**
+ * The most pages one report is made from (2026-11-11, the full audit's
+ * PL-22). Twelve files of eight pages each were all sent: up to ninety-six
+ * pages read one after another, then one request carrying every picture,
+ * past what the AI takes in one request, answered with an error and Forma's
+ * own draft. Twenty is room for any one report, and a plan that keeps fewer
+ * says so (`planReply` in lib/jobPlan.ts).
+ */
+export const MAX_REQUEST_PAGES = 20;
+
+/**
+ * How many pages of each file one report keeps under `max`: the first pages
+ * of every file, a page from each in turn, so a long first file does not
+ * leave the others out. Keyed by upload id; a file with no pages keeps 0.
+ */
+export function pagesPerFile(files: readonly { uploadId: string; pages: number }[], max = MAX_REQUEST_PAGES): Map<string, number> {
+  const keep = new Map(files.map((f) => [f.uploadId, 0]));
+  let left = max;
+  for (let round = 0; left > 0; round++) {
+    let took = false;
+    for (const f of files) {
+      if (left <= 0) break;
+      if (f.pages > round) {
+        keep.set(f.uploadId, round + 1);
+        left--;
+        took = true;
+      }
+    }
+    if (!took) break;
+  }
+  return keep;
+}
+
 /** Anything carrying the id that identifies one dropped file. */
 export interface Staged {
   uploadId: string;

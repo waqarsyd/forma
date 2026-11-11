@@ -36,6 +36,17 @@ describe('CommandMenu', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  // WS-31 (2026-11-11): two commands that share an id each draw and each run their own.
+  it('draws and runs each command, even two that share an id', () => {
+    const projects = vi.fn();
+    const convo = vi.fn();
+    render(<CommandMenu commands={[{ id: 'search', label: 'Search projects', run: projects }, { id: 'search', label: 'Search the conversation', run: convo }]} onClose={vi.fn()} />);
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['Search projects', 'Search the conversation']);
+    fireEvent.click(screen.getByText('Search the conversation'));
+    expect(convo).toHaveBeenCalledTimes(1);
+    expect(projects).not.toHaveBeenCalled();
+  });
+
   it('says when nothing holds the words, and closes on Escape', () => {
     const onClose = vi.fn();
     render(<CommandMenu commands={commands()} onClose={onClose} />);

@@ -610,14 +610,28 @@ describe('searching the requests', () => {
     draw({ messages: thread, query: 'INVOICE' });
     expect(document.querySelectorAll('.wb-note')).toHaveLength(2);
     expect([...document.querySelectorAll('mark.wb-hit')].map((m) => m.textContent)).toEqual(['invoice']);
-    expect(screen.getByRole('status').textContent).toBe('1 reply holds that');
+    expect(screen.getByRole('status').textContent).toBe('1 message holds that');
+    expect(document.querySelectorAll('[data-hit]')).toHaveLength(1);
   });
 
-  it('says nothing when no reply holds it, which the question asked may', () => {
+  // 2026-11-11, the full audit's WS-34: "No match" when nothing holds it, and the count over every message.
+  it('says "No match" when no message holds it', () => {
     draw({ messages: thread, query: 'chart' });
     expect(document.querySelectorAll('.wb-note')).toHaveLength(2);
-    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByRole('status').textContent).toBe('No match');
     expect(document.querySelectorAll('mark')).toHaveLength(0);
+  });
+
+  it('counts what was asked as well as the replies, and says which one Enter is on', () => {
+    const ask = msg({ id: '1', role: 'user', text: 'Make an invoice' });
+    const turns = [{ id: '1', ask, replies: thread }];
+    const renderAsk = ({ ask: a }: { ask: typeof ask }) => <p>{a.text}</p>;
+    draw({ messages: thread, turns, renderAsk, query: 'invoice' });
+    expect(screen.getByRole('status').textContent).toBe('2 messages hold that');
+    expect(document.querySelectorAll('[data-hit]')).toHaveLength(2);
+    cleanup();
+    draw({ messages: thread, turns, renderAsk, query: 'invoice', searchAt: 2 });
+    expect(screen.getByRole('status').textContent).toBe('2 of 2');
   });
 
   it('draws everything, unmarked, with no query', () => {

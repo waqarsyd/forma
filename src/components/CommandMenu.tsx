@@ -71,8 +71,11 @@ export default function CommandMenu({ commands, onClose }: { commands: readonly 
           <kbd>Esc</kbd>
         </div>
         <ul className="wb-cmd-list" id="wb-cmd-list" role="listbox" aria-label="Commands" ref={listRef}>
+          {/* Keyed by place as well as id (2026-11-11, the full audit's WS-31):
+              App gave two commands the id 'search', and React drew one row
+              for both, so "Search the conversation" ran the projects' search. */}
           {shown.map((c, i) => (
-            <li key={c.id} id={`wb-cmd-opt-${i}`} role="option" aria-selected={i === at} onMouseEnter={() => setAt(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => run(c)}>
+            <li key={`${i}:${c.id}`} id={`wb-cmd-opt-${i}`} role="option" aria-selected={i === at} onMouseEnter={() => setAt(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => run(c)}>
               <span>{c.label}</span>
               {c.keys && <kbd>{c.keys}</kbd>}
             </li>

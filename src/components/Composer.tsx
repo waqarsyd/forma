@@ -822,7 +822,9 @@ export default function Composer({
         ) : (
           <button
             className="wb-send"
-            aria-label="Send note"
+            // "Send", as every chat names it (2026-11-11, the full audit's WS-36): it said "Send note".
+            aria-label="Send"
+            title="Send"
             /* Wrapped rather than passed bare. `onSend` is `handleGenerate`,
                whose first parameter is an optional prompt override, so handing
                it straight to onClick passes the click event as the prompt. */

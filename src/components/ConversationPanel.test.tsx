@@ -301,6 +301,17 @@ describe("the pill's edit, withdraw and versions", () => {
     expect(onWithdraw).toHaveBeenCalledWith('q1');
   });
 
+  // WS-41 (2026-11-11): withdrawing a request whose answer changed the report undoes the change, and says so.
+  it('asks whether to undo what Forma changed when withdrawing undoes it', () => {
+    const onWithdraw = vi.fn();
+    draw({ onWithdraw, undoes: new Set(['q1']) });
+    expect(screen.getByRole('button', { name: 'Withdraw' }).getAttribute('title')).toBe('Withdraw this message and undo what Forma changed');
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw' }));
+    expect(screen.getByText('Withdraw this message and undo what Forma changed?')).toBeTruthy();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Withdraw' }).find((b) => b.closest('[aria-label="Withdraw this message"]'))!);
+    expect(onWithdraw).toHaveBeenCalledWith('q1');
+  });
+
   it('holds both while something runs', () => {
     draw({ onEdit: vi.fn(), onWithdraw: vi.fn(), isChatting: true });
     expect((screen.getByRole('button', { name: 'Edit' }) as HTMLButtonElement).disabled).toBe(true);
