@@ -965,10 +965,32 @@ function dpiOf(attrs: string): number {
  * written without a Dpi; 100 pixels at a Dpi of 96; and "30, 40" printed as
  * though nothing were written. Its serializer leaves the attribute out of a
  * report saved at those default margins, so this is every such report.
+ *
+ * Four numbers that are not all whole are dropped on load as well (parity row
+ * 77, 2026-11-11, the full audit's CC-03): `75.0, ...`, `75.5, 75, 75, 75`
+ * and `39.37, ...` each printed with sides of 100 and the top and bottom of
+ * its margin bands, `render.json` reading `[100, 100, 39, 39]` for bands of
+ * 39.37. So the sides are 100 and the top and bottom are `bands`, the margin
+ * bands' heights in the root's Dpi, 100 where a band is missing.
  */
-export function marginsOf(value: string | null | undefined): number[] {
-  const parts = (value ?? '').split(',').map((p) => Number.parseFloat(p.trim()));
-  return parts.length >= 4 && parts.slice(0, 4).every(Number.isFinite) ? parts.slice(0, 4) : [100, 100, 100, 100];
+export function marginsOf(value: string | null | undefined, bands: { top?: number | null; bottom?: number | null } = {}): number[] {
+  const raw = (value ?? '').split(',');
+  const parts = raw.map((p) => Number.parseFloat(p.trim()));
+  if (!(parts.length >= 4 && parts.slice(0, 4).every(Number.isFinite))) return [100, 100, 100, 100];
+  if (raw.slice(0, 4).every((p) => /^\s*-?\d+\s*$/.test(p))) return parts.slice(0, 4);
+  return [100, 100, bands.top ?? 100, bands.bottom ?? 100];
+}
+
+/**
+ * A margin band's height in the root's own Dpi, for `marginsOf`: its `HeightF`
+ * at its own Dpi, 100 when it writes none (row 56), or null when the report
+ * has no such band.
+ */
+function marginBandHeight(text: string, type: 'TopMarginBand' | 'BottomMarginBand', rootDpi: number): number | null {
+  const at = text.search(new RegExp(`\\sControlType\\s*=\\s*"${type}"`));
+  if (at < 0) return null;
+  const tag = /^<[A-Za-z_][\w.-]*((?:\s+[\w.:-]+\s*=\s*"[^"]*")*)/.exec(text.slice(text.lastIndexOf('<', at)));
+  return tag ? numAttr(tag[1], 'HeightF', 100) * (rootDpi / dpiOf(tag[1])) : null;
 }
 
 function pairAttr(attrs: string, name: string): { a: number; b: number } {
@@ -1931,7 +1953,14 @@ export function parseReportStructure(
   // Margins="left, right, top, bottom" -- DevExpress writes them in that order,
   // which is not the CSS order and is the kind of thing that renders a
   // plausible page with the wrong gap at the top.
-  const marginRaw = marginsOf(attrOf(rootAttrs, 'Margins'));
+  // Fractional margins are dropped on load; the top and bottom then come from the bands (row 77).
+  const marginsWritten = attrOf(rootAttrs, 'Margins');
+  const marginRaw = marginsOf(
+    marginsWritten,
+    marginsWritten !== null && !/^(\s*-?\d+\s*,){3}\s*-?\d+\s*$/.test(marginsWritten)
+      ? { top: marginBandHeight(text, 'TopMarginBand', dpiOf(rootAttrs)), bottom: marginBandHeight(text, 'BottomMarginBand', dpiOf(rootAttrs)) }
+      : {},
+  );
 
   /*
    * Every band and control is read at its own Dpi, 100 when absent, whatever

@@ -67,6 +67,26 @@ describe('printedPaper, the page DevExpress prints', () => {
     expect(printedPaper(attrsOf(root(' PaperKind="A3" PageWidth="1169" PageHeight="1654"')))).toMatchObject({ width: 1169, height: 1654 });
   });
 
+  /*
+   * CC-03, the probe files' own roots (2026-11-11): under Custom a fractional
+   * size re-saved as the default, `826.77 x 1169.29` as 850 with no height
+   * (C-custom, S-source) and `850.5` as 850 (pw-frac); a named paper kept its
+   * own size whatever was written (A-margins-first, B-paper-first).
+   */
+  it('reads a fractional custom size as DevExpress loads it, the default in its place', () => {
+    expect(printedPaper(attrsOf(root(' PaperKind="Custom" PageWidth="826.77" PageHeight="1169.29"')))).toMatchObject({ width: 850, height: 1100 });
+    expect(printedPaper(attrsOf(root(' PaperKind="Custom" PageWidth="850.5" PageHeight="1100"')))).toMatchObject({ width: 850, height: 1100 });
+    // In every unit the property's own default, 850 (re-measured in tenths of a millimetre and pixels, 2026-11-11).
+    expect(printedPaper(attrsOf(root(' ReportUnit="TenthsOfAMillimeter" PaperKind="Custom" PageWidth="2100.5" PageHeight="1000"')))).toMatchObject({ width: 850, height: 1000 });
+    expect(printedPaper(attrsOf(root(' PaperKind="Custom" PageWidth="900" PageHeight="600.4"')))).toMatchObject({ width: 900, height: 1100 });
+    const a4 = printedPaper(attrsOf(root(' PaperKind="A4" PageWidth="826.77" PageHeight="1169.29"')));
+    expect(a4.width).toBeCloseTo(826.77, 1);
+    // A named paper this app has no size for takes its size from the paper, which the size written is nearer than the default.
+    expect(printedPaper(attrsOf(root(' PaperKind="A3" PageWidth="1169.29" PageHeight="1653.54"')))).toMatchObject({ width: 1169.29, height: 1653.54 });
+    // Not a paper named wrong: the audit's page-size-not-whole says what it is.
+    expect(findPaperProblem(root(' PaperKind="Custom" PageWidth="826.77" PageHeight="1169.29"'))).toBeNull();
+  });
+
   it('is the paper written for once the repair has named it', () => {
     for (const attrs of [' PageWidth="827" PageHeight="1169"', ' PageWidth="1169" PageHeight="827"', ' ReportUnit="Pixels" PageWidth="816" PageHeight="1344"', ' PageWidth="900" PageHeight="600"']) {
       const written = attrsOf(root(attrs));

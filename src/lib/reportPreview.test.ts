@@ -1557,6 +1557,29 @@ describe('side margins and the printable width, as DevExpress prints them', () =
     expect(paginate(s1, 1).pages).toHaveLength(2);
   });
 
+  /*
+   * Parity row 77, CC-03 (2026-11-11): margins that are not four whole numbers
+   * are dropped on load. The fastreport source's `39.37` on every side printed
+   * as `[100, 100, 39, 39]`, its sides at 100 and its top and bottom its
+   * margin bands', which left 650 of A4's width for controls 748 wide.
+   */
+  it('reads fractional margins as DevExpress loads them: sides 100, top and bottom from the bands', () => {
+    expect(marginsOf('75.0, 75.0, 75.0, 75.0', { top: 75, bottom: 75 })).toEqual([100, 100, 75, 75]);
+    expect(marginsOf('75.5, 75, 75, 75')).toEqual([100, 100, 100, 100]);
+    expect(marginsOf('75, 75, 75, 75', { top: 20, bottom: 20 })).toEqual([75, 75, 75, 75]);
+    const source = parseReportStructure(
+      '<XtraReportsLayoutSerializer ControlType="DevExpress.XtraReports.UI.XtraReport" ReportUnit="HundredthsOfAnInch" Margins="39.37, 39.37, 39.37, 39.37" PaperKind="Custom" PageWidth="826.77" PageHeight="1169.29"><Bands>' +
+        '<Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="39.37" />' +
+        '<Item2 Ref="3" ControlType="DetailBand" Name="Detail" HeightF="20"><Controls><Item1 Ref="4" ControlType="XRLabel" Name="wide" Text="x" SizeF="748,20" LocationFloat="0,0" /></Controls></Item2>' +
+        '<Item3 Ref="5" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="39.37" />' +
+        '</Bands></XtraReportsLayoutSerializer>',
+    );
+    expect(source.margins).toEqual({ left: 100, right: 100, top: 39.37, bottom: 39.37 });
+    // The fractional Custom size is Letter's, so 650 units are left between the margins.
+    expect(source.page).toEqual({ width: 850, height: 1100 });
+    expect(source.page.width - source.margins.left - source.margins.right).toBe(650);
+  });
+
   // s47b and s47e: a column nothing reaches gets no page, and a page with
   // nothing past the margin gets none; the pages after are renumbered.
   it('adds a page only for the columns a page\'s controls reach (s47b, s47e)', () => {

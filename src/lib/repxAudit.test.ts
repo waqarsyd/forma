@@ -478,6 +478,117 @@ describe('auditRepx on scripts and expressions', () => {
     const others = auditRepx(bound('[Orders.Qty] + [DataSource.RowCount] + [Parameters.Rate]'), null, { fields: ['Qty'] });
     expect(others.findings.map((f) => f.code)).not.toContain('expression-field-unknown');
   });
+
+  /*
+   * CC-04 (2026-11-11): the seven expressions the auditor ran through the
+   * parser (tools/criteria-check.ts in its work folder). Three cannot print:
+   * a .NET method after a field, FastReport's double bracket, and an
+   * unclosed call. `[ProductName].Substring(0, 1)` was passed over as
+   * collection syntax until then, and DevExpress printed it blank.
+   */
+  it('reads the auditor\'s seven expressions as DevExpress does', () => {
+    const unreadable = ['[ProductName].Substring(0, 1)', '[[Products.ProductName].Substring(0,1)]', 'Iif([Qty] &gt; 0, [Qty], 0'];
+    const readable = ['Substring([ProductName], 0, 1)', "Concat('Total products: ', sumCount([ProductName]))", "'Attn: ' + [BillToAttn]", 'sumSum([Amount]) * 0.085m'];
+    for (const expression of unreadable) expect(codes(bound(expression)), expression).toContain('expression-invalid');
+    for (const expression of readable) expect(codes(bound(expression)).filter((c) => c.startsWith('expression-')), expression).toEqual([]);
+    // Collection syntax before an aggregate is still left alone.
+    expect(codes(bound('[Orders].Count()')).filter((c) => c.startsWith('expression-'))).toEqual([]);
+  });
+});
+
+describe('auditRepx on fields a group, a sort or a text names (CC-04, CC-09)', () => {
+  /** The healthy report with a group header on `field` above it, binding `header`. */
+  const grouped = (field: string, header = '[Region]', sort = '') =>
+    report(
+      TOP +
+        `<Item2 Ref="10" ControlType="GroupHeaderBand" Name="GroupHeader1"><GroupFields><Item1 Ref="11" FieldName="${field}" /></GroupFields><Controls>` +
+        `<Item1 Ref="12" ControlType="XRLabel" Name="g"><ExpressionBindings><Item1 Ref="13" EventName="BeforePrint" PropertyName="Text" Expression="${header}" /></ExpressionBindings></Item1></Controls></Item2>` +
+        detailWithTable.replace('<Item2 Ref="2"', '<Item3 Ref="2"').replace(/<\/Item2>$/, '</Item3>').replace('<Controls>', `${sort}<Controls>`) +
+        bottom(4, 9),
+    );
+
+  it('makes a group on a field the data lacks an error when the data is known, a warning when it is bound nowhere', () => {
+    const letter = grouped('GroupLetter', "Substring([ProductName], 0, 1)");
+    const known = auditRepx(letter, null, { fields: ['ProductName', 'UnitPrice'] }).findings.find((f) => f.code === 'field-unknown');
+    expect(known?.severity).toBe('error');
+    expect(known?.message).toContain('"GroupLetter"');
+    expect(auditRepx(letter).findings.find((f) => f.code === 'field-unknown')?.severity).toBe('warning');
+    // A field the report prints is taken to be the data's, with no schema to say otherwise.
+    expect(codes(grouped('Region'))).not.toContain('field-unknown');
+    // A sort on Detail is checked the same way.
+    const sorted = grouped('Region', '[Region]', '<SortFields><Item1 Ref="14" FieldName="Nowhere" /></SortFields>');
+    expect(auditRepx(sorted, null, { fields: ['Region'] }).findings.find((f) => f.code === 'field-unknown')?.message).toContain('"Nowhere"');
+  });
+
+  it('counts a group on a calculated field as a use of it (the false positive on FirstLetter)', () => {
+    const calc = grouped('FirstLetter', 'Upper(Substring([ProductName], 0, 1))').replace(
+      '<Bands>',
+      '<CalculatedFields><Item1 Ref="30" Name="FirstLetter" Expression="Upper(Substring([ProductName], 0, 1))" /></CalculatedFields><Bands>',
+    );
+    const found = codes(calc);
+    expect(found).not.toContain('calculated-field-unused');
+    expect(found).not.toContain('field-unknown');
+  });
+
+  it('warns of static text holding an expression, as a FastReport migration leaves it', () => {
+    const literal = healthy.replace('Name="c1" Text="A"', 'Name="c1" Text="[[Products.ProductName].Substring(0,1)]"');
+    expect(auditRepx(literal).findings.find((f) => f.code === 'text-looks-like-expression')?.message).toContain('"c1"');
+    expect(codes(healthy.replace('Name="c1" Text="A"', 'Name="c1" Text="[ProductName].Substring(0, 1)"'))).toContain('text-looks-like-expression');
+    // DevExpress's own mail merge, and a design-time placeholder under a binding, are not.
+    expect(codes(healthy.replace('Name="c1" Text="A"', 'Name="c1" Text="Dear [FirstName],"'))).not.toContain('text-looks-like-expression');
+    const placeholder = healthy.replace(
+      '<Item1 Ref="5" ControlType="XRTableCell" Name="c1" Text="A" Weight="1" />',
+      '<Item1 Ref="5" ControlType="XRTableCell" Name="c1" Text="[[x].Substring(0,1)]" Weight="1"><ExpressionBindings><Item1 Ref="20" EventName="BeforePrint" PropertyName="Text" Expression="[x]" /></ExpressionBindings></Item1>',
+    );
+    expect(codes(placeholder)).not.toContain('text-looks-like-expression');
+  });
+
+  it('warns of fields named after the report\'s title or a repeated caption (CC-09)', () => {
+    const titled = grouped('Region', '[QuarterlySalesByRegion]').replace('Name="Report1"', 'Name="QuarterlySalesByRegion" DisplayName="Quarterly Sales by Region"');
+    expect(auditRepx(titled).findings.find((f) => f.code === 'field-named-after-text')?.message).toContain('[QuarterlySalesByRegion]');
+    const numbered = ['INVOICE', 'INVOICE2', 'INVOICE3', 'INVOICE4', 'BillToAddress1', 'BillToAddress2'].map((f) => `[${f}]`).join(' + ');
+    const message = auditRepx(grouped('Region', numbered)).findings.find((f) => f.code === 'field-named-after-text')?.message ?? '';
+    expect(message).toContain('[INVOICE2]');
+    expect(message).toContain('[INVOICE4]');
+    // A schema's own numbering, with no base field bound, is not a repeated caption.
+    expect(message).not.toContain('BillToAddress');
+    expect(codes(grouped('Region'))).not.toContain('field-named-after-text');
+    // A phrase repeated twice is a caption; a base column with two numbered lines is a schema.
+    const phrase = ['QuarterlySalesByRegion', 'QuarterlySalesByRegion2', 'QuarterlySalesByRegion3'].map((f) => `[${f}]`).join(' + ');
+    expect(auditRepx(grouped('Region', phrase)).findings.find((f) => f.code === 'field-named-after-text')?.message).toContain('[QuarterlySalesByRegion3]');
+    const schema = ['Address', 'Address2', 'Address3', 'Phone', 'Phone2', 'Phone3'].map((f) => `[${f}]`).join(' + ');
+    expect(codes(grouped('Region', schema))).not.toContain('field-named-after-text');
+    // A one-word report name is as likely a table's: a report called Customers may bind [Customers].
+    const oneWord = grouped('Region', '[Customers]').replace('Name="Report1"', 'Name="Customers"');
+    expect(codes(oneWord)).not.toContain('field-named-after-text');
+  });
+});
+
+/*
+ * CC-03 (2026-11-11, parity row 77): the probe files' own roots. DevExpress
+ * 20.1 dropped every fractional Margins and a fractional Custom size.
+ */
+describe('auditRepx on margins and a page size DevExpress drops', () => {
+  const rooted = (attrs: string) => healthy.replace('PageWidth="850" PageHeight="1100"', attrs);
+
+  it('reports fractional margins and a fractional custom size as errors', () => {
+    for (const margins of ['75.0, 75.0, 75.0, 75.0', '75.5, 75, 75, 75', '39.37, 39.37, 39.37, 39.37']) {
+      const finding = auditRepx(rooted(`PaperKind="Letter" PageWidth="850" PageHeight="1100" Margins="${margins}"`)).findings.find((f) => f.code === 'margins-not-whole');
+      expect(finding?.severity, margins).toBe('error');
+    }
+    const custom = auditRepx(rooted('Margins="39, 39, 39, 39" PaperKind="Custom" PageWidth="826.77" PageHeight="1169.29"')).findings;
+    expect(custom.find((f) => f.code === 'page-size-not-whole')?.message).toContain('PageWidth="826.77"');
+    expect(custom.map((f) => f.code)).not.toContain('paper-mismatch');
+  });
+
+  it('says nothing of whole numbers, or of a named paper\'s written size', () => {
+    expect(codes(rooted('PaperKind="Letter" PageWidth="850" PageHeight="1100" Margins="75, 75, 75, 75"'))).toEqual([]);
+    const a4 = codes(rooted('PaperKind="A4" PageWidth="826.77" PageHeight="1169.29" Margins="39, 39, 39, 39"'));
+    expect(a4).not.toContain('page-size-not-whole');
+    // A named paper Forma has no size for is the paper's size in DevExpress too.
+    expect(codes(rooted('PaperKind="A3" PageWidth="1169.29" PageHeight="1653.54" Margins="39, 39, 39, 39"'))).not.toContain('page-size-not-whole');
+    expect(a4).not.toContain('margins-not-whole');
+  });
 });
 
 describe('auditRepx cross-checked against the layout', () => {

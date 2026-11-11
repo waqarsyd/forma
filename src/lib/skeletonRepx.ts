@@ -31,6 +31,7 @@
 import { ensureUniqueRefs } from './repxRefs';
 import { repairDpi } from './repxDpi';
 import { repairPaper } from './repxPaper';
+import { wholeMargins } from './repxMargins';
 import { pointsToUnits } from './reportGeometry';
 import type { DetectedLayout } from './ocrLayout';
 import type { BandKind } from './reportPreview';
@@ -300,8 +301,31 @@ export function skeletonToDesign(
   }
   const title = places.filter((p) => p.role === 'title').map((p) => words.get(key(p))!)[0] ?? options.title?.trim() ?? 'Report';
 
-  // Each value's field, from the caption over its column in a header band.
-  const captions = places.filter((p) => p.role === 'caption' && HEADERS.includes(k.bands[p.band].kind));
+  /*
+   * Each value's field, from the caption that heads it in a header band
+   * (2026-11-11, the full audit's CC-09). Forma's own drafts bound
+   * `[QuarterlySalesByRegion2]` and `[INVOICE2]` to `[INVOICE6]` and grouped on
+   * the title, so no data could ever fill them, because any caption over a
+   * value named it, the title included, and a repeat was numbered. Now:
+   * - a caption on the value's own line, to its left, names it first, as a
+   *   key names its value in an invoice's meta block;
+   * - else the nearest caption over its column, never a ReportHeader caption
+   *   over a value in another band, nor one sized like a title;
+   * - a caption worded like data (an address, an e-mail, a number) or the
+   *   value's own words never names it;
+   * - a name already taken gives `Field<n>` rather than a numbered copy.
+   */
+  const fontOf = (p: Place) => {
+    const c = k.bands[p.band].controls[p.control];
+    return (p.row >= 0 ? c.rows?.[p.row]?.[p.cell]?.font?.size : c.font?.size) ?? 0;
+  };
+  const headerCaptions = places.filter((p) => p.role === 'caption' && HEADERS.includes(k.bands[p.band].kind));
+  const sizes = headerCaptions.map(fontOf).filter((s) => s > 0).sort((a, b) => a - b);
+  const usualSize = sizes[Math.floor(sizes.length / 2)] ?? 0;
+  const looksLikeData = (words: string) => /@|\d{3,}|https?:|www\./i.test(words) || words.split(/\s+/).length > 5;
+  const titleSized = (p: Place) => k.bands[p.band].kind === 'ReportHeader' && usualSize > 0 && fontOf(p) >= usualSize * 1.5;
+  const captions = headerCaptions.filter((p) => !titleSized(p) && !looksLikeData(words.get(key(p)) ?? ''));
+  const squash = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
   const fields: string[] = [];
   const fieldOf = new Map<string, string>();
   const unique = (base: string) => {
@@ -324,12 +348,30 @@ export function skeletonToDesign(
       fieldOf.set(key(v), own);
       continue;
     }
-    const above = captions
-      .filter((c) => c.box === null || v.box === null || c.box.y < v.box.y)
-      .map((c) => ({ c, o: overlap(c, v) }))
-      .filter((x) => x.o > 0)
-      .sort((a, b) => b.o - a.o)[0];
-    fieldOf.set(key(v), unique(above ? fieldFromCaption(words.get(key(above.c)) ?? '') : ''));
+    const self = v.box ? squash(textIn(texts, v.box)) : '';
+    const usable = captions.filter((c) => (k.bands[c.band].kind !== 'ReportHeader' || c.band === v.band) && (!self || squash(words.get(key(c)) ?? '') !== self));
+    const mid = (b: Box) => b.y + b.h / 2;
+    const vb = v.box;
+    const beside = vb
+      ? usable
+          .filter((c) => c.band === v.band && c.box && c.box.x + c.box.w <= vb.x + 2 && Math.abs(mid(c.box) - mid(vb)) <= Math.max(c.box.h, vb.h) / 2)
+          .sort((a, b) => b.box!.x - a.box!.x)[0]
+      : undefined;
+    const above = usable
+      .filter((c) => (c.box === null || vb === null || c.box.y < vb.y) && overlap(c, v) > 0)
+      .sort((a, b) => {
+        const da = a.box && vb ? vb.y - a.box.y : Number.POSITIVE_INFINITY;
+        const db = b.box && vb ? vb.y - b.box.y : Number.POSITIVE_INFINITY;
+        return da - db || overlap(b, v) - overlap(a, v);
+      })[0];
+    const heading = beside ?? above;
+    const base = heading ? fieldFromCaption(words.get(key(heading)) ?? '') : '';
+    if (base && !fields.includes(base)) {
+      fields.push(base);
+      fieldOf.set(key(v), base);
+    } else {
+      fieldOf.set(key(v), unique(''));
+    }
   }
   // A total sums the value in its column; one with none above it gets a field of its own.
   for (const t of places.filter((p) => p.role === 'total')) {
@@ -363,6 +405,16 @@ export function skeletonToDesign(
   const unitSize = (f: SkeletonFont | null) => (f ? Math.round(pointsToUnits(f.size, 'HundredthsOfAnInch') * 100) / 100 : undefined);
   let groupCount = 0;
   const usedGroups = new Map<number, string[]>();
+  // Whole numbers, or DevExpress drops the margins and prints sides of 100
+  // (2026-11-11, CC-03, repxMargins.ts): the margin bands take the same.
+  const whole = wholeMargins(k.margins);
+  // A band read as the page's full height is held to what the whole margins
+  // leave: rounding a fractional top and bottom up can take up to two units
+  // from the page, and a band that much taller prints a near-empty page after
+  // it (2026-11-11, the review of CC-03). Only that much: a band taller by
+  // more was read that way, and band-taller-than-page names it.
+  const printable = Math.round(k.height) - whole.top - whole.bottom;
+  const fitted = (h: number) => (h > printable && h - printable < 2 ? printable : h);
 
   k.bands.forEach((b, bi) => {
     const type = BAND_TYPE[b.kind];
@@ -487,7 +539,7 @@ export function skeletonToDesign(
       usedGroups.set(bi, names);
       groupXml = `<GroupFields>${names.map((f, i) => `<Item${i + 1} Ref="${next()}" FieldName="${attr(f)}" />`).join('')}</GroupFields>`;
     }
-    const height = b.kind === 'TopMargin' ? k.margins.top : b.kind === 'BottomMargin' ? k.margins.bottom : b.height;
+    const height = b.kind === 'TopMargin' ? whole.top : b.kind === 'BottomMargin' ? whole.bottom : fitted(b.height);
     const inner = `${groupXml}${controls.length ? `<Controls>${controls.join('')}</Controls>` : ''}`;
     bandsXml.push({ kind: b.kind, xml: `<Band Ref="${next()}" ControlType="${type}" Name="${b.kind}${bi + 1}" HeightF="${n(height)}"${inner ? `>${inner}</Band>` : ' />'}` });
     const section = SECTION[b.kind];
@@ -502,14 +554,14 @@ export function skeletonToDesign(
 
   const bandItems = bandsXml.map((b, i) => b.xml.replace(/^<Band/, `<Item${i + 1}`).replace(/<\/Band>$/, `</Item${i + 1}>`));
   const name = fieldFromCaption(title) || 'VisionReport';
-  const m = k.margins;
+  const m = whole;
   // The version asked for, as the AI's own REPX would carry it (X.Y.3.0, gemini.md).
   const v = /^\d{2}\.\d$/.test(options.version ?? '') ? options.version! : '20.1';
   const xml =
     '<?xml version="1.0" encoding="utf-8"?>\n' +
     `<XtraReportsLayoutSerializer SerializerVersion="${v}.3.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v${v}, Version=${v}.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a"` +
     ` Name="${attr(name)}" DisplayName="${attr(title)}" ReportUnit="HundredthsOfAnInch" Margins="${n(m.left)}, ${n(m.right)}, ${n(m.top)}, ${n(m.bottom)}"` +
-    ` PageWidth="${n(k.width)}" PageHeight="${n(k.height)}" Version="${v}" Font="Arial, 9pt"><Bands>${bandItems.join('')}</Bands></XtraReportsLayoutSerializer>`;
+    ` PageWidth="${Math.round(k.width)}" PageHeight="${Math.round(k.height)}" Version="${v}" Font="Arial, 9pt"><Bands>${bandItems.join('')}</Bands></XtraReportsLayoutSerializer>`;
   let repx = xml;
   for (const pass of [ensureUniqueRefs, repairDpi, repairPaper]) {
     const r = pass(repx);

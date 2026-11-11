@@ -148,11 +148,87 @@ describe('skeletonToDesign', () => {
 
   it('binds each value to a field named after the caption over its column, and each total to the field above it', () => {
     const design = skeletonToDesign(skeleton, { texts });
-    expect(design.fields).toEqual(['Item', 'Item2', 'Quantity']);
+    // The record's item takes `Field2`, not a numbered copy of the group's (CC-09).
+    expect(design.fields).toEqual(['Item', 'Field2', 'Quantity']);
     expect(design.repx).toContain('Expression="[Quantity]"');
     expect(design.repx).toMatch(/Running="Group" \/><ExpressionBindings><Item1 Ref="\d+" EventName="BeforePrint" PropertyName="Text" Expression="sumSum\(\[Quantity\]\)"/);
     expect(design.repx).toMatch(/Running="Report" \/>/);
     expect(design.repx).toContain('FieldName="Item"');
+  });
+
+  /*
+   * CC-09 (2026-11-11): Forma's own drafts bound `[QuarterlySalesByRegion2]`,
+   * `[INVOICE2]` to `[INVOICE6]`, `[billingNorthwindExample]` and
+   * `[F2721HarborAvenueSuite400]`, and grouped on the title, so the page's own
+   * records could not be printed through them.
+   */
+  it('never names a field after the title, sample text or a repeat of another', () => {
+    const k: ReportSkeleton = {
+      ...skeleton,
+      bands: [
+        { kind: 'TopMargin', height: 50, groupFields: 0, controls: [] },
+        {
+          kind: 'ReportHeader',
+          height: 120,
+          groupFields: 0,
+          controls: [
+            // The title, read as a caption in a large face.
+            label({ y: 0, w: 400, h: 30, font: font(18, true) }),
+            // A key and its value on one line.
+            label({ y: 40, w: 100, h: 16 }),
+            label({ role: 'value', x: 110, y: 40, w: 150, h: 16 }),
+            // An address read as a caption, over a value.
+            label({ x: 400, y: 40, w: 250, h: 16 }),
+            label({ role: 'value', x: 400, y: 60, w: 250, h: 16 }),
+          ],
+        },
+        { kind: 'PageHeader', height: 20, groupFields: 0, controls: [label({ y: 0, w: 200, h: 20 }), label({ x: 300, y: 0, w: 200, h: 20 })] },
+        { kind: 'GroupHeader', height: 20, groupFields: 1, controls: [label({ role: 'value', x: 0, y: 0, w: 200, h: 20 })] },
+        { kind: 'Detail', height: 20, groupFields: 0, controls: [label({ role: 'value', x: 0, y: 0, w: 200, h: 20 }), label({ role: 'value', x: 300, y: 0, w: 200, h: 20 })] },
+        { kind: 'BottomMargin', height: 50, groupFields: 0, controls: [] },
+      ],
+    };
+    const read: PageText[] = [
+      { text: 'Quarterly Sales by Region', x: 60, y: 55, w: 300, h: 24 },
+      { text: 'Invoice No', x: 55, y: 92, w: 80, h: 12 },
+      { text: '2026-0417', x: 165, y: 92, w: 80, h: 12 },
+      { text: '2721 Harbor Avenue, Suite 400', x: 455, y: 92, w: 200, h: 12 },
+      { text: 'Region', x: 55, y: 173, w: 60, h: 14 },
+      { text: 'Revenue', x: 355, y: 173, w: 60, h: 14 },
+    ];
+    const design = skeletonToDesign(k, { texts: read });
+    expect(design.fields).toEqual(['InvoiceNo', 'Field2', 'Region', 'Field4', 'Revenue']);
+    expect(design.repx).not.toMatch(/QuarterlySalesByRegion\]|F2721|Region2|Revenue2/);
+    expect(design.repx).toContain('FieldName="Region"');
+    expect(auditRepx(design.repx).findings.map((f) => f.code)).not.toContain('field-named-after-text');
+  });
+
+  it('writes whole margins and a whole page, as DevExpress keeps them (CC-03)', () => {
+    const fractional = { ...skeleton, paper: 'Custom' as const, width: 826.4, height: 1169.6, margins: { top: 43.45, bottom: 23.4, left: 50.6, right: 14.92 } };
+    const { repx } = skeletonToDesign(fractional);
+    expect(/Margins="([^"]*)"/.exec(repx)?.[1]).toBe('50, 14, 43, 23');
+    expect(repx).toMatch(/ControlType="TopMarginBand" Name="TopMargin1" HeightF="43"/);
+    expect(repx).toMatch(/ControlType="BottomMarginBand" Name="BottomMargin\d+" HeightF="23"/);
+    expect(auditRepx(repx).findings.map((f) => f.code)).not.toContain('margins-not-whole');
+  });
+
+  it('holds a page-high band to what the rounded margins leave, and no further', () => {
+    // 1100 less 49.6 and 49.6 is 1000.8; written as 50 and 50, the page leaves 1000.
+    const page = (height: number): ReportSkeleton => ({
+      ...skeleton,
+      paper: 'Letter',
+      width: 850,
+      height: 1100,
+      margins: { top: 49.6, bottom: 49.6, left: 50, right: 50 },
+      bands: [
+        { kind: 'TopMargin', height: 49.6, groupFields: 0, controls: [] },
+        { kind: 'ReportHeader', height, groupFields: 0, controls: [] },
+        { kind: 'BottomMargin', height: 49.6, groupFields: 0, controls: [] },
+      ],
+    });
+    expect(skeletonToDesign(page(1000.8)).repx).toMatch(/ControlType="ReportHeaderBand" Name="ReportHeader2" HeightF="1000"/);
+    // A band read taller than a rounding's worth is left for band-taller-than-page to name.
+    expect(skeletonToDesign(page(1040)).repx).toMatch(/ControlType="ReportHeaderBand" Name="ReportHeader2" HeightF="1040"/);
   });
 
   it('prints a date where the page showed one, and the page number otherwise', () => {

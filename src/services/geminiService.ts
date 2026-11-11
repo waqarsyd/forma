@@ -41,6 +41,8 @@ import { instructionBlock } from "../lib/userInstructions";
 import { auditRepx, type RepxAudit, type RepxFinding } from "../lib/repxAudit";
 import { carryDataSource } from "../lib/repxSqlDataSource";
 import { repairRepx } from "../lib/repairChain";
+import { repairWholeMargins } from "../lib/repxMargins";
+import { repairCalculatedFields } from "../lib/repxCalculatedFields";
 import { isRepxText, restoreBlobs, stashBlobs, type BlobStash } from "../lib/repxBlobs";
 import { hasReportScripts } from "../lib/shares";
 import { rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
@@ -3420,6 +3422,23 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       previous: previousState?.repxContent ?? null,
       keepScripts,
     }).xml;
+
+    /*
+     * Two passes beside the chain (2026-11-11, the full audit's CC-03 and
+     * CC-04), until lib/repairChain.ts takes them into its order: Margins and
+     * a custom page size made whole numbers, which DevExpress 20.1 otherwise
+     * drops (a report converted to millimetres writes fractions too), and a
+     * group on a field nothing has declared as the calculated field its
+     * header prints. Both after the paper and the group levels, as they would
+     * stand in the chain.
+     */
+    for (const pass of [repairWholeMargins, (xml: string) => repairCalculatedFields(xml, { fields: options?.fields })]) {
+      const result = pass(parsed.repxContent);
+      if (result.applied) {
+        parsed.repxContent = result.xml;
+        console.warn(`Repair: ${result.reason}.`);
+      }
+    }
 
     /*
      * There is deliberately no binding pass here any more.

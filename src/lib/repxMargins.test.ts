@@ -8,7 +8,7 @@
  * a diff and be wrong on paper.
  */
 import { describe, it, expect } from 'vitest';
-import { liftReportMargins } from './repxMargins';
+import { isWholeNumber, liftReportMargins, repairWholeMargins, wholeMargins, wholeMarginsWritten } from './repxMargins';
 
 /** Build a flat single-Detail report of the shape the mega-prompt asks for. */
 function flat(
@@ -87,11 +87,13 @@ describe('the default margin, where nothing has to move for it', () => {
   });
 
   // 20 units is 0.2in, and the point is the physical margin, not the number.
-  it('is 0.2in in whatever unit the report declares', () => {
+  it('is 0.2in in whatever unit the report declares, as a whole number', () => {
     const r = liftReportMargins(empty({ unit: 'TenthsOfAMillimeter' }));
     expect(r.applied).toBe(true);
-    // 0.2in at 254 units/in = 50.8, formatted.
-    expect(r.margins?.top).toBeCloseTo(50.8, 1);
+    // 0.2in at 254 units/in is 50.8, which DevExpress 20.1 drops (CC-03): 50.
+    expect(r.margins?.top).toBe(50);
+    expect(attr(r.xml, 'Margins')).toBe('50, 50, 50, 50');
+    expect(bandHeight(r.xml, 'TopMarginBand')).toBe(50);
   });
 
   // The band has to give up the space; if it cannot, do not invent a page.
@@ -297,5 +299,84 @@ ${label('d', 50, 10)}
     const second = liftReportMargins(result.xml);
     expect(second.applied).toBe(false);
     expect(second.xml).toBe(result.xml);
+  });
+
+  it('lifts a fractional whitespace as whole numbers, never more than was measured', () => {
+    const result = liftReportMargins(flat([label('a', 48.6, 47.4), label('b', 48.6, 300)].join('\n')));
+    expect(result.applied).toBe(true);
+    expect(attr(result.xml, 'Margins')).toBe('48, 48, 47, 47');
+    expect(locations(result.xml)[0][0]).toBeCloseTo(0.6, 5);
+    expect(wholeMarginsWritten(attr(result.xml, 'Margins')!)).toBe(true);
+  });
+});
+
+/*
+ * The probe files' own root attributes (2026-11-11, the full audit's CC-03,
+ * forma-model-data/work/claude-code-ref-2026-11-11/probe-fractional and
+ * fastreport-groups/probe-margins). Each fractional one re-saved through
+ * DevExpress 20.1 with no Margins at all; `m-int` kept its 75s.
+ */
+const PROBE_ROOT = (attrs: string, band = '75') => `<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a" Name="InvoiceRuled" DisplayName="Invoice" ReportUnit="HundredthsOfAnInch" ${attrs} Font="Arial, 6.75pt" Version="20.1">
+  <Bands>
+    <Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="${band}" />
+    <Item2 Ref="3" ControlType="DetailBand" Name="Detail" HeightF="20" />
+    <Item3 Ref="4" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="${band}" />
+  </Bands>
+</XtraReportsLayoutSerializer>`;
+
+describe('repairWholeMargins (CC-03)', () => {
+  it('reads which Margins values DevExpress keeps, as the probes printed', () => {
+    expect(wholeMarginsWritten('75, 75, 75, 75')).toBe(true); // m-int: kept
+    expect(wholeMarginsWritten('75.0, 75.0, 75.0, 75.0')).toBe(false); // m-dot0: dropped
+    expect(wholeMarginsWritten('75.5, 75, 75, 75')).toBe(false); // m-frac-one: dropped
+    expect(wholeMarginsWritten('39.37, 39.37, 39.37, 39.37')).toBe(false); // m-frac-all, S-source: dropped
+    expect(wholeMarginsWritten('30, 40')).toBe(false);
+    expect(isWholeNumber('850')).toBe(true);
+    expect(isWholeNumber('850.5')).toBe(false); // pw-frac: re-saved as 850
+  });
+
+  it('writes m-dot0 and m-frac-one as the whole numbers they meant', () => {
+    const dot0 = repairWholeMargins(PROBE_ROOT('PaperKind="Letter" PageWidth="850" PageHeight="1100" Margins="75.0, 75.0, 75.0, 75.0"'));
+    expect(dot0.applied).toBe(true);
+    expect(attr(dot0.xml, 'Margins')).toBe('75, 75, 75, 75');
+    const one = repairWholeMargins(PROBE_ROOT('PaperKind="Letter" PageWidth="850" PageHeight="1100" Margins="75.5, 75, 75, 75"'));
+    // The side is floored, so the printable width never grows.
+    expect(attr(one.xml, 'Margins')).toBe('75, 75, 75, 75');
+  });
+
+  it('floors the sides and rounds the top and bottom, and moves the margin bands with them', () => {
+    const source = repairWholeMargins(
+      PROBE_ROOT('Margins="39.37, 39.37, 39.37, 39.37" PaperKind="Custom" PageWidth="826.77" PageHeight="1169.29"', '39.37'),
+    );
+    expect(attr(source.xml, 'Margins')).toBe('39, 39, 39, 39');
+    expect(attr(source.xml, 'PageWidth')).toBe('827');
+    expect(attr(source.xml, 'PageHeight')).toBe('1169');
+    expect(bandHeight(source.xml, 'TopMarginBand')).toBe(39);
+    expect(bandHeight(source.xml, 'BottomMarginBand')).toBe(39);
+    // Forma's own invoice draft, which printed at 100, 100, 50, 50.
+    const draft = repairWholeMargins(PROBE_ROOT('Margins="50, 14.92, 50, 50" PageWidth="850" PageHeight="1100"', '50'));
+    expect(attr(draft.xml, 'Margins')).toBe('50, 14, 50, 50');
+  });
+
+  it('rounds a fractional custom page size alone (pw-frac)', () => {
+    const r = repairWholeMargins(PROBE_ROOT('PaperKind="Custom" PageWidth="850.5" PageHeight="1100" Margins="75, 75, 75, 75"'));
+    expect(r.applied).toBe(true);
+    expect(attr(r.xml, 'PageWidth')).toBe('851');
+    expect(attr(r.xml, 'Margins')).toBe('75, 75, 75, 75');
+  });
+
+  it('leaves whole numbers, and a report with no Margins, untouched', () => {
+    const int = PROBE_ROOT('PaperKind="Letter" PageWidth="850" PageHeight="1100" Margins="75, 75, 75, 75"');
+    expect(repairWholeMargins(int)).toMatchObject({ applied: false, xml: int });
+    const none = PROBE_ROOT('PaperKind="A4" PageWidth="827" PageHeight="1169"');
+    expect(repairWholeMargins(none).applied).toBe(false);
+    expect(repairWholeMargins('').applied).toBe(false);
+  });
+
+  it('gives every writer whole margins: the sides floored, top and bottom rounded', () => {
+    expect(wholeMargins({ left: 50.8, right: 14.92, top: 43.45, bottom: 23.6 })).toEqual({ left: 50, right: 14, top: 43, bottom: 24 });
+    // Float noise just under a whole number is that number.
+    expect(wholeMargins({ left: 47.99999999, right: 0, top: 0, bottom: 0 }).left).toBe(48);
   });
 });

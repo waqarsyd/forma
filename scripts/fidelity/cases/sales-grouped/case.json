@@ -12,10 +12,18 @@
       "all": ["Quarterly Sales by Region", "Region", "Product Line", "Sales Rep", "Units", "Revenue", "Margin", "Subtotal", "Grand Total"],
       "minRatio": 0.85
     },
-    "fontSize": { "median": { "min": 8, "max": 12 } },
-    "margins": { "declared": true },
+    "fontSize": { "relative": { "sourcePt": 7.2 } },
+    "margins": { "loaded": true },
     "audit": { "errors": 0, "maxWarnings": 5 },
     "sectionsMatchBands": true,
-    "serializerVersion": "20.1.3.0"
-  }
+    "serializerVersion": "20.1.3.0",
+    "bindings": { "notFromText": true },
+    "print": {
+      "pages": { "max": 1 },
+      "clippedMax": 0,
+      "groups": { "min": 3, "max": 3 },
+      "printed": ["Subtotal North", "1,240", "7,450"]
+    }
+  },
+  "printNotes": "Added 2026-11-11 (the full audit, CC-02, CC-03, CC-09): data.json holds the page's nine records, and print checks what the report prints with them: one page, three regions, a subtotal that names its region, units with separators. The body is Calibri 15px at 150dpi, 7.2pt."
 }

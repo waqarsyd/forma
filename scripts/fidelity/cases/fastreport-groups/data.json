@@ -1,0 +1,25 @@
+{
+  "types": {"UnitPrice":"Decimal"},
+  "rows": [
+    {"ProductName":"Tofu","UnitPrice":"23.25"},
+    {"ProductName":"Chai","UnitPrice":"18.00"},
+    {"ProductName":"Aniseed Syrup","UnitPrice":"10.00"},
+    {"ProductName":"Chang","UnitPrice":"19.00"},
+    {"ProductName":"Chef Anton's Cajun Seasoning","UnitPrice":"22.00"},
+    {"ProductName":"Grandma's Boysenberry Spread","UnitPrice":"25.00"},
+    {"ProductName":"Uncle Bob's Organic Dried Pears","UnitPrice":"30.00"},
+    {"ProductName":"Northwoods Cranberry Sauce","UnitPrice":"40.00"},
+    {"ProductName":"Mishi Kobe Niku","UnitPrice":"97.00"},
+    {"ProductName":"Ikura","UnitPrice":"31.00"},
+    {"ProductName":"Queso Cabrales","UnitPrice":"21.00"},
+    {"ProductName":"Queso Manchego La Pastora","UnitPrice":"38.00"},
+    {"ProductName":"Konbu","UnitPrice":"6.00"},
+    {"ProductName":"Genen Shouyu","UnitPrice":"15.50"},
+    {"ProductName":"Pavlova","UnitPrice":"17.45"},
+    {"ProductName":"Alice Mutton","UnitPrice":"39.00"},
+    {"ProductName":"Carnarvon Tigers","UnitPrice":"62.50"},
+    {"ProductName":"Teatime Chocolate Biscuits","UnitPrice":"9.20"},
+    {"ProductName":"Sir Rodney's Marmalade","UnitPrice":"81.00"},
+    {"ProductName":"Chef Anton's Gumbo Mix","UnitPrice":"21.35"}
+  ]
+}

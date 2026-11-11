@@ -9,6 +9,14 @@
     "texts": { "all": ["ALPHABETICAL PRODUCT LIST"], "minRatio": 1 },
     "bindings": { "fields": ["ProductName", "UnitPrice"], "minRatio": 1 },
     "audit": { "errors": 0, "maxWarnings": 5 },
-    "serializerVersion": "20.1.3.0"
-  }
+    "serializerVersion": "20.1.3.0",
+    "margins": { "loaded": true },
+    "print": {
+      "pages": { "max": 2 },
+      "clippedMax": 0,
+      "groups": { "min": 10 },
+      "printed": ["Total products: 5"]
+    }
+  },
+  "printNotes": "Added 2026-11-11 (the full audit, CC-02, CC-03, CC-04): data.json holds twenty products, deliberately unsorted, and print checks what the report prints with them: a group per first letter (twelve here), C's count of five, nothing past the margin. The untouched source must fail (run.ts's self-test): DevExpress refused to print it, its margins and page size being fractions it drops."
 }

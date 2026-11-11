@@ -77,6 +77,27 @@
  * mirrors top, each capped by the space actually free, because the other two
  * edges measure nothing: no control need approach the right edge, and the last
  * band's height is the model's choice rather than its content's.
+ *
+ * ## Margins are four whole numbers, or none at all
+ *
+ * Measured with `RepxProbe inspect` and `render` on 2026-11-11 (the full
+ * audit's CC-03, parity row 77): DevExpress 20.1 silently drops a `Margins`
+ * value that is not four whole numbers. `75.5, 75, 75, 75`, `39.37, ...` and
+ * even `75.0, 75.0, 75.0, 75.0` all re-saved with no `Margins` at all and
+ * printed with sides of 100, the top and bottom taken from the margin bands.
+ * The property is `System.Drawing.Printing.Margins`, four ints, so a written
+ * fraction is a value it cannot read, in any unit: re-measured the same day in
+ * tenths of a millimetre and in pixels, `75.0` and `75.5` re-saved as sides of
+ * 100 and `75` was kept. Every writer here wrote two decimals until then, so
+ * a millimetre default of 50.8 or a lifted 14.92 lost the margin it declared:
+ * Forma's own invoice draft, `50, 14.92, 50, 50`, printed at 100, 100, 50, 50.
+ *
+ * So every margin written is whole (`wholeMargins`): the sides floored, so the
+ * printable width never grows past what the content was laid out in, the top
+ * and bottom rounded, and the margin bands given the same numbers. The lift
+ * floors all four, since any value up to the measured whitespace is safe.
+ * `repairWholeMargins` does the same to a report written elsewhere, and to a
+ * `Custom` page size, which is dropped the same way (`repxPaper.ts`).
  */
 import { unitsPerInch } from './reportGeometry';
 
@@ -158,6 +179,91 @@ function readNumber(a: Attr | undefined): number | undefined {
 /** Trim a float to the two decimals a report unit can meaningfully carry. */
 function fmt(n: number): string {
   return Number.isInteger(n) ? String(n) : String(Number(n.toFixed(2)));
+}
+
+/** A hair under a whole number is float noise, not a fraction to floor away. */
+const down = (n: number) => Math.max(0, Math.floor(n + 1e-6));
+
+/**
+ * A value DevExpress reads into an int property, `Margins` and `PageWidth` and
+ * `PageHeight` among them: digits only. `75.0` is not one (2026-11-11, CC-03).
+ */
+export const isWholeNumber = (value: string) => /^\s*-?\d+\s*$/.test(value);
+
+/** Whether a `Margins` attribute is the four whole numbers DevExpress keeps. */
+export const wholeMarginsWritten = (value: string) => {
+  const parts = value.split(',');
+  return parts.length === 4 && parts.every(isWholeNumber);
+};
+
+/**
+ * Margins as DevExpress keeps them: whole numbers, the sides floored so the
+ * printable width never grows past what the content was laid out in, the top
+ * and bottom rounded. What every writer of a `Margins` attribute and of the
+ * margin bands' `HeightF` uses (the module's header says why).
+ */
+export function wholeMargins(m: LiftedMargins): LiftedMargins {
+  return { left: down(m.left), right: down(m.right), top: Math.max(0, Math.round(m.top)), bottom: Math.max(0, Math.round(m.bottom)) };
+}
+
+export interface WholeMarginsRepair {
+  xml: string;
+  applied: boolean;
+  reason: string;
+}
+
+/** Every opening tag with its attribute block, for the margin bands. */
+const OPEN_TAG = /<[A-Za-z_][\w.-]*((?:\s+[\w.:-]+\s*=\s*"[^"]*")*)\s*\/?>/g;
+
+/**
+ * Make a report's `Margins` four whole numbers, and its page size whole, as
+ * DevExpress 20.1 reads them (CC-03). A margin band whose height was the
+ * fractional margin takes the same whole number, so the two still agree.
+ * Leaves a report whose numbers are already whole untouched.
+ */
+export function repairWholeMargins(xml: string | undefined | null): WholeMarginsRepair {
+  const text = xml ?? '';
+  const root = /<XtraReportsLayoutSerializer\b((?:\s+[\w.:-]+\s*=\s*"[^"]*")*)/.exec(text);
+  if (!root) return { xml: text, applied: false, reason: 'no report root' };
+  const did: string[] = [];
+  let attrs = root[1];
+  let marginBands: { top: [number, number]; bottom: [number, number] } | null = null;
+
+  const margins = /(\sMargins\s*=\s*")([^"]*)(")/.exec(attrs);
+  const parts = margins ? margins[2].split(',').map((p) => Number(p.trim())) : [];
+  if (margins && parts.length === 4 && parts.every(Number.isFinite) && !wholeMarginsWritten(margins[2])) {
+    const [left, right, top, bottom] = parts;
+    const whole = wholeMargins({ left, right, top, bottom });
+    const value = `${whole.left}, ${whole.right}, ${whole.top}, ${whole.bottom}`;
+    attrs = attrs.replace(margins[0], () => `${margins[1]}${value}${margins[3]}`);
+    marginBands = { top: [top, whole.top], bottom: [bottom, whole.bottom] };
+    did.push(`margins ${margins[2]} -> ${value}`);
+  }
+
+  for (const name of ['PageWidth', 'PageHeight']) {
+    const size = new RegExp(`(\\s${name}\\s*=\\s*")([^"]*)(")`).exec(attrs);
+    const n = size ? Number(size[2].trim()) : NaN;
+    if (!size || !Number.isFinite(n) || isWholeNumber(size[2])) continue;
+    attrs = attrs.replace(size[0], () => `${size[1]}${Math.round(n)}${size[3]}`);
+    did.push(`${name} ${size[2]} -> ${Math.round(n)}`);
+  }
+  if (!did.length) return { xml: text, applied: false, reason: 'margins and page size are already whole numbers' };
+
+  let out = text.slice(0, root.index) + `<XtraReportsLayoutSerializer${attrs}` + text.slice(root.index + root[0].length);
+  if (marginBands) {
+    const bands = marginBands;
+    out = out.replace(OPEN_TAG, (tag: string, inner: string) => {
+      const type = /\sControlType\s*=\s*"([^"]*)"/.exec(inner)?.[1];
+      const pair = type === 'TopMarginBand' ? bands.top : type === 'BottomMarginBand' ? bands.bottom : null;
+      if (!pair) return tag;
+      return tag.replace(/(\sHeightF\s*=\s*")([^"]*)(")/, (whole: string, a: string, value: string, b: string) => {
+        const height = Number(value.trim());
+        // The band was written as the same fractional margin: it moves with it.
+        return Number.isFinite(height) && !isWholeNumber(value) && Math.abs(height - pair[0]) < 1 ? `${a}${pair[1]}${b}` : whole;
+      });
+    });
+  }
+  return { xml: out, applied: true, reason: `wrote whole numbers DevExpress keeps: ${did.join('; ')}` };
 }
 
 interface Control {
@@ -265,7 +371,8 @@ export function liftReportMargins(xml: string | undefined | null): MarginLift {
      * DEFAULT_MARGIN_INCHES for why 20 is safe on this path alone.
      */
     const perInch = unitsPerInch(root.get('ReportUnit')?.value);
-    const size = DEFAULT_MARGIN_INCHES * perInch;
+    // Whole, as DevExpress keeps a margin (CC-03): 0.2in is 50.8 tenths of a millimetre, written 50.
+    const size = down(DEFAULT_MARGIN_INCHES * perInch);
     const first = bodyBands[0];
     const bodyHeight = bodyBands.reduce((n, b) => n + b.height, 0);
 
@@ -312,8 +419,10 @@ export function liftReportMargins(xml: string | undefined | null): MarginLift {
     return decline('content reaches the paper edge; a margin would clip it');
   }
 
-  const left = Math.min(measuredLeft, max);
-  const top = Math.min(measuredTop, max);
+  // Floored to whole numbers, which DevExpress keeps (CC-03); less than the
+  // whitespace measured is always safe, so floor, never round.
+  const left = down(Math.min(measuredLeft, max));
+  const top = down(Math.min(measuredTop, max));
 
   // Right and bottom are mirrored from left and top rather than taken from the
   // measurement, and both are capped by what the content actually leaves free.
@@ -326,9 +435,9 @@ export function liftReportMargins(xml: string | undefined | null): MarginLift {
   // keeps it honest: a design with a genuinely wide right border ends up with
   // the declared margin plus some inset, never with content pushed off the
   // printable area.
-  const right = Math.min(measuredRight, left);
+  const right = down(Math.min(measuredRight, left));
   const bodyHeight = bodyBands.reduce((n, b) => n + b.height, 0) - top;
-  const bottom = Math.max(0, Math.min(top, pageHeight - top - bodyHeight));
+  const bottom = down(Math.min(top, pageHeight - top - bodyHeight));
 
   const edits: Edit[] = [
     { start: marginsAttr.start, end: marginsAttr.end, text: `${fmt(left)}, ${fmt(right)}, ${fmt(top)}, ${fmt(bottom)}` },

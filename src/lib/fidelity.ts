@@ -18,19 +18,140 @@
  * scorecard is `scripts/fidelity/run.ts`; it spends the owner's quota and so
  * lives outside the suite. Everything here is pure and under test.
  *
- * Two deliberate limits. There is no pixel comparison: a REPX cannot be rendered
- * without DevExpress, and a mockup drawn from the layout is the model's own
- * account of itself. And the checks are coarse on purpose -- a band present or
- * absent, a phrase found or lost, a median inside a range. Those are the
- * failures that have actually happened here, and a coarse check that trips is
- * worth more than a precise one nobody can keep calibrated.
+ * Two deliberate limits. There is no pixel comparison: a mockup drawn from the
+ * layout is the model's own account of itself. And the checks are coarse on
+ * purpose -- a band present or absent, a phrase found or lost, a median inside
+ * a range. Those are the failures that have actually happened here, and a
+ * coarse check that trips is worth more than a precise one nobody can keep
+ * calibrated.
+ *
+ * ## What prints, not only what the file declares (2026-11-11, CC-02)
+ *
+ * This header said a REPX "cannot be rendered without DevExpress" until the
+ * full audit's Claude Code reference, which printed three cases through
+ * DevExpress with the records their sources show and found the score and the
+ * print disagreeing on all three: 16/16 for a two-page invoice titled "INVO",
+ * 12/12 for a source that throws when printed, 16/16 for a margin of 248.3%,
+ * and a faithful 6.72pt body failing a median of 8 to 12 while +34% passed.
+ * Forma's own `paginate` is pure TypeScript and runs here. So a case may carry
+ * `data.json`, the page's own records (`CaseData`), mapped onto whatever
+ * fields a run binds (`rowsForReport`, through `fieldMatch.ts`), and the
+ * report is printed with them (`printReport`): `print` checks its pages, what
+ * runs past the margin, the text it prints and how many groups break, and
+ * `texts` reads the printed text as well, so a caption built by an expression
+ * counts. `fontSize.relative` compares with the source's own size, and
+ * `margins.loaded` asks for the four whole numbers DevExpress keeps. In Node
+ * nothing measures text, so a print here does not grow; `run.ts --probe`
+ * puts DevExpress's own print beside it where DevExpress is installed.
  */
-import { parseReportStructure, decodeXmlText } from './reportPreview';
-import { auditRepx } from './repxAudit';
+import { parseReportStructure, decodeXmlText, paginate, type RecordValues } from './reportPreview';
+import { auditRepx, fieldsNamedAfterText } from './repxAudit';
 import { checkRepxComplete } from './repxTruncation';
 import type { ReportLayout } from './reportTypes';
 import { readBoundFields } from './repxBindingPlan';
 import { readRepxDataSources } from './repxSqlDataSource';
+import { wholeMarginsWritten } from './repxMargins';
+import { matchColumns, type FieldEvidence } from './fieldMatch';
+
+/**
+ * The records a case's source page shows (`data.json` beside `case.json`),
+ * every value as text exactly as the data holds it, so a decimal keeps its
+ * scale ("45.0"). `types` names each column's .NET type (`DateTime`,
+ * `Decimal`, `Int32`, `Double`, `Boolean`, `String`), as DevExpress reads it.
+ */
+export interface CaseData {
+  types?: Record<string, string>;
+  rows: Record<string, string>[];
+}
+
+/** A .NET type, as `typeRows` takes it for the print. */
+const TYPE_HINT: Record<string, string> = {
+  DateTime: 'date',
+  Date: 'date',
+  Decimal: 'decimal',
+  Int16: 'int',
+  Int32: 'int',
+  Int64: 'int',
+  Double: 'double',
+  Single: 'double',
+  Boolean: 'bool',
+  String: 'string',
+};
+
+const FIELD_TYPE: Record<string, FieldEvidence['type']> = { date: 'date', decimal: 'number', int: 'number', double: 'number', bool: 'boolean', string: 'string' };
+
+/** Every `FieldName` of a `GroupFields` or `SortFields`, which the print groups and sorts by. */
+function groupAndSortFields(xml: string): string[] {
+  return [...xml.matchAll(/<(GroupFields|SortFields)>([\s\S]*?)<\/\1>/g)].flatMap((b) => [...b[2].matchAll(/\sFieldName="([^"]*)"/g)].map((m) => decodeXmlText(m[1]).trim()));
+}
+
+/**
+ * A case's records for one report: each field the report binds, groups or
+ * sorts on, other than its own calculated fields and parameters, given the
+ * case column it matches (`matchColumns`, as the Data tab matches a column to
+ * a field), so a run that calls the quantity `Quantity` and one that calls it
+ * `Qty` both print the page's numbers. A field nothing matches is left out of
+ * the records, which is how the data would treat a field it lacks.
+ */
+export function rowsForReport(xml: string, data: CaseData): { rows: RecordValues[]; types: Record<string, string>; mapping: Record<string, string | null> } {
+  const columns = [...new Set(data.rows.flatMap((r) => Object.keys(r)))];
+  const hints = Object.fromEntries(columns.map((c) => [c, TYPE_HINT[data.types?.[c] ?? ''] ?? '']));
+  const calculated = new Set([...(/<CalculatedFields>([\s\S]*?)<\/CalculatedFields>/.exec(xml)?.[1] ?? '').matchAll(/\sName="([^"]*)"/g)].map((m) => m[1]));
+  const wanted = [...new Set([...readBoundFields(xml), ...groupAndSortFields(xml)])].filter((f) => f && !calculated.has(f) && !/^(Parameters|DataSource|ReportItems)\./.test(f));
+  const evidence: FieldEvidence[] = columns.map((name) => ({ name, type: FIELD_TYPE[hints[name]] ?? 'string', samples: data.rows.slice(0, 5).map((r) => r[name] ?? '') }));
+  const matches = matchColumns(wanted.map((heading) => ({ heading })), evidence);
+  const mapping = Object.fromEntries(wanted.map((w, i) => [w, columns.includes(w) ? w : matches[i]?.field ?? null]));
+  const rows = data.rows.map((r) => {
+    const out: RecordValues = { ...r };
+    for (const [field, column] of Object.entries(mapping)) if (column && r[column] !== undefined) out[field] = r[column];
+    return out;
+  });
+  const types: Record<string, string> = {};
+  for (const [c, hint] of Object.entries(hints)) if (hint) types[c] = hint;
+  for (const [field, column] of Object.entries(mapping)) if (column && hints[column]) types[field] = hints[column];
+  return { rows, types, mapping };
+}
+
+/** What a report prints with a case's records, read off Forma's own `paginate`. */
+export interface PrintMeasurements {
+  records: number;
+  pages: number;
+  /** Controls that run past the printable width, each counted once. */
+  clipped: string[];
+  /** Every text printed, in print order: each control's and each table cell's. */
+  printed: string[];
+  /** How many times the outermost group header prints: one per group, unless it repeats on each page. */
+  groups: number;
+  /** The case's column each field was printed from, or null where none matched. */
+  mapping: Record<string, string | null>;
+}
+
+/** Print a report with a case's records and read back what came out (CC-02). */
+export function printReport(xml: string, data: CaseData): PrintMeasurements {
+  const { rows, types, mapping } = rowsForReport(xml, data);
+  const structure = parseReportStructure(xml);
+  const report = paginate(structure, rows.length, { rows, rowTypes: types, maxPages: 60 });
+  const headers = structure.bands.filter((b) => b.kind === 'GroupHeader');
+  // The outer group: the higher Level, and between equals the later in the file (s19).
+  const outer = headers.reduce<(typeof headers)[number] | null>((best, b) => (!best || b.level >= best.level ? b : best), null);
+  const right = report.content.left + report.content.width + 0.5;
+  const clipped = new Set<string>();
+  const printed: string[] = [];
+  let groups = 0;
+  for (const page of report.pages) {
+    for (const band of page.bands) {
+      if (outer && band.band === outer) groups++;
+      for (const pc of band.controls) {
+        if (!pc.control.visible) continue;
+        // On its own page, not on a page added for what runs past the margin, whose band is shifted left (row 64).
+        if (band.left >= report.content.left && band.left + pc.control.x + pc.control.width > right) clipped.add(`${band.band.name}/${pc.control.name}`);
+        if (pc.text?.trim()) printed.push(pc.text);
+        for (const row of pc.cellTexts ?? []) for (const cell of row) if (cell?.trim()) printed.push(cell);
+      }
+    }
+  }
+  return { records: rows.length, pages: report.pages.length, clipped: [...clipped], printed, groups, mapping };
+}
 
 /** What a case file may ask of a generation. Every field is optional. */
 export interface FidelityExpectations {
@@ -46,10 +167,28 @@ export interface FidelityExpectations {
    * `all` that must be found, default 1.
    */
   texts?: { all: string[]; minRatio?: number };
-  /** Bounds on the median font size, in points, across every `Font` written. */
-  fontSize?: { median?: { min?: number; max?: number } };
-  /** Whether the root `Margins` must be something other than all zeros. */
-  margins?: { declared?: boolean };
+  /**
+   * Bounds on the median font size, in points, across every `Font` written;
+   * or `relative`, within `within` (default 0.1) of the source's own median,
+   * `sourcePt` (2026-11-11, CC-02: the invoice's body is 14px at 150dpi,
+   * 6.72pt, and a fixed 8 to 12 failed the faithful size and passed +34%).
+   * `run.ts --measure-source` reads it off an HTML source.
+   */
+  fontSize?: { median?: { min?: number; max?: number }; relative?: { sourcePt: number; within?: number } };
+  /**
+   * `declared`: whether the root `Margins` must be something other than all
+   * zeros. `loaded`: declared, and four whole numbers, which is what
+   * DevExpress 20.1 keeps (CC-03); anything else it drops.
+   */
+  margins?: { declared?: boolean; loaded?: boolean };
+  /**
+   * What the report prints with the case's `data.json` (CC-02): at most or at
+   * least so many pages, at most `clippedMax` controls past the printable
+   * width, each of `printed` found in the printed text (case and spacing
+   * aside), and between `groups.min` and `groups.max` groups. Without a
+   * `data.json` every one of them fails, so a case cannot claim them unread.
+   */
+  print?: { pages?: { min?: number; max?: number }; clippedMax?: number; printed?: string[]; groups?: { min?: number; max?: number } };
   /** Audit outcome on the finished file. */
   audit?: { errors?: number; maxWarnings?: number };
   /** Whether `layout.sections.length` must equal the number of content bands. */
@@ -60,8 +199,11 @@ export interface FidelityExpectations {
    * Fields of a shared database the report must print (2026-11-09, the SQL
    * Server programme, item 23): each bound by name, matched case-insensitively.
    * `minRatio` is the fraction of `fields` that must be bound, default 1.
+   * `notFromText` (2026-11-11, CC-09): no bound field is named after the
+   * report's title or is one of a caption's numbered copies
+   * (`fieldsNamedAfterText`), which no data could fill.
    */
-  bindings?: { fields: string[]; minRatio?: number };
+  bindings?: { fields?: string[]; minRatio?: number; notFromText?: boolean };
   /** The query the written SQL data source must read, by its name (`Customers`). */
   dataSource?: { query: string };
 }
@@ -74,6 +216,12 @@ export interface FidelityMeasurements {
   page: { width: number; height: number };
   /** The root `Margins`, in report units, or null when the attribute is absent. */
   margins: { left: number; right: number; top: number; bottom: number } | null;
+  /** Whether `Margins` is written as the four whole numbers DevExpress keeps (CC-03). */
+  marginsWhole: boolean;
+  /** Bound fields named after the report's own words (`fieldsNamedAfterText`, CC-09). */
+  namedAfterText: string[];
+  /** What it prints with the case's records, or null when the case has none (CC-02). */
+  print: PrintMeasurements | null;
   /** Content band kind to count. TopMargin and BottomMargin are excluded. */
   bands: Record<string, number>;
   /** Content band kinds in file order, one entry per band. */
@@ -143,7 +291,7 @@ export function normalizeText(text: string): string {
  * and no controls, with the reader's complaints in `problems`, which is what a
  * truncated or malformed generation should score as rather than crash the run.
  */
-export function measureReport(repxContent: string | null | undefined, layout?: ReportLayout | null): FidelityMeasurements {
+export function measureReport(repxContent: string | null | undefined, layout?: ReportLayout | null, data?: CaseData | null): FidelityMeasurements {
   const xml = repxContent ?? '';
   const structure = parseReportStructure(xml);
   const root = rootAttributes(xml);
@@ -179,7 +327,25 @@ export function measureReport(repxContent: string | null | undefined, layout?: R
   const fontSizesPt: number[] = [];
   for (const m of xml.matchAll(/\bFont="[^"]*?,\s*(\d+(?:\.\d+)?)pt/g)) fontSizesPt.push(Number(m[1]));
 
-  const audit = auditRepx(xml, layout ?? null);
+  let print: PrintMeasurements | null = null;
+  if (data && xml.trim()) {
+    try {
+      print = printReport(xml, data);
+    } catch (error) {
+      structure.problems.push(`The print with the case's records failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  /*
+   * With the case's columns as the data's fields, so a group on a field the
+   * data lacks is named (CC-04), and with every field the print matched to a
+   * column as well: a run that groups on `SalesRegion` prints a group per
+   * region through `matchColumns`, so the audit calling the same field unknown
+   * would score one answer two ways (2026-11-11, the review of CC-02).
+   */
+  const columns = data ? data.rows.flatMap((r) => Object.keys(r)) : [];
+  const matched = Object.entries(print?.mapping ?? {}).filter(([, column]) => column !== null).map(([field]) => field);
+  const dataFields = [...new Set([...columns, ...matched])];
+  const audit = auditRepx(xml, layout ?? null, dataFields.length ? { fields: dataFields } : {});
 
   return {
     complete: checkRepxComplete(xml).complete,
@@ -187,6 +353,9 @@ export function measureReport(repxContent: string | null | undefined, layout?: R
     unit: structure.unit,
     page: structure.page,
     margins: parseMargins(root.Margins),
+    marginsWhole: root.Margins !== undefined && wholeMarginsWritten(root.Margins),
+    namedAfterText: fieldsNamedAfterText(xml),
+    print,
     bands,
     bandOrder,
     controls,
@@ -244,7 +413,8 @@ export function checkFidelity(m: FidelityMeasurements, expect: FidelityExpectati
   }
 
   if (expect.texts) {
-    const haystack = normalizeText(m.texts.join(' \n '));
+    // What prints counts as well as what is written (CC-02): `'Subtotal ' + [Region]` prints "Subtotal North".
+    const haystack = normalizeText([...m.texts, ...(m.print?.printed ?? [])].join(' \n '));
     const missing = expect.texts.all.filter((phrase) => !haystack.includes(normalizeText(phrase)));
     const found = expect.texts.all.length - missing.length;
     const ratio = expect.texts.all.length ? found / expect.texts.all.length : 1;
@@ -267,6 +437,56 @@ export function checkFidelity(m: FidelityMeasurements, expect: FidelityExpectati
       expected: `${describeRange(expect.fontSize.median)}pt`,
       actual: m.fontMedianPt === null ? 'no Font written' : `${m.fontMedianPt}pt over ${m.fontSizesPt.length}`,
     });
+  }
+  if (expect.fontSize?.relative) {
+    const { sourcePt, within = 0.1 } = expect.fontSize.relative;
+    const off = m.fontMedianPt === null ? null : (m.fontMedianPt - sourcePt) / sourcePt;
+    checks.push({
+      id: 'fontSize.relative',
+      pass: off !== null && Math.abs(off) <= within + 1e-9,
+      expected: `within ${Math.round(within * 100)}% of the source's ${sourcePt}pt`,
+      actual: off === null ? 'no Font written' : `${m.fontMedianPt}pt, ${off >= 0 ? '+' : ''}${Math.round(off * 100)}%`,
+    });
+  }
+
+  if (expect.margins?.loaded !== undefined) {
+    const declared = !!m.margins && (m.margins.left || m.margins.right || m.margins.top || m.margins.bottom) !== 0;
+    const loaded = declared && m.marginsWhole;
+    checks.push({
+      id: 'margins.loaded',
+      pass: loaded === expect.margins.loaded,
+      expected: expect.margins.loaded ? 'non-zero Margins in whole numbers' : 'Margins DevExpress drops',
+      actual: m.margins ? `${m.margins.left}, ${m.margins.right}, ${m.margins.top}, ${m.margins.bottom}${m.marginsWhole ? '' : ' (not whole: dropped on load)'}` : 'no Margins attribute',
+    });
+  }
+
+  if (expect.print) {
+    const p = m.print;
+    const none = 'not printed: the case has no data.json';
+    if (expect.print.pages) {
+      checks.push({ id: 'print.pages', pass: !!p && inRange(p.pages, expect.print.pages), expected: describeRange(expect.print.pages), actual: p ? `${p.pages} over ${p.records} records` : none });
+    }
+    if (expect.print.clippedMax !== undefined) {
+      checks.push({
+        id: 'print.clipped',
+        pass: !!p && p.clipped.length <= expect.print.clippedMax,
+        expected: `<= ${expect.print.clippedMax}`,
+        actual: p ? (p.clipped.length ? `${p.clipped.length} (${p.clipped.slice(0, 4).join(', ')}${p.clipped.length > 4 ? ', ...' : ''})` : '0') : none,
+      });
+    }
+    if (expect.print.printed) {
+      const haystack = p ? normalizeText(p.printed.join(' \n ')) : '';
+      const missing = expect.print.printed.filter((s) => !haystack.includes(normalizeText(s)));
+      checks.push({
+        id: 'print.printed',
+        pass: !!p && missing.length === 0,
+        expected: `all of ${expect.print.printed.length} printed`,
+        actual: p ? (missing.length ? `missing: ${missing.map((s) => JSON.stringify(s)).join(', ')}` : `${expect.print.printed.length}/${expect.print.printed.length}`) : none,
+      });
+    }
+    if (expect.print.groups) {
+      checks.push({ id: 'print.groups', pass: !!p && inRange(p.groups, expect.print.groups), expected: describeRange(expect.print.groups), actual: p ? `${p.groups}` : none });
+    }
   }
 
   if (expect.margins?.declared !== undefined) {
@@ -316,16 +536,25 @@ export function checkFidelity(m: FidelityMeasurements, expect: FidelityExpectati
   }
 
   // The database's two (2026-11-09): which of its fields the report binds, and what the source reads.
-  if (expect.bindings) {
+  if (expect.bindings?.fields) {
+    const fields = expect.bindings.fields;
     const bound = new Set(m.boundFields.map((f) => f.toLowerCase()));
-    const found = expect.bindings.fields.filter((f) => bound.has(f.toLowerCase()));
-    const need = Math.ceil(expect.bindings.fields.length * (expect.bindings.minRatio ?? 1));
-    const missing = expect.bindings.fields.filter((f) => !bound.has(f.toLowerCase()));
+    const found = fields.filter((f) => bound.has(f.toLowerCase()));
+    const need = Math.ceil(fields.length * (expect.bindings.minRatio ?? 1));
+    const missing = fields.filter((f) => !bound.has(f.toLowerCase()));
     checks.push({
       id: 'bindings',
       pass: found.length >= need,
-      expected: `>= ${need} of ${expect.bindings.fields.length} fields bound`,
+      expected: `>= ${need} of ${fields.length} fields bound`,
       actual: `${found.length}${missing.length ? ` (missing ${missing.join(', ')})` : ''}`,
+    });
+  }
+  if (expect.bindings?.notFromText) {
+    checks.push({
+      id: 'bindings.notFromText',
+      pass: m.namedAfterText.length === 0,
+      expected: 'no field named after the title or a repeated caption',
+      actual: m.namedAfterText.length ? m.namedAfterText.slice(0, 6).map((f) => `[${f}]`).join(', ') : 'none',
     });
   }
   if (expect.dataSource) {
@@ -350,4 +579,14 @@ export interface FidelityScore {
 export function scoreChecks(checks: FidelityCheck[]): FidelityScore {
   const passed = checks.filter((c) => c.pass).length;
   return { passed, total: checks.length, ratio: checks.length ? passed / checks.length : 1 };
+}
+
+/**
+ * A case's self-test (2026-11-11, CC-02): a `.repx` source scored as if it
+ * were the answer must fail at least one check, or the case measures nothing.
+ * The FastReport case scored its own untouched source 12/12 while DevExpress
+ * refused to print it. The checks that failed, empty when it measures nothing.
+ */
+export function selfTest(sourceXml: string, expect: FidelityExpectations, data?: CaseData | null): FidelityCheck[] {
+  return checkFidelity(measureReport(sourceXml, null, data), expect).filter((c) => !c.pass);
 }

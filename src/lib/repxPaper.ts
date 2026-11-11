@@ -29,6 +29,19 @@
  * turned for landscape (and the `PaperKind` unless it is Letter), and
  * `PaperKind="Custom"` with any other size. The sizes it writes are the ones
  * `pageSizeInUnits` computes, in all three units.
+ *
+ * ## A custom size is whole, or it is Letter's
+ *
+ * `PageWidth` and `PageHeight` are ints, and a fraction is dropped on load
+ * (2026-11-11, the full audit's CC-03, `RepxProbe inspect`): under
+ * `PaperKind="Custom"`, `826.77 x 1169.29` re-saved as `PageWidth="850"` with
+ * no `PageHeight`, which is Letter, and `850.5`, `851.5`, `900.7` and
+ * `1000.9` all as `850`, each side on its own (`900 x 600.4` kept its 900).
+ * In a millimetre and a pixel report `850.5` re-saved as 850 too: the
+ * property's default as a number, not Letter in that unit. A named paper
+ * takes its size from the paper, so nothing is lost there. `printedPaper` reads a
+ * written size the same way, `repairWholeMargins` (repxMargins.ts) rounds it,
+ * and the audit's `page-size-not-whole` finds one neither reached.
  */
 import { SUPPORTED_PAGE_SIZES, pageSizeInUnits, paperInches, unitsPerInch } from './reportGeometry';
 
@@ -80,7 +93,18 @@ export function printedPaper(rootAttrs: string): PrintedPaper {
   const landscape = (attrOf(rootAttrs, 'Landscape') ?? '').toLowerCase() === 'true';
   const inches = kind === 'Custom' ? null : paperInches(kind);
   if (!inches) {
-    return { kind, landscape, width: numberOf(rootAttrs, 'PageWidth') ?? 850, height: numberOf(rootAttrs, 'PageHeight') ?? 1100 };
+    // A size written with a fraction is dropped for the property's default,
+    // 850 by 1100 as numbers in whatever unit (CC-03: a millimetre and a pixel
+    // report's `850.5` both re-saved as 850, not as Letter in their unit).
+    // Only for Custom: a named paper this app has no size for takes its size
+    // from the paper in DevExpress, which the size written is closer to than
+    // the default (2026-11-11, the review of CC-03).
+    const written = (name: string, fallback: number) => {
+      const raw = attrOf(rootAttrs, name);
+      const n = numberOf(rootAttrs, name);
+      return raw !== null && n !== null && (kind !== 'Custom' || /^\s*-?\d+\s*$/.test(raw)) ? n : fallback;
+    };
+    return { kind, landscape, width: written('PageWidth', 850), height: written('PageHeight', 1100) };
   }
   // The paper's own size, not the rounded one written: DevExpress printed A4
   // 2480.315 by 3507.874 three-hundredths of an inch, which is 826.77 by 1169.29.
@@ -100,6 +124,10 @@ export function findPaperProblem(xml: string | undefined | null): PaperProblem |
   const width = numberOf(attrs, 'PageWidth');
   const height = numberOf(attrs, 'PageHeight');
   if (width === null || height === null) return null;
+  // A custom size with a fraction is the audit's `page-size-not-whole`, not a paper named wrong.
+  const kind = attrOf(attrs, 'PaperKind') || 'Letter';
+  const whole = ['PageWidth', 'PageHeight'].every((name) => /^\s*-?\d+\s*$/.test(attrOf(attrs, name) ?? ''));
+  if (!whole && kind === 'Custom') return null;
   const printed = printedPaper(attrs);
   if (near(width, printed.width) && near(height, printed.height)) return null;
   return { written: { width, height }, printed, named: attrOf(attrs, 'PaperKind') !== null };

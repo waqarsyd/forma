@@ -47,6 +47,29 @@
  *                     glm-ocr, and send its text beside the picture as the app
  *                     does (lib/localModels.ts, 2026-11-10); with Gemini or a
  *                     local writer alike
+ *   --score <case> <file.repx>
+ *                     score one file against one case, with no key, no
+ *                     request and no results folder (2026-11-11, CC-02): the
+ *                     layout is read off the file as the app reads it, and
+ *                     the case's data.json prints it. May be repeated
+ *   --probe           after scoring, print each report through the installed
+ *                     DevExpress with the case's records (tools/RepxProbe
+ *                     render, Windows with DevExpress 20.1 and the probe
+ *                     built), and record its page count and the margins it
+ *                     loaded beside Forma's own print. Works with --replay and
+ *                     --score; opens no window
+ *   --measure-source  print the median font size of each .html source, read
+ *                     from headless Edge's layout of it, for a case's
+ *                     fontSize.relative.sourcePt; writes nothing
+ *
+ * A case may carry `data.json` beside `case.json` (2026-11-11, CC-02): the
+ * records its page shows, as `{ "types": { "Qty": "Int32", ... }, "rows":
+ * [ { "Qty": "12", ... } ] }`, every value as text. Each run's report is then
+ * printed with them (lib/fidelity.ts `printReport`), mapped onto whatever
+ * fields that run binds, and the case's `print` expectations are read off
+ * the print. A case whose source is a `.repx` is also scored against its own
+ * untouched source (`selfTest`), which must fail something: the scorecard
+ * says so when it does not.
  *
  * The local options are how the suggested Ollama pair is measured on the
  * owner's own computer (batch AF of the 2026-11-10 AI accuracy programme),
@@ -121,11 +144,16 @@ import {
   checkFidelity,
   measureReport,
   median,
+  rowsForReport,
   scoreChecks,
+  selfTest,
+  type CaseData,
   type FidelityCheck,
   type FidelityExpectations,
   type FidelityMeasurements,
 } from '../../src/lib/fidelity';
+import { layoutFromRepx } from '../../src/lib/repxViews';
+import { paperInches } from '../../src/lib/reportGeometry';
 
 /** The browser downsizes anything longer than this on its long edge (App.tsx). */
 const MAX_IMAGE_EDGE = 2048;
@@ -142,6 +170,8 @@ interface CaseFile {
    * source written from its answer (`writeFromAnswer`) before scoring.
    */
   database?: string;
+  /** The page's records, `data.json` by default when it is there (CC-02). */
+  data?: string;
   expect: FidelityExpectations;
   notes?: string;
 }
@@ -150,6 +180,16 @@ interface LoadedCase {
   name: string;
   dir: string;
   file: CaseFile;
+  /** The page's records, or null when the case has none. */
+  data: CaseData | null;
+}
+
+/** What DevExpress printed (`--probe`): its page count and the margins it loaded, beside Forma's print. */
+interface ProbeRecord {
+  pages: number | null;
+  margins: number[] | null;
+  formaPages: number | null;
+  error: string | null;
 }
 
 interface RunRecord {
@@ -171,6 +211,8 @@ interface RunRecord {
    * the reader declined it. Computed again on a replay, from today's reading.
    */
   coverage?: ReadCoverage | null;
+  /** DevExpress's own print of the report (`--probe`), when it was asked. */
+  probe?: ProbeRecord | null;
   /**
    * Everything the service wrote to the console during this run. The pipeline
    * explains itself there and nowhere else -- which model it chose, why a
@@ -217,6 +259,9 @@ function parseArgs(argv: string[]) {
     localModel: '',
     localUrl: 'http://localhost:11434/v1',
     pageReader: '',
+    score: [] as [string, string][],
+    probe: false,
+    measureSource: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -243,6 +288,13 @@ function parseArgs(argv: string[]) {
       case '--local-model': opts.localModel = next(); break;
       case '--local-url': opts.localUrl = next(); break;
       case '--page-reader': opts.pageReader = next(); break;
+      case '--score': {
+        const name = next();
+        opts.score.push([name, next()]);
+        break;
+      }
+      case '--probe': opts.probe = true; break;
+      case '--measure-source': opts.measureSource = true; break;
       default: throw new Error(`Unknown option ${a}`);
     }
   }
@@ -260,7 +312,10 @@ function loadCases(root: string, only: string[]): LoadedCase[] {
     if (only.length && !only.includes(entry)) continue;
     const file = JSON.parse(readFileSync(path, 'utf8')) as CaseFile;
     if (!file.source || !file.expect) throw new Error(`${path} needs "source" and "expect"`);
-    cases.push({ name: entry, dir, file });
+    const dataPath = join(dir, file.data ?? 'data.json');
+    const data = existsSync(dataPath) ? (JSON.parse(readFileSync(dataPath, 'utf8')) as CaseData) : null;
+    if (data && !Array.isArray(data.rows)) throw new Error(`${dataPath} needs "rows"`);
+    cases.push({ name: entry, dir, file, data });
   }
   cases.sort((a, b) => a.name.localeCompare(b.name));
   return cases;
@@ -406,7 +461,7 @@ async function readerBriefFor(c: LoadedCase, unit: string, paper: string, outDir
   // OCR's own layout is the audit's evidence, as prepareTeam passes it (2026-11-05).
   const evidence = sourceLayoutOf(pages, unit, paper);
   // Forma's draft for the AI to correct, as prepareTeam writes it (--draft, 2026-11-05).
-  const draft = built ? { text: draftToText(built.skeleton, built.used), texts: built.texts, title: built.title, readBy: "Forma's box reader, corrected by the AI" } : null;
+  const draft = built ? { text: draftToText(built.skeleton, built.used), texts: built.texts, title: built.title } : null;
   // Forma's own report, as the app stands one in when no AI answers (--forma): the box reader's, or OCR's copy.
   const copy = built ? null : buildFromRead(pages, unit, paper);
   const own = built ? { markdown: built.markdown, layout: built.layout, repxContent: built.repxContent } : copy ? { markdown: copy.markdown, layout: copy.layout, repxContent: copy.repxContent } : null;
@@ -460,7 +515,7 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
       if (!team.own) record.error = 'Forma makes no draft without a picture';
       record.elapsedMs = Date.now() - startedAt.getTime();
       record.model = 'forma-draft';
-      score(record, c.file.expect);
+      score(record, c);
       return record;
     }
     // The page reader's text beside the picture, as the app sends it (2026-11-10).
@@ -506,7 +561,7 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
   // 2026-11-06 (2.5 Flash named, Flash-Lite answering).
   const answered = [...record.log].reverse().map((line) => /Generation timing .*\(model: ([^,)]+)/.exec(line)?.[1]).find(Boolean);
   record.model = answered ?? readCachedModel();
-  score(record, c.file.expect);
+  score(record, c);
   record.coverage = await coverageFor(c, record, outDir);
   return record;
 }
@@ -632,14 +687,99 @@ async function houseEvaluation(records: RunRecord[], cases: LoadedCase[], key: s
   writeFileSync(join(outDir, 'house.md'), [`House style: ${house.family} ${house.size}pt body, from ${files.map((f) => f.name).join(', ')}.`, '', ...lines, ''].join('\n'));
 }
 
-function score(record: RunRecord, expect: FidelityExpectations): void {
+function score(record: RunRecord, c: LoadedCase): void {
   if (!record.response) {
     record.measurements = null;
     record.checks = [{ id: 'generated', pass: false, expected: 'a response', actual: record.error ?? 'none' }];
     return;
   }
-  record.measurements = measureReport(record.response.repxContent, record.response.layout);
-  record.checks = checkFidelity(record.measurements, expect);
+  // Printed with the page's records when the case has them (CC-02).
+  record.measurements = measureReport(record.response.repxContent, record.response.layout, c.data);
+  record.checks = checkFidelity(record.measurements, c.file.expect);
+}
+
+/**
+ * A `.repx` case's own source, scored as if it were the answer (CC-02): the
+ * checks it fails. None means the case cannot tell a fixed report from the
+ * one it asks to have fixed, which the scorecard says.
+ */
+function selfTestOf(c: LoadedCase): FidelityCheck[] | null {
+  if (extname(c.file.source).toLowerCase() !== '.repx') return null;
+  return selfTest(readFileSync(join(c.dir, c.file.source), 'utf8'), c.file.expect, c.data);
+}
+
+/** Where the built probe is, or null off Windows or before it is built (tools/RepxProbe/README.md). */
+function probePath(): string | null {
+  if (process.platform !== 'win32') return null;
+  const path = resolve('tools/RepxProbe/bin/Release/RepxProbe.exe');
+  return existsSync(path) ? path : null;
+}
+
+/**
+ * Print a report through the installed DevExpress with the case's records
+ * (`--probe`, CC-02): `RepxProbe render` over a case folder of its own in the
+ * results directory, the records written in the probe's own data.json shape
+ * (`Render.cs`), and its page count and loaded margins read back. Read-only,
+ * local and windowless, as the probe is.
+ */
+function probeRecord(c: LoadedCase, record: RunRecord, outDir: string): ProbeRecord {
+  const formaPages = record.measurements?.print?.pages ?? null;
+  const exe = probePath();
+  if (!exe) return { pages: null, margins: null, formaPages, error: 'RepxProbe is not built here (Windows with DevExpress 20.1 only)' };
+  const xml = record.response?.repxContent;
+  if (!xml) return { pages: null, margins: null, formaPages, error: 'no report' };
+  const dir = resolve(join(outDir, 'probe', `${record.case}-${record.run}`));
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'report.repx'), xml);
+  if (c.data) {
+    const { rows, types } = rowsForReport(xml, c.data);
+    const NET: Record<string, string> = { date: 'DateTime', decimal: 'Decimal', int: 'Int32', double: 'Double', bool: 'Boolean' };
+    const numeric = new Set(Object.entries(types).filter(([, t]) => t === 'decimal' || t === 'int' || t === 'double').map(([f]) => f));
+    const table = rows.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, numeric.has(k) && v !== '' && Number.isFinite(Number(v)) ? Number(v) : v])));
+    const probeTypes = Object.fromEntries(Object.entries(types).filter(([, t]) => NET[t]).map(([f, t]) => [`Data.${f}`, NET[t]]));
+    writeFileSync(join(dir, 'data.json'), JSON.stringify({ dataMember: 'Data', types: probeTypes, exports: [], tables: { Data: table } }, null, 2));
+  }
+  const out = join(dir, 'out');
+  const run = spawnSync(exe, ['render', dir, out], { encoding: 'utf8', timeout: 180_000 });
+  const json = join(out, 'render.json');
+  if (!existsSync(json)) return { pages: null, margins: null, formaPages, error: `RepxProbe render wrote nothing (exit ${run.status}): ${(run.stderr || run.stdout || '').trim().split('\n').slice(-1)[0] ?? ''}` };
+  const rendered = JSON.parse(readFileSync(json, 'utf8')) as { pageCount?: number; margins?: number[]; error?: string };
+  return { pages: rendered.pageCount ?? null, margins: rendered.margins ?? null, formaPages, error: rendered.error ?? null };
+}
+
+/**
+ * The median font size of an .html source as headless Edge lays it out
+ * (`--measure-source`, CC-02), in points at the page the render stands for:
+ * a copy of the page with a script that writes every visible text node's
+ * computed size into the DOM, read back with `--dump-dom`. Nothing is written
+ * beside the case; the copy lives in the results folder.
+ */
+function measureSourceFont(c: LoadedCase, outDir: string): number | null {
+  const edge = edgePath();
+  if (!edge || extname(c.file.source).toLowerCase() !== '.html') return null;
+  const html = readFileSync(join(c.dir, c.file.source), 'utf8');
+  const script = `<script>addEventListener('load',function(){var s=[],w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT),n;while((n=w.nextNode())){if(!n.textContent.trim())continue;var cs=getComputedStyle(n.parentElement);if(cs.display==='none'||cs.visibility==='hidden')continue;s.push(parseFloat(cs.fontSize));}var p=document.createElement('pre');p.id='forma-font-sizes';p.textContent=JSON.stringify(s);document.body.appendChild(p);});</script>`;
+  mkdirSync(outDir, { recursive: true });
+  const copy = resolve(join(outDir, `${c.name}-measure.html`));
+  writeFileSync(copy, html.includes('</body>') ? html.replace('</body>', () => `${script}</body>`) : html + script);
+  const width = c.file.render?.width ?? 1275;
+  const height = c.file.render?.height ?? 1650;
+  const result = spawnSync(edge, [
+    '--headless',
+    '--disable-gpu',
+    `--window-size=${width},${height}`,
+    '--virtual-time-budget=5000',
+    `--user-data-dir=${join(process.env.TEMP ?? process.env.TMP ?? '.', 'forma-fidelity-edge')}`,
+    '--dump-dom',
+    'file:///' + copy.replace(/\\/g, '/'),
+  ], { encoding: 'utf8', timeout: 60_000 });
+  const sizes = /<pre id="forma-font-sizes">([^<]*)<\/pre>/.exec(result.stdout ?? '')?.[1];
+  if (!sizes) return null;
+  const px = median(JSON.parse(sizes) as number[]);
+  // The render is the page at some dpi: its long edge over the paper's.
+  const inches = paperInches(c.file.config?.pageSize ?? 'Letter') ?? { w: 8.5, h: 11 };
+  const dpi = Math.max(width, height) / Math.max(inches.w, inches.h);
+  return px === null ? null : Math.round(((px / dpi) * 72) * 100) / 100;
 }
 
 function pad(s: string, n: number): string {
@@ -675,7 +815,7 @@ function scorecard(records: RunRecord[]): string {
   return lines.join('\n');
 }
 
-function summaryMarkdown(records: RunRecord[], opts: ReturnType<typeof parseArgs>): string {
+function summaryMarkdown(records: RunRecord[], opts: ReturnType<typeof parseArgs>, selfTests: ReadonlyMap<string, readonly FidelityCheck[]> = new Map()): string {
   const lines: string[] = [];
   lines.push(`# Fidelity benchmark, ${new Date().toISOString()}`);
   lines.push('');
@@ -685,6 +825,10 @@ function summaryMarkdown(records: RunRecord[], opts: ReturnType<typeof parseArgs
   lines.push(scorecard(records));
   lines.push('```');
   lines.push('');
+  for (const [name, failed] of selfTests) {
+    lines.push(failed.length ? `- ${name} self-test: the untouched source fails ${failed.map((f) => f.id).join(', ')}.` : `- **${name} self-test failed**: the untouched source passes every check, so the case measures nothing.`);
+  }
+  if (selfTests.size) lines.push('');
   for (const r of records) {
     lines.push(`## ${r.case} run ${r.run}`);
     lines.push('');
@@ -704,6 +848,8 @@ function summaryMarkdown(records: RunRecord[], opts: ReturnType<typeof parseArgs
       lines.push(`- fonts: median ${m.fontMedianPt ?? '-'}pt over ${m.fontSizesPt.length}`);
       lines.push(`- margins: ${m.margins ? `${m.margins.left}, ${m.margins.right}, ${m.margins.top}, ${m.margins.bottom}` : 'absent'}`);
       lines.push(`- audit: ${m.audit.errors} error(s), ${m.audit.warnings} warning(s)${m.audit.codes.length ? `: ${m.audit.codes.join(', ')}` : ''}`);
+      if (m.print) lines.push(`- printed with ${m.print.records} records: ${m.print.pages} page(s), ${m.print.groups} group(s), ${m.print.clipped.length} past the margin`);
+      if (r.probe) lines.push(`- DevExpress printed: ${r.probe.error ?? `${r.probe.pages} page(s), margins ${JSON.stringify(r.probe.margins)} (Forma's print: ${r.probe.formaPages ?? '-'})`}`);
       if (r.coverage) {
         const k = r.coverage;
         lines.push(`- kept: ${k.kept} of ${k.captions} captions Forma read${k.captions ? ` (${Math.round((100 * k.kept) / k.captions)}%)` : ''}, ${k.sameBand} in the same band${worthAnotherTry(k) ? ', would ask once more' : ''}${k.missing.length ? `; missing ${k.missing.slice(0, 8).map((s) => JSON.stringify(s)).join(', ')}` : ''}`);
@@ -731,8 +877,54 @@ async function main(): Promise<number> {
     return 1;
   }
 
+  // The median font size of each .html source, for fontSize.relative.sourcePt (CC-02); writes nothing beside the case.
+  if (opts.measureSource) {
+    const scratch = opts.out || join('fidelity-results', `measure-${timestamp()}`);
+    for (const c of cases) {
+      const pt = measureSourceFont(c, scratch);
+      console.log(`${pad(c.name, 24)}${pt === null ? 'not an .html source, or Edge could not lay it out' : `${pt}pt median over the page's text`}`);
+    }
+    return 0;
+  }
+
   let records: RunRecord[] = [];
   let outDir: string;
+
+  if (opts.score.length) {
+    // One file against one case, no key and no request (CC-02): the auditor's score.ts as an option.
+    outDir = opts.out || join('fidelity-results', `score-${timestamp()}`);
+    const all = loadCases(opts.cases, []);
+    for (const [name, file] of opts.score) {
+      const c = all.find((x) => x.name === name);
+      if (!c) throw new Error(`No case named ${name} under ${opts.cases}`);
+      const xml = readFileSync(file, 'utf8');
+      const record: RunRecord = {
+        case: c.name,
+        run: records.filter((r) => r.case === c.name).length + 1,
+        startedAt: new Date().toISOString(),
+        elapsedMs: 0,
+        model: basename(file),
+        config: withoutKey(configFor(c, '', opts)),
+        prompt: c.file.prompt ?? '',
+        response: { markdown: '', layout: layoutFromRepx(xml), repxContent: xml },
+        error: null,
+        measurements: null,
+        checks: [],
+        log: [],
+      };
+      score(record, c);
+      if (opts.probe) record.probe = probeRecord(c, record, outDir);
+      records.push(record);
+    }
+    console.log('\n' + scorecard(records));
+    for (const r of records) {
+      console.log(`\n${r.case} <- ${r.model}`);
+      for (const check of r.checks) console.log(`  ${check.pass ? 'pass' : 'FAIL'}  ${check.id}  expected ${check.expected}  actual ${check.actual}`);
+      if (r.measurements?.print) console.log(`  print: ${r.measurements.print.pages} page(s), ${r.measurements.print.groups} group(s), mapped ${JSON.stringify(r.measurements.print.mapping)}`);
+      if (r.probe) console.log(`  DevExpress: ${r.probe.error ?? `${r.probe.pages} page(s), margins ${JSON.stringify(r.probe.margins)}`}`);
+    }
+    return 0;
+  }
 
   if (opts.replay) {
     outDir = opts.out || opts.replay;
@@ -741,8 +933,9 @@ async function main(): Promise<number> {
       const record = JSON.parse(readFileSync(join(opts.replay, file), 'utf8')) as RunRecord;
       const c = byName.get(record.case);
       if (!c) continue;
-      score(record, c.file.expect);
+      score(record, c);
       record.coverage = await coverageFor(c, record, outDir);
+      if (opts.probe) record.probe = probeRecord(c, record, outDir);
       records.push(record);
     }
     if (records.length === 0) {
@@ -781,6 +974,7 @@ async function main(): Promise<number> {
       for (let run = 1; run <= opts.runs; run++) {
         console.log(`\n=== ${c.name} run ${run}/${opts.runs} ===`);
         const record = await generate(c, run, key, opts, outDir);
+        if (opts.probe) record.probe = probeRecord(c, record, outDir);
         records.push(record);
         writeFileSync(join(outDir, `run-${c.name}-${run}.json`), JSON.stringify(record, null, 2));
         if (record.response?.repxContent) {
@@ -793,8 +987,17 @@ async function main(): Promise<number> {
     if (opts.house) await houseEvaluation(records, cases, key, opts, outDir);
   }
 
+  // A .repx case that cannot tell its own untouched source from a fixed report measures nothing (CC-02).
+  const selfTests = new Map(cases.flatMap((c) => {
+    const failed = selfTestOf(c);
+    return failed ? [[c.name, failed] as const] : [];
+  }));
+  for (const [name, failed] of selfTests) {
+    console.log(failed.length ? `[${name}] self-test: the untouched source fails ${failed.map((f) => f.id).join(', ')}` : `[${name}] self-test FAILED: the untouched source passes every check, so this case measures nothing`);
+  }
+
   mkdirSync(outDir, { recursive: true });
-  writeFileSync(join(outDir, 'summary.md'), summaryMarkdown(records, opts));
+  writeFileSync(join(outDir, 'summary.md'), summaryMarkdown(records, opts, selfTests));
   writeFileSync(join(outDir, 'summary.json'), JSON.stringify(records.map((r) => ({
     case: r.case,
     run: r.run,

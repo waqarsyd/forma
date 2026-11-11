@@ -26,6 +26,7 @@
 import { ensureUniqueRefs } from './repxRefs';
 import { repairDpi } from './repxDpi';
 import { repairPaper } from './repxPaper';
+import { wholeMargins } from './repxMargins';
 import { checkRepx } from './repx';
 import { auditRepx } from './repxAudit';
 import { pointsToUnits } from './reportGeometry';
@@ -131,12 +132,19 @@ export function ocrControls(layout: DetectedLayout, options: Pick<OcrRepxOptions
 /** The .repx for `layout`, every page's controls on the one ReportHeader band. */
 export function layoutToRepx(layout: DetectedLayout, options: OcrRepxOptions = {}): string {
   const first = layout.pages[0];
-  const margins = first?.margins ?? { left: 50, right: 50, top: 50, bottom: 50 };
+  // Whole numbers, or DevExpress drops the margins and prints sides of 100
+  // (2026-11-11, CC-03, repxMargins.ts); the margin bands take the same.
+  const margins = wholeMargins(first?.margins ?? { left: 50, right: 50, top: 50, bottom: 50 });
   const page = first ?? { width: 850, height: 1100 };
   let ref = 0;
   const next = () => ++ref;
   const font = (size: number) => `Arial, ${n(size)}pt`;
 
+  // The content height the written page leaves, whole: a page's share of the
+  // header never runs past it, since rounding a fractional top and bottom up
+  // would otherwise leave the band up to a unit taller than the page and push
+  // a near-empty page after it (2026-11-11, the review of CC-03).
+  const printable = Math.round(page.height) - margins.top - margins.bottom;
   const controls: string[] = [];
   let offset = 0;
   const pages = ocrControls(layout, options);
@@ -168,7 +176,7 @@ export function layoutToRepx(layout: DetectedLayout, options: OcrRepxOptions = {
           ` LocationFloat="${n(c.x)},${n(c.y + offset)}" SizeF="${n(width)},${n(height)}"><Rows>${rows.join('')}</Rows></${item}>`,
       );
     }
-    offset += p.height - p.margins.top - p.margins.bottom;
+    offset += Math.min(p.height - p.margins.top - p.margins.bottom, printable);
   });
 
   const headerHeight = Math.max(1, offset);
@@ -176,7 +184,7 @@ export function layoutToRepx(layout: DetectedLayout, options: OcrRepxOptions = {
     '<?xml version="1.0" encoding="utf-8"?>\n' +
     `<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a"` +
     ` Name="${attr(options.name || 'OcrReport')}" ReportUnit="${layout.unit}" Margins="${n(margins.left)}, ${n(margins.right)}, ${n(margins.top)}, ${n(margins.bottom)}"` +
-    ` PageWidth="${n(page.width)}" PageHeight="${n(page.height)}" Version="20.1" Font="Arial, 9pt">` +
+    ` PageWidth="${Math.round(page.width)}" PageHeight="${Math.round(page.height)}" Version="20.1" Font="Arial, 9pt">` +
     '<Bands>' +
     `<Item1 Ref="${next()}" ControlType="TopMarginBand" Name="TopMargin" HeightF="${n(margins.top)}" />` +
     `<Item2 Ref="${next()}" ControlType="ReportHeaderBand" Name="ReportHeader" HeightF="${n(headerHeight)}"><Controls>${controls.join('')}</Controls></Item2>` +

@@ -47,6 +47,7 @@ import { findSummaryProblems } from './repxSummaries';
 import { crossTabsWithoutData, findCrossTabProblems } from './repxCrossTabs';
 import { findDpiProblem } from './repxDpi';
 import { findPaperProblem } from './repxPaper';
+import { isWholeNumber, wholeMarginsWritten } from './repxMargins';
 import { auditDataSources, decodeEntities, readRepxDataSources } from './repxSqlDataSource';
 import { parseReportStructure } from './reportPreview';
 import { parseCriteria } from './criteria';
@@ -153,11 +154,64 @@ function expressionsOf(xml: string): string[] {
 }
 
 /**
- * Collection syntax (`[Orders][[Qty] > 1].Sum([Qty])`, `[^.Id]`) is valid
- * DevExpress the Preview's parser does not read; it is left alone rather
- * than called broken, as the header asks of a check that could cry wolf.
+ * Collection syntax (`[Orders][[Qty] > 1].Sum([Qty])`, `[Orders].Count()`,
+ * `[^.Id]`) is valid DevExpress the Preview's parser does not read; it is left
+ * alone rather than called broken, as the header asks of a check that could
+ * cry wolf. A `.` after a field is collection syntax only before one of the
+ * aggregates (2026-11-11, the full audit's CC-04): `[ProductName].Substring(0,
+ * 1)` is a .NET method call DevExpress does not read, and it printed blank in
+ * a group header the AI wrote; skipped as collection syntax until then.
  */
-const COLLECTION_SYNTAX = /\]\s*[.[]|\[\^/;
+const COLLECTION_SYNTAX = /\]\s*\[|\[\^|\]\s*\.\s*(?:Count|Sum|Min|Max|Avg|Exists|Single)\s*\(/i;
+
+/** Lower case, letters and digits only: how a field and the words it may have been named after compare. */
+const squashed = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+
+/**
+ * Bound fields named after the report's own words rather than its data
+ * (2026-11-11, the full audit's CC-09): one equal to the report's title or
+ * name, as Forma's own draft bound `[QuarterlySalesByRegion]` and the AI's
+ * first detail cell did, and a base field bound with two or more numbered
+ * copies (`[INVOICE]` to `[INVOICE6]`), which is a caption repeated rather
+ * than a column. Real data never fills either. `BillToAddress1` and
+ * `BillToAddress2` with no `BillToAddress` are a schema's own numbering and
+ * pass. Exported for the fidelity benchmark's `bindings.notFromText`.
+ *
+ * Both rules are held to what a schema does not do (2026-11-11, the review of
+ * CC-09): a title counts only when it is two words or more, since a report
+ * named `Customers` may well bind `[Customers]`; and numbered copies count
+ * only when there are three or more, or the base is a phrase of three words
+ * or more, since `Address`, `Address2`, `Address3` and `Phone`, `Phone2`,
+ * `Phone3` are ordinary columns while `QuarterlySalesByRegion2` is not.
+ */
+export function fieldsNamedAfterText(xml: string): string[] {
+  const root = /<XtraReportsLayoutSerializer\b([^>]*)>/.exec(xml)?.[1] ?? '';
+  const titles = new Set(
+    [attr(root, 'DisplayName'), attr(root, 'Name')]
+      .filter((t): t is string => !!t)
+      .map((t) => decodeEntities(t))
+      .filter((t) => wordsIn(t) >= 2)
+      .map(squashed)
+      .filter(Boolean),
+  );
+  const bound = [...new Set(expressionsOf(xml).flatMap(fieldsIn).filter((f) => !/^(Parameters|DataSource|ReportItems)\./.test(f)))];
+  const out = bound.filter((f) => titles.has(squashed(f)));
+  for (const base of bound) {
+    const copies = bound.filter((f) => f !== base && f.startsWith(base) && /^\d+$/.test(f.slice(base.length)));
+    if (copies.length >= 3 || (copies.length >= 2 && wordsIn(base) >= 3)) out.push(...copies.filter((c) => !out.includes(c)));
+  }
+  return out;
+}
+
+/** How many words a name or title holds: spaces, underscores, camel humps and runs of digits each part one. */
+function wordsIn(name: string): number {
+  return name
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/([A-Za-z])(\d)/g, '$1 $2')
+    .replace(/(\d)([A-Za-z])/g, '$1 $2')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean).length;
+}
 
 /**
  * The rest of DevExpress's language the Preview's parser lacks, looked for
@@ -344,6 +398,113 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
           'so every place that prints it prints blank. It may be misspelt.',
       );
     }
+  }
+
+  /*
+   * Margins and a custom page size that are not whole numbers (2026-11-11, the
+   * full audit's CC-03, parity row 77). DevExpress 20.1 reads both into int
+   * properties and drops a fraction without a word: `39.37, ...` re-saved with
+   * no Margins and printed with sides of 100, and a Custom `826.77 x 1169.29`
+   * page at the default 850 x 1100 (Letter only in hundredths of an inch; in
+   * tenths of a millimetre and in pixels the same numbers, measured for the
+   * width, the height taken to follow). The FastReport case's own source threw "no enough space"
+   * that way. Every writer here writes whole numbers and `repairWholeMargins`
+   * rounds a generated report, so what reaches here was written elsewhere.
+   */
+  const rootAttrs = /<XtraReportsLayoutSerializer\b([^>]*)>/.exec(text)?.[1] ?? '';
+  const marginsWritten = attr(rootAttrs, 'Margins');
+  if (marginsWritten !== null && marginsWritten.split(',').length === 4 && marginsWritten.split(',').every((p) => Number.isFinite(Number(p.trim()))) && !wholeMarginsWritten(marginsWritten)) {
+    add(
+      'error',
+      'margins-not-whole',
+      `The page margins are written as "${marginsWritten}". DevExpress keeps only whole numbers, so it drops them and prints with its default sides of 100 instead, ` +
+        'and what no longer fits between them prints on extra pages. Write the four margins as whole numbers.',
+    );
+  }
+  const paperKind = attr(rootAttrs, 'PaperKind') || 'Letter';
+  // Custom only: a named paper, listed here or not, takes its size from the paper (A4 lost nothing).
+  if (paperKind === 'Custom') {
+    const fractional = ['PageWidth', 'PageHeight'].filter((name) => {
+      const value = attr(rootAttrs, name);
+      return value !== null && Number.isFinite(Number(value.trim())) && !isWholeNumber(value);
+    });
+    if (fractional.length) {
+      add(
+        'error',
+        'page-size-not-whole',
+        `The custom page size is written with a fraction (${fractional.map((n) => `${n}="${attr(rootAttrs, n)}"`).join(', ')}). DevExpress keeps only whole numbers, ` +
+          'so it drops the size and prints on its default size instead. Write the page size as whole numbers.',
+      );
+    }
+  }
+
+  /*
+   * Groups and sorts on a field nothing has (CC-04). A `GroupFields` or
+   * `SortFields` `FieldName` that is not a column of the data, a calculated
+   * field or a parameter groups every record into one group and sorts by
+   * nothing: the AI grouped the FastReport case on `GroupLetter`, declared
+   * nowhere, and DevExpress printed one group of all twenty products. An
+   * error when the data's fields are known (the Data tab's schema, or the
+   * report's own SQL source's); without them only a group field bound nowhere
+   * else in the report is named, and as a warning, since an uploaded report's
+   * data may well have it.
+   */
+  const viewFields = readRepxDataSources(text).flatMap((d) => d.views.flatMap((v) => v.fields.map((f) => f.name)));
+  const calculatedNames = [...(/<CalculatedFields>([\s\S]*?)<\/CalculatedFields>/.exec(text)?.[1] ?? '').matchAll(/\sName="([^"]*)"/g)].map((m) => m[1]);
+  const knownNames = new Set([...(options.fields ?? []), ...viewFields, ...calculatedNames, ...parseParameters(text).map((p) => p.name)]);
+  const schemaKnown = (options.fields?.length ?? 0) > 0 || viewFields.length > 0;
+  const boundAnywhere = new Set(expressionsOf(text).flatMap(fieldsIn));
+  const groupedOn = [
+    ...new Set(
+      [...text.matchAll(/<(GroupFields|SortFields)>([\s\S]*?)<\/\1>/g)].flatMap((block) =>
+        [...block[2].matchAll(/\sFieldName="([^"]*)"/g)].map((f) => decodeEntities(f[1]).trim()).filter(Boolean),
+      ),
+    ),
+  ];
+  const unknownGroups = groupedOn.filter((f) => !knownNames.has(f) && !knownNames.has(f.split('.').pop()!) && (schemaKnown || !boundAnywhere.has(f)));
+  if (unknownGroups.length) {
+    add(
+      schemaKnown ? 'error' : 'warning',
+      'field-unknown',
+      `The report groups or sorts on ${unknownGroups.map((f) => `"${f}"`).join(', ')}, which ${unknownGroups.length === 1 ? 'is' : 'are'} not ${schemaKnown ? 'a field of the data' : 'printed or declared anywhere in it'}, ` +
+        'so every record falls into one group and nothing is sorted by it. Group on a field the data has, or declare a calculated field of that name.',
+    );
+  }
+
+  /*
+   * Static text that holds an expression (CC-04): a label whose `Text` is
+   * FastReport's `[[Products.ProductName].Substring(0,1)]`, or a field with a
+   * .NET method after it, prints those characters as they are. It is the
+   * shape a FastReport or Crystal migration leaves. A plain `[Field]` in a
+   * label's text is DevExpress's own mail-merge syntax and is left alone.
+   */
+  const literalExpressions: string[] = [];
+  for (const m of text.matchAll(/<Item\d+\b([^>]*\sControlType="XR(?:Label|TableCell|CheckBox|RichText)"[^>]*?)(\/?)>/g)) {
+    const shown = decodeEntities(attr(m[1], 'Text') ?? '');
+    if (!/\[\[[^\]]+\][^\]]*\]|\[[A-Za-z_][\w.]*\]\s*\.\s*[A-Za-z_]\w*\s*\(/.test(shown)) continue;
+    const after = m[2] ? '' : text.slice(m.index! + m[0].length, m.index! + m[0].length + 4000);
+    const own = after.split(/<Item\d+\b[^>]*\sControlType="XR/)[0];
+    if (/\sPropertyName="Text"/.test(own)) continue;
+    literalExpressions.push(attr(m[1], 'Name') || shown);
+  }
+  if (literalExpressions.length) {
+    add(
+      'warning',
+      'text-looks-like-expression',
+      `${literalExpressions.slice(0, 3).map((n) => `"${n}"`).join(', ')}${literalExpressions.length > 3 ? ', ...' : ''} ${literalExpressions.length === 1 ? 'holds' : 'hold'} an expression as plain text, ` +
+        'so the brackets print as they are. Bind it as an expression instead, written in DevExpress syntax.',
+    );
+  }
+
+  // Fields named after the report's words rather than its data (CC-09).
+  const namedAfterText = fieldsNamedAfterText(text);
+  if (namedAfterText.length) {
+    add(
+      'warning',
+      'field-named-after-text',
+      `${namedAfterText.slice(0, 4).map((f) => `[${f}]`).join(', ')}${namedAfterText.length > 4 ? ', ...' : ''} ${namedAfterText.length === 1 ? 'is' : 'are'} named after the report's own words rather than its data, ` +
+        'so real data will not fill them. Name each after the column it prints.',
+    );
   }
 
   // --- warnings: it opens, but it is a worse report than it should be --------
@@ -772,7 +933,9 @@ export function auditRepx(xml: string | undefined | null, layout?: ReportLayout 
       );
     }
 
-    const unused = names.filter((n) => n && !new RegExp(`\\[${n}\\]`).test(text));
+    // A group or sort on it is a use (2026-11-11, CC-04): the FastReport case's
+    // `FirstLetter`, grouped on and so printed, was called unused until then.
+    const unused = names.filter((n) => n && !boundAnywhere.has(n) && !groupedOn.includes(n) && !new RegExp(`\\[${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`).test(text));
     if (unused.length) {
       add(
         'warning',

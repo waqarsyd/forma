@@ -1,0 +1,14 @@
+{
+  "types": {"Revenue":"Decimal","MarginPct":"Decimal","Units":"Int32"},
+  "rows": [
+    {"Region":"North","ProductLine":"Garden Tools","SalesRep":"A. Moreau","Units":"1240","Revenue":"86.8","MarginPct":"31.2"},
+    {"Region":"North","ProductLine":"Outdoor Lighting","SalesRep":"A. Moreau","Units":"610","Revenue":"54.9","MarginPct":"27.5"},
+    {"Region":"North","ProductLine":"Irrigation","SalesRep":"K. Lindqvist","Units":"380","Revenue":"41.8","MarginPct":"24.0"},
+    {"Region":"South","ProductLine":"Garden Tools","SalesRep":"M. Adeyemi","Units":"1905","Revenue":"133.4","MarginPct":"33.0"},
+    {"Region":"South","ProductLine":"Outdoor Lighting","SalesRep":"M. Adeyemi","Units":"720","Revenue":"64.8","MarginPct":"26.1"},
+    {"Region":"South","ProductLine":"Irrigation","SalesRep":"J. Castillo","Units":"1060","Revenue":"116.6","MarginPct":"29.4"},
+    {"Region":"South","ProductLine":"Patio Furniture","SalesRep":"J. Castillo","Units":"215","Revenue":"96.8","MarginPct":"22.8"},
+    {"Region":"West","ProductLine":"Garden Tools","SalesRep":"S. Park","Units":"980","Revenue":"68.6","MarginPct":"30.4"},
+    {"Region":"West","ProductLine":"Patio Furniture","SalesRep":"S. Park","Units":"340","Revenue":"153.0","MarginPct":"23.9"}
+  ]
+}

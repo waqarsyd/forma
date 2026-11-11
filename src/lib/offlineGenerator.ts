@@ -26,6 +26,7 @@ import { categoryOf, rankArchetypes, type Archetype, type FormaModel } from './f
 import { ensureUniqueRefs } from './repxRefs';
 import { repairDpi } from './repxDpi';
 import { repairPaper } from './repxPaper';
+import { wholeMargins } from './repxMargins';
 import { pointsToUnits } from './reportGeometry';
 import type { ReportElement, ReportLayout, ReportSection } from './reportTypes';
 
@@ -294,8 +295,11 @@ export function generateOffline(model: FormaModel, request: OfflineRequest): Off
   const style = styleOf(model, request.preferences);
   const paper = request.preferences?.paper ?? archetype.skeleton.paper;
   const landscape = request.preferences?.landscape ?? reading.landscape ?? (lineFields.length > 7 ? true : archetype.skeleton.landscape);
-  const page = pageOf(paper, landscape, { width: archetype.skeleton.width, height: archetype.skeleton.height });
-  const margins = model.style.margins[paper] ?? archetype.skeleton.margins;
+  const fallback = { width: Math.round(archetype.skeleton.width), height: Math.round(archetype.skeleton.height) };
+  const page = pageOf(paper, landscape, fallback);
+  // Whole numbers, or DevExpress drops the margins and prints sides of 100
+  // (2026-11-11, CC-03, repxMargins.ts); the printable width follows them.
+  const margins = wholeMargins(model.style.margins[paper] ?? archetype.skeleton.margins);
   const printable = Math.max(200, page.width - margins.left - margins.right);
   const title = request.title?.trim() || titleFrom(request.description);
   const rowH = Math.max(18, Math.min(30, Math.round(model.style.rowHeight)));

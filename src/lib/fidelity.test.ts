@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkFidelity, measureReport, median, normalizeText, scoreChecks } from './fidelity';
+import { checkFidelity, measureReport, median, normalizeText, printReport, rowsForReport, scoreChecks, selfTest, type CaseData } from './fidelity';
 import type { ReportLayout } from './reportTypes';
 
 /*
@@ -228,5 +228,105 @@ describe('bindings and the data source', () => {
     const checks = checkFidelity(m, { bindings: { fields: ['CompanyName', 'CurrentBalance'], minRatio: 0.5 }, dataSource: { query: 'Customers' } });
     expect(checks.find((c) => c.id === 'bindings')).toEqual({ id: 'bindings', pass: true, expected: '>= 1 of 2 fields bound', actual: '1 (missing CurrentBalance)' });
     expect(checks.find((c) => c.id === 'dataSource')).toEqual({ id: 'dataSource', pass: false, expected: 'reads Customers', actual: 'no data source' });
+  });
+});
+
+/*
+ * What prints, not only what the file declares (2026-11-11, the full audit's
+ * CC-02). A grouped listing, its fields named as one run might name them
+ * (`Area`, `Quantity`), printed with records whose columns another run would
+ * name (`Region`, `Qty`), as the auditor's data.json did.
+ */
+describe('the print with the page\'s records', () => {
+  const grouped = (opts: { group?: string; header?: string; margins?: string; wide?: boolean } = {}) => `<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Sales" DisplayName="Sales by Region" ReportUnit="HundredthsOfAnInch" Margins="${opts.margins ?? '50, 50, 50, 50'}" PageWidth="850" PageHeight="1100" Version="20.1">
+  <Bands>
+    <Item1 Ref="2" ControlType="TopMarginBand" Name="TopMargin" HeightF="50" />
+    <Item2 Ref="3" ControlType="GroupHeaderBand" Name="GroupHeader1" HeightF="25">
+      <GroupFields><Item1 Ref="4" FieldName="${opts.group ?? 'Area'}" /></GroupFields>
+      <Controls><Item1 Ref="5" ControlType="XRLabel" Name="area" LocationFloat="0,0" SizeF="300,25" Font="Calibri, 7pt"><ExpressionBindings><Item1 Ref="6" EventName="BeforePrint" PropertyName="Text" Expression="${opts.header ?? "'Subtotal ' + [Area]"}" /></ExpressionBindings></Item1></Controls>
+    </Item2>
+    <Item3 Ref="7" ControlType="DetailBand" Name="Detail" HeightF="20">
+      <Controls><Item1 Ref="8" ControlType="XRLabel" Name="qty" LocationFloat="0,0" SizeF="${opts.wide ? 900 : 200},20" Font="Calibri, 7pt" TextFormatString="{0:n0}"><ExpressionBindings><Item1 Ref="9" EventName="BeforePrint" PropertyName="Text" Expression="[Quantity]" /></ExpressionBindings></Item1></Controls>
+    </Item3>
+    <Item4 Ref="10" ControlType="BottomMarginBand" Name="BottomMargin" HeightF="50" />
+  </Bands>
+</XtraReportsLayoutSerializer>`;
+  const data: CaseData = {
+    types: { Qty: 'Int32' },
+    rows: [
+      { Region: 'North', Qty: '1240' },
+      { Region: 'South', Qty: '610' },
+      { Region: 'North', Qty: '380' },
+    ],
+  };
+
+  it('maps the case\'s columns onto the fields a run binds, and types them', () => {
+    const { mapping, rows, types } = rowsForReport(grouped(), data);
+    expect(mapping).toEqual({ Area: null, Quantity: 'Qty' });
+    expect(rows[0]).toMatchObject({ Quantity: '1240', Qty: '1240' });
+    expect(types.Quantity).toBe('int');
+    // Named as the data names it, the field is the data's own column.
+    expect(rowsForReport(grouped({ group: 'Region', header: "'Subtotal ' + [Region]" }), data).mapping.Region).toBe('Region');
+  });
+
+  it('prints the records: the pages, the groups, the formatted values and a caption built by an expression', () => {
+    const print = printReport(grouped({ group: 'Region', header: "'Subtotal ' + [Region]" }), data);
+    expect(print.pages).toBe(1);
+    expect(print.groups).toBe(2);
+    expect(print.printed).toEqual(expect.arrayContaining(['Subtotal North', 'Subtotal South', '1,240', '380']));
+    expect(print.clipped).toEqual([]);
+    const checks = checkFidelity(measureReport(grouped({ group: 'Region', header: "'Subtotal ' + [Region]" }), null, data), {
+      texts: { all: ['Subtotal North'] },
+      print: { pages: { max: 1 }, clippedMax: 0, printed: ['Subtotal North', '1,240'], groups: { min: 2, max: 2 } },
+    });
+    expect(checks.filter((c) => !c.pass)).toEqual([]);
+  });
+
+  it('audits with the fields the print matched as known, so one answer is not scored two ways', () => {
+    // `Quantity` prints the case's `Qty`, so the audit does not call it unknown; `Area` matched nothing, so it still does.
+    const codes = measureReport(grouped({ group: 'Quantity', header: "'Qty ' + [Quantity]" }), null, data).audit.codes;
+    expect(codes).not.toContain('field-unknown');
+    expect(codes).not.toContain('expression-field-unknown');
+    expect(measureReport(grouped(), null, data).audit.codes).toContain('field-unknown');
+  });
+
+  it('fails a group on a field the data lacks, a control past the margin, and a case with no records', () => {
+    // `Area` matches no column, so every record falls in one group, as DevExpress printed the AI's `GroupLetter`.
+    const m = measureReport(grouped({ wide: true }), null, data);
+    const checks = checkFidelity(m, { print: { groups: { min: 2 }, clippedMax: 0 }, audit: { errors: 0 } });
+    expect(checks.find((c) => c.id === 'print.groups')).toMatchObject({ pass: false, actual: '1' });
+    expect(checks.find((c) => c.id === 'print.clipped')).toMatchObject({ pass: false });
+    // With the case's columns known, the group on a field the data lacks is the audit's error.
+    expect(m.audit.codes).toContain('field-unknown');
+    expect(checks.find((c) => c.id === 'audit.errors')?.pass).toBe(false);
+    const unread = checkFidelity(measureReport(grouped(), null), { print: { pages: { max: 1 } } });
+    expect(unread.find((c) => c.id === 'print.pages')).toMatchObject({ pass: false, actual: 'not printed: the case has no data.json' });
+  });
+
+  it('checks the font size against the source\'s own, and margins DevExpress keeps', () => {
+    const m = measureReport(grouped(), null);
+    const [, faithful] = checkFidelity(m, { fontSize: { relative: { sourcePt: 7.2 } } });
+    expect(faithful).toMatchObject({ id: 'fontSize.relative', pass: true });
+    const [, scaled] = checkFidelity(m, { fontSize: { relative: { sourcePt: 5.2 } } });
+    expect(scaled).toMatchObject({ pass: false, actual: '7pt, +35%' });
+    const [, whole] = checkFidelity(m, { margins: { loaded: true } });
+    expect(whole.pass).toBe(true);
+    const [, dropped] = checkFidelity(measureReport(grouped({ margins: '50, 14.92, 50, 50' }), null), { margins: { loaded: true } });
+    expect(dropped).toMatchObject({ pass: false, actual: '50, 14.92, 50, 50 (not whole: dropped on load)' });
+  });
+
+  it('fails fields named after the title or a repeated caption (CC-09)', () => {
+    const titled = grouped({ header: '[SalesByRegion]' });
+    const [, from] = checkFidelity(measureReport(titled, null), { bindings: { notFromText: true } });
+    expect(from).toMatchObject({ id: 'bindings.notFromText', pass: false, actual: '[SalesByRegion]' });
+    const [, clean] = checkFidelity(measureReport(grouped(), null), { bindings: { notFromText: true } });
+    expect(clean.pass).toBe(true);
+  });
+
+  it('self-tests a case: its untouched source must fail something', () => {
+    const source = grouped({ margins: '39.37, 39.37, 39.37, 39.37' });
+    expect(selfTest(source, { margins: { loaded: true } }, data).map((c) => c.id)).toEqual(['margins.loaded']);
+    expect(selfTest(grouped(), { margins: { loaded: true } }, data)).toEqual([]);
   });
 });

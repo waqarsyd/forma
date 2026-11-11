@@ -12,10 +12,17 @@
       "all": ["INVOICE", "Northwind Traders", "Bill To", "Invoice No", "Description", "Qty", "Unit Price", "Amount", "Subtotal", "Tax", "Total Due", "Thank you for your business"],
       "minRatio": 0.85
     },
-    "fontSize": { "median": { "min": 8, "max": 12 } },
-    "margins": { "declared": true },
+    "fontSize": { "relative": { "sourcePt": 6.72 } },
+    "margins": { "loaded": true },
     "audit": { "errors": 0, "maxWarnings": 5 },
     "sectionsMatchBands": true,
-    "serializerVersion": "20.1.3.0"
-  }
+    "serializerVersion": "20.1.3.0",
+    "bindings": { "notFromText": true },
+    "print": {
+      "pages": { "max": 1 },
+      "clippedMax": 0,
+      "printed": ["14 Oct 2026", "1,763.00", "149.86", "USD 1,957.86"]
+    }
+  },
+  "printNotes": "Added 2026-11-11 (the full audit, CC-02, CC-03, CC-09): data.json holds the page's eight lines, as the Claude Code reference printed them through DevExpress, and print checks what the report prints with them. The body is 14px at 150dpi, 6.72pt, so the font size is checked against that rather than 8 to 12, which failed the faithful size and passed +34%. The margins must be whole numbers, which DevExpress keeps."
 }
