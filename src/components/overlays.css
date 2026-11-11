@@ -15,6 +15,14 @@
 .wb-cmd-search { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--rule); color: var(--ink-2); }
 .wb-cmd-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ink); font-size: 15px; }
 .wb-root .wb-cmd-search input:focus-visible { outline: none; }
+/* The field's own ring is off above, so the row shows the keyboard's focus as an
+   ink line under it (2026-11-11, audit FB-15): until then nothing did, and the
+   comment in workspace.css that said the command menu "shows the focus itself"
+   was not true. Never on a click. The one text field left on the pointer-absent
+   gate rather than FB-10's keyboard-proven one, on purpose: Ctrl+K itself sets no
+   modality, so a keyboard user who has pressed nothing else would see no line,
+   and the menu opens on a key or a click, never on a page load. */
+html:not([data-modality='pointer']) .wb-cmd-search:focus-within { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--ink) 45%, transparent); }
 .wb-cmd kbd, .wb-keys kbd { font-family: var(--mono); font-size: 10.5px; color: var(--ink-2); padding: 2px 6px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel-2); }
 .wb-cmd-list { list-style: none; margin: 0; padding: 6px; max-height: min(420px, 60vh); overflow-y: auto; }
 .wb-cmd-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 10px; font-size: 13.5px; color: var(--ink); cursor: pointer; }
@@ -28,6 +36,11 @@
 .wb-keys dl { margin: 0; display: grid; gap: 8px; }
 .wb-keys dl > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; color: var(--ink); }
 .wb-keys dd { margin: 0; display: flex; gap: 4px; }
+/* The dialog's container takes focus when it opens (useFocusTrap), and the ring
+   belongs on the controls inside it, not round all of it, as `.wb-set` already
+   had it (2026-11-11, audit FB-8): "?" drew a ring round the whole Shortcuts list,
+   and Share and Open in designer, in `.wb-share`'s frame, the same. */
+.wb-root .wb-keys:focus, .wb-root .wb-keys:focus-visible, .wb-root .wb-share:focus, .wb-root .wb-share:focus-visible { outline: none; }
 
 /* The right-click menu on a control (ControlMenu.tsx), as Stitch's on a screen.
    wb-cmenu, not wb-ctx: that is the selection toolbar's, and sharing it laid
@@ -88,7 +101,9 @@
   flex: 1; min-width: 0; height: 34px; padding: 0 12px; border: 1px solid var(--rule); border-radius: 10px; background: var(--panel); color: var(--ink); font-size: 13px;
 }
 .wb-root .wb-share input:focus-visible, .wb-root .wb-share select:focus-visible { outline: none; }
-html:not([data-modality='pointer']) .wb-root .wb-share input:focus-visible, html:not([data-modality='pointer']) .wb-root .wb-share select:focus-visible { border-color: var(--ink-2); }
+/* Keyboard focus darkens the edge; a click does not, nor a field focused on open before
+   any key (2026-11-11, audit FB-10: the keyboard proven, not the pointer absent). */
+html[data-modality='keyboard'] .wb-root .wb-share input:focus-visible, html[data-modality='keyboard'] .wb-root .wb-share select:focus-visible { border-color: var(--ink-2); }
 .wb-share-people { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .wb-share-people li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 2px; }
 .wb-share-people li span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -179,7 +194,7 @@ html:not([data-modality='pointer']) .wb-root .wb-share input:focus-visible, html
 .wb-project-rename { display: flex; gap: 4px; padding: 3px; }
 .wb-project-rename input { flex: 1; min-width: 0; height: 32px; padding: 0 10px; border: 1px solid var(--rule-strong); border-radius: 8px; background: var(--panel); color: var(--ink); font-size: 13px; }
 .wb-root .wb-project-rename input:focus-visible { outline: none; }
-html:not([data-modality='pointer']) .wb-root .wb-project-rename input:focus-visible { border-color: var(--ink-2); }
+html[data-modality='keyboard'] .wb-root .wb-project-rename input:focus-visible { border-color: var(--ink-2); }
 .wb-project-confirm { display: flex; align-items: center; gap: 2px; padding: 3px 3px 3px 10px; font-size: 12.5px; color: var(--ink-2); }
 .wb-project-confirm span { flex: 1; }
 .wb-project-note { margin: 4px 10px 4px; font-size: 11.5px; line-height: 1.4; color: var(--ink-faint); }

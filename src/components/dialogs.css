@@ -9,8 +9,9 @@
    the tight one (scripts/check-bundle-size.mjs).
 
    No orange border, outline or focus ring anywhere in it (the owner,
-   2026-11-06): a focused field darkens its own border to --ink-2, as the
-   Share dialog's do, and a switch that is on is ink, as ChatGPT's is. */
+   2026-11-06): keyboard focus darkens a field's own border to --ink-2, as the
+   Share dialog's do, and a click does not; a switch that is on is ink, as
+   ChatGPT's is. */
 
 .wb-set {
   width: min(780px, 100%);
@@ -67,9 +68,11 @@ h4.wb-set-label { margin: 0; }
 .wb-set-input { width: 100%; min-width: 0; height: 34px; padding: 0 10px; border: 1px solid var(--rule-strong); border-radius: 10px; background: var(--panel); color: var(--ink); font: inherit; font-size: 13px; }
 select.wb-set-input { cursor: pointer; }
 .wb-set-input::placeholder { color: var(--ink-faint); }
-/* The edge darkens for the keyboard only (2026-11-10, lib/inputModality.ts); a click shows the caret. */
+/* The edge darkens for the keyboard only (2026-11-10, lib/inputModality.ts); a click shows the caret.
+   The keyboard proven, not the pointer absent (2026-11-11, audit FB-10): a field the dialog
+   focuses itself on open is not a keyboard user's Tab. */
 .wb-root .wb-set-input:focus-visible { outline: none; }
-html:not([data-modality='pointer']) .wb-root .wb-set-input:focus-visible { border-color: var(--ink-2); }
+html[data-modality='keyboard'] .wb-root .wb-set-input:focus-visible { border-color: var(--ink-2); }
 .wb-set-secret { position: relative; display: flex; min-width: 0; }
 .wb-set-secret .wb-set-input { padding-right: 38px; }
 .wb-set-peek { position: absolute; top: 3px; right: 3px; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--ink-2); cursor: pointer; }

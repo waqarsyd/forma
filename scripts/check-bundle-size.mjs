@@ -369,7 +369,23 @@ const BUDGETS = [
   // shortcuts list, the right-click menu, the zoom field, Usage today) moved
   // to src/components/overlays.css: 128,926 -> 123,655 B, and overlays-*.css
   // is 5.2 kB of its own. The next lazy component's styles go there too.
-  { prefix: 'index-', ext: '.css', max: 129_000, note: 'the whole stylesheet' },
+  //
+  // Raised to 133_000 on 2026-11-11, an INTERIM raise carrying both halves.
+  // The silent half: 123,655 -> 128,807 B, +5,152 B, fitted under the cap with
+  // no entry between 2026-11-06 and a76e367 (the Stitch thread panel and its
+  // box, the database and designer programmes, the full audit's fixes), and
+  // left 193 B, found by the 2026-11-11 audit (TC-04) rather than by a commit.
+  // This half: 128,807 -> 129,386 B, +579 B, measured by building the tree with
+  // wave 1 of that audit's fixes in it, for its focus batch (FO): the pointer
+  // reset of Chrome's own ring and the split public-form rules in index.css, and
+  // the search pills, selection fills and sentence-case reply actions in
+  // workspace.css. That tripped the cap by 386 B. 133_000 is 97.3%, deliberately
+  // above the 93-94% band and deliberately temporary: the cut is PR-08 (wave 7
+  // of the same plan), which moves the workspace's rules, about 35% of this
+  // file, out of the entry stylesheet into a lazily loaded one, and then resets
+  // this cap to 94% of what is left. Until then each batch that grows the file
+  // names its growth here.
+  { prefix: 'index-', ext: '.css', max: 133_000, note: 'the whole stylesheet' },
   { prefix: 'pdf.worker-', ext: '.mjs', max: 2_250_000, note: 'pdfjs worker, lazy' },
   { prefix: 'pdf-', ext: '.js', max: 470_000, note: 'pdfjs entry, lazy' },
   { prefix: 'Markdown-', ext: '.js', max: 175_000, note: 'react-markdown + remark-gfm, lazy' },

@@ -529,7 +529,9 @@ html:where(:not([data-modality='pointer'])) .wb-root :focus-visible { outline: 2
   transition: border-color .15s ease, box-shadow .15s ease;
 }
 .wb-card:hover { border-color: var(--rule-strong); box-shadow: var(--shadow-sm); }
-.wb-card.wb-is-open { border-color: var(--rule-strong); background: var(--track); }
+/* The open project is a fill, as the rail's selected item: its darker edge
+   was a grey boundary that appeared on a click (2026-11-11, audit FB-14). */
+.wb-card.wb-is-open { background: var(--track); }
 /* Four buttons on a hovered card since 2026-11-05 (pin, rename, archive,
    delete): they cover the end of the name on the card's own ground rather
    than the name keeping their width free all the time, as ChatGPT's list
@@ -681,15 +683,15 @@ html:where(:not([data-modality='pointer'])) .wb-root :focus-visible { outline: 2
 .wb-note-actions--quiet { opacity: 0; transition: opacity .15s ease; }
 .wb-note:hover .wb-note-actions--quiet, .wb-note:focus-within .wb-note-actions--quiet { opacity: 1; }
 @media (hover: none) { .wb-note-actions--quiet { opacity: 1; } }
+/* In sentence case, in the body face (2026-11-11, audit UI4): "UNDO" in small
+   mono capitals read as a code, where ChatGPT's and Gemini's actions read
+   "Undo". */
 .wb-note-act {
   padding: 1px 7px;
   border: 1px solid transparent;
   border-radius: 999px;
   background: none;
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: .08em;
-  text-transform: uppercase;
+  font-size: 11.5px;
   color: var(--ink-faint);
   cursor: pointer;
 }
@@ -714,7 +716,7 @@ html:where(:not([data-modality='pointer'])) .wb-root :focus-visible { outline: 2
 /* When a message was made and what a reply cost, quiet beside its icons (2026-11-05). */
 .wb-note-meta { font-family: var(--mono); font-size: 9.5px; letter-spacing: .04em; color: var(--ink-faint); padding: 0 4px; white-space: nowrap; }
 /* A reply whose change was taken back (2026-11-05). */
-.wb-note-done { font-family: var(--mono); font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); padding: 1px 7px; }
+.wb-note-done { font-size: 11.5px; color: var(--ink-faint); padding: 1px 7px; }
 .wb-note-ask { font-size: 12px; color: var(--bad-ink); }
 .wb-edit textarea { width: 100%; resize: vertical; font: inherit; font-size: 13.5px; line-height: 1.6; }
 
@@ -739,21 +741,29 @@ html:where(:not([data-modality='pointer'])) .wb-root :focus-visible { outline: 2
   gap: 8px;
   margin: 10px 16px 0;
   padding: 6px 8px 6px 12px;
-  border: 1px solid var(--rule);
+  /* A fill with no edge (2026-11-11, audit UI1/FB-7): a grey outlined capsule
+     appeared when the magnifier was clicked, where ChatGPT's and Gemini's search
+     fields are a fill. The transparent border keeps the size the keyboard's edge needs. */
+  border: 1px solid transparent;
   border-radius: 999px;
-  background: var(--panel);
+  background: var(--track);
   color: var(--ink-faint);
 }
-/* No darker edge on focus (2026-11-10): the caret and the typed text show it, as ChatGPT's search. */
-.wb-chat-search:focus-within { background: var(--panel-2); }
-html:not([data-modality='pointer']) .wb-chat-search:focus-within { border-color: var(--rule-strong); }
+/* No darker edge on a click (2026-11-10): the caret and the typed text show it, as
+   ChatGPT's search. Keyboard focus darkens the edge; a click does not, and nor does
+   a field the page focused itself before any key was pressed (2026-11-11, audit
+   FB-10), so this waits for the keyboard proven rather than the pointer absent. */
+.wb-chat-search:focus-within { background: var(--track); }
+html[data-modality='keyboard'] .wb-chat-search:focus-within { border-color: var(--rule-strong); }
 .wb-chat-search input { flex: 1; min-width: 0; border: 0; background: none; font: inherit; font-size: 13px; color: var(--ink); outline: none; }
 /* The pill shows the focus, and its own button closes the search: the
    browser's ring and clear button inside it would be a second of each. */
 .wb-chat-search input:focus-visible { outline: none; }
 .wb-chat-search input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
 .wb-chat-search button { width: 22px; height: 22px; display: grid; place-items: center; border: 0; border-radius: 999px; background: none; color: var(--ink-faint); cursor: pointer; }
-.wb-chat-search button:hover { background: var(--track); color: var(--ink); }
+/* The pill is itself --track since 2026-11-11 (UI1), so the clear button's hover
+   is a shade of ink over it; --track alone would change nothing but the colour. */
+.wb-chat-search button:hover { background: color-mix(in srgb, var(--ink) 8%, var(--track)); color: var(--ink); }
 .wb-search-count { margin: 0; font-family: var(--mono); font-size: 10px; letter-spacing: .06em; color: var(--ink-faint); }
 mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 3px; box-shadow: none; }
 .wb-attach {
@@ -804,9 +814,12 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
   box-shadow: var(--shadow-sm), var(--inset-hi);
   transition: border-color .15s ease, box-shadow .15s ease;
 }
-/* Focus darkens the edge and lifts the shadow, with no orange (2026-11-05, at
-   the owner's request), as ChatGPT's box does; it was the accent. Focus stays
-   plainly visible, which is what the comment below depends on. */
+/* Focus lifts the shadow, with no orange (2026-11-05, at the owner's request),
+   as ChatGPT's box does; it was the accent. The edge does not change here: in
+   the panel's foot, where the composer is drawn, the blue-to-violet edge further
+   down is the focus (whether it stays on a click is the owner's decision 1 of the
+   2026-11-11 audit). Focus stays plainly visible, which is what the comment
+   below depends on. */
 .wb-box:focus-within { box-shadow: var(--shadow-md); }
 .wb-box .wb-line { flex: 1; min-width: 0; font-size: 13px; line-height: 1.4; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* `.wb-line` was a static placeholder span in the artifact, so it was coloured
@@ -814,13 +827,13 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
    --ink-faint too, indistinguishable from the placeholder it sat on top of.
    Text is --ink; the placeholder keeps the faint colour, deliberately. */
 .wb-box .wb-line::placeholder { color: var(--ink-faint); }
-/* No generic focus ring here: `.wb-box:focus-within` above already turns the
-   pill's border accent and lifts its shadow, so the shared `.wb-root
+/* No generic focus ring here: `.wb-box:focus-within` above already lifts the
+   box's shadow (and in the panel's foot lights its edge), so the shared `.wb-root
    :focus-visible` outline was a *second* indicator for the same focus — a
-   hard-edged 2px rectangle floating inside a rounded pill that had already gone
-   orange. Focus is still plainly visible, which is the part that matters; this
-   is the same trade `.wb-ctl:focus` makes in the config dialog. Do not add
-   `outline: none` anywhere the container does not take over like this. */
+   hard-edged 2px rectangle floating inside a rounded box. It was orange until
+   2026-11-05. Focus is still plainly visible, which is the part that matters;
+   this is the same trade `.wb-ctl:focus` makes. Do not add `outline: none`
+   anywhere the container does not take over like this. */
 .wb-box .wb-line:focus-visible { outline: none; }
 /* The message box is a textarea that grows with what is typed, to 160px,
    then scrolls (2026-11-01); the paperclip and send sit at its foot. */
@@ -1180,8 +1193,13 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
   font-family: var(--body);
   font-size: 13px;
 }
-.wb-ctl:focus { outline: none; }
-html:not([data-modality='pointer']) .wb-ctl:focus-visible { border-color: var(--ink-2); }
+/* Keyboard focus darkens the edge; a click does not, nor a field the page focused
+   itself before any key was pressed (2026-11-11, audit FB-10). The second selector
+   outweighs the generic ring above, (0,2,1), which a bare `.wb-ctl:focus` loses to:
+   without it that ring drew on a field focused before any key, and under the
+   keyboard it drew beside the darker edge, two indicators for one focus. */
+.wb-ctl:focus, .wb-root .wb-ctl:focus-visible { outline: none; }
+html[data-modality='keyboard'] .wb-ctl:focus-visible { border-color: var(--ink-2); }
 .wb-ctl::placeholder { color: var(--ink-faint); }
 /* The settings dialog's select with its drawn chevron, the key row with its
    eye, the two-column passphrase grid, the required mark and the green note
@@ -1806,9 +1824,14 @@ html:not([data-modality='pointer']) .wb-ctl:focus-visible { border-color: var(--
 .wb-panel-convo[hidden] { display: none; }
 .wb-panel-search {
   flex: none; display: flex; align-items: center; gap: 8px; margin: 6px 12px 0; padding: 0 12px; height: 32px;
-  border: 1px solid var(--rule); border-radius: 999px; background: var(--panel); color: var(--ink-2);
+  border: 1px solid transparent; border-radius: 999px; background: var(--track); color: var(--ink-2);
 }
+/* The conversation search is the projects search's twin (2026-11-11, audit UI1/FB-7): a
+   fill with no edge, the edge darkening for the keyboard only, and the pill rather than
+   a rectangle inside it showing that focus (this rule sits after the generic ring). */
+html[data-modality='keyboard'] .wb-panel-search:focus-within { border-color: var(--rule-strong); }
 .wb-panel-search input { flex: 1; min-width: 0; border: 0; background: none; color: var(--ink); font: inherit; font-size: 12.5px; outline: none; }
+.wb-panel-search input:focus-visible { outline: none; }
 .wb-panel-thread { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 /* A request: its ask pinned over its own replies, as Stitch's pins the
    request being read; the next request's ask takes over at its section. */
@@ -1818,8 +1841,10 @@ html:not([data-modality='pointer']) .wb-ctl:focus-visible { border-color: var(--
   background: linear-gradient(var(--panel-2) 80%, transparent);
 }
 .wb-turn-ask .wb-ask { margin: 0; }
-/* The request whose change is shown on the Preview: a firmer edge, no accent. */
-.wb-turn[aria-current='true'] .wb-ask { border-color: var(--ink-faint); }
+/* The request whose change is shown on the Preview: a fill, as the rail's selected
+   item, no accent. A firmer grey edge stood here until 2026-11-11 (audit FB-13), a
+   boundary that appeared on a click. */
+.wb-turn[aria-current='true'] .wb-ask { background: var(--track); }
 .wb-panel-foot { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 6px 10px 10px; }
 /* The agent's mark, Collapse and Expand, as Stitch's (2026-11-08, the owner's
    choice of Stitch's own icons; a minimise line and a chat bubble stood here

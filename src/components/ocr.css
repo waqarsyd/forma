@@ -38,7 +38,9 @@
 .wb-ocr-box { position: absolute; border: 1px solid rgba(15, 157, 107, .55); background: rgba(15, 157, 107, .10); }
 .wb-ocr-box.is-flagged { border-color: #ba1a1a; background: rgba(186, 26, 26, .16); }
 .wb-ocr-box.is-ignored { border: 1px dashed rgba(0, 0, 0, .35); background: none; }
-.wb-ocr-box.is-focus { outline: 2px solid var(--ink-2); outline-offset: 2px; z-index: 1; }
+/* The word chosen in the list, in the Preview's selection blue (2026-11-11, audit FB-12):
+   a grey ring appeared round its box on a click, and selection is blue. */
+.wb-ocr-box.is-focus { outline: 2px solid #2f6fe4; outline-offset: 2px; z-index: 1; }
 /* A detected table and its columns in the selection's blue, not orange (2026-11-06, the owner's rule). */
 .wb-ocr-table { position: absolute; border: 1.5px solid rgba(47, 111, 228, .55); pointer-events: none; }
 .wb-ocr-col { position: absolute; top: 0; bottom: 0; border-left: 1px solid rgba(47, 111, 228, .45); }

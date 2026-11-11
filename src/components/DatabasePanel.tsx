@@ -78,6 +78,10 @@ export type WriteOptions = Pick<DataSourceSpec, 'connectionName' | 'multiValue' 
 
 const CALC_TYPES: CalcType[] = ['String', 'Decimal', 'Int32', 'Double', 'DateTime', 'Boolean'];
 
+/* `.dbx-input` carries `outline: none` (2026-11-11, audit FB-2): with no author
+   outline, its twelve fields drew Chrome's own dark ring on every click; the
+   workspace's keyboard ring still wins for the keyboard. Warnings are ink, never
+   the light `--warn`, which was #d9a95f on white (audit FB-11). */
 const CSS = `
 .dbx { display: grid; gap: 14px; margin-bottom: 22px; }
 .dbx-card { border: 1px solid var(--paper-rule, #d7dee7); border-radius: 10px; padding: 14px 16px; background: var(--surface-container-lowest, #fff); }
@@ -89,7 +93,7 @@ const CSS = `
 .dbx-btn:hover:not(:disabled) { background: var(--track, rgba(0,0,0,.05)); }
 .dbx-btn:disabled { opacity: .5; cursor: default; }
 .dbx-btn--solid { background: var(--ink, #1b2430); color: var(--panel, #fff); border-color: transparent; }
-.dbx-input { width: 100%; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--paper-rule, #d7dee7); background: var(--surface-container-lowest, #fff); color: inherit; font: inherit; font-size: 13px; }
+.dbx-input { width: 100%; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--paper-rule, #d7dee7); background: var(--surface-container-lowest, #fff); color: inherit; font: inherit; font-size: 13px; outline: none; }
 .dbx-group { margin-top: 10px; }
 .dbx-group > h4 { margin: 0 0 4px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; opacity: .7; }
 .dbx-item { border-top: 1px solid var(--paper-rule, #e6ebf1); }
@@ -99,7 +103,7 @@ const CSS = `
 .dbx-col { display: flex; gap: 8px; }
 .dbx-col code { font-size: 12px; opacity: .8; }
 .dbx-badge { font-size: 10.5px; padding: 0 5px; border-radius: 4px; background: var(--track, rgba(0,0,0,.06)); }
-.dbx-warn { font-size: 12.5px; color: var(--warn, #9a4a00); }
+.dbx-warn { font-size: 12.5px; color: var(--warn-ink, #8a5a00); }
 .dbx-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; }
 .dbx-field { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 5px 8px; border: 1px solid var(--paper-rule, #e6ebf1); border-radius: 8px; font-size: 12.5px; }
 .dbx-field code { font-size: 11.5px; opacity: .75; }

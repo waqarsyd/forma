@@ -2291,13 +2291,19 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
           border: 1px solid #8a94a3; border-radius: 2px; background: #fff; color: #39424e;
           font: 600 10px/1 var(--font-code, monospace); cursor: pointer;
         }
-        .rp-drill:hover, .rp-drill:focus-visible { border-color: #2f6fe4; color: #2f6fe4; outline: none; }
+        .rp-drill:hover { border-color: #2f6fe4; color: #2f6fe4; }
+        .rp-drill:focus-visible { outline: none; }
+        html:not([data-modality='pointer']) .rp-drill:focus-visible { border-color: #2f6fe4; color: #2f6fe4; }
         @media print { .rp-drill { display: none; } }
+        /* The blue edge is the editing indicator, and the only one (2026-11-11, audit
+           FB-5): with no outline of its own the editor, focused on a double-click, wore
+           Chrome's dark ring round its blue edge, and the keyboard's grey ring outside it. */
         .rp-textedit {
           position: absolute; z-index: 2; box-sizing: border-box;
           border: 1.5px solid #2f6fe4; background: #fff; color: #111418;
-          padding: 0 2px; font-family: inherit;
+          padding: 0 2px; font-family: inherit; outline: none;
         }
+        .rp-textedit:focus-visible, .wb-root .rp-textedit:focus-visible { outline: none; }
         /* One line whatever it says, so selecting moves nothing below it (2026-11-06). */
         .rp-sel {
           font-family: var(--font-code, monospace); font-size: 11px;
@@ -2327,7 +2333,14 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
           padding: 0 2px; border: 0; border-bottom: 1px solid var(--rule-strong, #d7dee7);
           background: transparent; color: inherit;
         }
-        .rp-param input:focus { outline: none; border-bottom-color: currentColor; }
+        /* The underline darkens for the keyboard only (2026-11-11, audit FB-4, FB-10):
+           keyed on :focus, it turned black on every click into a parameter. The
+           lookup list takes the same underline: with its ring off and the input's
+           alone darkening, a Tab onto it showed nothing at all, in the workspace
+           and on a shared report alike (found in review the same day). */
+        .rp-param input:focus, .rp-param select:focus { outline: none; }
+        html[data-modality='keyboard'] .rp-param input:focus-visible,
+        html[data-modality='keyboard'] .rp-param select:focus-visible { border-bottom-color: currentColor; }
         .rp-param select {
           font-family: var(--font-code, monospace); font-size: 11px; max-width: 18ch;
           padding: 0 2px; border: 0; border-bottom: 1px solid var(--rule-strong, #d7dee7);

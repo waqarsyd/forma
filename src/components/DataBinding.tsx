@@ -152,7 +152,7 @@ export default function DataBinding({ repxContent, onApply, onPromptToExpression
   /*
    * A report already bound, against the fields it should read (item 23): each
    * field it prints that they lack, with the likeliest of theirs to rename it
-   * to, in one click (enameField).
+   * to, in one click (`renameField`).
    */
   const outside = useMemo(() => {
     if (!source.fields.length) return [];
@@ -243,10 +243,18 @@ export default function DataBinding({ repxContent, onApply, onPromptToExpression
           border: 1px solid var(--paper-rule, #d7dee7);
           background: var(--surface-container-lowest, #fff); color: inherit;
         }
-        .db-paste:focus-visible { outline: 2px solid var(--ink-2, #39424e); outline-offset: 1px; }
+        /* The ring is the keyboard's (2026-11-11, audit FB-3, FB-10): ungated, a 2px
+           slate ring drew round both boxes the moment they were clicked. The second
+           selector outweighs the workspace's generic ring, (0,2,1), which a bare
+           .db-paste loses to, so a box the page focused before any key keeps no ring. */
+        .db-paste, .wb-root .db-paste:focus-visible { outline: none; }
+        html[data-modality='keyboard'] .db-paste:focus-visible { outline: 2px solid var(--ink-2, #39424e); outline-offset: 1px; }
         .db-note { font-size: 12.5px; line-height: 1.5; opacity: .75; margin: 8px 0 0; }
-        .db-warn { border-left: 3px solid var(--warn, #b45309); padding: 10px 14px; font-size: 13px; line-height: 1.55; }
-        .db-ok { border-left: 3px solid var(--ok-ink, #1f6f49); padding: 10px 14px; font-size: 13px; }
+        /* A tinted block, never an edge (2026-11-11, audit FB-11): the amber left edge
+           was the orange-family border the owner asked gone from the workspace, the
+           device item 69 of 2026-11-06 took off the Preview's problems box. */
+        .db-warn { padding: 10px 14px; border-radius: 10px; background: var(--track); font-size: 13px; line-height: 1.55; }
+        .db-ok { padding: 10px 14px; border-radius: 10px; background: var(--ok-wash, rgba(15, 157, 107, .10)); font-size: 13px; }
         .db-fields { display: flex; flex-wrap: wrap; gap: 6px; }
         .db-chip {
           font-family: var(--font-code, monospace); font-size: 11px;
@@ -369,7 +377,7 @@ export default function DataBinding({ repxContent, onApply, onPromptToExpression
             </p>
             {databaseLine && <p className="db-note" role="status">{databaseLine}</p>}
             {source.problems.map((p, i) => (
-              <p className="db-note" key={i} style={{ color: 'var(--warn, #b45309)' }}>{p}</p>
+              <p className="db-note" key={i} style={{ color: 'var(--warn-ink, #8a5a00)' }}>{p}</p>
             ))}
             {source.fields.length > 0 && (
               <>
@@ -501,13 +509,13 @@ export default function DataBinding({ repxContent, onApply, onPromptToExpression
                   <span className="db-count">Paste a sample first, so the expression can name real fields.</span>
                 )}
               </div>
-              {exprError && <p className="db-note" role="alert" style={{ color: 'var(--warn, #b45309)' }}>{exprError}</p>}
+              {exprError && <p className="db-note" role="alert" style={{ color: 'var(--warn-ink, #8a5a00)' }}>{exprError}</p>}
               {exprResult && (
                 <div className={exprResult.problems.length ? 'db-warn' : 'db-ok'} style={{ marginTop: 10 }} role="status">
                   <code style={{ fontFamily: 'var(--font-code, monospace)', fontSize: 12 }} aria-label="Generated expression">{exprResult.expression}</code>
                   {exprResult.explanation && <p className="db-note" style={{ marginTop: 6 }}>{exprResult.explanation}</p>}
                   {exprResult.problems.map((p, i) => (
-                    <p className="db-note" key={i} style={{ color: 'var(--warn, #b45309)' }}>{p}</p>
+                    <p className="db-note" key={i} style={{ color: 'var(--warn-ink, #8a5a00)' }}>{p}</p>
                   ))}
                   <div className="db-actions" style={{ marginTop: 8 }}>
                     <label className="db-count" htmlFor="db-expr-col">Use for column</label>
