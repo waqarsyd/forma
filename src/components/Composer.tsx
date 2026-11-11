@@ -655,7 +655,9 @@ export default function Composer({
           // Crystal Reports file (.rpt) too (2026-11-11, the full audit's
           // CP-01a): they were taken from a drop and not from the picker. A
           // .rpt is answered with how to export it as a PDF (lib/repxIntake.ts).
-          accept="image/*,application/pdf,.repx,.rdl,.rdlc,.rpt,.csv,.tsv,.json,.txt,.sql,.xlsx,.docx"
+          // A FastReport .frx too, which the intake converts and its notice
+          // names (the re-audit's R4-03, 2026-11-11).
+          accept="image/*,application/pdf,.repx,.rdl,.rdlc,.frx,.rpt,.csv,.tsv,.json,.txt,.sql,.xlsx,.docx"
           onChange={onFileChange}
           className="wb-hidden"
         />

@@ -117,7 +117,10 @@ export type ReplyKind = 'open' | 'picture' | 'pdf' | 'repx' | 'description';
 export function firstReply(kind: ReplyKind, hasWords: boolean, language?: string | null, bilingual?: boolean): string {
   if (kind === 'open') return "Done. I've changed the report as you asked.";
   // Asked for in two languages (CP-06): said as the chat's translation says it.
-  const both = language && bilingual ? `, with ${language} beside its own language. Switch between them in the Preview` : '';
+  // "Alongside the original" since the re-audit's R1-05 (2026-11-11): "beside
+  // its own language" was stiff, and the source's language is not known, so it
+  // is not named ("in English and German" would be wrong for a French page).
+  const both = language && bilingual ? `, with ${language} alongside the original; pick the language in the Preview` : '';
   if (kind === 'description') return `Here's the report you described${both || (language ? `, in ${language}` : '')}.`;
   // A .repx is already a report (2026-11-11, the full audit's UI11): "the
   // report from your report" said the same word twice and meant nothing.

@@ -233,8 +233,9 @@ describe('the chat’s database edits', () => {
     const codes = auditRepx(once.xml, null).findings.map((f) => f.code);
     expect(codes).not.toContain('band-order');
     expect(codes).not.toContain('field-not-in-schema');
-    expect(describeChanges(base, once.xml)[0]).toBe('added the band GroupFooterRegion');
-    expect(describeChanges(base, once.xml)).toContain('added the band GroupHeaderRegion, grouping by [Region]');
+    // By its kind in words since the re-audit's R1-10 (2026-11-11), not the designer's band name.
+    expect(describeChanges(base, once.xml)[0]).toBe('added a group footer');
+    expect(describeChanges(base, once.xml)).toContain('added a group header, grouping by [Region]');
 
     const twice = applyEdits(once.xml, [{ op: 'group', field: 'CompanyName' }]);
     const outer = parseReportStructure(twice.xml).bands.find((b) => b.fields.some((f) => f.field === 'CompanyName'))!;

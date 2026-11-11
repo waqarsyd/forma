@@ -173,11 +173,14 @@ export function batchReadyNote(items: readonly { title: string; sourceName: stri
   return `${ready}${other}`;
 }
 
-/** What the thread says once the plan was answered. */
-export function planOutcome(plan: JobPlan, started: boolean): string {
-  if (!started) return 'Not started.';
-  const kept = keptFiles(plan);
-  return plan.mode === 'each' && kept.length > 1 ? `Started: ${count(kept.length, 'report')} in Batch.` : `Started: one report from ${count(kept.length, 'file')}.`;
+/**
+ * What the thread says once the plan was answered: that it started, and no
+ * more (2026-11-11, the re-audit's R1-12). It said "Started: one report from
+ * 3 files." under a reply that had just said "Making one report from these 3
+ * pictures.": one thing said twice. The reply above it says what.
+ */
+export function planOutcome(_plan: JobPlan, started: boolean): string {
+  return started ? 'Started.' : 'Not started.';
 }
 
 /** The plan with one file ticked or left out. */

@@ -103,9 +103,11 @@ describe('the plan, as it is changed', () => {
     for (const p of [plan, each, toggleFile(plan, '3')]) {
       for (const step of planSteps(p, 'Gemini')) expect(step).not.toMatch(/\brequests?\b|\bOCR\b|\bticked\b/);
     }
-    expect(planOutcome(each, true)).toBe('Started: 3 reports in Batch.');
-    expect(planOutcome(plan, true)).toBe('Started: one report from 3 files.');
+    // Not what was made a second time (the re-audit's R1-12): the reply above says that.
+    expect(planOutcome(each, true)).toBe('Started.');
+    expect(planOutcome(plan, true)).toBe('Started.');
     expect(planOutcome(plan, false)).toBe('Not started.');
+    expect(planReply(plan)).toMatch(/^Making one report from these 3/);
   });
 });
 

@@ -126,6 +126,19 @@ export function pointsToUnits(points: number, reportUnit?: string): number {
   return (points / POINTS_PER_INCH) * unitsPerInch(reportUnit);
 }
 
+/**
+ * A length in report units as a person reads it (2026-11-11, the re-audit's
+ * R1-10): millimetres for a report in tenths of a millimetre, inches for any
+ * other, at most two decimals with no trailing zeros ("1.25 in", "4 in",
+ * "12.7 mm"). The chat's list of changes said "moved **total** to 400, 50",
+ * the file's own numbers, which mean nothing without the unit they are in.
+ */
+export function lengthWords(value: number, reportUnit?: string): string {
+  const inches = value / unitsPerInch(reportUnit);
+  const [amount, unit] = reportUnit === 'TenthsOfAMillimeter' ? [inches * 25.4, 'mm'] : [inches, 'in'];
+  return `${Number((Math.round(amount * 100) / 100).toFixed(2))} ${unit}`;
+}
+
 /** Points per unit of a written length, for `lengthToPoints`. */
 const POINTS_PER: Record<string, number> = { in: 72, cm: 72 / 2.54, mm: 72 / 25.4, pt: 1, pc: 12, px: 72 / CSS_PX_PER_INCH };
 

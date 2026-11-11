@@ -64,6 +64,25 @@ describe('a long line in another script', () => {
 });
 
 /*
+ * The re-audit's R1-02 and R1-07 (2026-11-11): a report with no file says so
+ * in downloadDesign's words, with no model and no plain-text export that
+ * Export no longer makes; and the pane carries no token count.
+ */
+describe('in plain words', () => {
+  it('says a report has no .repx file yet, and what to do', () => {
+    const { container } = render(<RepxViewer xml="" />);
+    expect(screen.getByText('This report has no .repx file yet.')).toBeTruthy();
+    expect(screen.getByText('Send the request again to make one.')).toBeTruthy();
+    expect(container.textContent).not.toMatch(/model|plain-text|DevExpress XML/i);
+  });
+
+  it('shows no token count beside the file', () => {
+    const { container } = render(<RepxViewer xml={XML} />);
+    expect(container.textContent).not.toMatch(/tokens?\b/i);
+  });
+});
+
+/*
  * What DevExpress found, asked once the report is on screen (2026-11-11, the
  * full audit's PERF batch): it arrives while the pane is open, joins the
  * audit's list, and belongs to the file it was asked about alone.

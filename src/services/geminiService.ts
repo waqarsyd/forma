@@ -44,7 +44,7 @@ import { repairRepx } from "../lib/repairChain";
 import { isRepxText, restoreBlobs, stashBlobs, type BlobStash } from "../lib/repxBlobs";
 import { hasReportScripts } from "../lib/shares";
 import { rootStructurePrompt, tableRowsRule } from "../lib/reportBands";
-import { addUsage, readTokenUsage, type TokenUsage } from "../lib/tokenUsage";
+import { addUsage, describeUsage, readTokenUsage, summariseUsage, type TokenUsage } from "../lib/tokenUsage";
 import { sectionsFor, describeSections, ALL_SECTIONS } from "../lib/promptSections";
 import { checkRepxComplete } from "../lib/repxTruncation";
 import { captionsOfDraft, missedNote, readCoverage, worthAnotherTry } from "../lib/readCoverage";
@@ -878,7 +878,7 @@ On a table, font, color, align, border and format name a cell by row and cell, a
 
 When the outline ends with SELECTED ON THE PREVIEW, the user has selected those controls, and "this", "it", "these" and "them" in the message mean them.
 
-"tools" are Forma's own actions, run after any edits, only when the user asks for one, with "answer" or "edit": show (pane: mockup, preview, data, spec or repx), testData (fills the Preview with sample rows), export (format: repx, pdf, csv, xlsx, docx, rtf, html or png), designer (opens the report in the DevExpress designer on the user's computer), undo (takes back the last change to the report, when the user asks to undo one), translate (language: the language the user named, as "German"; Forma translates every typed caption and title of the report and keeps the layout; list no edits for a translation). Every tool runs at once; never ask the user to press a button or to confirm what they asked for. When the message only asks for a tool, leave reply empty; Forma says what it does.
+"tools" are Forma's own actions, run after any edits, only when the user asks for one, with "answer", "edit" or "rebuild" (after a rebuild they run on the redesigned report): show (pane: mockup, preview, data, spec or repx), testData (fills the Preview with sample rows), export (format: repx, pdf, csv, xlsx, docx, rtf, html or png), designer (opens the report in the DevExpress designer on the user's computer), undo (takes back the last change to the report, when the user asks to undo one), translate (language: the language the user named, as "German"; Forma translates every typed caption and title of the report and keeps the layout; list no edits for a translation). Every tool runs at once; never ask the user to press a button or to confirm what they asked for. When the message only asks for a tool, leave reply empty; Forma says what it does.
 
 ${HOW_TO_WRITE}
 
@@ -2181,7 +2181,8 @@ Answer with the expression and one sentence saying what it computes.`,
 
   const parsed = JSON.parse(response.text ?? "{}") as Partial<ExpressionOutcome>;
   const expression = (parsed.expression ?? "").trim();
-  if (!expression) throw new Error("The model returned no expression. Try describing it differently.");
+  // "No ... came back", not "The model returned" (2026-11-11, R1-01): the Data tab shows it as it is.
+  if (!expression) throw new Error("No expression came back. Try describing it differently.");
   return {
     expression,
     explanation: (parsed.explanation ?? "").trim(),
@@ -2320,7 +2321,7 @@ Answer with the statement, a short name for the query (letters only, such as Sal
 
   const parsed = JSON.parse(response.text ?? "{}") as { sql?: string; name?: string; explanation?: string };
   const sql = (parsed.sql ?? "").trim().replace(/;\s*$/, '');
-  if (!sql) throw new Error("The model returned no query. Try describing it differently.");
+  if (!sql) throw new Error("No query came back. Try describing it differently.");
   return { sql, name: (parsed.name ?? '').replace(/\W/g, '') || 'Query', explanation: (parsed.explanation ?? "").trim() };
 }
 
@@ -2436,7 +2437,7 @@ Return exactly ${wanted} rows. Each row is an array of ${names.length} values IN
     const values = Array.isArray(row?.values) ? row.values : [];
     return Object.fromEntries(names.map((f, i) => [f, values[i] === undefined || values[i] === null ? "" : String(values[i])]));
   });
-  if (rows.length === 0) throw new Error("The model returned no sample rows. Try again.");
+  if (rows.length === 0) throw new Error("No sample rows came back. Try again.");
   return rows;
 }
 
@@ -3159,7 +3160,8 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
     if (budget.left <= 0) {
       if (lastError) throw toFriendlyError(lastError);
       if (response) break;
-      throw new Error('This report has used the requests one try may make. Send it again in a minute.');
+      // Said as the result, not the allowance (2026-11-11, the re-audit's R1-11).
+      throw new Error("I couldn't finish this one just now. Send it again in a minute.");
     }
     budget.left--;
     try {
@@ -3297,12 +3299,19 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
           continue;
         }
 
+        /*
+         * Said in the person's words (2026-11-11, the re-audit's R1-01): these
+         * two named the model ids tried ("gemini-2.5-flash, gemini-2.5-pro all
+         * did") and "the model", and App shows them as they are on a failed
+         * redesign, Test data, a translation and a Batch row. The ids stay in
+         * the console lines above. "busy" stays in the second: formaTeam's
+         * failureReason reads it.
+         */
         if (runaway) {
           throw new Error(
-            `The model kept getting stuck repeating itself while writing this report` +
-            `${overloadedModels.length > 1 ? ` — ${overloadedModels.join(", ")} all did` : ", even after retrying"}. ` +
-            `Nothing is wrong with your API key. Try generating again; if it happens again, add a sentence ` +
-            `describing the report, or try a simpler source image.`
+            `The AI kept repeating itself while writing this report, even after trying again. ` +
+            `Nothing is wrong with your API key. Send it again; if it happens again, add a sentence ` +
+            `describing the report, or try a simpler picture.`
           );
         }
 
@@ -3310,16 +3319,15 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
         // Or its streams kept breaking: say that, not the SDK's parser message.
         if (quota || cut) throw classifyGeminiError(error, failure);
 
-        // Every model this key can use is busy. Say so, and name them — "try
-        // again" reads very differently when the user can see it was not one
-        // unlucky model.
+        // Every model this key can use is busy. Say so: "try again" reads very
+        // differently when the person can see it was not one unlucky try. The
+        // ids it once listed are in the console warnings above (R1-01).
         throw new Error(
           overloadedModels.length > 1
-            ? `Google's servers are busy for every model this key can use — ${overloadedModels.join(", ")} ` +
-              `were all tried and all returned "overloaded". This is capacity at Google's end: nothing is wrong ` +
-              `with your API key or your design. Wait a minute or two and generate again.`
-            : "Google's servers are busy and could not take this request, even after retrying. " +
-              "Nothing is wrong with your API key or your design — wait a minute and generate again."
+            ? `Google's servers are busy for every Gemini version your key can use; each was tried. ` +
+              `Nothing is wrong with your API key or your report. Wait a minute or two and send it again.`
+            : "Google's servers are busy and could not take this request, even after trying again. " +
+              "Nothing is wrong with your API key or your report. Wait a minute and send it again."
         );
       }
 
@@ -3400,10 +3408,13 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
   const buildCorrection = (text: string | undefined, finishReason: string | undefined, request: DraftRequest): { repxContent: string } => {
     const reading = textToDraft(text ?? '');
     if (!reading.skeleton || !controlCount(reading.skeleton)) {
+      // In the person's words (2026-11-11, R1-01): "Forma's draft" is how the
+      // request is made, not what they asked for, and an answer that cannot be
+      // read is not one that ran out of room, so each has its own line.
       if (finishReason === 'MAX_TOKENS') {
-        throw new Error('The correction of Forma\'s draft was cut off before it finished. Try generating again, or upload fewer pages at once.');
+        throw new Error('The report was cut off before it finished. Send it again, or send fewer pages at once.');
       }
-      throw new Error("The AI's correction of Forma's draft could not be read. Try generating again.");
+      throw new Error('The report came back unreadable. Send it again.');
     }
     if (reading.problems.length) {
       // Each skipped line quoted, so a format the model drifts into can be seen and read.
@@ -3660,8 +3671,11 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       markdown: specFromRepx(parsed.repxContent, title),
       layout: layoutFromRepx(parsed.repxContent, title),
       repxContent: parsed.repxContent,
-      // Carried onto the result so the REPX pane can show it. The console line
-      // in requestFor stays: it is the only record when a run fails before here.
+      // Carried onto the result for the bench and the record. The REPX pane
+      // showed it until 2026-11-11 (the re-audit's R1-07: a token count is
+      // machinery in the workspace); the line below is where it is read now.
+      // The console line in requestFor stays: it is the only record when a run
+      // fails before here.
       usage: addUsage(spentBefore, response.usage),
       ...(draft ? { fromDraft: true } : {}),
       ...(named.query !== undefined ? { dataQuery: named.query } : {}),
@@ -3670,6 +3684,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       ...(printFindings.length ? { printFindings } : {}),
       inspect,
     };
+    if (result.usage) console.info(`This answer cost ${summariseUsage(result.usage)} in all.\n${describeUsage(result.usage)}`);
     /*
      * Asked once more, and only once, when the report left out enough of the
      * page (`worthAnotherTry`), the request naming what was missing. The better

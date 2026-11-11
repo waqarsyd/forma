@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { parseReportStructure } from './reportPreview';
-import { applyEdits, askedFor, changedControls, distinctTools, followUpMessage, splitTools, formatEdits, changesMarkdown, checksMarkdown, describeChanges, parsesSoFar, readAlign, readReportOutcome, reportOutline, repxColor, sideNamed, toolLine, toolSentence, plainFinding, plainDeclined, colourWords, MAX_EDITS, PLAIN_FINDINGS, type AgentEdit, type AgentTool } from './agentEdit';
+import { afterRedesign, applyEdits, askedFor, changedControls, controlWords, distinctTools, followUpMessage, splitTools, formatEdits, changesMarkdown, checksMarkdown, describeChanges, parsesSoFar, readAlign, readReportOutcome, reportOutline, repxColor, sideNamed, toolLine, toolSentence, plainFinding, plainDeclined, colourWords, MAX_EDITS, PLAIN_FINDINGS, type AgentEdit, type AgentTool } from './agentEdit';
 
 const report = `<?xml version="1.0" encoding="utf-8"?>
 <XtraReportsLayoutSerializer SerializerVersion="20.1.8.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" DisplayName="Invoice" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 40, 40" PageWidth="850" PageHeight="1100" Version="20.1">
@@ -131,7 +131,8 @@ describe('what the agent sees, and edits that reach the control meant', () => {
     expect(outline).toContain('Some controls share a name');
     const out = applyEdits(twins, [{ op: 'move', control: 'total#2', x: 400 }]);
     expect(out.xml).toMatch(/LocationFloat="10,50"[\s\S]*LocationFloat="400,50"/);
-    expect(describeChanges(twins, out.xml)).toEqual(['moved **total#2** to 400, 50']);
+    // How far and which way, in the report's unit, and the second of two by its place (R1-10).
+    expect(describeChanges(twins, out.xml)).toEqual(['moved the second **total** 1 in right']);
     expect(changedControls(twins, out.xml)).toEqual(['total']);
   });
 
@@ -205,7 +206,7 @@ describe('the new edits, and edits that do what they say', () => {
   it("sets a band's height, and refuses one that would cut through what it holds", () => {
     expect(applyEdits(doc(lbl(1, 'a')), [{ op: 'bandHeight', band: 'Detail', height: 60 }]).xml).toContain('HeightF="60"');
     expect(applyEdits(doc(lbl(1, 'a')), [{ op: 'bandHeight', band: 'Detail', height: 30 }]).declined[0]).toMatch(/holds a control reaching 45|reaches 0\.45 in down/);
-    expect(describeChanges(doc(lbl(1, 'a')), applyEdits(doc(lbl(1, 'a')), [{ op: 'bandHeight', band: 'Detail', height: 60 }]).xml)).toContain('set the height of Detail to 60');
+    expect(describeChanges(doc(lbl(1, 'a')), applyEdits(doc(lbl(1, 'a')), [{ op: 'bandHeight', band: 'Detail', height: 60 }]).xml)).toContain('made the detail band 0.6 in tall');
   });
 
   it('writes borders as BorderSide writes them, and refuses sides it does not know', () => {
@@ -383,6 +384,31 @@ describe('the new edits, and edits that do what they say', () => {
     [{ name: 'designer' }, 'open it in DevExpress'],
     [{ name: 'designer' }, 'open in Visual Studio'],
     [{ name: 'designer' }, 'edit it in Visual Studio'],
+    // Still asked for once a verb is aimed at the designer (R5-04).
+    [{ name: 'designer' }, 'open the designer'],
+    [{ name: 'designer' }, 'open the report in the DevExpress designer'],
+    [{ name: 'export', format: 'pdf' }, 'export it as a PDF'],
+    [{ name: 'export', format: 'pdf' }, 'save it as PDF'],
+    // R5-04's review (2026-11-11): each of these ran at once before the tightening, and must still.
+    [{ name: 'export', format: 'pdf' }, 'I want it as PDF'],
+    [{ name: 'export', format: 'pdf' }, 'can I have a PDF?'],
+    [{ name: 'export', format: 'pdf' }, 'PDF please'],
+    [{ name: 'export', format: 'pdf' }, 'make it a PDF'],
+    [{ name: 'export', format: 'pdf' }, 'make a pdf'],
+    [{ name: 'export', format: 'pdf' }, 'can I get a PDF of this'],
+    [{ name: 'export', format: 'pdf' }, 'I need a pdf copy'],
+    [{ name: 'export', format: 'pdf' }, 'pdf'],
+    [{ name: 'export', format: 'pdf' }, 'convert it to PDF'],
+    [{ name: 'export', format: 'pdf' }, 'turn it into a pdf'],
+    [{ name: 'export', format: 'pdf' }, 'redesign it and give me a pdf'],
+    [{ name: 'export', format: 'xlsx' }, 'excel please'],
+    [{ name: 'export', format: 'xlsx' }, 'I need an Excel version'],
+    [{ name: 'designer' }, 'send it to the designer'],
+    [{ name: 'designer' }, 'designer please'],
+    [{ name: 'designer' }, 'take it to DevExpress'],
+    [{ name: 'designer' }, 'open in designer'],
+    [{ name: 'designer' }, 'I want to tweak it in the designer myself'],
+    [{ name: 'designer' }, 'can I edit this in devexpress?'],
   ] as [AgentTool, string][])('runs %o for "%s" at once', (tool, words) => {
     expect(splitTools([tool], words)).toEqual({ now: [tool], dropped: [] });
   });
@@ -412,6 +438,17 @@ describe('the new edits, and edits that do what they say', () => {
     [{ name: 'translate', language: 'Polish' }, 'I would like you to polish the layout'],
     [{ name: 'translate', language: 'de' }, 'Remember to de-duplicate the rows'],
     [{ name: 'translate', language: 'ar' }, 'Add a total in ar'],
+    // The re-audit's R5-04 (2026-11-11): a format or DevExpress named in passing asks for neither.
+    [{ name: 'export', format: 'pdf' }, 'make a DevExpress report from this pdf'],
+    [{ name: 'designer' }, 'make a DevExpress report from this pdf'],
+    [{ name: 'designer' }, 'fix the DevExpress header'],
+    [{ name: 'designer' }, 'use XtraReports styles for the table'],
+    [{ name: 'export', format: 'csv' }, 'the data comes from a CSV'],
+    // And the phrasings its review put back do not reach the source.
+    [{ name: 'export', format: 'pdf' }, 'I have a PDF of the invoice, make a report like it'],
+    [{ name: 'export', format: 'csv' }, 'the data comes from a CSV, please group it by region'],
+    [{ name: 'export', format: 'xlsx' }, 'build it from the Excel version I sent'],
+    [{ name: 'designer' }, 'make the DevExpress header blue please'],
   ] as [AgentTool, string][])('drops %o the model brought into "%s"', (tool, words) => {
     expect(splitTools([tool], words)).toEqual({ now: [], dropped: [tool] });
   });
@@ -557,14 +594,30 @@ describe('readReportOutcome: the answer as Forma acts on it', () => {
   });
 
   // Forma's own actions (2026-11-05).
-  it('keeps a tool only when its name, pane or format is one Forma has, and runs none with a redesign', () => {
+  it('keeps a tool only when its name, pane or format is one Forma has, a redesign\'s too', () => {
     const out = readReportOutcome({
       reply: 'Here it is.',
       action: 'answer',
       tools: [{ name: 'show', pane: 'preview' }, { name: 'show', pane: 'chart' }, { name: 'export', format: 'pdf' }, { name: 'export', format: 'odt' }, { name: 'print' }, { name: 'testData' }],
     });
     expect(out.tools).toEqual([{ name: 'show', pane: 'preview' }, { name: 'export', format: 'pdf' }, { name: 'testData' }]);
-    expect(readReportOutcome({ reply: 'Redesigning.', action: 'rebuild', tools: [{ name: 'designer' }] }).tools).toEqual([]);
+    // Kept with a redesign since the re-audit's R1-04 (2026-11-11): App runs them on the report it makes.
+    expect(readReportOutcome({ reply: 'Redesigning.', action: 'rebuild', tools: [{ name: 'designer' }] }).tools).toEqual([{ name: 'designer' }]);
+  });
+
+  // The re-audit's R1-04 (2026-11-11): a tool asked for with a redesign was dropped without a word.
+  it('says what runs once a redesign is made, carries no undo, and says what a new report will need asked there', () => {
+    const asked: AgentTool[] = [{ name: 'export', format: 'pdf' }, { name: 'undo' }, { name: 'translate', language: 'de' }, { name: 'export', format: 'pdf' }];
+    const then = afterRedesign(asked);
+    expect(then.tools).toEqual([{ name: 'export', format: 'pdf' }, { name: 'translate', language: 'de' }]);
+    expect(then.line).toBe("Once it's made, I'll export it as a PDF and translate it into German.");
+    expect(afterRedesign([{ name: 'designer' }]).line).toBe("Once it's made, I'll open it in the designer.");
+    expect(afterRedesign([{ name: 'undo' }, { name: 'translate' }])).toEqual({ tools: [], line: '' });
+    expect(afterRedesign([])).toEqual({ tools: [], line: '' });
+    const elsewhere = afterRedesign([{ name: 'export', format: 'xlsx' }], true);
+    expect(elsewhere.tools).toEqual([]);
+    expect(elsewhere.line).toBe('Once the new report is made, ask me there to export it as an Excel workbook.');
+    for (const line of [then.line, elsewhere.line]) expect(line).not.toMatch(/not started|button|press|confirm/i);
   });
 
   it('reads an edit with no edits but a tool as an answer that acts, not a redesign', () => {
@@ -611,11 +664,12 @@ describe('readReportOutcome: the answer as Forma acts on it', () => {
   });
 
   // Agent audit items 19 and 20: the whole request for a design, and a different report in a project of its own.
-  it('keeps the brief for a redesign or a new report only, and runs no edit or tool with a new report', () => {
+  it('keeps the brief for a redesign or a new report only, and makes no edit with a new report', () => {
     expect(readReportOutcome({ reply: 'Redesigning.', action: 'rebuild', brief: ' Orders grouped by region, with a total per region ' }).brief).toBe('Orders grouped by region, with a total per region');
     expect(readReportOutcome({ reply: 'Made it bold.', action: 'edit', edits: [{ op: 'font', control: 'a', bold: true }], brief: 'x' })).not.toHaveProperty('brief');
     const fresh = readReportOutcome({ reply: 'A new one.', action: 'new', brief: 'A payslip', edits: [{ op: 'delete', control: 'a' }], tools: [{ name: 'testData' }] });
-    expect(fresh).toEqual({ reply: 'A new one.', wantsReport: false, action: 'new', edits: [], tools: [], brief: 'A payslip' });
+    // Its tools are kept for App to say (R1-04, `afterRedesign(tools, true)`); none runs on this report.
+    expect(fresh).toEqual({ reply: 'A new one.', wantsReport: false, action: 'new', edits: [], tools: [{ name: 'testData' }], brief: 'A payslip' });
   });
 
   it('reads an unknown action from what came with it, and never edits on an answer', () => {
@@ -657,7 +711,7 @@ describe('describeChanges: what the reply says changed', () => {
     const said = describeChanges(report, added);
     expect(said[0]).toMatch(/^added a label to the detail band/);
     expect(describeChanges(added, report)).toEqual(['removed a label']);
-    expect(describeChanges(added, added.replace(unnamed(10), unnamed(40)))).toEqual(['moved the label to 40, 5']);
+    expect(describeChanges(added, added.replace(unnamed(10), unnamed(40)))).toEqual(['moved the label 0.3 in right']);
     expect([...said, ...describeChanges(added, report)].join('\n')).not.toMatch(/XR[A-Z]/);
   });
 
@@ -707,7 +761,29 @@ describe('describeChanges: what the reply says changed', () => {
   it('says nothing for no change, and counts what is past the limit', () => {
     expect(describeChanges(report, report)).toEqual([]);
     const out = edit({ op: 'move', control: 'title', x: 1 }, { op: 'move', control: 'subtitle', x: 1 }, { op: 'move', control: 'customer', x: 1 });
-    expect(describeChanges(report, out.xml, 2)).toEqual(['moved the title to 1, 20', 'moved the subtitle to 1, 70', 'and 1 more changes']);
+    expect(describeChanges(report, out.xml, 2)).toEqual(['moved the title 0.19 in left', 'moved the subtitle 0.19 in left', 'and 1 more change']);
+  });
+
+  // The re-audit's R1-10 (2026-11-11): the list said the file's numbers and the designer's band names.
+  it('says sizes, margins and bands in the report\'s own unit and in words', () => {
+    const out = edit({ op: 'resize', control: 'title', width: 250, height: 40 }, { op: 'move', control: 'subtitle', x: 20, y: 95 }, { op: 'margins', left: 100, top: 25 });
+    expect(describeChanges(report, out.xml)).toEqual([
+      'made the title 2.5 in wide',
+      'moved the subtitle 0.25 in down',
+      'the margins are now 1 in left, 0.5 in right, 0.25 in top and 0.4 in bottom',
+    ]);
+    // A report in tenths of a millimetre is said in millimetres.
+    // Written at the unit's own Dpi, as repairDpi writes it: with none, DevExpress reads 100.
+    const metric = report.replace('ReportUnit="HundredthsOfAnInch"', 'ReportUnit="TenthsOfAMillimeter" Dpi="254"').replace('Name="title"', 'Name="title" Dpi="254"');
+    expect(describeChanges(metric, applyEdits(metric, [{ op: 'move', control: 'title', x: 147 }]).xml)).toEqual(['moved the title 12.7 mm right']);
+    for (const line of describeChanges(report, out.xml)) expect(line).not.toMatch(/\d+, \d+|Detail|\bto \d/);
+  });
+
+  // R1-10: the command menu's Go to says each part as the list does, never "xrLabel3".
+  it('names each named part for Go to by what it is', () => {
+    const labels = '<Item1 Ref="6" ControlType="XRLabel" Name="labelTitle" Text="Invoice" LocationFloat="0,40" SizeF="200,20" /><Item2 Ref="7" ControlType="XRLabel" Name="xrLabel3" Text="Bill to" LocationFloat="0,70" SizeF="200,20" />';
+    const xml = `<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer SerializerVersion="20.1.8.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="R" PageWidth="850" PageHeight="1100" Version="20.1"><Bands><Item1 Ref="1" ControlType="DetailBand" Name="Detail" HeightF="100"><Controls>${labels}</Controls></Item1></Bands></XtraReportsLayoutSerializer>`;
+    expect(controlWords(xml)).toEqual([['labelTitle', 'the title'], ['xrLabel3', 'the label "Bill to"']]);
   });
 
   // The checks said aloud (2026-11-05).

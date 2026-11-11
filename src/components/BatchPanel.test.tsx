@@ -81,6 +81,15 @@ describe('queueing', () => {
     await waitFor(() => expect(document.querySelectorAll('.bp-row')).toHaveLength(2));
   });
 
+  // The re-audit's R4-03 and R1-03 (2026-11-11): the picker offers every report file the intake
+  // converts, and the empty state says what a row tells you without naming "the structural audit".
+  it('offers SSRS, FastReport and Crystal Reports files, and speaks plainly while empty', () => {
+    render(<BatchPanel ready runOne={vi.fn()} onOpen={vi.fn()} onNeedKey={vi.fn()} />);
+    const accept = (document.querySelector('input[type=file]') as HTMLInputElement).accept.split(',');
+    for (const type of ['.repx', '.rdl', '.rdlc', '.frx', '.rpt']) expect(accept).toContain(type);
+    expect(document.querySelector('.bp-empty')?.textContent).not.toMatch(/audit|structural/i);
+  });
+
   it('makes one row per file', () => {
     render(<BatchPanel ready runOne={vi.fn()} onOpen={vi.fn()} onNeedKey={vi.fn()} />);
     choose(['a.png', 'b.png', 'c.png']);

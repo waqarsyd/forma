@@ -1,8 +1,14 @@
 /**
- * What one generation cost, in the form the REPX pane shows it (the status
- * bar's until 2026-11-04).
+ * What one generation cost, in the form the console says it once the answer
+ * is read (geminiService.ts). It was the status bar's readout until
+ * 2026-11-04 and the REPX pane's until 2026-11-11, when the re-audit's R1-07
+ * took it out of the workspace: a token count is how the AI is billed, which
+ * the owner's rule keeps out of what a person reads. The reasoning below for
+ * having the line at all still holds; it is a console line now, written once
+ * per answer with the whole cost, retries included, so it is there even when
+ * the per-request lines scrolled away.
  *
- * ## Why this is in the UI at all
+ * ## Why this was in the UI at all
  *
  * The numbers were already measured -- `geminiService.ts` reads `usageMetadata`
  * off the final stream chunks and has logged them since streaming was added. But

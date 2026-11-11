@@ -223,7 +223,10 @@ export function verdict(item: BatchItem): string {
       // What reading the file left out goes after the audit's word (PL-15):
       // it was dropped, so a PDF read to its eighth page said "clean".
       const note = item.notes ? ` · ${item.notes}` : '';
-      if (!item.repxContent) return 'no REPX was produced';
+      // PLAIN_FINDINGS.empty's words (2026-11-11, the re-audit's R1-03): it
+      // said "no REPX was produced". "content will be lost" below stays, as
+      // the public pages quote it as the row's words.
+      if (!item.repxContent) return 'no report file came back';
       if (item.errors) return `${item.errors} error${item.errors > 1 ? 's' : ''} — content will be lost${note}`;
       if (item.warnings) return `${item.warnings} warning${item.warnings > 1 ? 's' : ''}${note}`;
       return `clean${note}`;

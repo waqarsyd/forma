@@ -107,7 +107,7 @@ describe('a first generation from a picture with Forma\'s draft', () => {
 
   it('says so when the answer is not a draft, rather than building an empty report', async () => {
     stub('I could not read the picture.');
-    await expect(analyzeReportDesign('', [picture], config, undefined, undefined, undefined, { draft })).rejects.toThrow(/correction of Forma's draft could not be read/);
+    await expect(analyzeReportDesign('', [picture], config, undefined, undefined, undefined, { draft })).rejects.toThrow(/^The report came back unreadable\. Send it again\.$/);
   });
 });
 

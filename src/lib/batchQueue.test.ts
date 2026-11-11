@@ -142,7 +142,8 @@ describe('the verdict per row', () => {
   });
 
   it('reports a finished job that produced no file', () => {
-    expect(verdict(item({ status: 'done' }))).toBe('no REPX was produced');
+    // In plain words since the re-audit's R1-03 (2026-11-11); workspaceVoice reads it too.
+    expect(verdict(item({ status: 'done' }))).toBe('no report file came back');
   });
 
   it('prefers the real message for a failure', () => {

@@ -49,7 +49,7 @@ import {
   type ControlRef,
   type EditResult,
 } from './repxEdit';
-import { SUPPORTED_PAGE_SIZES, pageSizeInUnits } from './reportGeometry';
+import { SUPPORTED_PAGE_SIZES, lengthWords, pageSizeInUnits } from './reportGeometry';
 import { readRepxDataSources } from './repxSqlDataSource';
 import { languageAsked, languageName, namesLanguage, syncLocalization } from './repxTranslate';
 import { NOT_FOLLOWED } from './chatTurn';
@@ -882,6 +882,54 @@ export function toolSentence(tool: AgentTool): string {
   }
 }
 
+/** What a tool will do, after "I'll": "export it as a PDF". Empty for one that cannot follow a redesign. */
+function toolVerb(tool: AgentTool): string {
+  switch (tool.name) {
+    case 'show':
+      return `open ${PANE_WORDS[tool.pane ?? 'preview']}`;
+    case 'testData':
+      return 'fill the Preview with sample rows';
+    case 'export':
+      return `export it as ${EXPORT_WORDS_FOR[tool.format ?? 'repx'] ?? `a ${String(tool.format).toUpperCase()} file`}`;
+    case 'designer':
+      return 'open it in the designer';
+    case 'translate': {
+      const language = languageName(tool.language);
+      return language ? `translate it into ${language}` : '';
+    }
+    // Undo after a redesign would take the redesign back: not carried.
+    case 'undo':
+      return '';
+  }
+}
+
+/** "a", "a and b", "a, b and c". */
+const listed = (parts: readonly string[]) => (parts.length < 2 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`);
+
+/**
+ * The tools asked for with a redesign, and what the reply says of them
+ * (2026-11-11, the re-audit's R1-04): an export, the designer or a
+ * translation asked for in the same message as a redesign was dropped
+ * without a word, or said "not started". They run on the report the
+ * redesign makes, once it is made (App's `startRedesign`), and the reply
+ * says so ahead: "Once it's made, I'll export it as a PDF." An undo is not
+ * carried, as it would take the redesign back.
+ *
+ * `elsewhere` is a different report the chat starts in a project of its own
+ * (the "new" action): the request goes there as words, and what was asked
+ * of it is said rather than dropped, since nothing here can run it on a
+ * report that does not exist yet.
+ */
+export function afterRedesign(tools: readonly AgentTool[], elsewhere = false): { tools: AgentTool[]; line: string } {
+  // A new project opens its report on its own; what it would need asked is an export, the designer or a translation.
+  const carried = tools.filter((t) => toolVerb(t) && (!elsewhere || ASK_FIRST_TOOLS.includes(t.name)));
+  const verbs = listed(distinctTools(carried).map(toolVerb));
+  if (!verbs) return { tools: [], line: '' };
+  return elsewhere
+    ? { tools: [], line: `Once the new report is made, ask me there to ${verbs}.` }
+    : { tools: distinctTools(carried), line: `Once it's made, I'll ${verbs}.` };
+}
+
 /**
  * The tools that run only when the person's own words asked for them
  * (2026-11-07, agent audit item 47): a model can be told to export, open the
@@ -895,8 +943,14 @@ export function toolSentence(tool: AgentTool): string {
  */
 export const ASK_FIRST_TOOLS: readonly ToolName[] = ['export', 'designer', 'translate'];
 
-/** An export asked for in so many words: the verb, or a format named after "as", "in" or "to". */
-const EXPORT_WORDS = /\b(export|download|save (it |this |the report )?as|as a (pdf|csv|spreadsheet|workbook|word (document|file)|picture|png|image)|\.?(pdf|xlsx|csv|docx|rtf|html|png|repx)\b)/i;
+/*
+ * An export asked for in so many words: the verb, or a format named after
+ * "as". A format's name alone no longer counts (2026-11-11, the re-audit's
+ * R5-04): "make a DevExpress report from this PDF" names one, and an export
+ * a label in that PDF told the model to bring ran at once. A format after
+ * "in", "into" or "to" is EXPORT_PHRASED's.
+ */
+const EXPORT_WORDS = /\b(export|download|save (it |this |the report )?as|as a (pdf|csv|spreadsheet|workbook|word (document|file)|picture|png|image))\b/i;
 /*
  * The ordinary phrasings (2026-11-11, TC-02): a verb that takes a file out
  * ("give me an Excel file", "send it to Word", "print it"), or a format named
@@ -906,16 +960,50 @@ const EXPORT_WORDS = /\b(export|download|save (it |this |the report )?as|as a (p
  * the first version found "rename the column to Image" and "set the title to
  * Invoice file" running an export the model brought into an ordinary edit.
  */
+/*
+ * A file format by its own name, never an everyday word: "image", "word" and
+ * "file" are left to the verbs above.
+ */
+const FORMAT = String.raw`(pdf|excel|xlsx|spreadsheet|workbook|csv|docx|rtf|html|png|repx)`;
 const EXPORT_PHRASED = new RegExp(
   [
     String.raw`\b(export|download|save|print|send (it|this|the report|me)|give me|get (it|this|me))\b[^.?!]{0,40}\b(pdf|excel|xlsx|spreadsheet|workbook|csv|word|docx|rtf|html|web page|png|image|picture|repx|file)\b`,
-    String.raw`\b(in(to)?|to|as an?)\s+(an?\s+|the\s+)?(pdf|excel|xlsx|spreadsheet|workbook|csv|docx|rtf|html|png|repx)\b`,
+    // "in Excel", "convert it to PDF", "as PDF" (no article since R5-04's review).
+    String.raw`\b(in(to)?|to|as)\s+(an?\s+|the\s+)?${FORMAT}\b`,
     String.raw`\bas an?\s+(\w+\s+)?(image|picture|word|file)\b`,
     String.raw`\bprint (it|this|the report)\b`,
+    /*
+     * The review of R5-04 (2026-11-11): tightened to the verbs above, these
+     * ran nothing, the owner's rule broken the other way. "make it a PDF",
+     * "can I have a PDF?", "I need a pdf copy", "PDF please", and a message
+     * that is a format alone. "have" only as a question: "I have a PDF" is
+     * the source, as "from this PDF" is, and neither matches.
+     */
+    String.raw`\b(make (it |me )?|(can|could|may) (i|we) have |get |want |need |like )(it as )?an?\s+${FORMAT}\b`,
+    String.raw`(?<!\bfrom\s+(\w+\s+)?)\b${FORMAT}\s*,?\s*(please|pls|copy|version)\b`,
+    String.raw`^\s*(an?\s+)?${FORMAT}\s*[.!?]*\s*$`,
   ].join('|'),
   'i',
 );
-const DESIGNER_WORDS = /\b(designer|devexpress|xtrareports?|visual studio|end-user designer)\b/i;
+/*
+ * The designer asked for by a verb aimed at it (2026-11-11, the re-audit's
+ * R5-04): "open it in DevExpress", "edit it in Visual Studio", "open the
+ * designer". The bare names counted until then, so "make a DevExpress report
+ * from this PDF" or "fix the DevExpress header" ran an Open in designer a
+ * label in the file told the model to bring.
+ */
+const DESIGNER_TARGET = String.raw`(?:devexpress|xtrareports?|visual studio|(?:the\s+)?(?:devexpress\s+|end-user\s+|report\s+)?designer)`;
+const DESIGNER_WORDS = new RegExp(
+  [
+    String.raw`\b(?:open|edit|show|see|view|load|launch|work on|finish|tweak|check)\b[^.?!]{0,40}?\b(?:in|with|into|inside)\s+(?:the\s+)?${DESIGNER_TARGET}\b`,
+    String.raw`\b(?:open|launch|start)\s+(?:up\s+)?(?:the\s+)?(?:devexpress\s+|end-user\s+|report\s+)?designer\b`,
+    // "send it to the designer", "take it to DevExpress", "designer please", "designer" alone (R5-04's review).
+    String.raw`\b(?:send|take|move|put|bring|pass)\s+(?:it|this|the report)\s+(?:in)?to\s+(?:the\s+)?${DESIGNER_TARGET}\b`,
+    String.raw`\b(?:devexpress|designer)\s*,?\s*(?:please|pls)\b`,
+    String.raw`^\s*(?:the\s+)?(?:devexpress\s+)?designer\s*[.!?]*\s*$`,
+  ].join('|'),
+  'i',
+);
 
 /** Whether the person's own words ask for a tool, so it may run at once. */
 export function askedFor(tool: AgentTool, words: string): boolean {
@@ -1085,7 +1173,10 @@ export function readReportOutcome(parsed: { reply?: string; action?: string; edi
     wantsReport: action === 'rebuild',
     action,
     edits: action === 'edit' ? edits : [],
-    tools: designs ? [] : tools,
+    // Kept with a redesign too since 2026-11-11 (the re-audit's R1-04): App
+    // runs them on the report it makes (`afterRedesign`), where they were
+    // dropped here without a word.
+    tools,
     ...(brief ? { brief } : {}),
     ...(!designs && toolsDeclined.length ? { toolsDeclined } : {}),
   };
@@ -1150,7 +1241,21 @@ function controlsOf(xml: string): Map<string, Seen> {
  * was what this said until 2026-11-11 ("moved XRLabel to ..."; the full
  * audit's CV-15).
  */
-const named = (key: string, type: string | undefined) => (key.includes('@') ? `the ${plainKind(type)}` : `**${key}**`);
+const named = (key: string, type: string | undefined) => (key.includes('@') ? `the ${plainKind(type)}` : shownKey(key));
+
+const ORDINALS = ['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'];
+/**
+ * A control's own name, where the list must use it: "**total**", and the
+ * second of two controls named alike "the second **total**" (2026-11-11, the
+ * re-audit's R1-10). "total#2" is how the outline tells them apart for the
+ * model, not a name anyone gave it.
+ */
+function shownKey(key: string): string {
+  const twin = /^(.*)#(\d+)$/.exec(key);
+  if (!twin) return `**${key}**`;
+  const n = Number(twin[2]);
+  return `the ${ORDINALS[n] ?? `number ${n}`} **${twin[1]}**`;
+}
 
 /** A control as a line first mentions it: "label **title**", or "a label" when it has no name. */
 function introduced(key: string, type: string | undefined): string {
@@ -1204,8 +1309,20 @@ function plainNames(...reports: ReadonlyMap<string, Seen>[]): Map<string, string
   }
   const uses = new Map<string, number>();
   for (const phrase of said.values()) uses.set(phrase, (uses.get(phrase) ?? 0) + 1);
-  for (const [key, phrase] of said) if (!key.includes('@') && (uses.get(phrase) ?? 0) > 1) said.set(key, `**${key}**`);
+  for (const [key, phrase] of said) if (!key.includes('@') && (uses.get(phrase) ?? 0) > 1) said.set(key, shownKey(key));
   return said;
+}
+
+/**
+ * Each named control of a report as a person reads it, by its own Name, for
+ * the command menu's "Go to" (2026-11-11, the re-audit's R1-10: it listed
+ * "Go to xrLabel3"): "the title", 'the label "Bill to"', the name only where
+ * two would read the same. A name two controls share is listed once, as the
+ * Preview outlines both.
+ */
+export function controlWords(xml: string): [name: string, said: string][] {
+  const plain = plainNames(controlsOf(xml));
+  return [...plain].filter(([key]) => !key.includes('@') && !key.includes('#')).map(([key, said]) => [key, said.replace(/\*\*/g, '')]);
 }
 
 /** A choice in the selection toolbar's Format menu (2026-11-05). */
@@ -1413,6 +1530,15 @@ export function describeChanges(before: string, after: string, limit = 10): stri
   const lines: string[] = [];
   const a = controlsOf(before);
   const b = controlsOf(after);
+  const [ra, rb] = [ROOT.exec(before)?.[1] ?? '', ROOT.exec(after)?.[1] ?? ''];
+  /*
+   * Lengths in the report's own unit, in words (2026-11-11, the re-audit's
+   * R1-10, lib/reportGeometry.ts): "moved the title 0.5 in right", where the
+   * list said "moved **total#2** to 400, 50", the file's numbers with no unit.
+   */
+  const unit = attrOf(rb, 'ReportUnit') ?? undefined;
+  const len = (v: number) => lengthWords(Math.abs(v), unit);
+  const step = (d: number, more: string, less: string) => (round(d) ? [`${len(d)} ${d > 0 ? more : less}`] : []);
   // Each part by what it is, not by the name the designer keeps (UI9).
   const plain = plainNames(a, b);
   for (const [key, { c, band }] of b) {
@@ -1427,8 +1553,11 @@ export function describeChanges(before: string, after: string, limit = 10): stri
     const name = plain.get(key) ?? named(key, was.type);
     if (was.text !== now.text && !now.field) lines.push(`retyped ${name} to "${clip(now.text)}"`);
     const [p, q] = [fileBox(was), fileBox(now)];
-    if (p.x !== q.x || p.y !== q.y) lines.push(`moved ${name} to ${q.x}, ${q.y}`);
-    if (p.width !== q.width || p.height !== q.height) lines.push(`resized ${name} to ${q.width} x ${q.height}`);
+    // How far, and which way, as the page prints: the parse reads each control at its own Dpi.
+    const moves = [...step(now.x - was.x, 'right', 'left'), ...step(now.y - was.y, 'down', 'up')];
+    if ((p.x !== q.x || p.y !== q.y) && moves.length) lines.push(`moved ${name} ${moves.join(' and ')}`);
+    const sized = [...(p.width !== q.width ? [`${len(now.width)} wide`] : []), ...(p.height !== q.height ? [`${len(now.height)} tall`] : [])];
+    if (sized.length) lines.push(`made ${name} ${sized.join(' and ')}`);
     // Each kind of change in its own words (2026-11-07, agent audit item 50):
     // a colour made red read "restyled labelTitle (Arial 18pt)", the
     // appearance having changed and the font not.
@@ -1440,25 +1569,33 @@ export function describeChanges(before: string, after: string, limit = 10): stri
     // BW2), which the designer's default names do.
     lines.push(...cellChanges(name, was, now, /pageheader/i.test(band) || /head/i.test(key.replace(/(group|page|report)_?header/gi, ''))));
   }
-  const [ra, rb] = [ROOT.exec(before)?.[1] ?? '', ROOT.exec(after)?.[1] ?? ''];
   const paper = (attrs: string) => `${attrOf(attrs, 'PaperKind') ?? 'Letter'}${(attrOf(attrs, 'Landscape') ?? '').toLowerCase() === 'true' ? ' landscape' : ''}`;
   if (paper(ra) !== paper(rb)) lines.push(`the paper is now ${paper(rb)}`);
-  if ((attrOf(ra, 'Margins') ?? '') !== (attrOf(rb, 'Margins') ?? '')) lines.push(`the margins are now ${attrOf(rb, 'Margins') ?? 'the default'}`);
-  // A band made taller or shorter (2026-11-07, `bandHeight`).
+  // Each side named, in the report's unit (R1-10): "50, 50, 40, 40" was DevExpress's left, right, top, bottom.
+  const margins = (written: string | null) => {
+    const sides = (written ?? '').split(',').map(Number);
+    return sides.length === 4 && sides.every(Number.isFinite)
+      ? `${len(sides[0])} left, ${len(sides[1])} right, ${len(sides[2])} top and ${len(sides[3])} bottom`
+      : written ?? 'the default';
+  };
+  if ((attrOf(ra, 'Margins') ?? '') !== (attrOf(rb, 'Margins') ?? '')) lines.push(`the margins are now ${margins(attrOf(rb, 'Margins'))}`);
+  // A band made taller or shorter (2026-11-07, `bandHeight`), said by its kind (R1-10: "set the height of Detail to 60").
   const [sa, sb] = [parseAsWritten(before).bands, parseAsWritten(after).bands];
   sb.forEach((band) => {
     const old = sa.find((x) => x.name === band.name);
     const h = (x: PreviewBand) => round(x.height / (x.dpiScale ?? 1));
-    if (old && h(old) !== h(band)) lines.push(`set the height of ${band.name} to ${h(band)}`);
-    // A band the edit added: a group above all (2026-11-09, the chat's `group`).
+    if (old && h(old) !== h(band)) lines.push(`made ${plainBand(band.kind)} ${len(band.height)} tall`);
+    // A band the edit added: a group above all (2026-11-09, the chat's `group`), "a group header", not "the band GroupHeader1".
     const grouping = band.kind === 'GroupHeader' && band.fields.length ? `, grouping by ${band.fields.map((f) => `[${f.field}]`).join(', ')}` : '';
-    if (!old) lines.unshift(`added the band ${band.name}${grouping}`);
+    const kind = plainBand(band.kind);
+    if (!old) lines.unshift(`added ${kind.replace(/^the /, /^the [aeiou]/.test(kind) ? 'an ' : 'a ')}${grouping}`);
   });
   // What the report reads (2026-11-09): the data source the chat or the Data tab wrote.
   const reads = (xml: string) => readRepxDataSources(xml).map((d) => `${d.queries.map((q) => q.name).join(', ')} on connection "${d.connectionName}"`).join('; ');
   const [da, db] = [reads(before), reads(after)];
   if (da !== db) lines.unshift(db ? `the report now reads ${db}` : 'removed the data source');
-  if (lines.length > limit) return [...lines.slice(0, limit), `and ${lines.length - limit} more changes`];
+  const more = lines.length - limit;
+  if (more > 0) return [...lines.slice(0, limit), `and ${more} more change${more === 1 ? '' : 's'}`];
   return lines;
 }
 

@@ -33,9 +33,11 @@ describe('firstReply', () => {
     for (const words of [true, false]) expect(firstReply('repx', words)).not.toMatch(/from your report/);
     expect(firstReply('description', true)).toBe("Here's the report you described.");
     expect(firstReply('picture', true, 'German')).toBe("Here's the report from your page, in German.");
-    // Asked for in two languages (CP-06): said as the chat's translation says it.
-    expect(firstReply('picture', true, 'German', true)).toBe("Here's the report from your page, with German beside its own language. Switch between them in the Preview.");
-    expect(firstReply('description', true, 'French', true)).toBe("Here's the report you described, with French beside its own language. Switch between them in the Preview.");
+    // Asked for in two languages (CP-06): said as the chat's translation says it, in plain
+    // words since the re-audit's R1-05, naming no source language Forma does not know.
+    expect(firstReply('picture', true, 'German', true)).toBe("Here's the report from your page, with German alongside the original; pick the language in the Preview.");
+    expect(firstReply('description', true, 'French', true)).toBe("Here's the report you described, with French alongside the original; pick the language in the Preview.");
+    expect(firstReply('repx', true, 'German', true)).not.toMatch(/beside its own language/);
     for (const kind of ['open', 'picture', 'pdf', 'repx', 'description'] as const) expect(firstReply(kind, true)).not.toMatch(/updated|instructions/);
   });
 });

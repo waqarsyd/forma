@@ -371,7 +371,9 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey, incoming,
         ref={inputRef}
         type="file"
         multiple
-        accept="image/*,application/pdf,.repx,.rdl,.rdlc,.rpt"
+        // .frx since 2026-11-11 (the re-audit's R4-03): folderDrop takes it and
+        // the intake converts it, so the picker offers it as a drop does.
+        accept="image/*,application/pdf,.repx,.rdl,.rdlc,.frx,.rpt"
         className="wb-hidden"
         onChange={(e) => { addFiles(filesFromPicker(e.target.files ?? [])); e.target.value = ''; }}
       />
@@ -451,8 +453,8 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey, incoming,
         <p className="bp-empty">
           Choose or drop the screenshots, PDFs or existing <code>.repx</code> files you want
           converted, or a whole folder of them, and each one becomes its own report: one{' '}
-          <code>.repx</code> per source document, with the structural audit's verdict beside it,
-          downloadable together as a zip.
+          <code>.repx</code> per source document, with a word beside it on whether it came out
+          clean, downloadable together as a zip.
           <br /><br />
           This is different from attaching several files to the composer, which builds
           <em> one</em> report out of several pages.

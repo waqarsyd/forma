@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  alreadyIn,
   applyTranslations,
   collectTexts,
   cultureName,
@@ -12,12 +13,14 @@ import {
   keepsBoth,
   languageAsked,
   languageName,
+  languageToTranslate,
   localizationItems,
   localizeRepx,
   namesLanguage,
   placeTranslations,
   reportCultures,
   retypeInCulture,
+  rightToLeftFor,
   syncLocalization,
   translatable,
   translatedLine,
@@ -290,6 +293,60 @@ describe('a second language beside the first (CP-06)', () => {
     expect(replaced.xml).not.toContain('LocalizationItems');
     // A language with no culture Forma knows is put in place, as before.
     expect(placeTranslations(REPX, new Map([['Invoice', 'Qapla']]), 'Klingon', 'add Klingon').bilingual).toBe(false);
-    expect(translatedLine('German', true)).toMatch(/beside its own language/);
+    // In plain words since the re-audit's R1-05 (2026-11-11), naming no source language.
+    expect(translatedLine('German', true)).toBe('Done, the report now carries German alongside the original; pick the language in the Preview.');
+  });
+
+  // The re-audit's R2-04 (2026-11-11): a report translated into Arabic stayed left to right.
+  it('sets a report translated into a right-to-left language right to left, and only then', () => {
+    const arabic = new Map([['Invoice', 'فاتورة'], ['Quantity', 'الكمية'], ['Amount', 'المبلغ']]);
+    const root = (xml: string) => /<XtraReportsLayoutSerializer\b[^>]*>/.exec(xml)![0];
+    const turned = placeTranslations(REPX, arabic, 'Arabic', 'translate it into Arabic');
+    expect(root(turned.xml)).toMatch(/RightToLeft="Yes"/);
+    expect(root(turned.xml)).toMatch(/RightToLeftLayout="Yes"/);
+    // Positions as written: DevExpress mirrors them under both attributes.
+    expect(turned.xml).toContain('SizeF="200,30"');
+    // German stays left to right; both languages are not turned until measured.
+    expect(root(placeTranslations(REPX, GERMAN, 'German', 'translate it into German').xml)).not.toMatch(/RightToLeft/);
+    expect(root(placeTranslations(REPX, arabic, 'ar', 'add Arabic').xml)).not.toMatch(/RightToLeft/);
+    // A report already in a right-to-left script is turned by App as its page is seen, not here.
+    const hebrew = REPX.replace(/Text="Invoice"/g, 'Text="חשבונית"').replace('Text="Quantity"', 'Text="כמות"').replace('Text="Amount"', 'Text="סכום"').replace('Text="Terms &amp; conditions: net 30 days"', 'Text="תנאים"');
+    expect(root(placeTranslations(hebrew, new Map([['חשבונית', 'فاتورة']]), 'Arabic', 'translate it into Arabic').xml)).not.toMatch(/RightToLeft/);
+  });
+
+  // R2-04's review (2026-11-11): a first report asked for in Arabic, which the AI wrote in Arabic itself.
+  it('sets a first report asked for in Arabic right to left, whoever wrote the Arabic', () => {
+    const root = (xml: string) => /<XtraReportsLayoutSerializer\b[^>]*>/.exec(xml)![0];
+    const written = applyTranslations(REPX, new Map([['Invoice', 'فاتورة'], ['Quantity', 'الكمية'], ['Amount', 'المبلغ'], ['Terms & conditions: net 30 days', 'الشروط']])).xml;
+    const turned = rightToLeftFor(written, 'make this report in Arabic', false);
+    expect(root(turned)).toMatch(/RightToLeftLayout="Yes"/);
+    expect(turned).toContain('SizeF="200,30"');
+    // Once only, and not from a right-to-left page, with both languages, or in English.
+    expect(rightToLeftFor(turned, 'make this report in Arabic', false)).toBe(turned);
+    expect(rightToLeftFor(written, 'make this report in Arabic', true)).toBe(written);
+    expect(rightToLeftFor(written, 'in English and Arabic', false)).toBe(written);
+    expect(rightToLeftFor(REPX, 'make this report in Arabic', false)).toBe(REPX);
+    expect(rightToLeftFor(written, 'make this report in German', false)).toBe(written);
+  });
+});
+
+// The re-audit's R2-01 (2026-11-11): a first report in the language its words name was translated again.
+describe('a first report already in the language asked for', () => {
+  it('is not translated again, by its words or its script', () => {
+    expect(languageToTranslate(REPX, 'make this report in English')).toBeNull();
+    expect(languageToTranslate(REPX, 'make this report in German')).toBe('German');
+    const german = REPX.replace(/Text="Invoice"/g, 'Text="Rechnung"').replace('Text="Quantity"', 'Text="Menge"').replace('Text="Amount"', 'Text="Betrag"').replace('Text="Terms &amp; conditions: net 30 days"', 'Text="Zahlung netto 30 Tage"');
+    expect(languageToTranslate(german, 'in German please')).toBeNull();
+    expect(languageToTranslate(german, 'in English please')).toBe('English');
+    expect(alreadyIn(['합계', '청구서', '날짜'], 'Korean')).toBe(true);
+    expect(alreadyIn(['Total', 'Invoice'], 'Korean')).toBe(false);
+    // A script several languages write proves nothing: Arabic letters may be Urdu.
+    expect(alreadyIn(['فاتورة', 'المبلغ'], 'Urdu')).toBe(false);
+    // Kanji alone may be Chinese; kana is Japanese.
+    expect(alreadyIn(['合計', '請求書'], 'Japanese')).toBe(false);
+    expect(alreadyIn(['ご請求書', 'お支払い'], 'Japanese')).toBe(true);
+    // Nothing named, or both asked for: as before.
+    expect(languageToTranslate(REPX, 'make the title bold')).toBeNull();
+    expect(languageToTranslate(REPX, 'in English and German')).toBe('German');
   });
 });

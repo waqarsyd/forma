@@ -138,6 +138,17 @@ describe('a generation whose model begins repeating itself', () => {
     expect(urls[3]).toContain('model-b');
   });
 
+  it('says so in plain words once every model looped, naming no model id (2026-11-11, R1-01)', async () => {
+    cacheModel('model-a', ['model-a', 'model-b']);
+    stubSequence(runaway, runaway, runaway, runaway, runaway, runaway);
+    // Two models, three tries each: the six requests of one report's budget.
+    const failed = await analyzeReportDesign('', parts, config).catch((e: Error) => e);
+    expect(failed).toBeInstanceOf(Error);
+    const message = (failed as Error).message;
+    expect(message).toMatch(/^The AI kept repeating itself/);
+    expect(message).not.toMatch(/model-a|model-b|\bmodel\b/i);
+  });
+
   it('asks the retry with a little sampling, since at temperature 0 the same request loops the same way (2026-11-04)', async () => {
     cacheModel('model-a', ['model-a', 'model-b']);
     const fetchMock = stubSequence(runaway, runaway, runaway, good);

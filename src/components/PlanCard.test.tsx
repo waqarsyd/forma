@@ -42,7 +42,9 @@ describe('the plan card', () => {
 
   it('says what was started once answered, with nothing left to press', () => {
     const { container } = render(<PlanCard plan={{ ...plan, mode: 'each', answered: 'yes' }} ai="Gemini" />);
-    expect(screen.getByText('Started: 3 reports in Batch.')).toBeTruthy();
+    // The reply above the card says what was made; the card says only that it started (R1-12).
+    expect(screen.getByText('Started.')).toBeTruthy();
+    expect(container.textContent).not.toMatch(/3 reports|from 3 files/);
     expect(container.querySelectorAll('button')).toHaveLength(0);
   });
 });

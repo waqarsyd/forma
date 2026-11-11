@@ -246,7 +246,7 @@ import {
   type ClarificationAnswer,
   type ReportDescriptionRequest,
 } from './lib/promptToReport';
-import { addUsage, summariseUsage, describeUsage, type TokenUsage } from './lib/tokenUsage';
+import { addUsage, type TokenUsage } from './lib/tokenUsage';
 import type { ReadCoverage } from './lib/readCoverage';
 import { designerFileName } from './lib/designerBridge';
 import { groupAttachments, type PreviewMeta } from './lib/attachments';
@@ -1664,8 +1664,13 @@ export default function App() {
    * the message and the replies' changes covering a reload.
    */
   const turnBases = useRef(new Map<string, DesignResult | null>());
-  /** The chat's tools waiting for the render that applies the turn's edits (2026-11-05). */
-  const [pendingTools, setPendingTools] = useState<AgentTool[] | null>(null);
+  /**
+   * The chat's tools waiting for the render that applies the turn's edits
+   * (2026-11-05). `over`, for tools asked for with a redesign (2026-11-11, the
+   * re-audit's R1-04): the report it replaces, so they run on the one it made
+   * and not at all when it made none (a failure, or Stop).
+   */
+  const [pendingTools, setPendingTools] = useState<{ tools: AgentTool[]; over?: DesignResult | null } | null>(null);
   /** The reply that said what they do, which a translation finishes in place (2026-11-11, the full audit's UI3). */
   const toolReplyRef = useRef<string | null>(null);
   /** Runs them; assigned beside `showPlate`, where the handlers it calls are. */
@@ -1675,7 +1680,7 @@ export default function App() {
   useEffect(() => {
     if (!pendingTools) return;
     setPendingTools(null);
-    runToolsRef.current?.(pendingTools);
+    if (pendingTools.over === undefined || reportNow.current !== pendingTools.over) runToolsRef.current?.(pendingTools.tools);
   }, [pendingTools]);
   /** The controls selected on the Preview, by name: what the chat's "this" means (2026-11-05). */
   const [previewSelection, setPreviewSelection] = useState<string[]>([]);
@@ -4223,12 +4228,14 @@ export default function App() {
        * of the language.
        */
       let translated: { xml: string; language: string; bilingual: boolean } | null = null;
-      const askedLanguage = !open && response.repxContent
-        ? await import('./lib/repxTranslate').then((m) => m.languageAsked(currentPrompt || describeRequest?.description || '')).catch(() => null)
-        : null;
+      // Not when the report already reads in it (R2-01): the design request carried the same words.
+      const asked = currentPrompt || describeRequest?.description || '';
+      const tr = !open && response.repxContent ? await import('./lib/repxTranslate').catch(() => null) : null;
+      const askedLanguage = tr?.languageToTranslate(response.repxContent, asked) ?? null;
       if (askedLanguage) {
         try {
-          const done = await translateXml(response.repxContent, askedLanguage, signal, currentPrompt);
+          // With the settings the answer came from (R2-01), a limit's switch included.
+          const done = await translateXml(response.repxContent, askedLanguage, signal, currentPrompt, answering);
           if (signal.aborted) return;
           translated = { xml: done.xml, language: askedLanguage, bilingual: done.bilingual };
         } catch (translateError) {
@@ -4248,7 +4255,8 @@ export default function App() {
       // or a .repx attached) keeps that report's positions, which are already
       // laid out right to left, and turning them again would print it back
       // to front if the answer left out RightToLeftLayout (the PIPE1 review).
-      const repxContent = await asConfigured(response.repxContent, !startedFromReport);
+      // Asked in Arabic from a left-to-right page, whoever wrote the Arabic (R2-04).
+      const repxContent = await asConfigured(tr ? tr.rightToLeftFor(response.repxContent, asked, effectiveConfig().rtl) : response.repxContent, !startedFromReport);
       if (signal.aborted) return;
       const found = response.evidenceFindings ?? [];
       const newResult = {
@@ -4703,16 +4711,27 @@ export default function App() {
 
   /** A redesign under way, so a second one waits for it (2026-11-11, the full audit's PL-19). */
   const redesigningRef = useRef(false);
-  /** A redesign of the open report from words, as a refinement has always run. */
-  const startRedesign = async (words: string) => {
+  /**
+   * A redesign of the open report from words, as a refinement has always run;
+   * then the tools asked for with it, on the report it made (2026-11-11, the
+   * re-audit's R1-04: they were dropped without a word), from the reply `id`
+   * that said they would run.
+   */
+  const startRedesign = async (words: string, then?: { tools: AgentTool[]; id: string }, run = () => runGeneration(words, [], [], INITIAL_RUN)) => {
     if (redesigningRef.current) return;
     redesigningRef.current = true;
+    const [over, session] = [reportNow.current, sessionId.current];
     try {
       setIsAnalyzing(true);
       setProgress(startProgress());
       setError(null);
       activeDescribeRef.current = undefined;
-      await runGeneration(words, [], [], INITIAL_RUN);
+      await run();
+      // Not on another project's report: leaving the session ends the run without a throw.
+      if (then?.tools.length && sessionId.current === session) {
+        toolReplyRef.current = then.id;
+        setPendingTools({ tools: then.tools, over });
+      }
     } finally {
       redesigningRef.current = false;
     }
@@ -5119,7 +5138,7 @@ export default function App() {
     };
 
     if (stagedImages.length === 0 && stagedTexts.length === 0 && !promptText) {
-      setError('Please provide at least an image, PDF, or a text description.');
+      setError('Attach a picture or a PDF, or describe the report.');
       return;
     }
     // A new request clears the last one's error line (agent audit item 53):
@@ -5393,6 +5412,8 @@ export default function App() {
       : currentPrompt;
     /** The words a design is made from: the turn's brief, which carries the whole conversation, or the message. */
     let designWords = steered ? `${steered}\n\n${currentPrompt}` : currentPrompt;
+    /** The tools a design from a picture runs once it is made (R1-04), and the reply that said so. */
+    let carry: { tools: AgentTool[]; id: string } | undefined;
     /*
      * A picture or a file sent with a report open goes to the agent too
      * (2026-11-07, agent audit item 21), which reads it with the report: it
@@ -5543,7 +5564,8 @@ export default function App() {
         if (inventedNames.length && (outcome.action === 'rebuild' || outcome.action === 'new') && !withPictures) {
           outcome.action = 'answer';
           outcome.wantsReport = false;
-          outcome.edits = [];
+          // And no export or translation of the report it left as it was (R1-04).
+          outcome.edits = outcome.tools = [];
           outcome.reply = factsLib!.declinedForFields(inventedNames, facts!);
         } else if (inventedNames.length) {
           outcome.reply = `${outcome.reply}\n\n${factsLib!.inventedNote(inventedNames)}`;
@@ -5558,10 +5580,11 @@ export default function App() {
          * this turn has ended (`startNewFrom`), with the brief as its message.
          */
         if (open && outcome.action === 'new') {
+          // In plainer words (the re-audit's R1-12), and what was asked of the new report said, not dropped (R1-04).
           setMessages(prev => [...prev, withCost({
             id: nextMessageId(),
             role: 'assistant',
-            text: [outcome.reply, 'This report stays in its project; the new one opens in a project of its own.'].filter(Boolean).join(' '),
+            text: [outcome.reply, "I'll make it as a new project and keep this one as it is.", agent!.afterRedesign(agent!.splitTools(outcome.tools ?? [], currentPrompt).now, true).line].filter(Boolean).join(' '),
           })]);
           setStartNewFrom({ text: outcome.brief || currentPrompt, ...(withPictures ? { images: currentPreviews, imageMeta: stagedMeta } : {}) });
           return;
@@ -5626,7 +5649,7 @@ export default function App() {
         const toolReply = (id: string) => {
           if (tools.length) {
             toolReplyRef.current = id;
-            setPendingTools(tools);
+            setPendingTools({ tools });
           }
         };
         // Tools asked for and refused, said under "Not done" (agent audit item 82).
@@ -5737,30 +5760,36 @@ export default function App() {
            * words at once (2026-11-10, the full audit, the owner's rule that a
            * request is carried out and not answered with a question; it asked
            * "Redesign?" with two buttons from 2026-11-05). Stop stops it and
-           * Undo takes it back. The tools asked for with the edits do not run
-           * on a report the edits never reached (agent audit item 38).
+           * Undo takes it back. The tools asked for with the edits run on the
+           * report the redesign makes (2026-11-11, the re-audit's R1-04; until
+           * then "not started", agent audit item 38).
            */
+          const then = agent.afterRedesign(tools);
           setMessages(prev => [...prev, withCost({
             id,
             role: 'assistant',
-            text: `That cannot be changed in place, so I'm redesigning the report from your words; Undo brings this one back.\n\n${agent.changesMarkdown([], [...done.declined, ...tools.map((t) => `${agent.toolLine(t)}: not started, as the edits were not made`)])}`,
+            text: [["That cannot be changed in place, so I'm redesigning the report from your words; Undo brings this one back.", then.line].filter(Boolean).join(' '), agent.changesMarkdown([], done.declined)].filter(Boolean).join('\n\n'),
           })]);
           // Inside the turn, once this step has let go (2026-11-11, the full audit's PL-19).
-          return () => (turn.signal.aborted ? Promise.resolve() : startRedesign(designWords));
+          return () => (turn.signal.aborted ? Promise.resolve() : startRedesign(designWords, { tools: then.tools, id }));
         } else if (open && outcome.wantsReport && !withPictures) {
           /*
            * A change only a redesign can make starts at once (2026-11-10; it
            * was asked first from 2026-11-05, as a costly step). The reply says
            * so; the whole report is rewritten and Undo brings this one back. A
-           * question an older thread holds is answered by a typed yes.
+           * question an older thread holds is answered by a typed yes. The
+           * tools asked for with it run once it is made (R1-04).
            */
+          const id = nextMessageId();
+          // `agent` is loaded whenever a report is open.
+          const then = agent!.afterRedesign(tools);
           setMessages(prev => [...prev, withCost({
-            id: nextMessageId(),
+            id,
             role: 'assistant',
-            text: [outcome.reply, 'Redesigning the whole report now; Undo brings this one back.'].filter(Boolean).join(' '),
+            text: [outcome.reply, 'Redesigning the whole report now; Undo brings this one back.', then.line].filter(Boolean).join(' '),
           })]);
           // Inside the turn, once this step has let go (PL-19), so the queue waits for it.
-          return () => (turn.signal.aborted ? Promise.resolve() : startRedesign(designWords));
+          return () => (turn.signal.aborted ? Promise.resolve() : startRedesign(designWords, { tools: then.tools, id }));
         } else if (!outcome.wantsReport) {
           const id = nextMessageId();
           toolReply(id);
@@ -5771,15 +5800,19 @@ export default function App() {
             setMessages(prev => [...prev, withCost({ id, role: 'assistant', text: text || '' })]);
           }
           return;
-        } else if (outcome.reply || chained.note) {
+        } else {
           // The user does want a report built or redesigned — fall through to
           // generation below, after what the reply says, when it says anything
           // (2026-11-11, the full audit's CV-18: it is left empty, and the
-          // report's own first reply says what was made).
-          setMessages(prev => [...prev, withCost({
-            id: nextMessageId(),
+          // report's own first reply says what was made). A redesign from a
+          // picture carries its tools as one from words does (R1-04).
+          const then = agent?.afterRedesign(tools);
+          const id = nextMessageId();
+          if (then?.tools.length) carry = { tools: then.tools, id };
+          if (outcome.reply || chained.note || then?.line) setMessages(prev => [...prev, withCost({
+            id,
             role: 'assistant',
-            text: outcome.reply,
+            text: [outcome.reply, then?.line].filter(Boolean).join(' '),
           })]);
         }
         // With no report to refine, a description is designed as the Describe
@@ -5816,12 +5849,8 @@ export default function App() {
     }
     if (turn.signal.aborted) return;
 
-    setIsAnalyzing(true);
-    setProgress(startProgress());
-    setError(null);
-
-    activeDescribeRef.current = undefined;
-    await runGeneration(designWords, currentPreviews, currentTexts, INITIAL_RUN, undefined, teamInput, { base: attachedReport ? null : base, askId: newUserMsg.id });
+    // As a redesign starts (no other runs while the turn holds the queue), with what it carries.
+    await startRedesign(designWords, carry, () => runGeneration(designWords, currentPreviews, currentTexts, INITIAL_RUN, undefined, teamInput, { base: attachedReport ? null : base, askId: newUserMsg.id }));
   };
 
   /*
@@ -6011,7 +6040,7 @@ export default function App() {
       const rows = await runTestData(boundFields, { title: result.title, description: activeDescribeRef.current?.description ?? result.content?.slice(0, 600) }, activeDatabase, activeQuery, config, stop);
       if (sessionId.current !== session || stop.aborted) return;
       setTestRows(rows);
-      setSaveNotice(`${rows.length} sample rows generated for the preview.`);
+      setSaveNotice(`The Preview shows ${rows.length} sample rows.`);
     } catch (err: any) {
       if (stop.aborted) return;
       if (isMissingApiKey(err)) {
@@ -6032,16 +6061,12 @@ export default function App() {
    * untouched; beside the report's own language when the words ask for both
    * (CP-06). Shared by a translation asked for in the chat (kept as a
    * revision, with its Undo) and a first report whose words name a language
-   * (2026-11-11, the full audit's CV-14). Run at once, never offered.
+   * (2026-11-11, the full audit's CV-14). Run at once, never offered. The
+   * asking lives in repxTranslate.ts since the re-audit (FIX2A), off this chunk;
+   * a Batch file's or a first report's own settings when given (lib/batchRun.ts, R2-01).
    */
-  const translateXml = async (xml: string, language: string, signal: AbortSignal, words: string, worked?: ReportConfig) => {
-    const [{ collectTexts, placeTranslations }, { translateTexts }, { askWithChain }] = await Promise.all([import('./lib/repxTranslate'), loadGemini(), import('./lib/fallbackChain')]);
-    const texts = collectTexts(xml);
-    if (!texts.length) return { xml, changed: 0, any: false, note: '', by: null, bilingual: false };
-    // A Batch file's own settings when it is one (lib/batchRun.ts).
-    const answered = await askWithChain(worked ?? effectiveConfig(), (asked) => translateTexts(texts.map((t) => t.text), language, asked, signal), signal);
-    return { ...placeTranslations(xml, answered.value, language, words), any: true, note: answered.note, by: answered.by };
-  };
+  const translateXml = (xml: string, language: string, signal: AbortSignal, words: string, worked?: ReportConfig) =>
+    import('./lib/repxTranslate').then((m) => m.translateReportXml(xml, language, signal, words, worked ?? effectiveConfig()));
 
   const translateReport = async (named: string, replyId?: string | null) => {
     const open = result;
@@ -6089,7 +6114,7 @@ export default function App() {
       if (!done.changed) {
         // Said as it is (2026-11-11, the full audit's WS-29): the texts came
         // back unchanged, which is not proof they were already in the language.
-        say('Nothing changed: the texts came back as they were. Try naming the language differently.');
+        say('Nothing changed: no text came back translated. Try naming the language another way.');
         return;
       }
       const next: DesignResult = { ...open, repxContent: await asConfigured(done.xml), timestamp: new Date() };
@@ -6109,7 +6134,8 @@ export default function App() {
     } catch (err: any) {
       if (sessionId.current !== session || turnAbortRef.current?.signal.aborted) return;
       if (isMissingApiKey(err)) setIsConfigOpen(true);
-      else say(`The translation could not be made: ${err?.message || 'the AI did not answer'}.`);
+      // The reason as its own sentence (R1-12): "...: <a message ending in a full stop>." doubled it.
+      else say(`I couldn't translate it. ${err?.message || 'Send it again in a minute.'}`);
     } finally {
       if (sessionId.current === session) {
         setIsChatting(false);
@@ -6144,11 +6170,6 @@ export default function App() {
    * differ (2026-11-11, the PERF batch's review).
    */
   const auditedXmlRef = useRef<string | null>(null);
-  // One object while the report's usage is the same, for the memoised REPX pane (PR-05).
-  const usageLine = useMemo(() => {
-    const short = summariseUsage(result?.usage);
-    return short ? { short, long: describeUsage(result?.usage) } : null;
-  }, [result?.usage]);
   /*
    * With the Data tab's fields (CP-07), and with what Forma's own reading of
    * the page found while the report is the one it was found in (PL-11b).
@@ -6559,6 +6580,14 @@ export default function App() {
     return true;
   };
   /** Everything the command menu offers, from what is open (2026-11-05, components/CommandMenu.tsx). */
+  /** The report's parts in words for Go to, read when the menu opens (2026-11-11, R1-10: "Go to xrLabel3"). */
+  const [goTo, setGoTo] = useState<[string, string][]>([]);
+  useEffect(() => {
+    const xml = result?.repxContent;
+    // Cleared first, so no other report's parts show while this one's load.
+    setGoTo([]);
+    if (isCommandOpen && xml) void import('./lib/agentEdit').then((m) => setGoTo(m.controlWords(xml)));
+  }, [isCommandOpen, result?.repxContent]);
   const buildCommands = (): Command[] => {
     const list: Command[] = [
       { id: 'new', label: 'New report', keys: keysFor('Ctrl+Shift+O'), run: () => chatShortcutRef.current?.('newReport') },
@@ -6614,8 +6643,7 @@ export default function App() {
         );
         if (previewSelection.length) list.push({ id: 'zsel', label: 'Zoom to the selection', keys: keysFor('Shift+2'), run: () => zoomPreview('selection') });
       }
-      const names = new Set([...(result.repxContent ?? '').matchAll(/ControlType="XR(?!TableRow|TableCell)\w+"[^>]*?\sName="([^"]+)"/g)].map((m) => m[1]));
-      for (const name of names) list.push({ id: `go-${name}`, label: `Go to ${name}`, run: () => { showPlate('print'); setChangedHighlight([name]); } });
+      for (const [name, said] of goTo) list.push({ id: `go-${name}`, label: `Go to ${said}`, run: () => { showPlate('print'); setChangedHighlight([name]); } });
     }
     if (messages.some((m) => m.role === 'assistant')) {
       list.push(
@@ -7540,7 +7568,6 @@ export default function App() {
                       xml={result.repxContent || ''}
                       unit={openUnit}
                       audit={repxAudit}
-                      usage={usageLine}
                       coverage={result.coverage ?? null}
                     />
                   </Suspense>

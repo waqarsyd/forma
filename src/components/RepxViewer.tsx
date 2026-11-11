@@ -72,14 +72,16 @@ const RepxViewer = ({
   xml,
   unit,
   audit,
-  usage,
   coverage,
 }: {
   xml: string;
   unit?: string;
   audit?: RepxAudit | null;
-  /** What the generation cost, when the model said (lib/tokenUsage.ts): a short line and its parts. */
-  usage?: { short: string; long: string | null } | null;
+  /*
+   * `usage`, the generation's token count, was shown here until 2026-11-11
+   * (the re-audit's R1-07): how the AI is billed, not what the report is. The
+   * console says it once per answer (lib/tokenUsage.ts).
+   */
   /**
    * What the report kept of the captions and titles Forma read on the page
    * (2026-11-10, lib/readCoverage.ts), when the request carried Forma's draft.
@@ -138,11 +140,11 @@ const RepxViewer = ({
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
         <IconWarn className="text-error" size={28} />
-        <p className="text-sm font-semibold text-on-surface">No REPX was generated for this report.</p>
-        <p className="text-xs text-on-surface-variant max-w-sm">
-          The model returned a specification but no DevExpress XML. Export will fall back to a
-          plain-text file. Try generating again.
-        </p>
+        {/* downloadDesign's own words (2026-11-11, the re-audit's R1-02): this
+            said "The model returned a specification but no DevExpress XML" and
+            promised a plain-text export that Export no longer makes. */}
+        <p className="text-sm font-semibold text-on-surface">This report has no .repx file yet.</p>
+        <p className="text-xs text-on-surface-variant max-w-sm">Send the request again to make one.</p>
       </div>
     );
   }
@@ -175,11 +177,6 @@ const RepxViewer = ({
           <span className="text-[11px] text-on-surface-variant font-mono" data-readout="units">
             {lines.length} lines · {xml.length.toLocaleString()} chars · units {unitsPerInch(unit)}/in
           </span>
-          {usage && (
-            <span className="text-[11px] text-on-surface-variant font-mono" title={usage.long ?? undefined}>
-              {usage.short}
-            </span>
-          )}
           {/* "kept 40/45 read", how many of the texts Forma read the report
               kept, sat here until 2026-11-11 (the full audit's CV-12): a count
               of the reading, not of the report. What is missing is named below. */}

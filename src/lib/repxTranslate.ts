@@ -23,6 +23,8 @@
  * match, escaped as the file writes them, and counts what it changed.
  */
 import { escapeXmlAttribute, unescapeXml } from './xmlEscape';
+import { makeRightToLeft } from './repxRtl';
+import type { ReportConfig } from '../services/geminiService';
 
 const TEXT_CONTROLS = /<(Item\d+)\b([^>]*\bControlType="(?:XRLabel|XRTableCell|XRCheckBox|XRRichText)"[^>]*)>/g;
 const TEXT_ATTR = /\sText="([^"]*)"/;
@@ -494,10 +496,26 @@ export function keepsBoth(words: string): boolean {
   return BOTH_LANGUAGES.test(words);
 }
 
+/** The languages written right to left, by the one English name `languageName` gives. */
+const RIGHT_TO_LEFT = new Set(['Arabic', 'Hebrew', 'Urdu', 'Persian']);
+/** Letters of a script written right to left. */
+const RTL_LETTER = /[\p{Script=Arabic}\p{Script=Hebrew}]/gu;
+
 /**
  * A translation put into the report the way the words ask: beside its own
  * language when they ask for both and Forma knows the language's culture,
  * else in place of it. `bilingual` says which was done.
+ *
+ * Into Arabic, Hebrew, Urdu or Persian, in place of a language written left
+ * to right, the report is set right to left as well (2026-11-11, the
+ * re-audit's R2-04): the translated layout is the left-to-right one, which
+ * DevExpress mirrors under both attributes, so `makeRightToLeft` alone and
+ * never `toLogicalRtl`. Until then an Arabic translation printed with every
+ * caption on the left. Not when the texts were already in a right-to-left
+ * script: that report is the source's own direction, which `asConfigured`
+ * in App turns as the page is seen, and setting the attributes here first
+ * would stop it turning. Not for both languages either, until RepxProbe has
+ * measured how a localised report prints right to left.
  */
 export function placeTranslations(
   xml: string,
@@ -511,12 +529,120 @@ export function placeTranslations(
     if (out.changed) return { ...out, bilingual: true };
   }
   const replaced = applyTranslations(xml, translations);
-  return { xml: syncLocalization(replaced.xml), changed: replaced.changed, bilingual: false };
+  const turned = replaced.changed && RIGHT_TO_LEFT.has(languageName(language)) && !share(collectTexts(xml).map((t) => t.text), RTL_LETTER);
+  return { xml: syncLocalization(turned ? makeRightToLeft(replaced.xml) : replaced.xml), changed: replaced.changed, bilingual: false };
+}
+
+/**
+ * A first report asked for in Arabic, Hebrew, Urdu or Persian from a page
+ * written left to right, set right to left once its texts are in that script
+ * (2026-11-11, the re-audit's review of R2-04). `placeTranslations` turns a
+ * report only when the texts it translated were not in a right-to-left
+ * script, and the design request already carries "in Arabic", so the AI
+ * mostly writes them in Arabic itself: the report then printed left to
+ * right, as the page's own direction (`pageRtl`, App's `asConfigured`) said.
+ * Whatever wrote the texts, the layout is the page's left-to-right one, so
+ * `makeRightToLeft` alone, as for a translation. Not with both languages
+ * kept (see `placeTranslations`), and not when the page was right to left,
+ * which `asConfigured` turns as it is seen.
+ */
+export function rightToLeftFor(xml: string, words: string, pageRtl?: boolean): string {
+  const language = languageAsked(words);
+  if (pageRtl || !language || keepsBoth(words) || !RIGHT_TO_LEFT.has(languageName(language))) return xml;
+  return share(collectTexts(xml).map((t) => t.text), RTL_LETTER) ? makeRightToLeft(xml) : xml;
 }
 
 /** What the reply says of a finished translation, in plain words. */
 export function translatedLine(language: string, bilingual: boolean): string {
+  // "Alongside the original" since the re-audit's R1-05: "beside its own
+  // language" was stiff, and Forma does not know the source's language to name it.
   return bilingual
-    ? `Done, the report now carries ${language} beside its own language. Switch between them in the Preview.`
+    ? `Done, the report now carries ${language} alongside the original; pick the language in the Preview.`
     : `Done, the report is in ${language}. Some labels are longer now; worth a look in the Preview.`;
+}
+
+/** Whether most of the letters in `texts` match `letters` (a global pattern). */
+function share(texts: readonly string[], letters: RegExp, most = 0.6): boolean {
+  const all = texts.join(' ');
+  const total = all.match(/\p{L}/gu)?.length ?? 0;
+  return total > 0 && (all.match(letters)?.length ?? 0) / total >= most;
+}
+
+/*
+ * Whether a report's texts are already in a language (2026-11-11, the
+ * re-audit's R2-01): a first report whose words name a language was always
+ * translated, a second request to the AI, even when the AI had written it in
+ * that language already ("in English" counts too, and the words are in the
+ * design request as well).
+ *
+ * A script that only one listed language writes is read off the letters.
+ * A script several share (Arabic and Urdu, Hindi and Marathi, Russian and
+ * Ukrainian, Chinese and Japanese's kanji) proves nothing, so the request is
+ * made as before. A language in Latin letters is read off the words a
+ * report's captions use, and only for the seven below; it must be the clear
+ * winner, so a page whose words several languages share is translated.
+ */
+const OWN_SCRIPT: Readonly<Record<string, readonly [RegExp, number]>> = {
+  Hebrew: [/\p{Script=Hebrew}/gu, 0.6],
+  Bengali: [/\p{Script=Bengali}/gu, 0.6],
+  Tamil: [/\p{Script=Tamil}/gu, 0.6],
+  Telugu: [/\p{Script=Telugu}/gu, 0.6],
+  Gujarati: [/\p{Script=Gujarati}/gu, 0.6],
+  Punjabi: [/\p{Script=Gurmukhi}/gu, 0.6],
+  Korean: [/\p{Script=Hangul}/gu, 0.6],
+  Greek: [/\p{Script=Greek}/gu, 0.6],
+  Thai: [/\p{Script=Thai}/gu, 0.6],
+  // By its kana alone, which Chinese never writes; its kanji are Chinese's too.
+  Japanese: [/[\p{Script=Hiragana}\p{Script=Katakana}]/gu, 0.2],
+};
+const CAPTION_WORDS: Readonly<Record<string, string>> = {
+  English: 'the and of to for from date total subtotal invoice customer amount description quantity qty price page name address number tax balance due payment order item items report summary account bill ship phone email unit discount signature thank you your terms notes paid received period statement sales product code reference no',
+  German: 'der die das und von für datum gesamt summe rechnung kunde kunden betrag beschreibung menge preis seite adresse anschrift nummer steuer mwst zahlung bestellung artikel bericht konto einheit rabatt unterschrift vielen dank bezahlt zeitraum umsatz produkt zwischensumme netto brutto nr',
+  French: 'le la les et de du des pour facture total client montant quantité quantite prix nom adresse numéro numero taxe tva paiement commande article rapport compte unité remise merci payé période ventes produit',
+  Spanish: 'el los las y del para factura fecha cliente importe descripción descripcion cantidad precio página nombre dirección número impuesto iva pago pedido artículo informe cuenta unidad descuento firma gracias pagado ventas producto',
+  Italian: 'il e di per fattura data totale cliente importo descrizione quantità prezzo indirizzo imposta pagamento ordine articolo conto sconto grazie pagato vendite prodotto',
+  Portuguese: 'o os e do da para fatura cliente valor descrição quantidade preço endereço imposto pagamento pedido artigo relatório conta desconto assinatura obrigado pago vendas produto',
+  Dutch: 'het en van voor factuur datum totaal klant bedrag omschrijving aantal prijs pagina naam adres nummer btw betaling bestelling rekening korting handtekening bedankt betaald verkoop',
+};
+const VOCABULARY = new Map(Object.entries(CAPTION_WORDS).map(([language, list]) => [language, new Set(list.split(' '))] as const));
+
+/** Whether the texts are already in `language`, as far as their letters or words can tell; false when they cannot. */
+export function alreadyIn(texts: readonly string[], language: string): boolean {
+  const name = languageName(language);
+  if (OWN_SCRIPT[name]) return share(texts, ...OWN_SCRIPT[name]);
+  const words = VOCABULARY.get(name);
+  // Latin letters, mostly: a page in another script is not in a Latin-letter language.
+  if (!words || !share(texts, /\p{Script=Latin}/gu, 0.9)) return false;
+  const tokens = texts.join(' ').toLowerCase().match(/\p{L}+/gu) ?? [];
+  const hits = (vocabulary: ReadonlySet<string>) => tokens.filter((t) => vocabulary.has(t)).length;
+  const own = hits(words);
+  const rival = Math.max(0, ...[...VOCABULARY].filter(([other]) => other !== name).map(([, v]) => hits(v)));
+  return own >= 2 && own >= 0.25 * tokens.length && own >= 1.5 * rival;
+}
+
+/**
+ * The language a first report's words ask to translate it into, or null when
+ * they name none or the report is already in it (R2-01). Both languages
+ * asked for are translated as before: the language added is the second.
+ */
+export function languageToTranslate(xml: string, words: string): string | null {
+  const language = languageAsked(words);
+  if (!language || keepsBoth(words)) return language;
+  return alreadyIn(collectTexts(xml).map((t) => t.text), language) ? null : language;
+}
+
+/**
+ * A report's typed texts in another language, asked of the AI once and put
+ * back the way the words ask (`placeTranslations`), through the free chain
+ * when the chosen AI is at a limit. App's until 2026-11-11 (the re-audit's
+ * FIX2A), moved here so the workspace's chunk does not carry it. `config` is
+ * the settings worked out for the request: a first report's own, or a Batch
+ * file's (R2-01 asked for `answering` to reach it).
+ */
+export async function translateReportXml(xml: string, language: string, signal: AbortSignal, words: string, config: ReportConfig) {
+  const texts = collectTexts(xml);
+  if (!texts.length) return { xml, changed: 0, any: false, note: '', by: null, bilingual: false };
+  const [{ translateTexts }, { askWithChain }] = await Promise.all([import('../services/geminiService'), import('./fallbackChain')]);
+  const answered = await askWithChain(config, (asked) => translateTexts(texts.map((t) => t.text), language, asked, signal), signal);
+  return { ...placeTranslations(xml, answered.value, language, words), any: true, note: answered.note, by: answered.by };
 }

@@ -42,16 +42,22 @@ import { renderToString } from 'react-dom/server';
 import RevisionsPanel from '../components/RevisionsPanel';
 import type { Revision } from './revisions';
 
-/** The words that describe the machinery rather than the result. */
-const MACHINERY = /\b(OCR|box reader|vision model|own draft|tokens?|REPX checks?|repair|the model|companion)\b/i;
+/**
+ * The words that describe the machinery rather than the result. "Forma's
+ * draft" joined on 2026-11-11 (the re-audit's R1-01): the service's errors
+ * said "the AI's correction of Forma's draft", which is how a request is made.
+ */
+const MACHINERY = /\b(OCR|box reader|vision model|own draft|Forma's draft|tokens?|REPX checks?|repair|the model|companion)\b/i;
 
 /**
  * The calls whose words reach the person. The Data tab's and the Preview's
  * own lines (`setLine`, `setPasteLine`, `setAsked`, `setLiveLine`) joined on
  * 2026-11-11 (the full audit's BW2): DatabasePanel and ReportPreview speak
- * through them, and until then nothing here read a word either said.
+ * through them, and until then nothing here read a word either said. So did
+ * `markAskError` and `markMessageError` (the re-audit's R1-06), which put an
+ * error on a request in the thread as it is.
  */
-const SPEAKERS = /\b(say|recordRevision|setTeamStage|setError|setSaveNotice|setNotice|setToast|showToast|toast|notices\.push|setLine|setLiveLine|setPasteLine|setAsked)\(/g;
+const SPEAKERS = /\b(say|recordRevision|setTeamStage|setError|setSaveNotice|setNotice|setToast|showToast|toast|notices\.push|setLine|setLiveLine|setPasteLine|setAsked|markAskError|markMessageError)\(/g;
 
 /** The property a posted reply carries its words in. */
 const REPLY_TEXT = /\btext:\s*/g;
@@ -334,6 +340,56 @@ describe('the workspace says results, never machinery', () => {
     const hits = workspaceFiles().flatMap((f) => machineryIn(f));
     for (const a of ALLOWED) {
       expect(hits.some((h) => h.file.endsWith(a.file) && a.text.test(h.text)), `${a.file} ${a.text}`).toBe(true);
+    }
+  });
+});
+
+/*
+ * Words made outside the workspace's files and shown as they are (2026-11-11,
+ * the re-audit's R1-06). The scan above reads App.tsx and the components, so
+ * an error the generation service throws, which App puts on a request, on
+ * Test data, on a translation and on a Batch row word for word, was never
+ * read; nor was the Batch row's own verdict. Both named the model ids, "the
+ * model", "Forma's draft" and "REPX" until R1-01 and R1-03.
+ */
+describe('words made elsewhere and shown as they are', () => {
+  /** The literals of every `new Error(...)` in a file, where they name the machinery. */
+  const thrownIn = (file: string, source = readFileSync(file, 'utf8')): Hit[] => {
+    const hits: Hit[] = [];
+    for (const m of source.matchAll(/\bnew Error\(/g)) {
+      if (inComment(source, m.index!)) continue;
+      for (const text of literalsIn(argumentsAt(source, m.index! + m[0].length))) {
+        if (MACHINERY.test(text)) hits.push({ file, line: source.slice(0, m.index!).split('\n').length, speaker: 'new Error', text });
+      }
+    }
+    return hits;
+  };
+
+  it('reads an error a service throws, and finds what it looks for', () => {
+    const sample = 'if (x) throw new Error(`The model returned no ${what}.`); // new Error("the OCR in a comment")\nreturn new Error("Send it again.");';
+    expect(thrownIn('sample.ts', sample).map((h) => h.text)).toEqual(['The model returned no ….']);
+  });
+
+  it('the generation service throws its errors in plain words', () => {
+    const hits = thrownIn('src/services/geminiService.ts');
+    expect(hits.map(said), hits.map(said).join('\n')).toEqual([]);
+  });
+
+  it("a Batch row's verdict names neither the file format's insides nor the audit", async () => {
+    const { verdict } = await import('./batchQueue');
+    const base = { id: 'a', sourceName: 'a.png', status: 'done' as const, errors: 0, warnings: 0 };
+    const items = [
+      { ...base },
+      { ...base, repxContent: '<x/>' },
+      { ...base, repxContent: '<x/>', warnings: 2 },
+      { ...base, repxContent: '<x/>', errors: 1 },
+      { ...base, status: 'pending' as const },
+      { ...base, status: 'running' as const },
+    ];
+    for (const item of items) {
+      const words = verdict(item as Parameters<typeof verdict>[0]);
+      expect(words).not.toMatch(MACHINERY);
+      expect(words).not.toMatch(/structural audit|\bREPX\b/i);
     }
   });
 });

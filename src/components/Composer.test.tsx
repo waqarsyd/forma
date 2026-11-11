@@ -728,10 +728,11 @@ describe('a shared database', () => {
 
 /* The picker takes what a drop takes (2026-11-11, the full audit's CP-01a, a wave-3 follow-up). */
 describe('the file picker', () => {
-  it('offers SSRS and Crystal Reports files beside a .repx', () => {
+  it('offers SSRS, FastReport and Crystal Reports files beside a .repx', () => {
     draw();
     const accept = (document.querySelector('input[type=file]') as HTMLInputElement).accept.split(',');
-    for (const type of ['.repx', '.rdl', '.rdlc', '.rpt']) expect(accept).toContain(type);
+    // .frx since the re-audit's R4-03: converted by the intake, offered by the picker.
+    for (const type of ['.repx', '.rdl', '.rdlc', '.frx', '.rpt']) expect(accept).toContain(type);
   });
 });
 
