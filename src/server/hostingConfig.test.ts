@@ -213,4 +213,43 @@ describe('firebase.json hosting', () => {
     expect(config.firestore?.rules).toBe('firestore.rules');
     expect(config.emulators?.firestore?.port).toBe(8181);
   });
+
+  /*
+   * The owner's learning pull (scripts/model/pull-learning.ts) is a
+   * collection-group query over every account's `learning`, filtered on `day`
+   * and ordered by `day`, `at` and the name (lib/learningPipeline.ts,
+   * `pullQuery`). Firestore refuses such a query without its index, and no
+   * index file existed until 2026-11-11 (the full audit, LM-04), so the pull
+   * would have stopped at its first page. The file is deployed with the rules
+   * (scripts/deploy.mjs). A field override replaces a field's automatic
+   * indexes, so each keeps all three collection-scope ones (ascending,
+   * descending and array-contains) beside its own: harmless to drop the
+   * last for string fields, but an override that keeps every default is one
+   * nobody has to reason about.
+   */
+  it('declares the indexes the learning pull queries on, and deploys them', () => {
+    expect(config.firestore?.indexes).toBe('firestore.indexes.json');
+    const indexes = JSON.parse(readFileSync('firestore.indexes.json', 'utf8')) as {
+      indexes: { collectionGroup: string; queryScope: string; fields: { fieldPath: string; order: string }[] }[];
+      fieldOverrides: { collectionGroup: string; fieldPath: string; indexes: { order?: string; arrayConfig?: string; queryScope: string }[] }[];
+    };
+    expect(indexes.indexes).toContainEqual({
+      collectionGroup: 'learning',
+      queryScope: 'COLLECTION_GROUP',
+      fields: [
+        { fieldPath: 'day', order: 'ASCENDING' },
+        { fieldPath: 'at', order: 'ASCENDING' },
+      ],
+    });
+    for (const field of ['at', 'day']) {
+      const override = indexes.fieldOverrides.find((o) => o.collectionGroup === 'learning' && o.fieldPath === field);
+      expect(override?.indexes, field).toEqual([
+        { order: 'ASCENDING', queryScope: 'COLLECTION' },
+        { order: 'DESCENDING', queryScope: 'COLLECTION' },
+        { arrayConfig: 'CONTAINS', queryScope: 'COLLECTION' },
+        { order: 'ASCENDING', queryScope: 'COLLECTION_GROUP' },
+      ]);
+    }
+    expect(readFileSync('scripts/deploy.mjs', 'utf8')).toContain("'hosting,firestore:rules,firestore:indexes'");
+  });
 });

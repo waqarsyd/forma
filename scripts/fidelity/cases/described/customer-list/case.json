@@ -1,0 +1,13 @@
+{
+  "prompt": "A customer list with columns customer, city, phone and email.",
+  "notes": "Made up on 2026-11-11 (the full audit's batch LO, the gate for Forma's own model). Description only, scored by scripts/model/gate.ts with Forma's own report from the words. A plain list with no group and no total.",
+  "expect": {
+    "bands": ["ReportHeader", "PageHeader", "Detail", "PageFooter"],
+    "texts": { "all": ["Customer List", "Customer", "City", "Phone", "Email"] },
+    "bindings": { "fields": ["Customer", "City", "Phone", "Email"] },
+    "fontSize": { "median": { "min": 7, "max": 12 } },
+    "margins": { "declared": true },
+    "audit": { "errors": 0, "maxWarnings": 3 },
+    "sectionsMatchBands": true
+  }
+}

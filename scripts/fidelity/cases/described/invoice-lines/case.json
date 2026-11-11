@@ -1,0 +1,13 @@
+{
+  "prompt": "An invoice with line items: columns item, description, quantity, unit price and amount, and a total at the end.",
+  "notes": "Made up on 2026-11-11 (the full audit's batch LO, the gate for Forma's own model). Description only, scored by scripts/model/gate.ts with Forma's own report from the words. A document with line items and a grand total, on the archetype of the owner's invoices.",
+  "expect": {
+    "bands": ["ReportHeader", "PageHeader", "Detail", "ReportFooter"],
+    "texts": { "all": ["Invoice", "Item", "Description", "Quantity", "Unit Price", "Amount", "Total"] },
+    "bindings": { "fields": ["Item", "Description", "Quantity", "UnitPrice", "Amount"] },
+    "fontSize": { "median": { "min": 7, "max": 12 } },
+    "margins": { "declared": true },
+    "audit": { "errors": 0, "maxWarnings": 3 },
+    "sectionsMatchBands": true
+  }
+}

@@ -107,6 +107,20 @@ export interface Archetype {
 
 export interface FormaModel {
   version: 1;
+  /**
+   * Which model this is (2026-11-11, the full audit's batch LO): the first 12
+   * hex digits of the SHA-256 of `modelIdSource`, written by train.ts. Kept
+   * shipped models are stored under it (`forma-model-data/models/<id>.json`),
+   * so a model that made reports worse can be put back by name. Absent on a
+   * model trained before that day.
+   */
+  id?: string;
+  /**
+   * What it was learned from, as counts (batch LO): the owner's reports, the
+   * learning events pulled from people's accounts, and how many accounts those
+   * came from. Absent on a model trained before 2026-11-11.
+   */
+  trainedFrom?: { reports: number; events: number; accounts: number };
   /** How many reports it learned from. */
   reports: number;
   learnedOn: string;
@@ -121,6 +135,23 @@ export interface TrainingReport {
   skeleton: ReportSkeleton;
   /** A generic category (a `CATEGORY_WORDS` key), or null. */
   category: string | null;
+  /**
+   * The account a pulled skeleton came from, as the pull's pseudonym
+   * (`accountKey` in lib/learningPipeline.ts), or absent for one of the
+   * owner's own reports (2026-11-11, batch LO). A font is learned from pulled
+   * skeletons only when enough different accounts use it, so one account
+   * cannot put its font in the shipped model by sending it a thousand times.
+   */
+  account?: string | null;
+}
+
+/**
+ * The text a model's `id` is the hash of: the model as JSON without its `id`,
+ * so the same model always has the same id and an id can be checked.
+ */
+export function modelIdSource(model: FormaModel): string {
+  const { id: _id, ...rest } = model;
+  return JSON.stringify(rest);
 }
 
 const median = (xs: number[]) => {
@@ -136,12 +167,26 @@ function tally<T extends string>(items: T[]): { key: T; share: number }[] {
   return [...m.entries()].sort((a, b) => b[1] - a[1]).map(([key, n]) => ({ key, share: round(n / items.length) }));
 }
 
-/** The house style of a set of skeletons. Fonts used by fewer than `minFontReports` reports are left out. */
-export function learnStyle(skeletons: ReportSkeleton[], minFontReports = 1): HouseStyle {
-  const texts = skeletons.flatMap((k) => skeletonTexts(k));
+/**
+ * The house style of a set of skeletons. A font is learned when at least
+ * `minFontReports` of the owner's own reports use it, or when at least
+ * `minFontAccounts` different accounts' pulled skeletons do (`accounts`, one
+ * entry per skeleton, null for the owner's own; 2026-11-11, batch LO): a
+ * thousand skeletons from one account count once. A family that is '' (what
+ * the learning scrub left of a name it could not keep) is never a font.
+ */
+export function learnStyle(skeletons: ReportSkeleton[], minFontReports = 1, accounts: readonly (string | null | undefined)[] = [], minFontAccounts = 3): HouseStyle {
+  const texts = skeletons.flatMap((k) => skeletonTexts(k)).filter((t) => !t.font || t.font.family !== '');
   const fontReports = new Map<string, number>();
-  for (const k of skeletons) for (const f of new Set(skeletonTexts(k).flatMap((t) => (t.font ? [t.font.family] : [])))) fontReports.set(f, (fontReports.get(f) ?? 0) + 1);
-  const allowed = (f: string) => (fontReports.get(f) ?? 0) >= minFontReports;
+  const fontAccounts = new Map<string, Set<string>>();
+  skeletons.forEach((k, i) => {
+    const account = accounts[i];
+    for (const f of new Set(skeletonTexts(k).flatMap((t) => (t.font && t.font.family ? [t.font.family] : [])))) {
+      if (account) fontAccounts.set(f, (fontAccounts.get(f) ?? new Set<string>()).add(account));
+      else fontReports.set(f, (fontReports.get(f) ?? 0) + 1);
+    }
+  });
+  const allowed = (f: string) => (fontReports.get(f) ?? 0) >= minFontReports || (fontAccounts.get(f)?.size ?? 0) >= minFontAccounts;
   const fonts = tally(texts.flatMap((t) => (t.font && allowed(t.font.family) ? [t.font.family] : [])))
     .slice(0, 8)
     .map(({ key, share }) => ({ family: key, share }));
@@ -291,12 +336,12 @@ export function archetypeLabel(k: ReportSkeleton): string {
 /** Learn the model from a set of reports: the house style and `k` archetypes. */
 export function learnModel(
   set: TrainingReport[],
-  options: { k?: number; date?: string; minFontReports?: number; minCategoryReports?: number; seed?: number } = {},
+  options: { k?: number; date?: string; minFontReports?: number; minFontAccounts?: number; minCategoryReports?: number; seed?: number } = {},
 ): FormaModel {
   const vectors = set.map((r) => skeletonFeatures(r.skeleton));
   const scale = scaleOf(vectors);
   const { medoids, assignment } = kMedoids(vectors, options.k ?? 10, scale, { seed: options.seed });
-  const style = learnStyle(set.map((r) => r.skeleton), options.minFontReports ?? 1);
+  const style = learnStyle(set.map((r) => r.skeleton), options.minFontReports ?? 1, set.map((r) => r.account), options.minFontAccounts ?? 3);
   // A face the house style does not list (one few reports use) is written as
   // the house face, so the model names no font only one report had.
   const known = new Set(style.fonts.map((f) => f.family));
@@ -365,7 +410,8 @@ export function unexpectedStrings(model: FormaModel): string[] {
   const found = new Set<string>();
   const visit = (v: unknown, key: string) => {
     if (typeof v === 'string') {
-      const ok = allowed.has(v) || (key === 'id' && /^a\d+$/.test(v)) || (key === 'label' && /^(Label|Form|List|Grouped register|Document with line items)(, landscape)?$/.test(v));
+      // An archetype's id is a1, a2...; the model's own (batch LO) is 12 hex digits.
+      const ok = allowed.has(v) || (key === 'id' && (/^a\d+$/.test(v) || /^[0-9a-f]{12}$/.test(v))) || (key === 'label' && /^(Label|Form|List|Grouped register|Document with line items)(, landscape)?$/.test(v));
       if (!ok) found.add(v);
     } else if (Array.isArray(v)) v.forEach((x) => visit(x, key));
     else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) visit(x, k);

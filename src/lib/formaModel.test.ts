@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { parseReportStructure } from './reportPreview';
 import { FEATURE_NAMES, paperName, skeletonFeatures, skeletonFromLayout, skeletonOf, type ReportSkeleton } from './reportSkeleton';
-import { categoryOf, kMedoids, learnModel, rankArchetypes, unexpectedStrings, type FormaModel, type TrainingReport } from './formaModel';
+import { categoryOf, kMedoids, learnModel, modelIdSource, rankArchetypes, unexpectedStrings, type FormaModel, type TrainingReport } from './formaModel';
 
 const ROOT = 'SerializerVersion="20.1.3.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a" Version="20.1"';
 
@@ -172,6 +172,34 @@ describe('learnModel', () => {
     tampered.style.fonts.push({ family: 'ClientNameFont', share: 0 });
     tampered.archetypes[0].skeleton.bands[1].controls[0].font!.family = 'Wingdings';
     expect(unexpectedStrings(tampered).sort()).toEqual(['Confidential Client Ltd', 'Wingdings']);
+  });
+
+  /*
+   * 2026-11-11, the full audit (LM-07, LM-24b): one account sending a
+   * thousand skeletons in its own font must not put that font in the shipped
+   * model, and a family the learning scrub emptied is no font at all.
+   */
+  it('learns a pulled font only from enough different accounts, and never a family that is empty', () => {
+    const withFont = (family: string) => {
+      const k = skeleton(report({ name: 'p' }));
+      for (const b of k.bands) for (const c of b.controls) if (c.font) c.font = { ...c.font, family };
+      return k;
+    };
+    const own = set.map((r) => ({ ...r }));
+    const oneAccount = Array.from({ length: 50 }, () => ({ skeleton: withFont('Segoe UI'), category: null, account: 'acct-1' }));
+    expect(learnModel([...own, ...oneAccount], { k: 2, minFontReports: 5 }).style.fonts.map((f) => f.family)).not.toContain('Segoe UI');
+    const threeAccounts = ['acct-1', 'acct-2', 'acct-3'].map((account) => ({ skeleton: withFont('Segoe UI'), category: null, account }));
+    expect(learnModel([...own, ...threeAccounts], { k: 2, minFontReports: 5 }).style.fonts.map((f) => f.family)).toContain('Segoe UI');
+    const emptied = Array.from({ length: 10 }, () => ({ skeleton: withFont(''), category: null }));
+    expect(learnModel([...own, ...emptied], { k: 2 }).style.fonts.map((f) => f.family)).not.toContain('');
+  });
+
+  it('carries an id the leak check accepts, made from the model without it', () => {
+    const withId = { ...model, id: '0123456789ab', trainedFrom: { reports: 6, events: 0, accounts: 0 } };
+    expect(unexpectedStrings(withId)).toEqual([]);
+    expect(modelIdSource(withId)).toBe(modelIdSource({ ...withId, id: 'ffffffffffff' }));
+    expect(modelIdSource(withId)).not.toContain('0123456789ab');
+    expect(unexpectedStrings({ ...withId, id: 'Client Ltd' })).toEqual(['Client Ltd']);
   });
 
   it('clusters the same way every time for the same set', () => {

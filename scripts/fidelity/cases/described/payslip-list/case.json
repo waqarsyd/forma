@@ -1,0 +1,13 @@
+{
+  "prompt": "A payslip for each employee with employee, department, basic salary, allowances, deductions and net pay.",
+  "notes": "Made up on 2026-11-11 (the full audit's batch LO, the gate for Forma's own model). Description only, scored by scripts/model/gate.ts with Forma's own report from the words. The payroll category's usual fields, named in the words.",
+  "expect": {
+    "bands": ["ReportHeader", "Detail"],
+    "texts": { "all": ["Payslip", "Employee", "Department", "Basic Salary", "Allowances", "Deductions", "Net Pay"] },
+    "bindings": { "fields": ["Employee", "Department", "BasicSalary", "Allowances", "Deductions", "NetPay"] },
+    "fontSize": { "median": { "min": 7, "max": 12 } },
+    "margins": { "declared": true },
+    "audit": { "errors": 0, "maxWarnings": 3 },
+    "sectionsMatchBands": true
+  }
+}

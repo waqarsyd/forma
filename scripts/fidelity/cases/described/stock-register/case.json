@@ -1,0 +1,13 @@
+{
+  "prompt": "A stock register grouped by warehouse, with columns item, description, opening, received, issued and balance, and totals of each warehouse.",
+  "notes": "Made up on 2026-11-11 (the full audit's batch LO, the gate for Forma's own model). Description only: no source, scored by scripts/model/gate.ts with Forma's own report from the words (generateOffline), never by an AI. A register grouped by a field with a total of each group, the shape the owner's stock reports have most.",
+  "expect": {
+    "bands": ["ReportHeader", "PageHeader", "GroupHeader", "Detail", "GroupFooter"],
+    "texts": { "all": ["Stock Register", "Item", "Description", "Opening", "Received", "Issued", "Balance", "Warehouse"] },
+    "bindings": { "fields": ["Warehouse", "Item", "Description", "Opening", "Received", "Issued", "Balance"] },
+    "fontSize": { "median": { "min": 7, "max": 12 } },
+    "margins": { "declared": true },
+    "audit": { "errors": 0, "maxWarnings": 3 },
+    "sectionsMatchBands": true
+  }
+}

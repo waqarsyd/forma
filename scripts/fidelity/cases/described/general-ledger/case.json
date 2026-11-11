@@ -1,0 +1,13 @@
+{
+  "prompt": "A general ledger grouped by account, with date, reference, description, debit, credit and balance, and totals per account.",
+  "notes": "Made up on 2026-11-11 (the full audit's batch LO, the gate for Forma's own model). Description only, scored by scripts/model/gate.ts with Forma's own report from the words. The accounts category grouped by account, with dates and amounts side by side.",
+  "expect": {
+    "bands": ["ReportHeader", "PageHeader", "GroupHeader", "Detail", "GroupFooter"],
+    "texts": { "all": ["General Ledger", "Date", "Reference", "Description", "Debit", "Credit", "Balance", "Account"] },
+    "bindings": { "fields": ["Account", "Date", "Reference", "Description", "Debit", "Credit", "Balance"] },
+    "fontSize": { "median": { "min": 7, "max": 12 } },
+    "margins": { "declared": true },
+    "audit": { "errors": 0, "maxWarnings": 3 },
+    "sectionsMatchBands": true
+  }
+}

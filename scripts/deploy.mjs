@@ -2,14 +2,19 @@
 /**
  * One deploy, the same every time (2026-11-07, site audit items 3, 100, 101).
  *
- *   node scripts/deploy.mjs              build, check, and deploy main: hosting and the rules
+ *   node scripts/deploy.mjs              build, check, and deploy main: hosting, the rules and the indexes
  *   node scripts/deploy.mjs --preview    the same build to a preview channel for 7 days
  *   node scripts/deploy.mjs --dry-run    everything but the deploy
  *
  * For the owner to run. It is deliberately not an npm script: the committed
  * permission list allows `npm run *`, and a deploy changes what the public
  * site serves, so it must never be one an agent can start without asking
- * (CLAUDE.md, "Deploying is two commands, and both publish").
+ * (CLAUDE.md, "Deploying is the owner's, and it publishes").
+ *
+ * Firestore's indexes go with the rules since 2026-11-11 (the full audit,
+ * LM-04): firestore.indexes.json declares the collection-group index the
+ * owner's learning pull (scripts/model/pull-learning.ts) queries on, which no
+ * deploy had made, so the pull's query was refused.
  *
  * The live site served the build of 28 October for weeks while README said it
  * was main, and the sharing rules were never deployed with the code that
@@ -17,7 +22,7 @@
  * (a clean tree, on main, equal to origin/main), runs every check CI runs,
  * builds without the handwriting model unless asked (--with-handwriting, item
  * 2) and with PaddleOCR's models (npm run fetch:paddle, 2026-11-10), deploys
- * hosting and firestore.rules together, then runs
+ * hosting, firestore.rules and firestore.indexes.json together, then runs
  * scripts/smoke.mjs against the live sites expecting this commit, which the
  * page now carries in <meta name="forma-version">.
  *
@@ -48,6 +53,10 @@
  * building; after the release is made, `gh release upload` attaches it. When
  * it names an earlier release, that release must carry the zip (2026-11-10),
  * or this stops too: the download page links it whatever release this is.
+ * Since 2026-11-11 (SD-21) "carry" means the same bytes: GitHub's digest of
+ * the asset must be the manifest's SHA-256 and its size the manifest's
+ * (scripts/designer-asset.mjs), and without the GitHub CLI signed in to ask,
+ * this stops rather than taking the release on trust.
  *
  * Pure ASCII, as every script here.
  */
@@ -56,6 +65,10 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { designerAssetProblem, manifestOf } from './designer-asset.mjs';
+
+/** What a deploy of main sends: the site, the rules and the indexes, together. */
+const DEPLOY_ONLY = 'hosting,firestore:rules,firestore:indexes';
 
 const args = new Set(process.argv.slice(2));
 const preview = args.has('--preview');
@@ -163,19 +176,24 @@ if (notes) {
     // while /download went live linking a 404.
     const where = field('tag');
     if (!ghReady) {
-      console.log(`The Forma Designer download is on release ${where}, which this cannot check without the GitHub CLI signed in.`);
-    } else {
-      const view = spawnSync(`gh release view ${where} --repo waqarsyd/forma --json assets`, { shell: true, encoding: 'utf8' });
-      const assets = view.status === 0 ? (JSON.parse(view.stdout || '{}').assets || []).map((a) => a.name) : null;
-      if (!assets || !assets.includes(field('file'))) {
-        console.error(
-          `Stopped: src/lib/designerRelease.ts says the Forma Designer download is on release ${where}, ` +
-            (assets ? `which carries no ${field('file')}. ` : 'which does not exist. ') +
-            `Attach it (gh release upload ${where} "tools/RepxDesigner/bin/package/${field('file')}" --repo waqarsyd/forma), ` +
-            'or point the manifest at a release that has it, so /download does not link a 404.',
-        );
-        process.exit(1);
-      }
+      // Stops rather than logs (SD-21): a deploy that cannot see the release
+      // would publish a download page linking whatever is, or is not, there.
+      console.error(
+        `Stopped: the Forma Designer download is on release ${where}, which this cannot check without the GitHub CLI signed in. ` +
+          'Sign in (gh auth login) and run this again.',
+      );
+      process.exit(1);
+    }
+    const view = spawnSync(`gh release view ${where} --repo waqarsyd/forma --json assets`, { shell: true, encoding: 'utf8' });
+    const assets = view.status === 0 ? JSON.parse(view.stdout || '{}').assets || [] : null;
+    const problem = designerAssetProblem(assets, manifestOf(manifest));
+    if (problem) {
+      console.error(
+        `Stopped: src/lib/designerRelease.ts says the Forma Designer download is on release ${where}, but ${problem}. ` +
+          `Attach the zip the manifest describes (gh release upload ${where} "tools/RepxDesigner/bin/package/${field('file')}" --repo waqarsyd/forma --clobber), ` +
+          'or point the manifest at a release that has it, so /download links the file it describes.',
+      );
+      process.exit(1);
     }
   }
 }
@@ -203,7 +221,7 @@ run('npm run check:size');
 
 if (dryRun) {
   if (designerZip) console.log(`\nThe release would carry the Forma Designer download: ${designerZip}`);
-  console.log('\nDry run: every check passed and dist/ is built. Nothing was deployed.');
+  console.log(`\nDry run: every check passed and dist/ is built. Nothing was deployed; a deploy would send ${DEPLOY_ONLY.split(',').join(', ')}.`);
   process.exit(0);
 }
 
@@ -213,7 +231,7 @@ if (preview) {
   console.log('\nPreview deployed. The live site and the rules are unchanged.');
   process.exit(0);
 }
-run('npx firebase deploy --only hosting,firestore:rules');
+run(`npx firebase deploy --only ${DEPLOY_ONLY}`);
 
 // 4. The live sites, expecting this commit. Firebase's edge can go on serving
 // the previous index.html for some seconds after a release: on 2026-11-08 the
@@ -234,7 +252,7 @@ for (let attempt = 1; ; attempt++) {
   console.log('The live check failed; trying again in 20 seconds, as a release can take a moment to reach every edge.');
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20_000);
 }
-console.log(`\nDeployed ${commit.slice(0, 12)} to every site, with the rules, and the live checks passed.`);
+console.log(`\nDeployed ${commit.slice(0, 12)} to every site, with the rules and the indexes, and the live checks passed.`);
 
 // 5. The release (item 43): the tag on this commit, then its GitHub release.
 if (notes) {

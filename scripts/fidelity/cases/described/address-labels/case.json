@@ -1,0 +1,13 @@
+{
+  "prompt": "Address labels with name, street, city and postcode.",
+  "notes": "Made up on 2026-11-11 (the full audit's batch LO, the gate for Forma's own model). Description only, scored by scripts/model/gate.ts with Forma's own report from the words. The label category: a small page, one record per label.",
+  "expect": {
+    "bands": ["Detail"],
+    "texts": { "all": ["Name", "Street", "City", "Postcode"] },
+    "bindings": { "fields": ["Name", "Street", "City", "Postcode"] },
+    "fontSize": { "median": { "min": 7, "max": 14 } },
+    "margins": { "declared": true },
+    "audit": { "errors": 0, "maxWarnings": 3 },
+    "sectionsMatchBands": true
+  }
+}
