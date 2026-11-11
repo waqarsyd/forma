@@ -17,6 +17,15 @@
  *
  * Everything is in this browser's localStorage, and the Memory section of
  * Settings shows each memory, to switch off, change or forget.
+ *
+ * Kept per account since 2026-11-11 (the full audit's WS-28, LM-18, SA-07 and
+ * SE-17): `forma.memory:<uid>` for whoever is signed in, and `forma.memory`,
+ * the one key there was until then, for use signed out. On a shared computer
+ * the next person to sign in was told the last one's "remember" lines and kept
+ * style, and so was their AI on every request. App names the account with
+ * `setMemoryAccount` as it signs in and out; a caller that knows it may pass it.
+ * The signed-out key is not moved into an account on sign-in: whose it was
+ * cannot be known.
  */
 import { parseReportStructure } from './reportPreview';
 import { skeletonOf } from './reportSkeleton';
@@ -44,6 +53,13 @@ export interface Memory {
 
 /** The style one kept report leaves: no word of it. */
 export interface KeptStyle {
+  /**
+   * Which report it is (2026-11-11, the full audit's LM-28): its project's id,
+   * or a hash of its skeleton when it has no project. Keeping one report five
+   * times counted it five times until then, and two are enough to make a style.
+   * Absent on a style kept before the key.
+   */
+  key?: string;
   at: string;
   paper: string;
   landscape: boolean;
@@ -64,9 +80,22 @@ export const MAX_KEPT = 30;
 
 const EMPTY: MemoryState = { memories: [], kept: [], learnFromKept: true };
 
-export function readMemory(): MemoryState {
+/** Who is signed in, whose memory a read or write without one reaches; null signed out. */
+let account: string | null = null;
+
+/** Names the account signed in, or null on signing out. */
+export function setMemoryAccount(uid: string | null): void {
+  account = uid || null;
+}
+
+/** Where an account's memory is kept: its own key, or the signed-out one. */
+export function memoryKey(uid: string | null = account): string {
+  return uid ? `${STORAGE_KEY}:${uid}` : STORAGE_KEY;
+}
+
+export function readMemory(uid: string | null = account): MemoryState {
   try {
-    const s = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') as Partial<MemoryState> | null;
+    const s = JSON.parse(localStorage.getItem(memoryKey(uid)) || 'null') as Partial<MemoryState> | null;
     if (!s) return { ...EMPTY };
     return {
       memories: Array.isArray(s.memories) ? s.memories : [],
@@ -78,9 +107,9 @@ export function readMemory(): MemoryState {
   }
 }
 
-export function writeMemory(state: MemoryState): void {
+export function writeMemory(state: MemoryState, uid: string | null = account): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(memoryKey(uid), JSON.stringify(state));
   } catch {
     /* storage disabled or full: memory holds for this session only */
   }
@@ -174,23 +203,37 @@ export function rememberedReply(m: Memory): string {
     : "Got it, I'll keep that in mind for every report. You can change it in Settings, under Memory.";
 }
 
-/** The style a kept report leaves, or null when it cannot be read. */
-export function keptStyleOf(repx: string, now = new Date()): KeptStyle | null {
+/** A short hash of a string (FNV-1a, 32 bits), enough to tell one kept report from another. */
+function hashOf(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
+/**
+ * The style a kept report leaves, or null when it cannot be read. `key` is
+ * the report's project id when it has one; otherwise its skeleton's hash.
+ */
+export function keptStyleOf(repx: string, now = new Date(), key?: string): KeptStyle | null {
   try {
     const skeleton = skeletonOf(parseReportStructure(repx));
     if (!skeleton.bands.length) return null;
     const style = learnStyle([skeleton]);
     const sizes: KeptStyle['sizes'] = {};
     for (const role of ['title', 'caption', 'value', 'total'] as const) if (style.roles[role]) sizes[role] = style.roles[role]!.size;
-    return { at: now.toISOString(), paper: skeleton.paper, landscape: skeleton.landscape, fontFamily: style.fonts[0]?.family ?? 'Arial', sizes };
+    return { key: key || `s${hashOf(JSON.stringify(skeleton))}`, at: now.toISOString(), paper: skeleton.paper, landscape: skeleton.landscape, fontFamily: style.fonts[0]?.family ?? 'Arial', sizes };
   } catch {
     return null;
   }
 }
 
-/** Keep a report's style, the newest MAX_KEPT. */
+/** Keep a report's style, the newest MAX_KEPT; a report kept again replaces what it left before. */
 export function rememberKept(state: MemoryState, style: KeptStyle): MemoryState {
-  return { ...state, kept: [...state.kept, style].slice(-MAX_KEPT) };
+  const others = style.key ? state.kept.filter((k) => k.key !== style.key) : state.kept;
+  return { ...state, kept: [...others, style].slice(-MAX_KEPT) };
 }
 
 const most = <T>(xs: T[]): T | undefined => {

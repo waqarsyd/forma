@@ -30,6 +30,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getCountFromServer,
   getDoc,
   getDocs,
   limit,
@@ -71,9 +72,39 @@ export function learningDocRef(db: Firestore, uid: string, eventId: string): Doc
   return doc(db, USERS_COLLECTION, uid, LEARNING_COLLECTION, eventId);
 }
 
-/** One event into the account, with the `userId` the rules require beside the event's own fields. */
+/**
+ * How many events the account holds (2026-11-11, the full audit, LM-30), for
+ * Settings: an aggregation, billed as one read per thousand events, so the
+ * count never downloads what it counts.
+ */
+export async function countLearning(db: Firestore, uid: string): Promise<number> {
+  return (await getCountFromServer(learningCollectionRef(db, uid))).data().count;
+}
+
+/**
+ * One event into the account, with the `userId` the rules require beside the
+ * event's own fields.
+ *
+ * An event the account already holds counts as sent (2026-11-11, the PRIV
+ * review). The rules allow `create` and never `update`, so a second write of
+ * the same id is refused; and that happens whenever a write landed but the
+ * device never marked it sent (the tab closed in the moment between, the
+ * mark failed, or the immediate send and a sign-in flush raced). Refused as
+ * a failure, that one event would sort oldest at every later flush and hold
+ * back everything newer for good. So a refusal is answered by reading the
+ * document: there, it went; absent, the refusal stands.
+ */
 export async function writeLearning(db: Firestore, uid: string, event: DocumentData & { id: string }): Promise<void> {
-  await setDoc(learningDocRef(db, uid, event.id), { ...event, userId: uid });
+  const ref = learningDocRef(db, uid, event.id);
+  try {
+    await setDoc(ref, { ...event, userId: uid });
+  } catch (err) {
+    if ((err as { code?: unknown } | null)?.code === 'permission-denied') {
+      const held = await getDoc(ref).catch(() => null);
+      if (held?.exists()) return;
+    }
+    throw err;
+  }
 }
 
 /**
@@ -191,6 +222,32 @@ export const QUOTA_DOC_ID = 'quota';
 
 export function quotaDocRef(db: Firestore, uid: string): DocumentReference {
   return doc(db, USERS_COLLECTION, uid, META_COLLECTION, QUOTA_DOC_ID);
+}
+
+/**
+ * The account's two learning switches (2026-11-11, the full audit, LM-01 and
+ * SA-13), at `users/{uid}/meta/learning` as `{ structure, full }`. They lived
+ * in one browser's storage only, so the whole-report switch one person turned
+ * on stayed on for the next person to sign in there, and turning learning off
+ * on one computer left it on at every other. `firestore.rules` pins the two
+ * booleans; `deleteAccountData` removes the document.
+ */
+export const LEARNING_PREFS_DOC_ID = 'learning';
+
+export function learningPrefsDocRef(db: Firestore, uid: string): DocumentReference {
+  return doc(db, USERS_COLLECTION, uid, META_COLLECTION, LEARNING_PREFS_DOC_ID);
+}
+
+/** The account's switches, or null when it has never set them. */
+export async function readLearningPrefs(db: Firestore, uid: string): Promise<{ structure: boolean; full: boolean } | null> {
+  const snap = await getDoc(learningPrefsDocRef(db, uid));
+  if (!snap.exists()) return null;
+  const data = snap.data();
+  return { structure: data.structure === true, full: data.full === true };
+}
+
+export async function writeLearningPrefs(db: Firestore, uid: string, prefs: { structure: boolean; full: boolean }): Promise<void> {
+  await setDoc(learningPrefsDocRef(db, uid), { structure: prefs.structure === true, full: prefs.full === true });
 }
 
 /** Thrown when an account already has `MAX_SHARES` shares. */
@@ -378,6 +435,10 @@ export async function deleteAccountData(db: Firestore, uid: string): Promise<voi
   // The count itself, at zero now (2026-11-08); tolerated like the vault.
   await deleteDoc(quotaDocRef(db, uid)).catch((error) => {
     console.warn('Could not remove the share count while deleting the account:', error);
+  });
+  // The learning switches (2026-11-11); tolerated like the count: two booleans, nothing of the person's work.
+  await deleteDoc(learningPrefsDocRef(db, uid)).catch((error) => {
+    console.warn('Could not remove the learning switches while deleting the account:', error);
   });
 
   await deleteDoc(vaultDocRef(db, uid)).catch((error) => {

@@ -8,18 +8,26 @@ import type { ReportSkeleton } from './reportSkeleton';
 import {
   DEFAULT_LEARNING_SETTINGS,
   clearLearningEvents,
+  effectiveLearningSettings,
+  flushLearning,
+  forSending,
+  keepable,
   keepLearningEvent,
   learningEvent,
   learningId,
   learningSummary,
   listLearningEvents,
+  markLearningSent,
   MAX_LOCAL,
+  readDeviceLearning,
   readLearningSettings,
   scrubSkeleton,
   sendable,
+  settleLearningSettings,
   skeletonField,
   sourceOf,
   writeLearningSettings,
+  type LearningEvent,
 } from './learning';
 
 const skeleton: ReportSkeleton = {
@@ -52,13 +60,65 @@ function fakeStorage(): Pick<Storage, 'getItem' | 'setItem'> & { map: Map<string
 describe('the settings', () => {
   it('default to structure on and full reports off, and keep what is written', () => {
     const storage = fakeStorage();
-    expect(readLearningSettings(storage)).toEqual(DEFAULT_LEARNING_SETTINGS);
+    expect(readLearningSettings(null, storage)).toEqual(DEFAULT_LEARNING_SETTINGS);
     expect(DEFAULT_LEARNING_SETTINGS).toEqual({ structure: true, full: false });
-    writeLearningSettings({ structure: false, full: true }, storage);
-    expect(readLearningSettings(storage)).toEqual({ structure: false, full: true });
+    writeLearningSettings({ structure: false, full: true }, null, false, storage);
+    expect(readLearningSettings(null, storage)).toEqual({ structure: false, full: true });
     storage.map.set('forma:learning', '{not json');
-    expect(readLearningSettings(storage)).toEqual(DEFAULT_LEARNING_SETTINGS);
-    expect(readLearningSettings(null)).toEqual(DEFAULT_LEARNING_SETTINGS);
+    expect(readLearningSettings(null, storage)).toEqual(DEFAULT_LEARNING_SETTINGS);
+    expect(readLearningSettings(null, null)).toEqual(DEFAULT_LEARNING_SETTINGS);
+  });
+
+  // The full audit (2026-11-11, LM-01, SA-13): the next person at the browser never inherits the whole-report switch.
+  it('are read for the account that wrote them, and another account gets the defaults', () => {
+    const storage = fakeStorage();
+    writeLearningSettings({ structure: true, full: true }, 'alice', false, storage);
+    expect(readLearningSettings('alice', storage)).toEqual({ structure: true, full: true });
+    expect(readLearningSettings('bob', storage)).toEqual({ structure: true, full: false });
+    expect(readLearningSettings(null, storage)).toEqual({ structure: true, full: false });
+    writeLearningSettings({ structure: false, full: false }, 'bob', false, storage);
+    expect(readLearningSettings('alice', storage)).toEqual(DEFAULT_LEARNING_SETTINGS);
+  });
+
+  // The PRIV review (2026-11-11): an "off" chosen signed out survives the first sign-in into an account with no copy.
+  it('carry an off chosen signed out into the account at sign-in, and never whole reports', () => {
+    const storage = fakeStorage();
+    writeLearningSettings({ structure: false, full: false }, null, false, storage);
+    const device = readDeviceLearning('alice', storage);
+    expect(device).toEqual({ settings: { structure: false, full: false }, pending: false });
+    expect(settleLearningSettings(device, null)).toEqual({ settings: { structure: false, full: false }, push: true });
+    writeLearningSettings({ structure: true, full: true }, null, false, storage);
+    expect(readLearningSettings('alice', storage)).toEqual({ structure: true, full: false });
+  });
+
+  it('read a copy from before they named the account: an off is kept, whole reports are not', () => {
+    const storage = fakeStorage();
+    storage.map.set('forma:learning', JSON.stringify({ structure: false, full: true }));
+    expect(readLearningSettings('anyone', storage)).toEqual({ structure: false, full: false });
+    storage.map.set('forma:learning', JSON.stringify({ structure: true, full: true }));
+    expect(readLearningSettings(null, storage)).toEqual({ structure: true, full: false });
+  });
+
+  it('remember a change the account does not have yet', () => {
+    const storage = fakeStorage();
+    writeLearningSettings({ structure: false, full: false }, 'alice', true, storage);
+    expect(readDeviceLearning('alice', storage)).toEqual({ settings: { structure: false, full: false }, pending: true });
+    writeLearningSettings({ structure: false, full: false }, 'alice', false, storage);
+    expect(readDeviceLearning('alice', storage).pending).toBe(false);
+  });
+
+  it('settle on the account\'s copy, unless this browser holds a change it lacks or it has none', () => {
+    const device = (structure: boolean, full: boolean, pending = false) => ({ settings: { structure, full }, pending });
+    expect(settleLearningSettings(device(true, false), { structure: true, full: true })).toEqual({ settings: { structure: true, full: true }, push: false });
+    expect(settleLearningSettings(device(false, false, true), { structure: true, full: true })).toEqual({ settings: { structure: false, full: false }, push: true });
+    expect(settleLearningSettings(device(false, false), null)).toEqual({ settings: { structure: false, full: false }, push: true });
+  });
+
+  it('hold whole reports back, signed in, until the account\'s copy is known', () => {
+    const on = { structure: true, full: true };
+    expect(effectiveLearningSettings(on, true, false)).toEqual({ structure: true, full: false });
+    expect(effectiveLearningSettings(on, true, true)).toEqual(on);
+    expect(effectiveLearningSettings(on, false, false)).toEqual(on);
   });
 });
 
@@ -73,12 +133,24 @@ describe('the scrub', () => {
     (leaky.bands[0].controls[0] as { name?: string }).name = 'lblCustomerName';
     leaky.bands[0].controls[0].font!.family = 'Tahoma <script>';
     (leaky as unknown as { paper: string }).paper = 'A4; DROP TABLE';
-    const clean = scrubSkeleton(leaky) as unknown as { bands: { text: string; controls: { name: string; font: { family: string } }[] }[]; paper: string };
+    const clean = scrubSkeleton(leaky) as unknown as { bands: { text: string; controls: { name: string; font: { family?: string } }[] }[]; paper: string };
     expect(clean.bands[0].text).toBe('');
     expect(clean.bands[0].controls[0].name).toBe('');
-    expect(clean.bands[0].controls[0].font.family).toBe('');
+    expect(clean.bands[0].controls[0].font).not.toHaveProperty('family');
     expect(clean.paper).toBe('');
     expect(clean.bands[0].controls[0]).toMatchObject({ kind: 'label', role: 'title', w: 300 });
+  });
+
+  // The full audit (2026-11-11, LM-24): a family it cannot keep goes, rather than becoming a font named ''.
+  it('drops a non-Latin or underscored family, and keeps the rest of the font', () => {
+    for (const family of ['MS Gothic_JP', 'ＭＳ ゴシック', '微软雅黑']) {
+      const odd = JSON.parse(JSON.stringify(skeleton)) as ReportSkeleton;
+      odd.bands[0].controls[0].font!.family = family;
+      const font = (scrubSkeleton(odd).bands[0].controls[0].font ?? {}) as Record<string, unknown>;
+      expect(font, family).not.toHaveProperty('family');
+      expect(font).toMatchObject({ size: 14, bold: true });
+      expect(skeletonField(odd)).not.toContain('"family":""');
+    }
   });
 
   it('writes the skeleton as JSON, and nothing when there is none or it would not fit', () => {
@@ -126,6 +198,25 @@ describe('an event', () => {
     const e = learningEvent({ kind: 'edit', ops: Array.from({ length: 60 }, (_, i) => `op${i}`.padEnd(40, 'x')) }, settings);
     expect(e.ops).toHaveLength(40);
     expect(e.ops[0]).toHaveLength(24);
+  });
+
+  // The full audit (2026-11-11, LM-29): with both switches off nothing is kept, on the device either.
+  it('is kept only while one of the switches is on', () => {
+    expect(keepable({ structure: false, full: false })).toBe(false);
+    expect(keepable({ structure: true, full: false })).toBe(true);
+    expect(keepable({ structure: false, full: true })).toBe(true);
+  });
+
+  // The full audit (2026-11-11, LM-09): what goes is the event the rules pin, under the switches as they are when it goes.
+  it('goes to the account without what only this browser keeps, and without the whole report once that switch is off', () => {
+    const e = { ...learningEvent({ kind: 'edit', skeleton, repx: '<x/>', prompt: 'p' }, { structure: true, full: true }), uid: 'alice', sent: false };
+    const both = forSending(e, { structure: true, full: true })!;
+    expect(both).not.toHaveProperty('uid');
+    expect(both).not.toHaveProperty('sent');
+    expect(both).toMatchObject({ full: '<x/>', prompt: 'p' });
+    expect(forSending(e, { structure: true, full: false })).toMatchObject({ full: '', prompt: '' });
+    expect(forSending(e, { structure: false, full: false })).toBeNull();
+    expect(forSending({ ...e, full: '' }, { structure: false, full: true })).toBeNull();
   });
 
   it('gives ids that stay unique within one millisecond', () => {
@@ -208,6 +299,79 @@ describe.runIf(fakeIdb)('the store on the device', () => {
     expect(kept[0].id).toBe(events[MAX_LOCAL].id);
     expect(kept[MAX_LOCAL - 1].id).toBe(events[1].id);
   }, 60_000);
+
+  // The full audit (2026-11-11, LM-09): an event that could not be sent is sent at the next flush, and only its own account's.
+  it('sends what the account lacks at the next flush, once, and never another account\'s or one made signed out', async () => {
+    const idb = new fakeIdb!.IDBFactory();
+    const mine = { ...learningEvent({ kind: 'generation' }, structure, at(1)), uid: 'alice', sent: false };
+    const later = { ...learningEvent({ kind: 'edit' }, structure, at(2)), uid: 'alice', sent: false };
+    const theirs = { ...learningEvent({ kind: 'edit' }, structure, at(3)), uid: 'bob', sent: false };
+    const signedOut = { ...learningEvent({ kind: 'edit' }, structure, at(4)), uid: null, sent: false };
+    const already = { ...learningEvent({ kind: 'edit' }, structure, at(5)), uid: 'alice', sent: true };
+    for (const e of [mine, later, theirs, signedOut, already]) await keepLearningEvent(e, idb);
+
+    // Offline: nothing goes, and nothing is marked.
+    const failing = async () => { throw new Error('offline'); };
+    expect(await flushLearning('alice', structure, failing, idb)).toBe(0);
+
+    const sent: LearningEvent[] = [];
+    expect(await flushLearning('alice', structure, async (e) => void sent.push(e), idb)).toBe(2);
+    expect(sent.map((e) => e.id)).toEqual([mine.id, later.id]);
+    expect(sent[0]).not.toHaveProperty('uid');
+    expect(sent[0]).not.toHaveProperty('sent');
+
+    // Sent once: a second flush has nothing left.
+    expect(await flushLearning('alice', structure, async (e) => void sent.push(e), idb)).toBe(0);
+    const kept = await listLearningEvents(idb);
+    expect(kept.find((e) => e.id === mine.id)?.sent).toBe(true);
+    expect(kept.find((e) => e.id === theirs.id)?.sent).toBe(false);
+    expect(kept.find((e) => e.id === signedOut.id)?.sent).toBe(false);
+  });
+
+  // The PRIV review (2026-11-11): the rules allow create and never update, so an event the account already
+  // holds (written, then never marked sent) is refused at every later flush. It must not hold back what is newer.
+  it('goes on past an event the account refuses, and stops only for want of a connection', async () => {
+    const idb = new fakeIdb!.IDBFactory();
+    const landed = { ...learningEvent({ kind: 'generation' }, structure, at(1)), uid: 'alice', sent: false };
+    const next = { ...learningEvent({ kind: 'edit' }, structure, at(2)), uid: 'alice', sent: false };
+    const last = { ...learningEvent({ kind: 'rating', rating: 'good' }, structure, at(3)), uid: 'alice', sent: false };
+    for (const e of [landed, next, last]) await keepLearningEvent(e, idb);
+
+    // The account as the rules keep it: a second create of an id it holds is refused.
+    const account = new Set<string>([landed.id]);
+    const send = async (e: LearningEvent) => {
+      if (account.has(e.id)) throw Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' });
+      account.add(e.id);
+    };
+    expect(await flushLearning('alice', structure, send, idb)).toBe(2);
+    expect([...account]).toEqual([landed.id, next.id, last.id]);
+    // A second flush refuses the same one again and sends nothing twice.
+    expect(await flushLearning('alice', structure, send, idb)).toBe(0);
+    expect(account.size).toBe(3);
+
+    // No connection still stops the pass, so nothing newer is tried while offline.
+    const fresh = { ...learningEvent({ kind: 'edit' }, structure, at(4)), uid: 'alice', sent: false };
+    await keepLearningEvent(fresh, idb);
+    let tried = 0;
+    const offline = async () => {
+      tried++;
+      throw Object.assign(new Error('offline'), { code: 'unavailable' });
+    };
+    expect(await flushLearning('alice', structure, offline, idb)).toBe(0);
+    expect(tried).toBe(1);
+  });
+
+  it('sends nothing at a flush once learning is switched off', async () => {
+    const idb = new fakeIdb!.IDBFactory();
+    await keepLearningEvent({ ...learningEvent({ kind: 'generation' }, structure, at(1)), uid: 'alice', sent: false }, idb);
+    expect(await flushLearning('alice', { structure: false, full: false }, async () => undefined, idb)).toBe(0);
+  });
+
+  it('marks nothing it no longer keeps', async () => {
+    const idb = new fakeIdb!.IDBFactory();
+    await expect(markLearningSent('gone', idb)).resolves.toBeUndefined();
+    expect(await listLearningEvents(idb)).toEqual([]);
+  });
 });
 
 describe('a browser with no IndexedDB', () => {

@@ -2,7 +2,9 @@
  * What Forma remembers, the Memory section of Settings (2026-11-02,
  * milestone 4 of docs/proposals/own-model.md): every memory, to switch off,
  * change or forget, and what the reports the user kept have taught it.
- * Everything shown lives in this browser only (lib/memory.ts).
+ * Everything shown lives in this browser only (lib/memory.ts), and since
+ * 2026-11-11 (the full audit's WS-28) under the account signed in, which App
+ * names to the memory as it signs in; signed out, the browser's own.
  *
  * Every change is written as it is made. Since the redesign of 2026-11-07
  * Settings has no Cancel to put it back, as ChatGPT's memory has none, so
@@ -33,7 +35,7 @@ export default function MemorySettings() {
       <div className="wb-set-row is-stack">
         <div className="wb-set-text">
           <span className="wb-set-label">Saved memories</span>
-          <p>What Forma remembers about how you work. Tell it in the chat ("remember: always use A4"), or add one here. It stays in this browser.</p>
+          <p>What Forma remembers about how you work. Tell it in the chat ("remember: always use A4"), or add one here. It stays in this browser, kept apart for each account that signs in here.</p>
         </div>
         {state.memories.length === 0 ? (
           <p className="wb-set-note">Nothing remembered yet.</p>

@@ -17,8 +17,9 @@ import {
   assertSucceeds,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, deleteDoc, updateDoc, collection, getDocs, query, where, writeBatch, setLogLevel } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, updateDoc, collection, getDocs, query, where, writeBatch, setLogLevel, type Firestore } from 'firebase/firestore';
 import fs from 'node:fs';
+import { writeLearning } from '../src/lib/accountData';
 
 // Every denial this file expects is also logged by the SDK as a
 // PERMISSION_DENIED warning, which buried a real one under dozens of expected
@@ -691,5 +692,43 @@ describe('learning events (2026-11-10, the full audit)', () => {
     await assertFails(updateDoc(doc(aliceDb(), 'users', ALICE, 'learning', EVENT), { rating: 'bad' }));
     await assertFails(deleteDoc(doc(bobDb(), 'users', ALICE, 'learning', EVENT)));
     await assertSucceeds(deleteDoc(doc(aliceDb(), 'users', ALICE, 'learning', EVENT)));
+  });
+
+  // The PRIV review (2026-11-11): a write that landed but was never marked sent is sent again at the
+  // next flush. The rules refuse it as an update; writeLearning reads it back and answers it as sent.
+  it('takes an event the account already holds as sent, and still refuses one it does not', async () => {
+    const { userId: _added, ...event } = validLearning(EVENT, ALICE);
+    const db = aliceDb() as unknown as Firestore;
+    await writeLearning(db, ALICE, event);
+    await expect(writeLearning(db, ALICE, event)).resolves.toBeUndefined();
+    await expect(writeLearning(db, ALICE, { ...event, id: 'other-4', kind: 'telemetry' })).rejects.toMatchObject({ code: 'permission-denied' });
+  });
+});
+
+/* The learning switches kept with the account (2026-11-11, the full audit, LM-01 and SA-13). */
+describe('the learning switches', () => {
+  const prefs = (db: ReturnType<typeof aliceDb>, uid = ALICE) => doc(db, 'users', uid, 'meta', 'learning');
+
+  it('are read and written by their owner, two booleans and nothing else', async () => {
+    await assertSucceeds(setDoc(prefs(aliceDb()), { structure: false, full: false }));
+    await assertSucceeds(getDoc(prefs(aliceDb())));
+    await assertSucceeds(setDoc(prefs(aliceDb()), { structure: true, full: true }));
+    await assertFails(setDoc(prefs(aliceDb()), { structure: true }));
+    await assertFails(setDoc(prefs(aliceDb()), { structure: true, full: 'yes' }));
+    await assertFails(setDoc(prefs(aliceDb()), { structure: true, full: false, uid: ALICE }));
+    await assertSucceeds(deleteDoc(prefs(aliceDb())));
+  });
+
+  it('are nobody else\'s to read or change', async () => {
+    await seed(['users', ALICE, 'meta', 'learning'], { structure: true, full: false });
+    await assertFails(getDoc(prefs(bobDb())));
+    await assertFails(setDoc(prefs(bobDb()), { structure: true, full: true }));
+    await assertFails(deleteDoc(prefs(bobDb())));
+    await assertFails(getDoc(prefs(anonDb())));
+  });
+
+  it('give the share count nothing: the quota keeps its own rules', async () => {
+    await assertFails(setDoc(doc(aliceDb(), 'users', ALICE, 'meta', 'quota'), { structure: true, full: false }));
+    await assertFails(setDoc(doc(aliceDb(), 'users', ALICE, 'meta', 'other'), { structure: true, full: false }));
   });
 });

@@ -24,6 +24,13 @@ describe('swStrategy', () => {
     expect(swStrategy('/licenses.txt', false)).toBe('network');
     expect(swStrategy('/icons/icon-192.png', false)).toBe('network');
   });
+
+  // The full audit (2026-11-11, SE-17): a shared report's address never goes into the cache, where a sign-out cannot reach it.
+  it('never keeps a shared report\'s page', () => {
+    expect(swStrategy('/s/abc123', true)).toBe('network');
+    expect(swStrategy('/s/abc123', false)).toBe('network');
+    expect(swStrategy('/security', true)).toBe('page');
+  });
 });
 
 describe('serviceWorkerSource', () => {
@@ -40,5 +47,6 @@ describe('serviceWorkerSource', () => {
     expect(route('/assets/x.js', false)).toBe('asset');
     expect(route('/handwriting/0123456789/a', false)).toBe('network');
     expect(route('/features', true)).toBe('page');
+    expect(route('/s/abc123', true)).toBe('network');
   });
 });

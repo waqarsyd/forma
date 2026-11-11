@@ -25,10 +25,45 @@ export const SIGNED_OUT_SESSION_KEYS = [
  * (lib/batchCheckpoint.ts), which holds its source files and their reports.
  * Since 2026-11-10 (the full audit) also the learning events kept on the
  * device (lib/learning.ts), which on the full tier hold whole reports.
+ * Since 2026-11-11 (the full audit's WS-28, LM-18, SA-07 and SE-17) also the
+ * report library (lib/libraryDb.ts), which holds the last person's reports cut
+ * into examples and sent their house style to the next person's AI.
  * Named here, not imported, so the public site's bundle does not take the
  * stores; `signOut.test.ts` holds each name to its store's.
  */
-export const SIGNED_OUT_DATABASES = ['forma-databases', 'forma-batch', 'forma-learning'] as const;
+export const SIGNED_OUT_DATABASES = ['forma-databases', 'forma-batch', 'forma-learning', 'forma-library'] as const;
+
+/**
+ * What a sign-out removes from the browser's lasting storage (2026-11-11, the
+ * full audit's SA-07): which projects were pinned and archived, which library
+ * files were ticked as house style (they name the last person's reports, and
+ * the library they point into goes above), and, by prefix, when each account's
+ * project list was last checked. `localStorage`, so they outlived the tab
+ * where the session keys above do not. The memory is not here: it is kept per
+ * account since the same day (lib/memory.ts), so the next person reads their
+ * own and the last person finds theirs again on signing back in.
+ */
+export const SIGNED_OUT_LOCAL_KEYS = [
+  'forma:pinnedProjects', // App.tsx, PINNED_PROJECTS_KEY
+  'forma:archivedProjects', // App.tsx, ARCHIVED_PROJECTS_KEY
+  'libraryCanonical', // App.tsx, CANONICAL_KEY: the library's house-style ticks
+] as const;
+export const SIGNED_OUT_LOCAL_PREFIXES = ['forma:indexCheckedAt:'] as const;
+
+/** Removes those keys; storage that throws is left as it is. */
+export function forgetLocal(storage: Pick<Storage, 'removeItem' | 'key' | 'length'> | null = typeof localStorage === 'undefined' ? null : localStorage): void {
+  if (!storage) return;
+  try {
+    const named: string[] = [...SIGNED_OUT_LOCAL_KEYS];
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i);
+      if (key && SIGNED_OUT_LOCAL_PREFIXES.some((prefix) => key.startsWith(prefix))) named.push(key);
+    }
+    for (const key of named) storage.removeItem(key);
+  } catch {
+    /* storage blocked: nothing kept there to clear */
+  }
+}
 
 /** Deletes them; a browser without IndexedDB, or one that refuses, keeps nothing to delete. */
 export function forgetDevice(idb: Pick<IDBFactory, 'deleteDatabase'> | null = typeof indexedDB === 'undefined' ? null : indexedDB): void {
@@ -42,9 +77,13 @@ export function forgetDevice(idb: Pick<IDBFactory, 'deleteDatabase'> | null = ty
   }
 }
 
-/** Removes the signed-out person's session keys, and what `forgetDevice` deletes; storage that throws is left as it is. */
-export function forgetSession(storage: Pick<Storage, 'removeItem'> | null = typeof sessionStorage === 'undefined' ? null : sessionStorage): void {
+/** Removes the signed-out person's session keys, and what `forgetDevice` and `forgetLocal` remove; storage that throws is left as it is. */
+export function forgetSession(
+  storage: Pick<Storage, 'removeItem'> | null = typeof sessionStorage === 'undefined' ? null : sessionStorage,
+  local: Pick<Storage, 'removeItem' | 'key' | 'length'> | null = typeof localStorage === 'undefined' ? null : localStorage,
+): void {
   forgetDevice();
+  forgetLocal(local);
   if (!storage) return;
   for (const key of SIGNED_OUT_SESSION_KEYS) {
     try {

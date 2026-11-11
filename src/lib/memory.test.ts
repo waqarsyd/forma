@@ -4,13 +4,15 @@
  * localStorage; this must stay line 1. The kept report is made up for the
  * test, and its words are checked not to be kept.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   instructionsOf,
   keptStyleOf,
   keptSummary,
   MAX_KEPT,
   memoryFrom,
+  memoryKey,
+  setMemoryAccount,
   preferencesOf,
   readMemory,
   REMEMBER,
@@ -74,7 +76,7 @@ describe('what a message asks Forma to remember', () => {
 describe('what a kept report teaches', () => {
   it('its style, and none of its words', () => {
     const kept = keptStyleOf(REPORT, new Date('2026-11-02T10:00:00Z'))!;
-    expect(kept).toEqual({ at: '2026-11-02T10:00:00.000Z', paper: 'A4', landscape: false, fontFamily: 'Tahoma', sizes: { title: 15, caption: 9, value: 8 } });
+    expect(kept).toEqual({ key: expect.stringMatching(/^s[0-9a-z]+$/), at: '2026-11-02T10:00:00.000Z', paper: 'A4', landscape: false, fontFamily: 'Tahoma', sizes: { title: 15, caption: 9, value: 8 } });
     expect(JSON.stringify(kept)).not.toMatch(/Acme|Private|SecretField|ClientSecret|Account/);
     expect(keptStyleOf('not a report')).toBeNull();
   });
@@ -87,6 +89,51 @@ describe('what a kept report teaches', () => {
     expect(keptSummary({ memories: [], kept: [style({})], learnFromKept: true })).toBeNull();
     expect(keptSummary({ memories: [], kept: [style({ paper: 'A4' }), style({ paper: 'A4' }), style({})], learnFromKept: false })).toBeNull();
     expect(keptSummary({ memories: [], kept: [style({ paper: 'A4' }), style({ paper: 'A4' }), style({})], learnFromKept: true })).toMatchObject({ reports: 3, paper: 'A4', sizes: { value: 8 } });
+  });
+
+  // The full audit (2026-11-11, LM-28): one report exported five times is one report, not a house style.
+  it('counts one report kept many times once, as it was last kept', () => {
+    let state: MemoryState = { memories: [], kept: [], learnFromKept: true };
+    for (let i = 0; i < 5; i++) state = rememberKept(state, style({ key: 'project-1', paper: 'A4', at: String(i) }));
+    expect(state.kept).toHaveLength(1);
+    expect(state.kept[0].at).toBe('4');
+    expect(keptSummary(state)).toBeNull();
+    state = rememberKept(state, style({ key: 'project-2' }));
+    expect(state.kept.map((k) => k.key)).toEqual(['project-1', 'project-2']);
+    // A style kept before the key carries none, and stays beside the rest.
+    state = rememberKept({ ...state, kept: [style({}), ...state.kept] }, style({ key: 'project-1', at: '5' }));
+    expect(state.kept.map((k) => k.key)).toEqual([undefined, 'project-2', 'project-1']);
+    // The same report kept again without a project is known by its skeleton.
+    expect(keptStyleOf(REPORT)!.key).toBe(keptStyleOf(REPORT, new Date(0))!.key);
+    expect(keptStyleOf(REPORT, new Date(), 'project-9')!.key).toBe('project-9');
+  });
+});
+
+/* Each account its own memory (2026-11-11, the full audit, WS-28, LM-18, SA-07, SE-17). */
+describe('whose memory it is', () => {
+  const alice: MemoryState = { memories: [memoryFrom('remember: always use A4')], kept: [], learnFromKept: true };
+
+  afterEach(() => setMemoryAccount(null));
+
+  it('keeps each account apart, and apart from use signed out', () => {
+    writeMemory(alice, 'alice');
+    expect(readMemory('alice')).toEqual(alice);
+    expect(readMemory('bob').memories).toEqual([]);
+    expect(readMemory(null).memories).toEqual([]);
+    expect(localStorage.getItem('forma.memory:alice')).not.toBeNull();
+    expect(memoryKey(null)).toBe('forma.memory');
+    expect(memoryKey('bob')).toBe('forma.memory:bob');
+  });
+
+  it('reads and writes the account named by the sign-in when none is passed', () => {
+    setMemoryAccount('alice');
+    writeMemory(alice);
+    expect(readMemory().memories).toHaveLength(1);
+    setMemoryAccount('bob');
+    expect(readMemory().memories).toEqual([]);
+    setMemoryAccount(null);
+    expect(readMemory().memories).toEqual([]);
+    expect(readMemory('alice').memories).toHaveLength(1);
   });
 });
 

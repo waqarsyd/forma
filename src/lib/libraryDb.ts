@@ -57,6 +57,16 @@
  * `sqlSchemaStore.test.ts` show the pattern: a fresh `IDBFactory` per case, put
  * where the store looks for it. This adapter is next in line; until then,
  * exercise it in the running app.
+ *
+ * ## It belongs to whoever is signed in, and goes when they sign out
+ *
+ * Since 2026-11-11 (the full audit's WS-28 and SE-17) a sign-out deletes this
+ * database (`SIGNED_OUT_DATABASES` in lib/signOut.ts, which names it rather
+ * than importing it). It held the last person's reports cut into examples, and
+ * its ticked files went to the next person's AI as their house style. Keeping
+ * an `owner` on every record would have kept the library across a sign-out,
+ * at the cost of a migration and a filter on every read; deleting it costs a
+ * re-import, and the files are the person's own to import again.
  */
 import type { LibraryEntry, LibraryStorage } from './embedStore';
 import type { RepxChunk } from './repxChunks';

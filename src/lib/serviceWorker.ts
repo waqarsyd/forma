@@ -12,8 +12,9 @@
  *   the cache first, so a picture can still be read offline:
  *   its name changes whenever its bytes do, so a kept copy is never stale.
  * - Everything else goes to the network untouched: other origins (Google,
- *   Firebase, an AI), any request but GET, the worker itself, and the
- *   handwriting model, 68 MB the site only serves when a build asks for it.
+ *   Firebase, an AI), any request but GET, the worker itself, the
+ *   handwriting model, 68 MB the site only serves when a build asks for it,
+ *   and a shared report's page (`/s/`), whose address is never kept.
  * - The home page, the entry script and its stylesheet are kept on install,
  *   so a second visit, or one offline, paints without the network.
  * - Each build's cache is its own (`forma-<version>`); an older one is
@@ -29,6 +30,11 @@ export type SwStrategy = 'page' | 'asset' | 'network';
  */
 export function swStrategy(pathname: string, isNavigation: boolean): SwStrategy {
   if (pathname === '/sw.js' || pathname.indexOf('/__/') === 0 || pathname.indexOf('/handwriting/') === 0) return 'network';
+  // A shared report's page (2026-11-11, the full audit's SE-17): the cache's
+  // keys are its address, so a kept copy would let the next person at the
+  // browser list the links the last one opened, and a sign-out cannot reach
+  // the worker's cache. Shared reports need the network to load anyway.
+  if (pathname.indexOf('/s/') === 0) return 'network';
   if (isNavigation) return 'page';
   if (pathname.indexOf('/assets/') === 0) return 'asset';
   if (/^\/(ocr|paddle|pdf-fonts|model)\/[0-9a-f]{10}\//.test(pathname)) return 'asset';

@@ -349,6 +349,18 @@ service cloud.firestore {
       // account ever shared anything).
       allow delete: if isSignedIn() && userId == request.auth.uid && metaId == 'quota'
         && (resource == null || existing().shares == 0);
+
+      // The account's two learning switches (2026-11-11, the full audit, LM-01
+      // and SA-13), `users/{uid}/meta/learning`, so they follow the person to
+      // every device rather than staying in one browser for whoever signs in
+      // there next. Two booleans and nothing else, read and written by the
+      // owner alone; deleted with the account.
+      allow get, delete: if isSignedIn() && userId == request.auth.uid && metaId == 'learning';
+      allow create, update: if isSignedIn() && userId == request.auth.uid && metaId == 'learning'
+        && incoming().keys().hasOnly(['structure', 'full'])
+        && incoming().keys().hasAll(['structure', 'full'])
+        && incoming().structure is bool
+        && incoming().full is bool;
     }
 
     // What a person lets Forma learn from (2026-11-10, the full audit;
