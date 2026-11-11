@@ -51,9 +51,11 @@ import { versionsCollectionRef, versionDocRef } from '../src/lib/accountData';
 import {
   saveRevisions,
   loadRevisions,
-  versionDocId,
+  storedVersion,
+  versionKey,
   MAX_PERSISTED_REVISIONS,
   VERSION_BUDGET_BYTES,
+  VERSION_SLOTS,
   type VersionIo,
   type VersionDocument,
 } from '../src/lib/revisionStore';
@@ -102,7 +104,7 @@ const io = (db: Firestore, uid: string, reportId = REPORT): VersionIo => {
   const collectionRef = versionsCollectionRef(db, uid, reportId);
   const docRef = (id: string) => versionDocRef(db, uid, reportId, id);
   return {
-    list: async () => (await getDocs(collectionRef)).docs.map((entry) => entry.id),
+    list: async () => (await getDocs(collectionRef)).docs.map((entry) => storedVersion(entry.id, entry.data() as Partial<VersionDocument>)),
     read: async () =>
       (await getDocs(query(collectionRef, orderBy('timestamp', 'desc')))).docs.map(
         (entry) => entry.data() as VersionDocument,
@@ -144,9 +146,10 @@ describe('a history survives the trip to Firestore and back', () => {
 
   /**
    * The defect this file exists for. Firestore's natural document order is by
-   * id, and `versionDocId` is `${at}-${id}` — so ids sort lexicographically and
-   * "1000-1" sorts before "3000-3". Without the `orderBy`, the oldest version
-   * comes back first and takes the highest number.
+   * id, and since 2026-11-11 a version's id is its slot, v0..v9, which says
+   * nothing of its age: a slot reused for the newest version can sort first or
+   * last. Without the `orderBy`, whichever document comes back first takes the
+   * highest number.
    */
   it('numbers the newest highest, so the next revision cannot collide', async () => {
     const db = asUser(ALICE);
@@ -175,7 +178,8 @@ describe('saving twice', () => {
     const second = [revision(3, 3000, 'Step 3'), ...first];
     const secondOutcome = await saveRevisions(io(db, ALICE), second, REPORT, ALICE);
 
-    expect(secondOutcome.written).toEqual([versionDocId(second[0])]);
+    // Into the first free slot: v0 and v1 hold the first two.
+    expect(secondOutcome.written).toEqual(['v2']);
     expect(secondOutcome.deleted).toEqual([]);
     expect(await loadRevisions(io(db, ALICE))).toHaveLength(3);
   });
@@ -191,19 +195,54 @@ describe('saving twice', () => {
     expect(await loadRevisions(io(db, ALICE))).toHaveLength(3);
   });
 
-  it('prunes what has aged past the cap', async () => {
+  it('prunes what has aged past the cap, by writing over its slot', async () => {
     const db = asUser(ALICE);
     await saveRevisions(io(db, ALICE), history(MAX_PERSISTED_REVISIONS), REPORT, ALICE);
 
-    // One more revision arrives; the oldest falls off the end.
+    // One more revision arrives; the oldest falls off the end, and the newest
+    // takes its slot rather than an eleventh document (SA-01).
     const grown = history(MAX_PERSISTED_REVISIONS + 1);
     const outcome = await saveRevisions(io(db, ALICE), grown, REPORT, ALICE);
 
     expect(outcome.written).toHaveLength(1);
-    expect(outcome.deleted).toHaveLength(1);
+    expect(outcome.deleted).toHaveLength(0);
     const back = await loadRevisions(io(db, ALICE));
     expect(back).toHaveLength(MAX_PERSISTED_REVISIONS);
     expect(back.map((r) => r.label)).not.toContain('Step 1');
+    expect(back[0].label).toBe(`Step ${MAX_PERSISTED_REVISIONS + 1}`);
+  });
+
+  it('moves a history saved before the slots into them at the next save', async () => {
+    const db = asUser(ALICE);
+    // As a version was written before 2026-11-11: under `<at>-<id>`. The rule
+    // no longer takes that write from the client, so it is seeded around it.
+    const old = history(2);
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const admin = ctx.firestore() as unknown as Firestore;
+      for (const r of old) {
+        const id = `${r.at}-${r.id}`;
+        await setDoc(versionDocRef(admin, ALICE, REPORT, id), { id, reportId: REPORT, label: r.label, timestamp: r.at, snapshot: JSON.stringify(r.snapshot), userId: ALICE });
+      }
+    });
+
+    const outcome = await saveRevisions(io(db, ALICE), old, REPORT, ALICE);
+
+    expect(outcome.written.sort()).toEqual(['v0', 'v1']);
+    expect(outcome.deleted.sort()).toEqual(['1000-1', '2000-2']);
+    const ids = (await getDocs(versionsCollectionRef(db, ALICE, REPORT))).docs.map((d) => d.id).sort();
+    expect(ids).toEqual(['v0', 'v1']);
+    expect((await loadRevisions(io(db, ALICE))).map((r) => versionKey(r))).toEqual(old.map((r) => versionKey(r)));
+  });
+});
+
+describe('the ten slots, enforced by the rules (SA-01)', () => {
+  it('refuses a version written anywhere but v0..v9', async () => {
+    const db = asUser(ALICE);
+    const doc = { id: '1700000000000-3', reportId: REPORT, label: 'Generated', timestamp: 1, snapshot: '{"repxContent":"<x/>"}', userId: ALICE };
+    await assertFails(setDoc(versionDocRef(db, ALICE, REPORT, doc.id), doc));
+    await assertFails(setDoc(versionDocRef(db, ALICE, REPORT, 'v10'), { ...doc, id: 'v10' }));
+    for (const slot of VERSION_SLOTS) await setDoc(versionDocRef(db, ALICE, REPORT, slot), { ...doc, id: slot });
+    expect((await getDocs(versionsCollectionRef(db, ALICE, REPORT))).size).toBe(VERSION_SLOTS.length);
   });
 });
 
@@ -246,7 +285,7 @@ describe('a version too large to store', () => {
 
     const outcome = await saveRevisions(io(db, ALICE), [huge, ...history(2)], REPORT, ALICE);
 
-    expect(outcome.tooLarge).toEqual([versionDocId(huge)]);
+    expect(outcome.tooLarge).toEqual([versionKey(huge)]);
     const back = await loadRevisions(io(db, ALICE));
     expect(back.map((r) => r.label)).toEqual(['Step 2', 'Step 1']);
   });

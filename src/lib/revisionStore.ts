@@ -66,26 +66,36 @@ export interface VersionDocument {
 }
 
 /**
- * A stable document id for a revision.
- *
- * `Revision.id` alone is a per-session counter, so saving, reloading and saving
- * again would collide on 1, 2, 3 and overwrite unrelated versions. Pairing it
- * with the timestamp makes it unique in practice and keeps it sortable.
- *
- * Must satisfy `isValidId` in `firestore.rules` — letters, digits, underscore
- * and hyphen only — which digits and one hyphen do.
+ * The ten places a report's versions are kept in (2026-11-11, the full audit's
+ * SA-01): `v0` to `v9`, and `firestore.rules` accepts a version written to no
+ * other id. Until then each version had an id of its own, `<at>-<id>`, and
+ * the cap of ten was this file's alone: a client that skipped the pruning
+ * could write versions without end into the free plan everyone shares. A slot
+ * is overwritten when the version in it falls off the end, so a history never
+ * holds more than ten documents, whatever the client does.
  */
-export function versionDocId(revision: Revision): string {
-  return `${revision.at}-${revision.id}`;
+export const VERSION_SLOTS = Array.from({ length: MAX_PERSISTED_REVISIONS }, (_, i) => `v${i}`);
+
+/** Whether a stored id is one of the slots; any other is an older id, cleared at the next save. */
+export const isVersionSlot = (id: string): boolean => VERSION_SLOTS.includes(id);
+
+/**
+ * Which revision a stored version is, since the slot it sits in says nothing:
+ * its time and its label. `Revision.id` is a per-session counter and is not
+ * stored, so it cannot be the key.
+ */
+export function versionKey(revision: Pick<Revision, 'at' | 'label'>): string {
+  return `${revision.at}|${revision.label}`;
 }
 
 export function toVersionDocument(
   revision: Revision,
   reportId: string,
   userId: string,
+  slot: string,
 ): VersionDocument {
   return {
-    id: versionDocId(revision),
+    id: slot,
     reportId,
     label: revision.label,
     timestamp: revision.at,
@@ -162,17 +172,31 @@ export function fromVersionDocuments(docs: readonly VersionDocument[]): Revision
  * a reimplementation of it.
  */
 export interface VersionIo {
-  /** Stored document ids, for planning. Order does not matter. */
-  list: () => Promise<string[]>;
+  /** Stored versions, for planning: each one's id and what it holds. Order does not matter. */
+  list: () => Promise<StoredVersion[]>;
   /** Stored documents, newest first — the caller's query does the ordering. */
   read: () => Promise<VersionDocument[]>;
   write: (document: VersionDocument) => Promise<void>;
   remove: (id: string) => Promise<void>;
 }
 
+/** A stored version as the planner needs it: where it is, and which revision it holds. */
+export interface StoredVersion {
+  id: string;
+  timestamp: number;
+  label: string;
+}
+
+/** A stored document as `StoredVersion`, whatever fields it has. */
+export function storedVersion(id: string, data: Partial<VersionDocument> | undefined): StoredVersion {
+  return { id, timestamp: typeof data?.timestamp === 'number' ? data.timestamp : 0, label: typeof data?.label === 'string' ? data.label : '' };
+}
+
 export interface SaveOutcome {
+  /** The slots written. */
   written: string[];
   deleted: string[];
+  /** The revisions skipped for size, by `versionKey`. */
   tooLarge: string[];
 }
 
@@ -212,11 +236,11 @@ export async function loadRevisions(io: VersionIo): Promise<Revision[]> {
 }
 
 export interface VersionPlan {
-  /** Documents to write: the ones not already stored, newest first. */
+  /** Documents to write: the ones not already stored, newest first, each in a free slot. */
   toWrite: VersionDocument[];
-  /** Stored ids no longer in the list — pruned or from an older cap. */
+  /** Stored ids to delete: slots holding a version no longer kept and not reused, and every older id. */
   toDelete: string[];
-  /** Skipped for being over budget, with their ids, so the caller can say so. */
+  /** Skipped for being over budget, by `versionKey`, so the caller can say so. */
   tooLarge: string[];
 }
 
@@ -226,35 +250,57 @@ export interface VersionPlan {
  * Read-then-write-what-is-missing rather than rewriting everything: a save with
  * one new revision should cost one write, not ten. Idempotent — saving twice
  * with nothing new plans nothing.
+ *
+ * Since 2026-11-11 (SA-01) a version is written to a slot (`VERSION_SLOTS`):
+ * one already holding a revision still kept is left alone, and a new revision
+ * takes a slot that is empty or holds one that fell off the end, which is
+ * overwritten rather than deleted. A stored id that is not a slot, from before
+ * the slots, is deleted, and the revision it held, if still kept, is written
+ * again into a slot. At most ten are kept whatever `max` says.
  */
 export function planVersionWrites(
   revisions: readonly Revision[],
-  existingIds: readonly string[],
+  stored: readonly StoredVersion[],
   reportId: string,
   userId: string,
   max = MAX_PERSISTED_REVISIONS,
 ): VersionPlan {
-  const keep = revisions.slice(0, max);
-  const keepIds = new Set(keep.map(versionDocId));
+  const keep = revisions.slice(0, Math.min(max, VERSION_SLOTS.length));
+  const wanted = new Set(keep.map(versionKey));
+
+  // The slots already holding a revision that is kept, the first of two holding the same one.
+  const held = new Map<string, string>();
+  for (const s of stored) {
+    if (!isVersionSlot(s.id)) continue;
+    const key = versionKey({ at: s.timestamp, label: s.label });
+    if (wanted.has(key) && !held.has(key)) held.set(key, s.id);
+  }
+  const taken = new Set(held.values());
+  const free = VERSION_SLOTS.filter((slot) => !taken.has(slot));
 
   const toWrite: VersionDocument[] = [];
   const tooLarge: string[] = [];
   for (const revision of keep) {
-    const id = versionDocId(revision);
-    if (existingIds.includes(id)) continue;
-    const document = toVersionDocument(revision, reportId, userId);
+    const key = versionKey(revision);
+    if (held.has(key)) continue;
+    const slot = free[0];
+    if (!slot) break;
+    const document = toVersionDocument(revision, reportId, userId, slot);
     if (document.snapshot.length > VERSION_BUDGET_BYTES) {
-      tooLarge.push(id);
+      tooLarge.push(key);
       continue;
     }
+    free.shift();
     toWrite.push(document);
   }
 
+  const written = new Set(toWrite.map((d) => d.id));
   return {
     toWrite,
-    // Anything stored that is no longer among the kept revisions: dropped off
-    // the end of the cap, or belonging to a history that has moved on.
-    toDelete: existingIds.filter((id) => !keepIds.has(id)),
+    // A slot holding what is no longer kept and not written over, and every
+    // id from before the slots: dropped off the end of the cap, or belonging
+    // to a history that has moved on.
+    toDelete: stored.map((s) => s.id).filter((id) => !taken.has(id) && !written.has(id)),
     tooLarge,
   };
 }

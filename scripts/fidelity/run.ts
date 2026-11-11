@@ -52,6 +52,14 @@
  *                     as the app stands in when every AI has given out
  *                     (lib/fallbackChain.ts, batch AF). No key, no request, no
  *                     quota; a case whose source is not a picture is skipped
+ *   --style <path>    with --forma, also design each case from its words with
+ *                     Forma's own model, as the app stands one in for a
+ *                     described report, without and then with a person's own
+ *                     style, and print the face and the median size of each
+ *                     beside the source's (2026-11-11, the full audit's D1).
+ *                     The path is a folder of .repx files the person kept, read
+ *                     as the memory reads a kept report, or a .json of
+ *                     preferences as lib/memory.ts `preferencesOf` gives them
  *   --page-reader <name>
  *                     read each picture with a page reader on that server, as
  *                     glm-ocr, and send its text beside the picture as the app
@@ -167,6 +175,9 @@ import { paperInches } from '../../src/lib/reportGeometry';
 import { repairRepx } from '../../src/lib/repairChain';
 import { parseTrueType } from '../../src/lib/trueType';
 import { faceWidthsFrom, measureFacesWith } from '../../src/lib/ocrLayout';
+import { generateOffline, type OfflineRequest } from '../../src/lib/offlineGenerator';
+import { keptStyleOf, preferencesOf, rememberKept, type MemoryState } from '../../src/lib/memory';
+import type { FormaModel } from '../../src/lib/formaModel';
 
 /*
  * Text measured in its face's own widths, as the browser's canvas measures it
@@ -289,6 +300,7 @@ function parseArgs(argv: string[]) {
     brief: false,
     draft: false,
     forma: false,
+    style: '',
     localModel: '',
     localUrl: 'http://localhost:11434/v1',
     pageReader: '',
@@ -318,6 +330,7 @@ function parseArgs(argv: string[]) {
       case '--brief': opts.brief = true; break;
       case '--draft': opts.draft = true; break;
       case '--forma': opts.forma = true; break;
+      case '--style': opts.style = next(); break;
       case '--local-model': opts.localModel = next(); break;
       case '--local-url': opts.localUrl = next(); break;
       case '--page-reader': opts.pageReader = next(); break;
@@ -501,6 +514,64 @@ async function readerBriefFor(c: LoadedCase, unit: string, paper: string, outDir
   return { brief: built ? draftBrief(built.skeleton, built.layout, unit, 'reader') : '', evidence, draft, own };
 }
 
+/**
+ * A person's own preferences for `--style` (2026-11-11, D1): a folder of the
+ * .repx files they kept, each read as the memory reads a kept report (its
+ * style, never its words) and summed up as `preferencesOf` sums them for the
+ * app; or a .json of those preferences as they are.
+ */
+function loadStyle(path: string): OfflineRequest['preferences'] {
+  if (!statSync(path).isDirectory()) return JSON.parse(readFileSync(path, 'utf8')) as OfflineRequest['preferences'];
+  let state: MemoryState = { memories: [], kept: [], learnFromKept: true, ledger: [] };
+  for (const name of readdirSync(path).filter((n) => /\.repx$/i.test(n)).sort()) {
+    const style = keptStyleOf(readFileSync(join(path, name), 'utf8'), new Date(), name);
+    if (style) state = rememberKept(state, style);
+  }
+  if (state.kept.length < 2) throw new Error(`--style ${path}: a style is learned from two kept reports, and ${state.kept.length} could be read`);
+  return preferencesOf(state);
+}
+
+/** The face most of a report's `Font` attributes name, or null. */
+function faceOf(xml: string): string | null {
+  const counts = new Map<string, number>();
+  for (const m of xml.matchAll(/\bFont="([^,"]+),/g)) counts.set(m[1].trim(), (counts.get(m[1].trim()) ?? 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+}
+
+/** The source's own face: a .repx's most used, an .html's first `font-family`; null for a picture. */
+function sourceFace(c: LoadedCase): string | null {
+  const path = join(c.dir, c.file.source);
+  const ext = extname(path).toLowerCase();
+  if (ext === '.repx') return faceOf(readFileSync(path, 'utf8'));
+  if (ext === '.html') return /font-family:\s*['"]?([^;,'"]+)/i.exec(readFileSync(path, 'utf8'))?.[1].trim() ?? null;
+  return null;
+}
+
+let formaModelCache: FormaModel | null = null;
+
+/**
+ * `--style`: the case designed from its words by Forma's own model, as the
+ * app stands one in for a described report (lib/learningLoop.ts
+ * `designFromWords`), without the person's style and with it, each one's face
+ * and median size printed beside the source's, with the case's own fontSize
+ * checks. Measurement only: it changes no score.
+ */
+function styleComparison(c: LoadedCase, preferences: OfflineRequest['preferences']): string[] {
+  formaModelCache ??= JSON.parse(readFileSync('assets/model/formaModel.json', 'utf8')) as FormaModel;
+  const description = c.file.prompt?.trim() || c.name.replace(/[-_]+/g, ' ');
+  const source = sourceFace(c);
+  const sourcePt = c.file.expect.fontSize?.relative?.sourcePt ?? null;
+  const runs: [string, OfflineRequest['preferences']][] = [['without the style', undefined], ['with the style', preferences]];
+  return runs.map(([label, prefs]) => {
+    const design = generateOffline(formaModelCache!, { description, preferences: prefs });
+    const m = measureReport(design.repx, design.layout);
+    const face = faceOf(design.repx);
+    const sameFace = source && face ? (face.toLowerCase() === source.toLowerCase() ? ', the source\'s face' : `, the source's is ${source}`) : '';
+    const checks = checkFidelity(m, c.file.expect).filter((k) => k.id.startsWith('fontSize'));
+    return `own design from words, ${label}: ${face ?? 'no face'}${sameFace}; median ${m.fontMedianPt ?? '-'}pt${sourcePt ? ` (the source's ${sourcePt}pt)` : ''}${checks.length ? `; ${checks.map((k) => `${k.id} ${k.pass ? 'passes' : 'fails'}`).join(', ')}` : ''}`;
+  });
+}
+
 function configFor(c: LoadedCase, key: string, opts: ReturnType<typeof parseArgs>): ReportConfig {
   const config: ReportConfig = {
     version: '23.2',
@@ -544,6 +615,13 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
     if (opts.forma) {
       const team = await readerBriefFor(c, config.unit ?? 'HundredthsOfAnInch', config.pageSize ?? 'Letter', outDir);
       record.log.push(`[runner] Forma's own draft: ${team.own ? (team.draft ? 'the box reader' : 'OCR\'s copy') : 'none (not a picture)'}`);
+      // A person's own style on Forma's design from words, before and after (--style, D1).
+      if (opts.style) {
+        for (const line of styleComparison(c, loadStyle(opts.style))) {
+          record.log.push(`[runner] ${line}`);
+          console.log(`[${c.name}] ${line}`);
+        }
+      }
       if (!team.own) record.error = 'Forma makes no draft without a picture';
       record.elapsedMs = Date.now() - startedAt.getTime();
       record.model = 'forma-draft';

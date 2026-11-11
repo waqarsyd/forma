@@ -26,12 +26,22 @@
  * `setMemoryAccount` as it signs in and out; a caller that knows it may pass it.
  * The signed-out key is not moved into an account on sign-in: whose it was
  * cannot be known.
+ *
+ * A third kind since 2026-11-11 (the full audit's D4): **what their changes
+ * show.** A change the person makes to the same kind of part in two reports
+ * Forma made (a title's size, a caption's face, a total's alignment, a
+ * margin) becomes a memory of its own, `source: 'learned'`, which Settings
+ * lists under "Learned from your changes" with a Forget. The changes are
+ * kept as a ledger in this state (`ledger`, lib/corrections.ts), and an Undo
+ * of what Forma did counts against it.
  */
 import { parseReportStructure } from './reportPreview';
 import { skeletonOf, skeletonTexts, type ReportSkeleton } from './reportSkeleton';
 import { learnStyle, type HouseStyle } from './formaModel';
+import { DEFAULT_UNIT, unitsPerInch } from './reportGeometry';
 import { REMEMBER } from './chatTurn';
 import { roundSkeleton, scrubSkeleton } from './learning';
+import type { Correction } from './corrections';
 
 /** What Forma's own model can apply from a memory. */
 export interface MemoryHints {
@@ -40,11 +50,11 @@ export interface MemoryHints {
   fontFamily?: string;
   /** Points, by the role a text plays. */
   sizes?: Partial<Record<'title' | 'caption' | 'value' | 'total', number>>;
-  /** The page's margins, in the report's own units, from the kept reports (D1). */
+  /** The page's margins, in hundredths of an inch whatever the kept reports' own unit, from them (D1). */
   margins?: { top: number; bottom: number; left: number; right: number };
   /** Whether each role is bold, from the kept reports (D1). */
   bold?: Partial<Record<'title' | 'caption' | 'value' | 'total', boolean>>;
-  /** The height of a record's row, from the kept reports (D1). */
+  /** The height of a record's row, in hundredths of an inch, from the kept reports (D1). */
   rowHeight?: number;
 }
 
@@ -52,7 +62,8 @@ export interface Memory {
   id: string;
   /** What it says, as shown in Settings and as an AI is told it. */
   text: string;
-  source: 'chat' | 'settings';
+  /** Said in the chat, added in Settings, or learned from the person's changes (D4, lib/corrections.ts). */
+  source: 'chat' | 'settings' | 'learned';
   created: string;
   enabled: boolean;
   hints: MemoryHints;
@@ -91,6 +102,12 @@ export interface KeptStyle {
    * is learned from. Absent on a style kept before, or one too large to keep.
    */
   skeleton?: ReportSkeleton;
+  /**
+   * Set when `skeleton`'s geometry was read into hundredths of an inch
+   * (`skeletonInHundredths`, 2026-11-11, the LRN2 review). A skeleton kept
+   * before it is in the report's own unit, which `geometryKnown` tells apart.
+   */
+  hundredths?: true;
 }
 
 export interface MemoryState {
@@ -98,6 +115,13 @@ export interface MemoryState {
   kept: KeptStyle[];
   /** Whether what kept reports show is used; the memories each have their own switch. */
   learnFromKept: boolean;
+  /**
+   * The changes the person made to what Forma made, and the ones they undid
+   * (2026-11-11, D4): what a learned memory is counted from. Never a word of
+   * a report, only a part's kind and the value it was set to. Absent on a
+   * state written before it, read back as empty.
+   */
+  ledger?: Correction[];
 }
 
 const STORAGE_KEY = 'forma.memory';
@@ -109,7 +133,7 @@ export const MAX_KEPT = 30;
  */
 export const MAX_KEPT_SKELETON_CHARS = 20_000;
 
-const EMPTY: MemoryState = { memories: [], kept: [], learnFromKept: true };
+const EMPTY: MemoryState = { memories: [], kept: [], learnFromKept: true, ledger: [] };
 
 /** Who is signed in, whose memory a read or write without one reaches; null signed out. */
 let account: string | null = null;
@@ -118,6 +142,9 @@ let account: string | null = null;
 export function setMemoryAccount(uid: string | null): void {
   account = uid || null;
 }
+
+/** The account named last, for Settings' Forget, which clears that account's kept reports too. */
+export const memoryAccount = (): string | null => account;
 
 /** Where an account's memory is kept: its own key, or the signed-out one. */
 export function memoryKey(uid: string | null = account): string {
@@ -151,14 +178,15 @@ export function retireLegacyMemory(storage: Pick<Storage, 'getItem' | 'setItem' 
 export function readMemory(uid: string | null = account): MemoryState {
   try {
     const s = JSON.parse(localStorage.getItem(memoryKey(uid)) || 'null') as Partial<MemoryState> | null;
-    if (!s) return { ...EMPTY };
+    if (!s) return { ...EMPTY, ledger: [] };
     return {
       memories: Array.isArray(s.memories) ? s.memories : [],
       kept: Array.isArray(s.kept) ? s.kept : [],
       learnFromKept: s.learnFromKept !== false,
+      ledger: Array.isArray(s.ledger) ? s.ledger : [],
     };
   } catch {
-    return { ...EMPTY };
+    return { ...EMPTY, ledger: [] };
   }
 }
 
@@ -249,7 +277,9 @@ export function memoryFrom(message: string, source: Memory['source'] = 'chat', n
 
 /** The memory as one small file (CP-13): what Settings' Export writes and Import reads back. */
 export function exportMemory(state: MemoryState): string {
-  return JSON.stringify({ forma: 'memory', version: 1, memories: state.memories, learnFromKept: state.learnFromKept }, null, 1);
+  // Not what was learned from changes (D4): like the kept reports, it is learned from this browser's own reports.
+  const memories = state.memories.filter((m) => m.source !== 'learned');
+  return JSON.stringify({ forma: 'memory', version: 1, memories, learnFromKept: state.learnFromKept }, null, 1);
 }
 
 /**
@@ -320,12 +350,32 @@ function hashOf(text: string): string {
 }
 
 /**
+ * A report's skeleton with its geometry read into hundredths of an inch,
+ * whatever its ReportUnit and Dpi (2026-11-11, the LRN2 review). A skeleton
+ * is measured in hundredths everywhere it is used: Forma's model and its
+ * features, `paperName`, and the margins and row height `preferencesOf` hands
+ * offlineGenerator. Read in its own unit, a millimetre report's 1 cm margins
+ * (100) printed as 1 inch, 2.54 times too large, and never threw. The
+ * conversion is reportPreview's own, through reportGeometry's units.
+ */
+export function skeletonInHundredths(repx: string): ReportSkeleton {
+  return skeletonOf(parseReportStructure(repx, { dpi: unitsPerInch(DEFAULT_UNIT), unit: DEFAULT_UNIT }));
+}
+
+/**
+ * Whether a kept style's skeleton is in hundredths of an inch: read so since
+ * the LRN2 review, or, kept before, on a paper `paperName` knew, which only a
+ * page measured in hundredths matches (a millimetre A4 reads as Custom).
+ */
+const geometryKnown = (k: KeptStyle): boolean => !!k.skeleton && (k.hundredths === true || k.skeleton.paper !== 'Custom');
+
+/**
  * The style a kept report leaves, or null when it cannot be read. `key` is
  * the report's project id when it has one; otherwise its skeleton's hash.
  */
 export function keptStyleOf(repx: string, now = new Date(), key?: string): KeptStyle | null {
   try {
-    const skeleton = skeletonOf(parseReportStructure(repx));
+    const skeleton = skeletonInHundredths(repx);
     if (!skeleton.bands.length) return null;
     const style = learnStyle([skeleton]);
     const sizes: KeptStyle['sizes'] = {};
@@ -333,7 +383,7 @@ export function keptStyleOf(repx: string, now = new Date(), key?: string): KeptS
     const shape = `s${hashOf(JSON.stringify(skeleton))}`;
     const clean = roundSkeleton(scrubSkeleton(skeleton));
     const keep = JSON.stringify(clean).length <= MAX_KEPT_SKELETON_CHARS;
-    return { key: key || shape, shape, at: now.toISOString(), paper: skeleton.paper, landscape: skeleton.landscape, fontFamily: style.fonts[0]?.family ?? 'Arial', sizes, ...(keep ? { skeleton: clean } : {}) };
+    return { key: key || shape, shape, at: now.toISOString(), paper: skeleton.paper, landscape: skeleton.landscape, fontFamily: style.fonts[0]?.family ?? 'Arial', sizes, ...(keep ? { skeleton: clean, hundredths: true as const } : {}) };
   } catch {
     return null;
   }
@@ -376,10 +426,15 @@ export function keptSummary(state: MemoryState): (MemoryHints & { reports: numbe
  * brief a described report is given (App, `houseStyleBrief`), so a person
  * who keeps A4 reports in Tahoma 9pt gets the next one that way. Null until
  * then. Nothing of it leaves this browser but that brief.
+ *
+ * Only skeletons known to be in hundredths of an inch count (`geometryKnown`,
+ * the LRN2 review): learnStyle's margins and row height are read as
+ * hundredths by everything downstream, and one kept in millimetres would skew
+ * them by 2.54. A report kept before then counts again once kept again.
  */
 export function personalStyle(state: MemoryState): { style: HouseStyle; reports: number } | null {
   if (!state.learnFromKept) return null;
-  const skeletons = state.kept.flatMap((k) => (k.skeleton && Array.isArray(k.skeleton.bands) ? [k.skeleton] : []));
+  const skeletons = state.kept.flatMap((k) => (geometryKnown(k) && Array.isArray(k.skeleton!.bands) ? [k.skeleton!] : []));
   if (skeletons.length < 2) return null;
   return { style: learnStyle(skeletons), reports: skeletons.length };
 }
@@ -401,6 +456,8 @@ export function preferencesOf(state: MemoryState, projectId?: string | null): Me
     if (h.landscape !== undefined) out.landscape = h.landscape;
     if (h.fontFamily) out.fontFamily = h.fontFamily;
     if (h.sizes) out.sizes = { ...out.sizes, ...h.sizes };
+    // A role's weight learned from the person's changes (D4) wins over what their reports show.
+    if (h.bold) out.bold = { ...out.bold, ...h.bold };
   };
   const kept = keptSummary(state);
   if (kept) apply(kept);
@@ -416,7 +473,7 @@ export function preferencesOf(state: MemoryState, projectId?: string | null): Me
     if (Object.keys(bold).length) out.bold = bold;
     // Only when a kept report has a record's row to measure (2026-11-11):
     // learnStyle answers 20 when none has, which is its default, not theirs.
-    const measured = state.kept.some((k) => k.skeleton && Array.isArray(k.skeleton.bands) && skeletonTexts(k.skeleton).some((t) => t.band === 'Detail' && t.h > 0));
+    const measured = state.kept.some((k) => geometryKnown(k) && Array.isArray(k.skeleton!.bands) && skeletonTexts(k.skeleton!).some((t) => t.band === 'Detail' && t.h > 0));
     if (measured) out.rowHeight = mine.style.rowHeight;
   }
   for (const m of appliesTo(state, projectId)) apply(m.hints);

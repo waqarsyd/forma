@@ -13,8 +13,21 @@
  * run agree.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { importReports, retrieveHouseStyle, sources, removeSource, type LibraryDeps } from './library';
+import {
+  importReports,
+  forgetKept,
+  keepReport,
+  listSources,
+  MAX_KEPT_REPORTS,
+  nearestKept,
+  retrieveHouseStyle,
+  sources,
+  removeSource,
+  type KeptReport,
+  type LibraryDeps,
+} from './library';
 import type { LibraryEntry, LibraryStorage } from '../lib/embedStore';
+import type { KeptRecord, KeptStorage } from '../lib/libraryDb';
 
 const report = (controls: string, bandHeight = '96') =>
   '<?xml version="1.0" encoding="utf-8"?>' +
@@ -263,5 +276,129 @@ describe('removeSource', () => {
     const left = await removeSource('a.repx', deps({ storage: storage.store }));
     expect(sources(left).map((s) => s.name)).toEqual(['b.repx']);
     expect(sources(storage.held()).map((s) => s.name)).toEqual(['b.repx']);
+  });
+});
+
+/** The kept reports' store, in memory. */
+function fakeKept(initial: KeptRecord[] = []) {
+  let held = initial;
+  const store: KeptStorage = {
+    load: async () => held,
+    save: async (records) => {
+      held = records.slice();
+    },
+  };
+  return { store, held: () => held };
+}
+
+const keptReport = (over: Partial<KeptReport> = {}): KeptReport => ({
+  id: 'project-1',
+  owner: null,
+  name: 'Invoice',
+  features: [1, 0],
+  category: 'invoice',
+  face: 'Arial',
+  titleSize: 14,
+  repx: report(label('Arial, 9pt')),
+  ...over,
+});
+
+/* The reports a person keeps (2026-11-11, D2 and D3). */
+describe('keepReport', () => {
+  it('keeps a report stripped, as an added one is, and sends nothing anywhere', async () => {
+    const kept = fakeKept();
+    const d = deps({ kept: kept.store });
+    const secret = report('<Item1 Ref="2" ControlType="XRLabel" Name="lblClient" Text="Acme Private Ltd" Font="Arial, 9pt" />');
+    expect(await keepReport(keptReport({ repx: secret }), d, { now: 5 })).toBe(true);
+    const [record] = kept.held();
+    expect(record).toMatchObject({ id: 'project-1', name: 'Invoice', at: 5, category: 'invoice' });
+    expect(record.chunks.length).toBeGreaterThan(0);
+    expect(JSON.stringify(record.chunks)).not.toMatch(/Acme|Private|lblClient/);
+    expect(d.embedEntries).not.toHaveBeenCalled();
+    expect(d.embedTexts).not.toHaveBeenCalled();
+  });
+
+  it('replaces what the same report left before, and what it left before it had a project', async () => {
+    const kept = fakeKept();
+    const d = deps({ kept: kept.store });
+    await keepReport(keptReport({ id: 's-shape' }), d, { now: 1 });
+    await keepReport(keptReport(), d, { now: 2, replaces: 's-shape' });
+    await keepReport(keptReport(), d, { now: 3 });
+    expect(kept.held().map((r) => [r.id, r.at])).toEqual([['project-1', 3]]);
+  });
+
+  it('keeps the newest, the oldest going first', async () => {
+    const kept = fakeKept();
+    const d = deps({ kept: kept.store });
+    for (let i = 0; i < MAX_KEPT_REPORTS + 3; i++) await keepReport(keptReport({ id: `p${i}`, name: `R${i}` }), d, { now: i });
+    expect(kept.held()).toHaveLength(MAX_KEPT_REPORTS);
+    expect(kept.held()[0].id).toBe('p3');
+  });
+
+  it('keeps nothing with nowhere to keep it, or a file with no part to keep', async () => {
+    expect(await keepReport(keptReport(), deps())).toBe(false);
+    const kept = fakeKept();
+    expect(await keepReport(keptReport({ repx: 'not a report' }), deps({ kept: kept.store }))).toBe(false);
+    expect(kept.held()).toEqual([]);
+  });
+});
+
+describe('nearestKept', () => {
+  const record = (id: string, features: number[], category: string | null, at = 0): KeptRecord => ({ id, owner: null, name: id, at, features, category, face: 'Arial', titleSize: 14, chunks: [] });
+
+  it('finds the kept report shaped most like the new one, the category the words name counting most', () => {
+    const scale = { sd: [1, 1] };
+    const records = [record('list', [0, 0], 'list'), record('invoice', [2.4, 0], 'invoice')];
+    expect(nearestKept({ features: [0.5, 0], category: null }, records, scale)?.record.id).toBe('list');
+    expect(nearestKept({ features: [0.5, 0], category: 'invoice' }, records, scale)?.record.id).toBe('invoice');
+    // Equally near: the newer one.
+    expect(nearestKept({ features: [1, 0], category: null }, [record('a', [0, 0], null, 1), record('b', [2, 0], null, 2)], scale)?.record.id).toBe('b');
+    expect(nearestKept({ features: [1, 0], category: null }, [], scale)).toBeNull();
+    // One measured another way cannot be compared.
+    expect(nearestKept({ features: [1, 0], category: null }, [record('x', [1, 0, 0], null)], scale)).toBeNull();
+  });
+});
+
+describe('the kept reports in the panel', () => {
+  it('are listed by name beside the added files, and removed by the same Remove', async () => {
+    const storage = fakeStorage();
+    const kept = fakeKept();
+    const d = deps({ storage: storage.store, kept: kept.store });
+    await importReports([{ name: 'a.repx', text: report(label('Arial, 9pt')) }], d, { apiKey: 'k' });
+    await keepReport(keptReport({ name: 'Invoice' }), d);
+    await keepReport(keptReport({ id: 'p2', name: 'a.repx' }), d);
+    const rows = await listSources(d);
+    expect(rows.map((r) => [r.name, r.kept ?? false])).toEqual([['a.repx', false], ['Invoice', true]]);
+    expect(rows[1].embedded).toBe(rows[1].chunks);
+    await removeSource('Invoice', d);
+    expect((await listSources(d)).map((r) => r.name)).toEqual(['a.repx']);
+    // An added file and a kept report of one name go together.
+    await removeSource('a.repx', d);
+    expect(kept.held()).toEqual([]);
+  });
+
+  /* The LRN2 review (2026-11-11): the store is per browser, the memory per account. */
+  it("are listed only to whoever kept them, and someone else's go when a report is kept", async () => {
+    const kept = fakeKept();
+    const d = deps({ kept: kept.store });
+    await keepReport(keptReport({ id: 's1', name: 'Payroll' }), d, { now: 1 });
+    expect((await listSources(d, 'alice')).map((r) => r.name)).toEqual([]);
+    expect((await listSources(d, null)).map((r) => r.name)).toEqual(['Payroll']);
+    await keepReport(keptReport({ owner: 'alice', name: 'Invoice' }), d, { now: 2 });
+    expect(kept.held().map((r) => [r.owner, r.name])).toEqual([['alice', 'Invoice']]);
+    expect((await listSources(d, null)).map((r) => r.name)).toEqual([]);
+  });
+
+  it("are forgotten for one person by Settings' Forget, and nobody else's are touched", async () => {
+    const kept = fakeKept();
+    const d = deps({ kept: kept.store });
+    await keepReport(keptReport({ owner: 'alice' }), d, { now: 1 });
+    await forgetKept('bob', d);
+    expect(kept.held()).toHaveLength(1);
+    await forgetKept('alice', d);
+    expect(kept.held()).toEqual([]);
+    expect((await listSources(d, 'alice')).map((r) => r.name)).toEqual([]);
+    // Nowhere to keep them: nothing to forget, and no error.
+    await expect(forgetKept('alice', deps())).resolves.toBeUndefined();
   });
 });

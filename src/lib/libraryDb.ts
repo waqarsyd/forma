@@ -49,14 +49,24 @@
  * malformed-record guards — stored data outlives the code that wrote it, so a
  * record from an older shape has to be survivable rather than fatal.
  *
- * The IndexedDB calls themselves have no unit test yet. jsdom provides no
- * IndexedDB, and `fake-indexeddb` was declined here at first as a devDependency
- * for one adapter. There are four such stores now (this one, the learning
- * events, the database layouts and the batch checkpoint), so on 2026-11-11 (the
- * full audit, TC-07) it became a devDependency, and `learning.test.ts` and
- * `sqlSchemaStore.test.ts` show the pattern: a fresh `IDBFactory` per case, put
- * where the store looks for it. This adapter is next in line; until then,
- * exercise it in the running app.
+ * jsdom provides no IndexedDB, and `fake-indexeddb` was declined here at first
+ * as a devDependency for one adapter. There are four such stores now (this
+ * one, the learning events, the database layouts and the batch checkpoint), so
+ * on 2026-11-11 (the full audit, TC-07) it became a devDependency. Both stores
+ * here take the `IDBFactory` to use (the browser's when none is given), and
+ * `libraryDb.test.ts` runs them over a fresh in-memory one per case (batch
+ * LRN2, the same day).
+ *
+ * ## The reports a person keeps, beside the ones they add (2026-11-11, D2)
+ *
+ * A report the person keeps, by exporting it, saving it or opening it in the
+ * designer, joins their library on its own, in a second object store,
+ * `kept`: one record per report, its parts cut and stripped exactly as an
+ * imported file's are (`chunkRepx`), the numbers its shape is compared by,
+ * and its name, which never leaves this browser. Apart from `entries` on
+ * purpose: those are embedded through the person's key and searched on a
+ * refine, and a kept report is neither. It is compared by its shape, here,
+ * and nothing of it is sent anywhere for that (services/library.ts).
  *
  * ## It belongs to whoever is signed in, and goes when they sign out
  *
@@ -73,7 +83,68 @@ import type { RepxChunk } from './repxChunks';
 
 export const LIBRARY_DB_NAME = 'forma-library';
 export const LIBRARY_STORE = 'entries';
-export const LIBRARY_DB_VERSION = 1;
+/** The reports the person kept (D2), one record each. */
+export const KEPT_STORE = 'kept';
+/** 2 since 2026-11-11, when `kept` joined `entries`; an older database gains it on opening. */
+export const LIBRARY_DB_VERSION = 2;
+
+/**
+ * A report the person kept, as the library holds it: never its words. Its
+ * `name` is the report's own title, shown in the Library panel and in the
+ * reply that says a report was laid out like it; it is not sent to an AI.
+ */
+export interface KeptRecord {
+  /** The project's id, or a hash of its shape when it has none: keeping it again replaces it. */
+  id: string;
+  /**
+   * Who kept it: the account's uid, or null signed out (2026-11-11, the LRN2
+   * review). The memory is per account and only a sign-out deletes this
+   * database, so without it one person's kept reports were the next person's
+   * examples on a shared browser. Read and listed for its owner only, and a
+   * report kept by anyone else clears it out (services/library.ts).
+   */
+  owner: string | null;
+  name: string;
+  /** When it was last kept, epoch ms; the oldest goes first. */
+  at: number;
+  /** `skeletonFeatures` of its skeleton: what it is compared with a new request by. */
+  features: number[];
+  /** A `CATEGORY_WORDS` key its name points to, or null. */
+  category: string | null;
+  /** The face most of its text is in, and its title's size in points (null without a title). */
+  face: string;
+  titleSize: number | null;
+  /** Its parts, data stripped (`chunkRepx`): what the AI is shown as a formatting example. */
+  chunks: RepxChunk[];
+}
+
+/** A kept record read back, or null when it cannot be trusted (as `fromRecord`). */
+export function fromKeptRecord(record: unknown): KeptRecord | null {
+  if (!record || typeof record !== 'object') return null;
+  const r = record as Partial<KeptRecord>;
+  if (typeof r.id !== 'string' || !r.id || typeof r.name !== 'string') return null;
+  if (typeof r.at !== 'number' || !Number.isFinite(r.at)) return null;
+  if (!Array.isArray(r.features) || !r.features.every((f) => typeof f === 'number' && Number.isFinite(f))) return null;
+  if (!Array.isArray(r.chunks)) return null;
+  const chunks = r.chunks.filter((c): c is RepxChunk => !!c && typeof c === 'object' && typeof (c as RepxChunk).xml === 'string');
+  return {
+    id: r.id,
+    owner: typeof r.owner === 'string' && r.owner ? r.owner : null,
+    name: r.name,
+    at: r.at,
+    features: r.features,
+    category: typeof r.category === 'string' ? r.category : null,
+    face: typeof r.face === 'string' ? r.face : '',
+    titleSize: typeof r.titleSize === 'number' && Number.isFinite(r.titleSize) ? r.titleSize : null,
+    chunks,
+  };
+}
+
+/** The kept reports on disk: whole-store reads and writes, as the entries'. */
+export interface KeptStorage {
+  load(): Promise<KeptRecord[]>;
+  save(records: readonly KeptRecord[]): Promise<void>;
+}
 
 /**
  * An entry as it sits in the object store.
@@ -142,17 +213,21 @@ function request<T>(req: IDBRequest<T>): Promise<T> {
   });
 }
 
-function open(): Promise<IDBDatabase> {
+/** The browser's IndexedDB, or undefined where there is none (Node, some private modes). */
+const browserIdb = (): IDBFactory | undefined => (typeof indexedDB === 'undefined' ? undefined : indexedDB);
+
+function open(idb: IDBFactory | undefined = browserIdb()): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    if (typeof indexedDB === 'undefined') {
+    if (!idb) {
       reject(new Error('IndexedDB is not available in this browser context'));
       return;
     }
 
-    const req = indexedDB.open(LIBRARY_DB_NAME, LIBRARY_DB_VERSION);
+    const req = idb.open(LIBRARY_DB_NAME, LIBRARY_DB_VERSION);
     req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(LIBRARY_STORE)) {
-        req.result.createObjectStore(LIBRARY_STORE, { keyPath: 'id' });
+      // Each store made when missing, so a version-1 database keeps its entries and gains `kept`.
+      for (const name of [LIBRARY_STORE, KEPT_STORE]) {
+        if (!req.result.objectStoreNames.contains(name)) req.result.createObjectStore(name, { keyPath: 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -163,49 +238,60 @@ function open(): Promise<IDBDatabase> {
   });
 }
 
-/** The `LibraryStorage` the rest of the feature talks to. */
-export function createLibraryStorage(): LibraryStorage {
+/** Every record of one store, each read through `read`; [] when the store cannot be opened or read. */
+async function loadAll<T>(idb: IDBFactory | undefined, store: string, read: (record: unknown) => T | null): Promise<T[]> {
+  let db: IDBDatabase;
+  try {
+    db = await open(idb);
+  } catch {
+    return [];
+  }
+  try {
+    const tx = db.transaction(store, 'readonly');
+    const raw = await request<unknown[]>(tx.objectStore(store).getAll());
+    const out: T[] = [];
+    for (const record of raw) {
+      const item = read(record);
+      if (item) out.push(item);
+    }
+    return out;
+  } catch {
+    return [];
+  } finally {
+    db.close();
+  }
+}
+
+/** One store replaced by `records` in a single transaction; rejects, as the header says a save must. */
+async function saveAll(idb: IDBFactory | undefined, store: string, records: readonly unknown[]): Promise<void> {
+  const db = await open(idb);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(store, 'readwrite');
+      const os = tx.objectStore(store);
+      os.clear();
+      for (const record of records) os.put(record);
+      tx.oncomplete = () => resolve();
+      tx.onabort = () => reject(tx.error ?? new Error('IndexedDB write was aborted'));
+      tx.onerror = () => reject(tx.error ?? new Error('IndexedDB write failed'));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+/** The `LibraryStorage` the rest of the feature talks to; `idb` is the browser's unless a test gives one. */
+export function createLibraryStorage(idb?: IDBFactory): LibraryStorage {
   return {
-    async load(): Promise<LibraryEntry[]> {
-      let db: IDBDatabase;
-      try {
-        db = await open();
-      } catch {
-        return [];
-      }
+    load: () => loadAll(idb ?? browserIdb(), LIBRARY_STORE, fromRecord),
+    save: (entries) => saveAll(idb ?? browserIdb(), LIBRARY_STORE, entries.map(toRecord)),
+  };
+}
 
-      try {
-        const tx = db.transaction(LIBRARY_STORE, 'readonly');
-        const raw = await request<unknown[]>(tx.objectStore(LIBRARY_STORE).getAll());
-        const entries: LibraryEntry[] = [];
-        for (const record of raw) {
-          const entry = fromRecord(record);
-          if (entry) entries.push(entry);
-        }
-        return entries;
-      } catch {
-        return [];
-      } finally {
-        db.close();
-      }
-    },
-
-    async save(entries: readonly LibraryEntry[]): Promise<void> {
-      const db = await open();
-      try {
-        await new Promise<void>((resolve, reject) => {
-          const tx = db.transaction(LIBRARY_STORE, 'readwrite');
-          const store = tx.objectStore(LIBRARY_STORE);
-          store.clear();
-          for (const entry of entries) store.put(toRecord(entry));
-
-          tx.oncomplete = () => resolve();
-          tx.onabort = () => reject(tx.error ?? new Error('IndexedDB write was aborted'));
-          tx.onerror = () => reject(tx.error ?? new Error('IndexedDB write failed'));
-        });
-      } finally {
-        db.close();
-      }
-    },
+/** The kept reports' store (D2), in the same database. */
+export function createKeptStorage(idb?: IDBFactory): KeptStorage {
+  return {
+    load: () => loadAll(idb ?? browserIdb(), KEPT_STORE, fromKeptRecord),
+    save: (records) => saveAll(idb ?? browserIdb(), KEPT_STORE, records),
   };
 }

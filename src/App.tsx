@@ -220,6 +220,8 @@ import { pushRevision, type Revision } from './lib/revisions';
    +17,318 B (82.2% -> 84.9% of that artifact's budget) before this was made
    dynamic. The types are a separate `import type`, which is erased entirely. */
 const loadLibrary = () => import('./services/library');
+/** What the person's own reports teach their next one (2026-11-11, D1 to D4). */
+const loadLoop = () => import('./lib/learningLoop');
 import type { LibraryDeps, LibrarySource } from './services/library';
 /* Persisting those revisions. Pure — it plans documents, it does not write them —
    so it stays eager while `accountData`'s path builders arrive through
@@ -600,6 +602,8 @@ type TeamPlan = {
    * whose layout the vision model or the box reader read.
    */
   correct?: DraftRequest | null;
+  /** The page's shape as Forma read it, which the nearest kept report is found by (2026-11-11, D3). */
+  shape?: import('./lib/reportSkeleton').ReportSkeleton;
 };
 
 const NO_TEAM: TeamPlan = { brief: '', draft: null };
@@ -2305,8 +2309,8 @@ export default function App() {
 
   const refreshLibrary = useCallback(async () => {
     try {
-      const [{ sources }, deps] = await Promise.all([loadLibrary(), getLibraryDeps()]);
-      setLibrarySources(sources(await deps.storage.load()));
+      const [{ listSources }, deps] = await Promise.all([loadLibrary(), getLibraryDeps()]);
+      setLibrarySources(await listSources(deps, previousUidRef.current));
     } catch {
       /* A library that cannot be read is a feature offering nothing, not a
          broken workspace -- the same rule libraryDb.load() follows. */
@@ -2314,9 +2318,10 @@ export default function App() {
     }
   }, [getLibraryDeps]);
 
+  // Again on signing in or out, and as Settings closes, whose Forget clears kept reports (LRN2 review).
   useEffect(() => {
     void refreshLibrary();
-  }, [refreshLibrary]);
+  }, [refreshLibrary, user, isConfigOpen]);
 
   useEffect(() => {
     try {
@@ -3083,21 +3088,6 @@ export default function App() {
      autosave failed. */
 
   /**
-   * A report the user keeps teaches the memory its style, never its words
-   * (lib/memory.ts), under the account signed in. Known by its project when it
-   * has one (2026-11-11, the full audit's LM-28), so a report saved and
-   * exported five times is one report, not a house style of five.
-   */
-  const rememberKept = (repx: string | undefined, projectId?: string | null) => {
-    if (!repx) return;
-    const owner = previousUidRef.current;
-    void import('./lib/memory').then(m => {
-      const style = m.keptStyleOf(repx, new Date(), projectId ?? undefined);
-      if (style) m.writeMemory(m.rememberKept(m.readMemory(owner), style), owner);
-    }).catch(() => undefined);
-  };
-
-  /**
    * The open session saved (2026-11-05), by the Save button or on its own.
    *
    * Into the open project, which is the change: every save minted a new id
@@ -3120,7 +3110,6 @@ export default function App() {
     if (!report && kept.length === 0) return false;
     const reportId = openReportId.current ?? batchProjects.current.firstId ?? Date.now().toString();
     if (!openReportId.current) batchProjects.current.firstId = null;
-    if (!quiet) rememberKept(report?.repxContent, reportId);
     // Only once the save has succeeded (2026-11-11): a refused save, at the
     // projects limit or offline, kept nothing and is no sign the report was right.
     const keptBySave = () => { if (!quiet) recordKept('save', report?.repxContent); };
@@ -3932,16 +3921,8 @@ export default function App() {
    */
   /** A report Forma's own model designs from a description, with no AI: the stand-in when the AI fails (the chat box with no key used it until 2026-11-05). */
   const offlineDesign = async (request: ReportDescriptionRequest, message: string) => {
-    const [offline, { loadFormaModel }, { parseDataSource }, { readMemory, preferencesOf }] = await Promise.all([
-      import('./lib/offlineGenerator'),
-      import('./lib/formaModel'),
-      import('./lib/dataSource'),
-      import('./lib/memory'),
-    ]);
-    const fields = request.dataSchema
-      ? parseDataSource(request.dataSchema).fields.map(f => ({ name: f.name, type: f.type === 'string' ? ('text' as const) : f.type }))
-      : undefined;
-    const design = offline.generateOffline(await loadFormaModel(), { description: request.description || message, fields, preferences: preferencesOf(readMemory(previousUidRef.current), openReportId.current) });
+    // In the person's own style where their memory has one (lib/learningLoop.ts, D1).
+    const { design, reply } = await (await loadLoop()).designFromWords(request, message, previousUidRef.current, openReportId.current);
     const newResult: DesignResult = {
       content: design.markdown,
       timestamp: new Date(),
@@ -3951,7 +3932,7 @@ export default function App() {
       usage: null,
     };
     recordLearning({ kind: 'generation', source: 'words', request: 'new', ai: 'forma', draft: 'offline', repx: design.repx });
-    return { design, result: newResult, reply: offline.designedReply(design) };
+    return { design, result: newResult, reply };
   };
 
   /**
@@ -3974,6 +3955,7 @@ export default function App() {
     let draft: TeamPlan['draft'] = null;
     let evidence: ReportLayout | null = null;
     let correct: DraftRequest | null = null;
+    let shape: TeamPlan['shape'];
     if (input.read.length) {
       // OCR's own picture of the source, every row it read, for the audit
       // to check the AI's REPX against (2026-11-05, lib/ocrAttach.ts).
@@ -3987,6 +3969,7 @@ export default function App() {
         // The first page and the upload's last, in lib/visionDraft.ts since 2026-11-11 (BW).
         const made = await (await import('./lib/visionDraft')).visionDraft(vision, input.firstImage, input.lastImage, input.read, config, signal);
         ({ brief, correct } = made);
+        shape = made.skeleton;
         draft = async () => ({ result: made.result, source: 'vision' });
       } catch (err) {
         if (signal.aborted) throw err;
@@ -4000,7 +3983,7 @@ export default function App() {
       const built = await readerBuild(input.read, config);
       if (built && !signal.aborted) {
         const { draftBrief, readerCorrection } = await import('./lib/formaTeam');
-        brief = draftBrief(built.skeleton, built.layout, config.unit, 'reader');
+        brief = draftBrief((shape = built.skeleton), built.layout, config.unit, 'reader');
         correct = readerCorrection(built);
         const readerResult: DesignResult = { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: built.repxContent, usage: null };
         draft = async () => ({ result: readerResult, source: 'reader' });
@@ -4022,17 +4005,16 @@ export default function App() {
     const described = input.described;
     if (described) {
       // Forma's own style, unless the box's switch is off (2026-11-08); the
-      // person's own once two reports they kept show it (2026-11-11, D1).
+      // person's own once two reports they kept show it, with what their
+      // changes taught (2026-11-11, D1 and D4; lib/learningLoop.ts).
       if (houseStyleOn) try {
-        const [{ loadFormaModel }, { houseStyleBrief }, memory] = await Promise.all([import('./lib/formaModel'), import('./lib/formaTeam'), import('./lib/memory')]);
-        const model = memory.personalStyle(memory.readMemory(previousUidRef.current)) ?? await loadFormaModel();
-        brief = houseStyleBrief(model.style, model.reports, config.unit);
+        brief = await (await loadLoop()).houseBrief(previousUidRef.current, config.unit);
       } catch (err) {
         console.warn("Forma's own model could not be loaded; the AI designs without its house style.", err);
       }
       draft = async () => ({ result: (await offlineDesign(described, described.description)).result, source: 'offline' });
     }
-    return { brief, draft, evidence, correct };
+    return { brief, draft, evidence, correct, shape };
   };
 
   const runGeneration = async (
@@ -4137,8 +4119,12 @@ export default function App() {
       }
 
       // The user's remembered preferences (lib/memory.ts), as their own block
-      // ahead of the request, never mixed into the words they typed.
-      const remembered = await import('./lib/memory').then(m => m.instructionsOf(m.readMemory(previousUidRef.current), openReportId.current)).catch(() => '');
+      // ahead of the request, never mixed into the words they typed; on a
+      // first report, after the house style switch, the kept report nearest
+      // it as an example (2026-11-11, D3; lib/learningLoop.ts).
+      const { remembered, kept } = await loadLoop()
+        .then((l) => l.beforeGeneration({ owner: previousUidRef.current, projectId: openReportId.current, first: !open && houseStyleOn && !currentTexts.some((t) => isReportFile({ file: t.file ?? '' })), shape: team.shape, words: currentPrompt, description: describeRequest?.description }))
+        .catch(() => ({ remembered: '', kept: null }));
       // A shared database's likeliest objects and sample values, in place of "assume the procedure" (batch DE).
       const db = databaseShared && activeDatabase ? await import('./lib/databaseAi') : null;
       const database = db ? db.designSection(activeDatabase!, { query: activeQuery, words: [currentPrompt, team.brief, ...currentTexts.map((t) => t.text)].join('\n') }) : undefined;
@@ -4336,7 +4322,8 @@ export default function App() {
         : currentTexts.some(isReportFile) ? 'repx'
         : currentTexts.some((t) => /\.pdf$/i.test(t.file ?? '')) ? 'pdf'
         : currentPreviews.length ? 'picture' : 'description';
-      const said = firstReply(kind, Boolean(currentPrompt.trim()), translated?.language, translated?.bilingual);
+      // "Laid out like your Invoice report.", only when it visibly is (D3).
+      const said = [firstReply(kind, Boolean(currentPrompt.trim()), translated?.language, translated?.bilingual), kept && (await loadLoop().then((l) => l.laidOutLike(repxContent, kept)).catch(() => ''))].filter(Boolean).join(' ');
       const learnedAs = { id: recordLearning(null), ai: aiKindOf(chained.by) };
       const newAssistantMsg: ChatMessage = {
         id: nextMessageId(),
@@ -4614,6 +4601,8 @@ export default function App() {
     // An edit undone is the clearest "not that" there is (2026-11-11, LM-12): it names the edit's event.
     const undone = messages.find((m) => m.id === id)?.learning;
     if (undone) recordLearning({ kind: 'undo', request: 'edit', ref: undone.id, ai: undone.ai });
+    // And on this device it counts against what that change did (D4).
+    void loadLoop().then((l) => l.onUndone({ before: change.before.repxContent, after: change.after.repxContent, ref: id, owner: previousUidRef.current })).catch(() => undefined);
   };
   const handleRedo = (id: string) => {
     const change = chatChanges[id];
@@ -4621,6 +4610,7 @@ export default function App() {
     if (reportFuture.current[reportFuture.current.length - 1]?.repxContent === change.after.repxContent) redoReport();
     else setResult(change.after);
     recordRevision('Redone in the chat', change.after);
+    void loadLoop().then((l) => l.onRedone({ ref: id, owner: previousUidRef.current })).catch(() => undefined);
   };
   /* A change made again, by either Redo, is no longer undone. */
   useEffect(() => {
@@ -4803,12 +4793,18 @@ export default function App() {
   /**
    * A report kept (2026-11-11, LM-12 and D6): exported, opened in the designer
    * or saved, the strongest sign a report was right. With the report Forma
-   * made first in this conversation, so the event says how far it moved.
+   * made first in this conversation, so the event says how far it moved. On
+   * this device it also teaches the memory its style, counts what the person
+   * changed, and joins their library (lib/learningLoop.ts, D1, D2 and D4).
    */
   const recordKept = (how: string, repx: string | undefined) => {
     if (!repx) return;
     const made = messages.find((m) => m.role === 'assistant' && m.result?.repxContent);
     recordLearning({ kind: 'kept', how, repx, madeRepx: made?.result?.repxContent, ref: made?.learning?.id, ai: made?.learning?.ai });
+    void loadLoop()
+      .then((l) => l.onKept({ repx, projectId: openReportId.current, owner: previousUidRef.current, name: result?.title, madeRepx: made?.result?.repxContent, madeRef: made?.id }))
+      .then((added) => (added ? refreshLibrary() : undefined))
+      .catch(() => undefined);
   };
 
   /**
@@ -6246,7 +6242,6 @@ export default function App() {
       return;
     }
     if (blockedByInvalidRepx()) return;
-    rememberKept(result.repxContent, openReportId.current);
     recordKept('repx', result.repxContent);
     saveBlob(`${result.title ? result.title.replace(/\s+/g, '_') : 'report-design'}.repx`, new Blob([result.repxContent], { type: 'application/xml' }));
   };

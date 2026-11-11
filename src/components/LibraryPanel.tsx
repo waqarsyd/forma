@@ -204,19 +204,24 @@ export default function LibraryPanel({
               const isCanonical = canonical.has(source.name);
               return (
                 <li className="lp-row" key={source.name}>
-                  <label className="lp-canonical">
-                    <input
-                      type="checkbox"
-                      checked={isCanonical}
-                      onChange={(e) => onToggleCanonical(source.name, e.target.checked)}
-                      aria-label={`Use ${source.name} as house style`}
-                    />
-                  </label>
+                  {/* A report the person kept joined on its own and needs no tick (2026-11-11, D2): an empty cell, not an empty label. */}
+                  {source.kept ? (
+                    <span className="lp-canonical" />
+                  ) : (
+                    <label className="lp-canonical">
+                      <input
+                        type="checkbox"
+                        checked={isCanonical}
+                        onChange={(e) => onToggleCanonical(source.name, e.target.checked)}
+                        aria-label={`Use ${source.name} as house style`}
+                      />
+                    </label>
+                  )}
                   <span className="lp-name" title={source.name}>
                     {source.name}
                   </span>
                   <span className="lp-count">
-                    {source.embedded < source.chunks && 'Being read'}
+                    {source.kept ? 'You kept this' : source.embedded < source.chunks && 'Being read'}
                   </span>
                   <button className="wb-pill wb-pill--outline" onClick={() => onRemove(source.name)}>
                     Remove
@@ -225,9 +230,9 @@ export default function LibraryPanel({
               );
             })}
           </ul>
-          {canonical.size === 0 && (
+          {canonical.size === 0 && sources.some((s) => !s.kept) && (
             <p className="lp-hint">
-              Tick the reports that represent your house style. Nothing is used until you do.
+              Tick the reports that represent your house style. Nothing you add is used until you do.
             </p>
           )}
         </>

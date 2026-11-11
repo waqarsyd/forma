@@ -111,6 +111,23 @@ describe('generateOffline', () => {
     expect(sized.repx).toContain('Font="Tahoma, 9pt"');
   });
 
+  // D1 (2026-11-11): what the person's kept reports show of weight, margins and a record's row.
+  it("draws with the person's own weight, margins and row height, and keeps the page usable", () => {
+    const base = generateOffline(model, { description: 'a stock register', preferences: { paper: 'A4' } });
+    const mine = generateOffline(model, {
+      description: 'a stock register',
+      preferences: { paper: 'A4', fontFamily: 'Tahoma', sizes: { title: 16 }, bold: { title: false }, margins: { top: 60, bottom: 60, left: 75, right: 75 }, rowHeight: 26 },
+    });
+    expect(mine.repx).toContain('Font="Tahoma, 16pt"');
+    expect(mine.repx).not.toContain('Font="Tahoma, 16pt, style=Bold"');
+    expect(mine.repx).toMatch(/Margins="75, 75, 60, 60"/);
+    expect(parseReportStructure(mine.repx).bands.find((b) => b.kind === 'Detail')?.height).toBe(26);
+    expect(checkRepx(mine.repx).ok).toBe(true);
+    // Margins that leave no page (another unit's numbers) give way to the model's.
+    const silly = generateOffline(model, { description: 'a stock register', preferences: { paper: 'A4', margins: { top: 50, bottom: 50, left: 2000, right: 2000 } } });
+    expect(silly.repx.match(/Margins="[^"]+"/)?.[0]).toBe(base.repx.match(/Margins="[^"]+"/)?.[0]);
+  });
+
   it('starts a named kind of report from its usual columns, joined by what the words add', () => {
     const stock = generateOffline(model, { description: 'Create a stock register grouped by warehouse with totals' });
     expect(stock.title).toBe('Stock Register');

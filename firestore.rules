@@ -538,6 +538,12 @@ service cloud.firestore {
     // via get() would cost a read on every write to buy nothing: the path is
     // already owner-scoped, and a version under a report that has gone is
     // deleted by `deleteReportAndVersions`, not prevented by a rule.
+    //
+    // Written only to the ten slots v0..v9 (2026-11-11, the full audit's
+    // SA-01; VERSION_SLOTS in lib/revisionStore.ts), so a report holds at
+    // most ten versions whatever a client does: the cap was the client's
+    // alone until then. Delete stays open to any id, so the versions stored
+    // under their own ids before the slots can still be cleared.
     match /users/{userId}/reports/{reportId}/versions/{versionId} {
       allow get, list: if isSignedIn()
         && isValidId(userId)
@@ -546,7 +552,7 @@ service cloud.firestore {
       allow create, update: if isSignedIn()
         && isValidId(userId)
         && isValidId(reportId)
-        && isValidId(versionId)
+        && versionId in ['v0', 'v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8', 'v9']
         && userId == request.auth.uid
         && isValidReportVersion(incoming(), reportId)
         && incoming().id == versionId;

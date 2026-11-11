@@ -16,15 +16,20 @@
  * runs under the other config.
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import type { Revision, RevisionSnapshot } from './revisions';
 import {
   MAX_PERSISTED_REVISIONS,
   VERSION_BUDGET_BYTES,
-  versionDocId,
+  VERSION_SLOTS,
+  isVersionSlot,
+  versionKey,
   toVersionDocument,
   fromVersionDocument,
   fromVersionDocuments,
   planVersionWrites,
+  storedVersion,
+  type StoredVersion,
   type VersionDocument,
 } from './revisionStore';
 
@@ -42,50 +47,53 @@ const revision = (id: number, at: number, label = 'Generated'): Revision => ({
   snapshot: snapshot(`<r n="${id}" />`),
 });
 
-describe('versionDocId', () => {
-  it('pairs the timestamp with the session counter', () => {
-    expect(versionDocId(revision(3, 1_700_000_000_000))).toBe('1700000000000-3');
+/**
+ * The slots (2026-11-11, the full audit's SA-01). The rule accepts a version
+ * written to v0..v9 and nothing else, so the cap of ten is the database's and
+ * not only this file's. A slot list and a rule that disagree fail as a
+ * permission error on the first save past the shorter one, which reads like a
+ * rules bug: so the rule's list is read here and held to `VERSION_SLOTS`.
+ */
+describe('the version slots', () => {
+  it('are v0 to v9, one per version kept, and the rules accept exactly those', () => {
+    expect(VERSION_SLOTS).toEqual(['v0', 'v1', 'v2', 'v3', 'v4', 'v5', 'v6', 'v7', 'v8', 'v9']);
+    expect(VERSION_SLOTS).toHaveLength(MAX_PERSISTED_REVISIONS);
+    const rules = readFileSync('firestore.rules', 'utf8');
+    const listed = /versionId in \[([^\]]*)\]/.exec(rules)?.[1].split(',').map((s) => s.trim().replace(/'/g, ''));
+    expect(listed).toEqual(VERSION_SLOTS);
+    expect(isVersionSlot('v3')).toBe(true);
+    expect(isVersionSlot('1700000000000-3')).toBe(false);
   });
 
   /**
-   * The reason it is not just `revision.id`. That counter restarts at 1 in
-   * every session, so saving, reloading and saving again would file the new
-   * first revision on top of the old one — losing a version with no error
-   * anywhere. Two sessions producing id 1 must not collide.
+   * Which revision a slot holds is read off the document, since the slot says
+   * nothing. `Revision.id` restarts at 1 in every session, so it cannot be it:
+   * two sessions' first revisions must not read as the same one.
    */
-  it('separates the same counter in two sessions', () => {
-    expect(versionDocId(revision(1, 1_700_000_000_000)))
-      .not.toBe(versionDocId(revision(1, 1_700_000_060_000)));
-  });
-
-  /**
-   * `isValidId` in firestore.rules is `^[a-zA-Z0-9_\-]+$` and 128 characters.
-   * A document id that fails it is rejected by the rule, not by the SDK, so the
-   * failure arrives as a permission error and reads like a rules bug.
-   */
-  it('produces an id the rules will accept', () => {
-    const id = versionDocId(revision(12, Date.now()));
-    expect(id).toMatch(/^[a-zA-Z0-9_-]+$/);
-    expect(id.length).toBeLessThanOrEqual(128);
+  it('know a revision by its time and label, not the session counter', () => {
+    expect(versionKey(revision(1, 1_700_000_000_000))).not.toBe(versionKey(revision(1, 1_700_000_060_000)));
+    expect(versionKey(revision(1, 100, 'A'))).toBe(versionKey(revision(7, 100, 'A')));
   });
 });
 
 describe('toVersionDocument', () => {
   it('writes the six fields the rules pin, and no others', () => {
-    const document = toVersionDocument(revision(1, 1_700_000_000_000), 'rep-1', 'uid-1');
+    const document = toVersionDocument(revision(1, 1_700_000_000_000), 'rep-1', 'uid-1', 'v0');
     expect(Object.keys(document).sort()).toEqual(
       ['id', 'label', 'reportId', 'snapshot', 'timestamp', 'userId'].sort(),
     );
+    // The rule holds the id field to the document's own id, the slot.
+    expect(document.id).toBe('v0');
   });
 
   it('carries the report id on the document as well as in the path', () => {
     // The rule pins this against the {reportId} wildcard, so a version cannot
     // claim to belong to a report other than the one it is filed under.
-    expect(toVersionDocument(revision(1, 1), 'rep-1', 'uid-1').reportId).toBe('rep-1');
+    expect(toVersionDocument(revision(1, 1), 'rep-1', 'uid-1', 'v0').reportId).toBe('rep-1');
   });
 
   it('serialises the snapshot as a string, like the report document does', () => {
-    const document = toVersionDocument(revision(1, 1), 'rep-1', 'uid-1');
+    const document = toVersionDocument(revision(1, 1), 'rep-1', 'uid-1', 'v0');
     expect(typeof document.snapshot).toBe('string');
     expect(JSON.parse(document.snapshot).title).toBe('Quarterly Invoice');
   });
@@ -104,7 +112,7 @@ describe('fromVersionDocument', () => {
 
   it('round-trips a revision', () => {
     const original = revision(4, 1_700_000_000_000, 'Bound to data');
-    const back = fromVersionDocument(toVersionDocument(original, 'rep-1', 'uid-1'), 0);
+    const back = fromVersionDocument(toVersionDocument(original, 'rep-1', 'uid-1', 'v4'), 0);
     expect(back?.label).toBe('Bound to data');
     expect(back?.at).toBe(original.at);
     expect(back?.snapshot).toEqual(original.snapshot);
@@ -112,7 +120,8 @@ describe('fromVersionDocument', () => {
 
   /**
    * The id comes from the caller, not the document. The stored id is a document
-   * key — `1700000000000-1` — and the in-memory one is a number.
+   * key — a slot, `v3`, or `1700000000000-1` before the slots — and the
+   * in-memory one is a number.
    */
   it('takes its in-memory id from the caller', () => {
     expect(fromVersionDocument(stored(), 7)?.id).toBe(7);
@@ -182,10 +191,14 @@ describe('fromVersionDocuments', () => {
 
 describe('planVersionWrites', () => {
   const list = [revision(3, 300), revision(2, 200), revision(1, 100)];
+  /** A stored version holding `r`, in `slot`. */
+  const at = (slot: string, r: Revision): StoredVersion => ({ id: slot, timestamp: r.at, label: r.label });
+  /** Which revision each planned write carries, by its time, slot by slot. */
+  const writes = (plan: ReturnType<typeof planVersionWrites>) => plan.toWrite.map((d) => `${d.id}:${d.timestamp}`);
 
-  it('writes everything when nothing is stored', () => {
+  it('writes everything when nothing is stored, into the first slots', () => {
     const plan = planVersionWrites(list, [], 'rep-1', 'uid-1');
-    expect(plan.toWrite.map((d) => d.id)).toEqual(['300-3', '200-2', '100-1']);
+    expect(writes(plan)).toEqual(['v0:300', 'v1:200', 'v2:100']);
     expect(plan.toDelete).toEqual([]);
   });
 
@@ -194,20 +207,41 @@ describe('planVersionWrites', () => {
    * write; rewriting all ten every time is nine wasted round trips and nothing
    * in the result would look different.
    */
-  it('writes only what is new', () => {
-    const plan = planVersionWrites(list, ['200-2', '100-1'], 'rep-1', 'uid-1');
-    expect(plan.toWrite.map((d) => d.id)).toEqual(['300-3']);
+  it('writes only what is new, into a free slot', () => {
+    const plan = planVersionWrites(list, [at('v0', list[1]), at('v1', list[2])], 'rep-1', 'uid-1');
+    expect(writes(plan)).toEqual(['v2:300']);
+    expect(plan.toDelete).toEqual([]);
   });
 
   it('plans nothing when a save adds nothing', () => {
-    const plan = planVersionWrites(list, ['300-3', '200-2', '100-1'], 'rep-1', 'uid-1');
+    const plan = planVersionWrites(list, [at('v5', list[0]), at('v0', list[1]), at('v9', list[2])], 'rep-1', 'uid-1');
     expect(plan.toWrite).toEqual([]);
     expect(plan.toDelete).toEqual([]);
   });
 
-  it('deletes what has fallen out of the history', () => {
-    const plan = planVersionWrites(list, ['300-3', '050-0'], 'rep-1', 'uid-1');
-    expect(plan.toDelete).toEqual(['050-0']);
+  it('writes a new version over one that has fallen out of the history, rather than deleting it', () => {
+    const gone = revision(0, 50);
+    const plan = planVersionWrites(list, [at('v0', list[0]), at('v1', gone)], 'rep-1', 'uid-1');
+    expect(writes(plan)).toEqual(['v1:200', 'v2:100']);
+    expect(plan.toDelete).toEqual([]);
+  });
+
+  it('deletes a slot whose version has gone when nothing new needs it', () => {
+    const plan = planVersionWrites([list[0]], [at('v0', list[0]), at('v1', revision(0, 50))], 'rep-1', 'uid-1');
+    expect(plan.toWrite).toEqual([]);
+    expect(plan.toDelete).toEqual(['v1']);
+  });
+
+  /**
+   * Versions saved before the slots sit under their own ids, which the rule no
+   * longer accepts a write to. Each is deleted, and the revision it held, when
+   * still kept, is written again into a slot, so a report's history moves into
+   * the slots at its next save and loses nothing.
+   */
+  it('moves a version stored before the slots into one, and deletes the old id', () => {
+    const plan = planVersionWrites(list, [at('300-3', list[0]), at('100-1', list[2])], 'rep-1', 'uid-1');
+    expect(writes(plan)).toEqual(['v0:300', 'v1:200', 'v2:100']);
+    expect(plan.toDelete).toEqual(['300-3', '100-1']);
   });
 
   /**
@@ -216,18 +250,25 @@ describe('planVersionWrites', () => {
    * from the oldest end, not the newest — the recent versions are the ones
    * anyone returns to.
    */
-  it('stores at most the cap, newest first', () => {
+  it('stores at most the cap, newest first, and never past the tenth slot', () => {
     const many = Array.from({ length: 20 }, (_, i) => revision(20 - i, (20 - i) * 100));
     const plan = planVersionWrites(many, [], 'rep-1', 'uid-1');
     expect(plan.toWrite).toHaveLength(MAX_PERSISTED_REVISIONS);
-    expect(plan.toWrite[0].id).toBe('2000-20');
-    expect(plan.toWrite.at(-1)?.id).toBe('1100-11');
+    expect(plan.toWrite[0].timestamp).toBe(2000);
+    expect(plan.toWrite.at(-1)?.timestamp).toBe(1100);
+    expect(plan.toWrite.every((d) => isVersionSlot(d.id))).toBe(true);
+    // A larger cap asked for is still ten: there are ten slots.
+    expect(planVersionWrites(many, [], 'rep-1', 'uid-1', 15).toWrite).toHaveLength(MAX_PERSISTED_REVISIONS);
   });
 
-  it('prunes a version that has aged past the cap', () => {
-    const many = Array.from({ length: 12 }, (_, i) => revision(12 - i, (12 - i) * 100));
-    const plan = planVersionWrites(many, ['100-1'], 'rep-1', 'uid-1');
-    expect(plan.toDelete).toEqual(['100-1']);
+  it('reuses the slot of a version that has aged past the cap', () => {
+    const many = Array.from({ length: 11 }, (_, i) => revision(11 - i, (11 - i) * 100));
+    // Ten stored, the oldest (100) in v3; the newest (1100) arrives.
+    const stored = many.slice(1).map((r, i) => at(`v${(i + 3) % 10}`, r));
+    const oldest = stored.find((s) => s.timestamp === 100)!;
+    const plan = planVersionWrites(many, stored, 'rep-1', 'uid-1');
+    expect(writes(plan)).toEqual([`${oldest.id}:1100`]);
+    expect(plan.toDelete).toEqual([]);
   });
 
   it('honours a caller-supplied cap', () => {
@@ -247,11 +288,11 @@ describe('planVersionWrites', () => {
       snapshot: snapshot('x'.repeat(VERSION_BUDGET_BYTES + 1)),
     };
     const plan = planVersionWrites([huge, ...list], [], 'rep-1', 'uid-1');
-    expect(plan.tooLarge).toEqual(['900-9']);
-    expect(plan.toWrite.map((d) => d.id)).toEqual(['300-3', '200-2', '100-1']);
+    expect(plan.tooLarge).toEqual([versionKey(huge)]);
+    expect(writes(plan)).toEqual(['v0:300', 'v1:200', 'v2:100']);
   });
 
-  it('does not promote an older version into the slot an oversized one vacated', () => {
+  it('does not promote an older version into the place an oversized one vacated', () => {
     // The cap is applied to the history, then the budget to what survived. So a
     // skipped version leaves a gap rather than pulling an older one forward:
     // the stored history stays a prefix of the real one, which is what makes
@@ -263,8 +304,8 @@ describe('planVersionWrites', () => {
       snapshot: snapshot('x'.repeat(VERSION_BUDGET_BYTES + 1)),
     };
     const plan = planVersionWrites([huge, ...list], [], 'rep-1', 'uid-1', 2);
-    expect(plan.tooLarge).toEqual(['900-9']);
-    expect(plan.toWrite.map((d) => d.id)).toEqual(['300-3']);
+    expect(plan.tooLarge).toEqual([versionKey(huge)]);
+    expect(writes(plan)).toEqual(['v0:300']);
   });
 
   it('leaves an empty history planning nothing', () => {
@@ -273,7 +314,12 @@ describe('planVersionWrites', () => {
   });
 
   it('deletes every stored version when the history is emptied', () => {
-    expect(planVersionWrites([], ['300-3', '200-2'], 'rep-1', 'uid-1').toDelete)
-      .toEqual(['300-3', '200-2']);
+    expect(planVersionWrites([], [at('v0', list[0]), at('300-3', list[0])], 'rep-1', 'uid-1').toDelete)
+      .toEqual(['v0', '300-3']);
+  });
+
+  it('reads a stored document as what it holds, whatever is missing', () => {
+    expect(storedVersion('v2', { timestamp: 5, label: 'X' })).toEqual({ id: 'v2', timestamp: 5, label: 'X' });
+    expect(storedVersion('v2', undefined)).toEqual({ id: 'v2', timestamp: 0, label: '' });
   });
 });

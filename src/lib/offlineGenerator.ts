@@ -43,8 +43,22 @@ export interface OfflineRequest {
   title?: string;
   /** A pasted schema's fields, which win over any the words list. */
   fields?: OfflineField[];
-  /** Remembered preferences (the memory feature): these win over the pattern. */
-  preferences?: { paper?: string; landscape?: boolean; fontFamily?: string; sizes?: Partial<Record<'title' | 'caption' | 'value' | 'total', number>> };
+  /**
+   * Remembered preferences (the memory feature): these win over the pattern.
+   * Since 2026-11-11 (the full audit's D1) also what the person's own kept
+   * reports show (`preferencesOf` in lib/memory.ts): how bold each kind of
+   * text is, the margins (hundredths of an inch, as the model's), and the
+   * height of a record's row, so Forma's own report looks like theirs too.
+   */
+  preferences?: {
+    paper?: string;
+    landscape?: boolean;
+    fontFamily?: string;
+    sizes?: Partial<Record<'title' | 'caption' | 'value' | 'total', number>>;
+    bold?: Partial<Record<'title' | 'caption' | 'value' | 'total', boolean>>;
+    margins?: { top: number; bottom: number; left: number; right: number };
+    rowHeight?: number;
+  };
 }
 
 export interface OfflineDesign {
@@ -223,10 +237,11 @@ interface Style {
 
 function styleOf(model: FormaModel, prefs?: OfflineRequest['preferences']): Style {
   const r = model.style.roles;
-  // A remembered size (memory.ts) wins over the house style's.
+  // A remembered size (memory.ts) wins over the house style's, and since
+  // 2026-11-11 (D1) a remembered weight over the house style's too.
   const role = (k: keyof typeof r, size: number, bold: boolean) => ({
     size: prefs?.sizes?.[k as 'title'] ?? r[k]?.size ?? size,
-    bold: r[k] ? r[k]!.bold >= 0.5 : bold,
+    bold: prefs?.bold?.[k as 'title'] ?? (r[k] ? r[k]!.bold >= 0.5 : bold),
   });
   return {
     family: prefs?.fontFamily || r.value?.family || model.style.fonts[0]?.family || 'Arial',
@@ -244,6 +259,20 @@ function pageOf(paper: string, landscape: boolean, fallback: { width: number; he
   const s = sizes[paper];
   if (!s) return fallback;
   return landscape ? { width: s[1], height: s[0] } : { width: s[0], height: s[1] };
+}
+
+/**
+ * Remembered margins, when they fit the page: each side at least 0 and the
+ * sides leaving half the page (2026-11-11, D1). They arrive in hundredths of
+ * an inch, converted where the kept report is read (`skeletonInHundredths`
+ * in lib/memory.ts, since the LRN2 review); this is only the backstop for
+ * margins that really were that wide, where the model's are better than a
+ * page with no room on it. It cannot catch a unit mix-up, whose numbers are
+ * plausible.
+ */
+function sensibleMargins(m: { top: number; bottom: number; left: number; right: number } | undefined, page: { width: number; height: number }) {
+  if (!m || [m.top, m.bottom, m.left, m.right].some((v) => !Number.isFinite(v) || v < 0)) return undefined;
+  return m.left + m.right <= page.width / 2 && m.top + m.bottom <= page.height / 2 ? m : undefined;
 }
 
 /** Does the archetype rule a line under its heading: a line, or a bottom border, in a report or page header? */
@@ -299,10 +328,11 @@ export function generateOffline(model: FormaModel, request: OfflineRequest): Off
   const page = pageOf(paper, landscape, fallback);
   // Whole numbers, or DevExpress drops the margins and prints sides of 100
   // (2026-11-11, CC-03, repxMargins.ts); the printable width follows them.
-  const margins = wholeMargins(model.style.margins[paper] ?? archetype.skeleton.margins);
+  // The person's own margins and row first (D1), when their kept reports show them.
+  const margins = wholeMargins(sensibleMargins(request.preferences?.margins, page) ?? model.style.margins[paper] ?? archetype.skeleton.margins);
   const printable = Math.max(200, page.width - margins.left - margins.right);
   const title = request.title?.trim() || titleFrom(request.description);
-  const rowH = Math.max(18, Math.min(30, Math.round(model.style.rowHeight)));
+  const rowH = Math.max(18, Math.min(30, Math.round(request.preferences?.rowHeight ?? model.style.rowHeight)));
   const widths = columnWidths(lineFields, printable);
   const font = (s: { size: number; bold: boolean }) => `${style.family}, ${n2(s.size)}pt${s.bold ? ', style=Bold' : ''}`;
   const lineHeight = (s: { size: number }) => Math.round(pointsToUnits(s.size, 'HundredthsOfAnInch') * 1.6 + 4);

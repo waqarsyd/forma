@@ -176,7 +176,7 @@ describe('a stocked library', () => {
     panel({ sources: stocked });
     const boxes = screen.getAllByRole('checkbox') as HTMLInputElement[];
     expect(boxes.every((box) => !box.checked)).toBe(true);
-    expect(screen.getByText(/Nothing is used until you do/)).toBeTruthy();
+    expect(screen.getByText(/Nothing you add is used until you do/)).toBeTruthy();
   });
 
   it('reports a file being made canonical', () => {
@@ -251,5 +251,25 @@ describe('dropping files on the panel', () => {
     drop(['a.repx']);
     expect(props.onNeedKey).toHaveBeenCalledTimes(1);
     expect(props.onImport).not.toHaveBeenCalled();
+  });
+});
+
+/* A report the person keeps joins on its own (2026-11-11, D2): no tick, a Remove like any other. */
+describe('a report the person kept', () => {
+  it('is listed with no tick, says it was kept, and can be removed', () => {
+    const props = panel({ sources: [{ ...source('Invoice'), kept: true }] });
+    expect(screen.queryByLabelText('Use Invoice as house style')).toBeNull();
+    expect(screen.getByText('You kept this')).toBeTruthy();
+    // Nothing is waiting for a tick, so the panel does not ask for one.
+    expect(screen.queryByText(/Tick the reports/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(props.onRemove).toHaveBeenCalledWith('Invoice');
+    expect(document.body.textContent).not.toMatch(MACHINERY);
+  });
+
+  it('leaves the tick on a report that was added', () => {
+    panel({ sources: [{ ...source('Invoice'), kept: true }, source('Stock.repx')] });
+    expect(screen.getByLabelText('Use Stock.repx as house style')).toBeTruthy();
+    expect(screen.getByText(/Tick the reports/)).toBeTruthy();
   });
 });

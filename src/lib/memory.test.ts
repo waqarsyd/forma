@@ -80,7 +80,7 @@ describe('what a message asks Forma to remember', () => {
 describe('what a kept report teaches', () => {
   it('its style, and none of its words', () => {
     const kept = keptStyleOf(REPORT, new Date('2026-11-02T10:00:00Z'))!;
-    expect(kept).toEqual({ skeleton: expect.objectContaining({ paper: 'A4' }), key: expect.stringMatching(/^s[0-9a-z]+$/), shape: kept!.key, at: '2026-11-02T10:00:00.000Z', paper: 'A4', landscape: false, fontFamily: 'Tahoma', sizes: { title: 15, caption: 9, value: 8 } });
+    expect(kept).toEqual({ skeleton: expect.objectContaining({ paper: 'A4' }), hundredths: true, key:expect.stringMatching(/^s[0-9a-z]+$/), shape: kept!.key, at: '2026-11-02T10:00:00.000Z', paper: 'A4', landscape: false, fontFamily: 'Tahoma', sizes: { title: 15, caption: 9, value: 8 } });
     expect(JSON.stringify(kept)).not.toMatch(/Acme|Private|SecretField|ClientSecret|Account/);
     expect(keptStyleOf('not a report')).toBeNull();
   });
@@ -134,6 +134,32 @@ describe('what a kept report teaches', () => {
     expect(personalStyle({ ...state, kept: state.kept.map(({ skeleton: _s, ...k }) => k) })).toBeNull();
   });
 
+  /*
+   * The LRN2 review (2026-11-11): a millimetre report's margins and row reach
+   * Forma's own report in hundredths of an inch. Read in its own unit, 1 cm
+   * (100 tenths of a millimetre) was taken as 1 inch, 2.54 times too large.
+   */
+  it("gives a millimetre report's margins and row height in hundredths of an inch", () => {
+    const d = 'Dpi="254"';
+    const mm =
+      `<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer ${ROOT} Name="R" ${d} ReportUnit="TenthsOfAMillimeter" Margins="100, 100, 150, 150" PageWidth="2100" PageHeight="2970" PaperKind="A4"><Bands>` +
+      `<Item1 Ref="1" ControlType="TopMarginBand" ${d} HeightF="150" />` +
+      `<Item2 Ref="2" ControlType="ReportHeaderBand" ${d} HeightF="100"><Controls><Item1 Ref="3" ControlType="XRLabel" ${d} Text="T" Font="Tahoma, 15pt, style=Bold" SizeF="1270,76.2" LocationFloat="0,0" /></Controls></Item2>` +
+      `<Item3 Ref="5" ControlType="DetailBand" ${d} HeightF="50.8"><Controls><Item1 Ref="6" ControlType="XRLabel" ${d} Font="Tahoma, 8pt" SizeF="254,50.8" LocationFloat="0,0"><ExpressionBindings><Item1 Ref="7" EventName="BeforePrint" PropertyName="Text" Expression="[F]" /></ExpressionBindings></Item1></Controls></Item3>` +
+      `<Item4 Ref="8" ControlType="BottomMarginBand" ${d} HeightF="150" /></Bands></XtraReportsLayoutSerializer>`;
+    const a = keptStyleOf(mm, new Date(), 'p1')!;
+    expect(a.paper).toBe('A4');
+    const state: MemoryState = { memories: [], kept: [a, keptStyleOf(mm, new Date(), 'p2')!], learnFromKept: true };
+    const prefs = preferencesOf(state);
+    expect(prefs.margins!.left).toBeCloseTo(39.4, 0);
+    expect(prefs.margins!.top).toBeCloseTo(59.1, 0);
+    expect(prefs.rowHeight).toBeCloseTo(20, 0);
+    // A skeleton kept before then, in its own unit, is left out rather than guessed at: a Custom page says so.
+    const old = state.kept.map(({ hundredths: _h, ...k }) => ({ ...k, skeleton: { ...k.skeleton!, paper: 'Custom' } }));
+    expect(personalStyle({ ...state, kept: old })).toBeNull();
+    expect(preferencesOf({ ...state, kept: old }).margins).toBeUndefined();
+  });
+
   // CP-13 (2026-11-11): a memory said for this client applies in its project alone.
   it('keeps a memory said for this client to its project, and moves memories as one file', () => {
     const forClient = memoryFrom('remember: for this client use Letter', 'chat', new Date(), 'project-1');
@@ -179,7 +205,7 @@ describe('whose memory it is', () => {
 
   it('keeps each account apart, and apart from use signed out', () => {
     writeMemory(alice, 'alice');
-    expect(readMemory('alice')).toEqual(alice);
+    expect(readMemory('alice')).toEqual({ ...alice, ledger: [] });
     expect(readMemory('bob').memories).toEqual([]);
     expect(readMemory(null).memories).toEqual([]);
     expect(localStorage.getItem('forma.memory:alice')).not.toBeNull();
@@ -237,10 +263,21 @@ describe('using what is remembered', () => {
   });
 
   it('is kept in this browser and read back', () => {
-    expect(readMemory()).toEqual({ memories: [], kept: [], learnFromKept: true });
+    expect(readMemory()).toEqual({ memories: [], kept: [], learnFromKept: true, ledger: [] });
     writeMemory(state);
-    expect(readMemory()).toEqual(state);
+    // A state written before the ledger (D4) reads back with an empty one.
+    expect(readMemory()).toEqual({ ...state, ledger: [] });
     localStorage.setItem('forma.memory', '{not json');
     expect(readMemory().memories).toEqual([]);
+  });
+
+  // D4 (2026-11-11): what the person's changes taught is applied, and stays with this browser.
+  it("applies a weight learned from the person's changes, and leaves it out of the exported file", () => {
+    const learned = { id: 'learned-bold-title', text: 'Titles not bold', source: 'learned' as const, created: '2026-11-11T00:00:00Z', enabled: true, hints: { bold: { title: false } } };
+    const withLearned: MemoryState = { ...state, memories: [...state.memories, learned] };
+    expect(preferencesOf(withLearned).bold).toEqual({ title: false });
+    expect(instructionsOf(withLearned)).toContain('- Titles not bold');
+    expect(preferencesOf({ ...withLearned, memories: [...state.memories, { ...learned, enabled: false }] }).bold).toBeUndefined();
+    expect(JSON.parse(exportMemory(withLearned)).memories.map((m: { text: string }) => m.text)).not.toContain('Titles not bold');
   });
 });

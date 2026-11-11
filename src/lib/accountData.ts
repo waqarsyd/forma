@@ -50,7 +50,7 @@ import {
   type Query,
 } from 'firebase/firestore';
 import { MAX_SHARES, inviteesOf, splitShare, type LegacyShareFields, type StoredShare } from './shares';
-import type { VersionDocument, VersionIo } from './revisionStore';
+import { storedVersion, type VersionDocument, type VersionIo } from './revisionStore';
 
 /** Everything for one account hangs off `users/{uid}`. */
 export const USERS_COLLECTION = 'users';
@@ -483,7 +483,8 @@ export function versionIoFor(db: Firestore, uid: string, reportId: string): Vers
   const collectionRef = versionsCollectionRef(db, uid, reportId);
   const docRef = (id: string) => versionDocRef(db, uid, reportId, id);
   return {
-    list: async () => (await getDocs(collectionRef)).docs.map((entry) => entry.id),
+    // Each stored version's slot and what it holds (2026-11-11, SA-01): the plan fills the slots by it.
+    list: async () => (await getDocs(collectionRef)).docs.map((entry) => storedVersion(entry.id, entry.data() as Partial<VersionDocument>)),
     read: async () => (await getDocs(query(collectionRef, orderBy('timestamp', 'desc')))).docs.map((entry) => entry.data() as VersionDocument),
     write: async (document) => {
       await setDoc(docRef(document.id), document);

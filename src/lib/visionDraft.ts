@@ -14,7 +14,7 @@ import type { PreviewMeta } from './attachments';
 import type { ReadPage } from './ocrAttach';
 import type { DraftRequest, ReportConfig, ReportLayout } from '../services/geminiService';
 import type { readSkeleton } from '../services/formaVision';
-import type { skeletonToDesign } from './skeletonRepx';
+import type { mergePageSkeletons, skeletonToDesign } from './skeletonRepx';
 
 type Reading = Awaited<ReturnType<typeof readSkeleton>>;
 
@@ -68,6 +68,8 @@ export interface VisionDraft {
   correct: DraftRequest;
   /** The design as a result the bench can show, for the stand-in. */
   result: { content: string; timestamp: Date; title: string; layout: ReportLayout; repxContent: string; usage: null };
+  /** The page's shape, which the person's kept reports are matched against (LRN2's D3). */
+  skeleton: ReturnType<typeof mergePageSkeletons>;
 }
 
 export async function visionDraft(
@@ -101,5 +103,6 @@ export async function visionDraft(
     brief: draftBrief(skeleton, design.layout, config.unit),
     correct: { text: draftToText(skeleton, design.used), texts, title: design.title },
     result: { content: design.markdown, timestamp: new Date(), title: design.title, layout: design.layout, repxContent: design.repx, usage: null },
+    skeleton,
   };
 }
