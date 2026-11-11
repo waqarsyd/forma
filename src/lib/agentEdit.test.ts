@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { parseReportStructure } from './reportPreview';
-import { applyEdits, askedFor, changedControls, distinctTools, followUpMessage, splitTools, formatEdits, changesMarkdown, checksMarkdown, describeChanges, parsesSoFar, readAlign, readReportOutcome, reportOutline, repxColor, sideNamed, toolLine, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
+import { applyEdits, askedFor, changedControls, distinctTools, followUpMessage, splitTools, formatEdits, changesMarkdown, checksMarkdown, describeChanges, parsesSoFar, readAlign, readReportOutcome, reportOutline, repxColor, sideNamed, toolLine, toolSentence, MAX_EDITS, type AgentEdit, type AgentTool } from './agentEdit';
 
 const report = `<?xml version="1.0" encoding="utf-8"?>
 <XtraReportsLayoutSerializer SerializerVersion="20.1.8.0" Ref="0" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="Report1" DisplayName="Invoice" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 40, 40" PageWidth="850" PageHeight="1100" Version="20.1">
@@ -182,14 +182,15 @@ describe('the new edits, and edits that do what they say', () => {
 
   it('duplicates a control and puts the copy where it was asked', () => {
     const out = applyEdits(doc(lbl(1, 'total')), [{ op: 'duplicate', control: 'total', x: 300, y: 25 }]);
-    expect(out.applied[0]).toMatch(/duplicated XRLabel "total" as "total1"/);
+    // The control by its kind in words since 2026-11-11 (the full audit, repxEdit's plainKind).
+    expect(out.applied[0]).toMatch(/duplicated (XRLabel|the label) "total" as "total1"/);
     expect(control(out.xml, 'total1')).toMatchObject({ x: 300, y: 25 });
     expect(control(out.xml, 'total')).toMatchObject({ x: 10, y: 25 });
   });
 
   it("sets a band's height, and refuses one that would cut through what it holds", () => {
     expect(applyEdits(doc(lbl(1, 'a')), [{ op: 'bandHeight', band: 'Detail', height: 60 }]).xml).toContain('HeightF="60"');
-    expect(applyEdits(doc(lbl(1, 'a')), [{ op: 'bandHeight', band: 'Detail', height: 30 }]).declined[0]).toMatch(/holds a control reaching 45/);
+    expect(applyEdits(doc(lbl(1, 'a')), [{ op: 'bandHeight', band: 'Detail', height: 30 }]).declined[0]).toMatch(/holds a control reaching 45|reaches 0\.45 in down/);
     expect(describeChanges(doc(lbl(1, 'a')), applyEdits(doc(lbl(1, 'a')), [{ op: 'bandHeight', band: 'Detail', height: 60 }]).xml)).toContain('set the height of Detail to 60');
   });
 
@@ -230,7 +231,8 @@ describe('the new edits, and edits that do what they say', () => {
   // The third gap of docs/proposals/ai-designers.md (2026-11-10): a sentence about what a control is for.
   it('describes a control for the AI, and the outline shows it', () => {
     const done = applyEdits(doc(lbl(1, 'a')), [{ op: 'describe', control: 'a', text: '  The tax line,   under the subtotal.  ' }]);
-    expect(done.applied).toEqual(['described XRLabel "a"']);
+    expect(done.applied).toHaveLength(1);
+    expect(done.applied[0]).toMatch(/^described (XRLabel|the label) "a"$/);
     expect(done.xml).toContain('AccessibleDescription="The tax line, under the subtotal."');
     expect(reportOutline(done.xml)).toMatch(/a: XRLabel .* described as "The tax line, under the subtotal\."/);
     expect(applyEdits(doc(lbl(1, 'a')), [{ op: 'describe', control: 'a' }]).declined[0]).toMatch(/no description was given/);
@@ -305,18 +307,77 @@ describe('the new edits, and edits that do what they say', () => {
   });
 
   // The full audit (2026-11-10), the owner's rule: what the person asked for runs at once; what the
-  // model brought on its own (a label in the report can tell it to, agent audit item 47) is offered.
-  it('runs what the person asked for at once, and offers a guarded tool the model brought alone', () => {
+  // model brought on its own (a label in the report can tell it to, agent audit item 47) is dropped,
+  // never offered as a button (2026-11-11, WS-09 and TC-02).
+  it('runs what the person asked for at once, and drops a guarded tool the model brought alone', () => {
     const all = [{ name: 'show', pane: 'preview' }, { name: 'export', format: 'pdf' }, { name: 'testData' }, { name: 'designer' }, { name: 'undo' }, { name: 'translate', language: 'German' }] as const;
     const alone = splitTools([...all]);
     expect(alone.now.map((t) => t.name)).toEqual(['show', 'testData', 'undo']);
-    expect(alone.ask.map((t) => t.name)).toEqual(['export', 'designer', 'translate']);
+    expect(alone.dropped.map((t) => t.name)).toEqual(['export', 'designer', 'translate']);
     const asked = splitTools([...all], 'Translate it into German, export it as a PDF and open it in the designer');
     expect(asked.now.map((t) => t.name)).toEqual(['show', 'export', 'testData', 'designer', 'undo', 'translate']);
-    expect(asked.ask).toEqual([]);
+    expect(asked.dropped).toEqual([]);
     expect(askedFor({ name: 'translate', language: 'French' }, 'Make it French')).toBe(true);
     expect(askedFor({ name: 'export', format: 'xlsx' }, 'download the spreadsheet')).toBe(true);
     expect(askedFor({ name: 'export', format: 'pdf' }, 'make the title bold')).toBe(false);
+  });
+
+  // TC-02's table of ordinary phrasings (2026-11-11), each of which got a button before, and the
+  // five the plan added: every one runs at once.
+  it.each([
+    [{ name: 'translate', language: 'German' }, 'generate the report in German'],
+    [{ name: 'translate', language: 'de' }, 'generate the report in German'],
+    [{ name: 'translate', language: 'Deutsch' }, 'generate the report in German'],
+    [{ name: 'translate', language: 'German (Germany)' }, 'generate the report in German'],
+    [{ name: 'translate' }, 'generate the report in German'],
+    [{ name: 'translate', language: 'Spanish' }, 'I need it in espanol'],
+    [{ name: 'translate', language: 'Hindi' }, 'Hindi in Devanagari script'],
+    [{ name: 'export', format: 'pdf' }, 'print it'],
+    [{ name: 'export', format: 'xlsx' }, 'I want it in Excel'],
+    [{ name: 'export', format: 'xlsx' }, 'give me an Excel file'],
+    [{ name: 'export', format: 'xlsx' }, 'I need it in Excel'],
+    [{ name: 'export', format: 'docx' }, 'send it to Word'],
+    [{ name: 'designer' }, 'open it in DevExpress'],
+    [{ name: 'designer' }, 'open in Visual Studio'],
+    [{ name: 'designer' }, 'edit it in Visual Studio'],
+  ] as [AgentTool, string][])('runs %o for "%s" at once', (tool, words) => {
+    expect(splitTools([tool], words)).toEqual({ now: [tool], dropped: [] });
+  });
+
+  // PX-02 (2026-11-11): text holding a replacement pattern is written as it is, through the
+  // retyping and the root's attributes (`setRootAttributes`, which the margins edit uses).
+  it.each(["Preis ($'000)", 'Menge $&', 'Betrag $$', 'Wert $1'])('writes "%s" as written, never as a replacement pattern', (text) => {
+    const out = applyEdits(doc(lbl(1, 'a')), [{ op: 'text', control: 'a', text }, { op: 'margins', left: 60 }]);
+    expect(out.declined).toEqual([]);
+    expect(parseReportStructure(out.xml).bands[0].controls[0].text).toBe(text);
+    expect(out.xml).toMatch(/<XtraReportsLayoutSerializer [^>]*Margins="60, 50, 40, 40"/);
+  });
+
+  it('drops a guarded tool the model brought while the words asked for something else', () => {
+    const brought: AgentTool[] = [{ name: 'export', format: 'pdf' }, { name: 'designer' }, { name: 'translate', language: 'German' }];
+    expect(splitTools(brought, 'make the title bold')).toEqual({ now: [], dropped: brought });
+  });
+
+  // The review of the full audit (2026-11-11): an ordinary edit naming an everyday word that is also a
+  // format, or report talk that a code reads as a language, asks for no export and no translation.
+  it.each([
+    [{ name: 'export', format: 'png' }, 'change the label to File name'],
+    [{ name: 'export', format: 'png' }, 'rename the column to Image'],
+    [{ name: 'export', format: 'png' }, 'move the logo to the picture box'],
+    [{ name: 'export', format: 'docx' }, 'set the title to Invoice file'],
+    [{ name: 'translate', language: 'pt' }, 'Keep the font sizes in pt'],
+    [{ name: 'translate', language: 'Polish' }, 'I would like you to polish the layout'],
+    [{ name: 'translate', language: 'de' }, 'Remember to de-duplicate the rows'],
+    [{ name: 'translate', language: 'ar' }, 'Add a total in ar'],
+  ] as [AgentTool, string][])('drops %o the model brought into "%s"', (tool, words) => {
+    expect(splitTools([tool], words)).toEqual({ now: [], dropped: [tool] });
+  });
+
+  // CV-01: the language the model named reaches App, trimmed and bounded.
+  it('keeps the language of a translation the model asked for', () => {
+    expect(readReportOutcome({ reply: '', action: 'answer', tools: [{ name: 'translate', language: '  de  ' }] }).tools).toEqual([{ name: 'translate', language: 'de' }]);
+    expect(readReportOutcome({ reply: '', action: 'answer', tools: [{ name: 'translate', language: 'x'.repeat(60) }] }).tools[0].language).toHaveLength(40);
+    expect(readReportOutcome({ reply: '', action: 'answer', tools: [{ name: 'translate' }] }).tools).toEqual([{ name: 'translate' }]);
   });
 
   // Items 23 and 38.
@@ -398,7 +459,8 @@ describe('applyEdits: what the model asked for, made by splices', () => {
   it("retypes and restyles a table's cell by row and cell, and declines a cell that prints a field", () => {
     const out = edit({ op: 'text', control: 'lines', row: 1, cell: 1, text: 'Product' }, { op: 'font', control: 'lines', row: 1, cell: 1, bold: true }, { op: 'text', control: 'lines', row: 1, cell: 2, text: 'x' });
     expect(control(out.xml, 'lines').rows[0].cells[0]).toMatchObject({ text: 'Product', bold: true });
-    expect(out.declined).toEqual(['text lines: the cell prints a field, not typed text: bind another in the Data tab']);
+    expect(out.declined).toHaveLength(1);
+    expect(out.declined[0]).toMatch(/^text lines: the cell prints a field, not typed text: bind another (in|on) the Data tab$/);
   });
 
   it('declines typing over a field, an unknown name and a table with no cell named, changing nothing', () => {
@@ -467,7 +529,7 @@ describe('readReportOutcome: the answer as Forma acts on it', () => {
   });
 
   // In the present since 2026-11-07 (agent audit item 38): the reply is written before a tool runs.
-  it('says what each tool is starting, under Started', () => {
+  it('names what each tool is starting, for a line that says it did not start', () => {
     expect([{ name: 'show', pane: 'repx' }, { name: 'testData' }, { name: 'export', format: 'xlsx' }, { name: 'designer' }, { name: 'undo' }, { name: 'translate', language: 'French' }].map((t) => toolLine(t as AgentTool))).toEqual([
       'opening the REPX',
       'filling the Preview with sample rows',
@@ -476,7 +538,28 @@ describe('readReportOutcome: the answer as Forma acts on it', () => {
       'taking back the last change',
       'translating its texts into French',
     ]);
-    expect(changesMarkdown([], [], ['opening the Preview'])).toBe('**Started**\n- opening the Preview');
+  });
+
+  // The full audit (2026-11-11, UI3): one sentence a tool, in the reply's own words, not a Started list.
+  it('says what each tool is doing in one sentence, and lists no Started', () => {
+    expect([{ name: 'export', format: 'pdf' }, { name: 'export', format: 'xlsx' }, { name: 'designer' }, { name: 'translate', language: 'de' }, { name: 'show', pane: 'preview' }, { name: 'undo' }].map((t) => toolSentence(t as AgentTool))).toEqual([
+      'Exporting it as a PDF.',
+      'Exporting it as an Excel workbook.',
+      'Opening it in the designer.',
+      'Translating it into German.',
+      'Opening the Preview.',
+      'Taking back the last change.',
+    ]);
+    // A translation with no language cannot start, so it says nothing it would never take back.
+    expect(toolSentence({ name: 'translate' })).toBe('');
+    expect(toolSentence({ name: 'translate', language: 'zh-Hans' })).toBe('Translating it into Chinese.');
+    expect(changesMarkdown([], [], ['Opening the Preview.', 'Exporting it as a PDF.'])).toBe('Opening the Preview. Exporting it as a PDF.');
+    expect(changesMarkdown(['moved **title** to 1, 20'], [], ['Exporting it as a PDF.'])).not.toContain('Started');
+  });
+
+  // CV-26: an empty answer, in a person's words.
+  it("says it did not follow an answer with nothing in it", () => {
+    expect(readReportOutcome({ action: 'answer' }).reply).toBe("I didn't follow that. Could you say it another way?");
   });
 
   it('reads a redesign as wanting a report, and an edit with nothing to make as a redesign', () => {

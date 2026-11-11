@@ -51,6 +51,8 @@ import {
 } from './repxEdit';
 import { SUPPORTED_PAGE_SIZES, pageSizeInUnits } from './reportGeometry';
 import { readRepxDataSources } from './repxSqlDataSource';
+import { languageAsked, languageName, namesLanguage } from './repxTranslate';
+import { NOT_FOLLOWED } from './chatTurn';
 
 /**
  * What the model can ask for. Anything else is a redesign. The last seven
@@ -562,9 +564,12 @@ function setRootAttributes(xml: string, attrs: Record<string, string | null>): s
   let tag = root[0];
   for (const [name, value] of Object.entries(attrs)) {
     const existing = new RegExp(`\\s${name}\\s*=\\s*"[^"]*"`);
+    // Replacer functions, never the value in a replacement string (2026-11-11, the
+    // full audit's PX-02): a `$&` or `$'` in it was read as a pattern and wrote the
+    // matched text, or the rest of the tag, into the file.
     if (value === null) tag = tag.replace(existing, '');
-    else if (existing.test(tag)) tag = tag.replace(existing, ` ${name}="${value}"`);
-    else tag = tag.replace(/\s*(\/?)>$/, ` ${name}="${value}"$1>`);
+    else if (existing.test(tag)) tag = tag.replace(existing, () => ` ${name}="${value}"`);
+    else tag = tag.replace(/\s*(\/?)>$/, (_m, close: string) => ` ${name}="${value}"${close}>`);
   }
   return xml.slice(0, root.index) + tag + xml.slice(root.index + root[0].length);
 }
@@ -831,44 +836,104 @@ export function toolLine(tool: AgentTool): string {
   }
 }
 
+/** Each export format in the words a person uses for it. */
+const EXPORT_WORDS_FOR: Partial<Record<string, string>> = {
+  pdf: 'a PDF',
+  csv: 'a CSV file',
+  xlsx: 'an Excel workbook',
+  docx: 'a Word document',
+  rtf: 'an RTF file',
+  html: 'a web page',
+  png: 'a picture',
+  repx: 'a .repx file',
+};
+
 /**
- * The tools that run at once only when the person's own words asked for
- * them (2026-11-10, the full audit). The owner's rule is that a request is
- * carried out as Claude, ChatGPT and Gemini carry one out, never answered
- * with a button to press: "translate into German" was answered with a button
- * and that was wrong. The reason these three waited from 2026-11-07 (agent
- * audit item 47) still stands, though: a model can be told to export, open
- * the designer or translate by a label inside the report or the picture it
- * reads, and each takes something out of the page. So the person's message
- * decides. Asked for in it, the tool runs now; asked for by the model alone,
- * it is offered as a button, which words inside a report cannot press.
+ * What a tool is doing, as the one sentence a reply says of it (2026-11-11,
+ * the full audit's UI3): "Exporting it as a PDF." in place of a **Started**
+ * list under the reply, which made a tool turn two accounts of one thing.
+ * A translation with no language is empty: it cannot start (App drops it
+ * before this is asked), and "into the language you named" was a line no
+ * result ever replaced.
+ */
+export function toolSentence(tool: AgentTool): string {
+  switch (tool.name) {
+    case 'show':
+      return `Opening ${PANE_WORDS[tool.pane ?? 'preview']}.`;
+    case 'testData':
+      return 'Filling the Preview with sample rows.';
+    case 'export':
+      return `Exporting it as ${EXPORT_WORDS_FOR[tool.format ?? 'repx'] ?? `a ${String(tool.format).toUpperCase()} file`}.`;
+    case 'designer':
+      return 'Opening it in the designer.';
+    case 'undo':
+      return 'Taking back the last change.';
+    case 'translate': {
+      const language = languageName(tool.language);
+      return language ? `Translating it into ${language}.` : '';
+    }
+  }
+}
+
+/**
+ * The tools that run only when the person's own words asked for them
+ * (2026-11-07, agent audit item 47): a model can be told to export, open the
+ * designer or translate by a label inside the report or the picture it reads,
+ * and each takes something out of the page. So the person's message decides.
+ * Asked for in it, the tool runs at once; brought by the model alone, it is
+ * dropped, with a console line, and never drawn as a button (2026-11-11, the
+ * full audit's WS-09 and TC-02, the owner's rule that nothing waits on a
+ * press: until then it was offered as one, and 9 of 14 ordinary phrasings,
+ * "print it", "I want it in Excel", "open it in DevExpress", got a button).
  */
 export const ASK_FIRST_TOOLS: readonly ToolName[] = ['export', 'designer', 'translate'];
+
+/** An export asked for in so many words: the verb, or a format named after "as", "in" or "to". */
+const EXPORT_WORDS = /\b(export|download|save (it |this |the report )?as|as a (pdf|csv|spreadsheet|workbook|word (document|file)|picture|png|image)|\.?(pdf|xlsx|csv|docx|rtf|html|png|repx)\b)/i;
+/*
+ * The ordinary phrasings (2026-11-11, TC-02): a verb that takes a file out
+ * ("give me an Excel file", "send it to Word", "print it"), or a format named
+ * by its own name after "in", "into" or "to" ("I need it in Excel"). The
+ * words that are also everyday report words, "image", "picture", "word",
+ * "file", count only after such a verb or right after "as a": the review of
+ * the first version found "rename the column to Image" and "set the title to
+ * Invoice file" running an export the model brought into an ordinary edit.
+ */
+const EXPORT_PHRASED = new RegExp(
+  [
+    String.raw`\b(export|download|save|print|send (it|this|the report|me)|give me|get (it|this|me))\b[^.?!]{0,40}\b(pdf|excel|xlsx|spreadsheet|workbook|csv|word|docx|rtf|html|web page|png|image|picture|repx|file)\b`,
+    String.raw`\b(in(to)?|to|as an?)\s+(an?\s+|the\s+)?(pdf|excel|xlsx|spreadsheet|workbook|csv|docx|rtf|html|png|repx)\b`,
+    String.raw`\bas an?\s+(\w+\s+)?(image|picture|word|file)\b`,
+    String.raw`\bprint (it|this|the report)\b`,
+  ].join('|'),
+  'i',
+);
+const DESIGNER_WORDS = /\b(designer|devexpress|xtrareports?|visual studio|end-user designer)\b/i;
 
 /** Whether the person's own words ask for a tool, so it may run at once. */
 export function askedFor(tool: AgentTool, words: string): boolean {
   switch (tool.name) {
     case 'export':
-      return /\b(export|download|save (it |this |the report )?as|as a (pdf|csv|spreadsheet|workbook|word (document|file)|picture|png|image)|\.?(pdf|xlsx|csv|docx|rtf|html|png|repx)\b)/i.test(words);
+      return EXPORT_WORDS.test(words) || EXPORT_PHRASED.test(words);
     case 'designer':
-      return /\bdesigner\b/i.test(words);
+      return DESIGNER_WORDS.test(words);
     case 'translate':
-      return /\b(translat\w*|locali[sz]\w*)\b/i.test(words) || (!!tool.language && new RegExp(`\\b${tool.language.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(words));
+      return /\b(translat\w*|locali[sz]\w*)\b/i.test(words) || languageAsked(words) !== null || (!!tool.language && namesLanguage(words, tool.language));
     default:
       return true;
   }
 }
 
 /**
- * The tools to run at once, and those offered as a button: everything the
- * person asked for runs now (`words` is their message), and a guarded tool
- * the model brought on its own is offered.
+ * The tools to run at once, and those dropped: everything the person asked
+ * for runs now (`words` is their message), and a guarded tool the model
+ * brought on its own is dropped (see ASK_FIRST_TOOLS).
  */
-export function splitTools(tools: readonly AgentTool[], words = ''): { now: AgentTool[]; ask: AgentTool[] } {
+export function splitTools(tools: readonly AgentTool[], words = ''): { now: AgentTool[]; dropped: AgentTool[] } {
   const now: AgentTool[] = [];
-  const ask: AgentTool[] = [];
-  for (const t of tools) (!ASK_FIRST_TOOLS.includes(t.name) || askedFor(t, words) ? now : ask).push(t);
-  return { now, ask };
+  const dropped: AgentTool[] = [];
+  for (const t of tools) (!ASK_FIRST_TOOLS.includes(t.name) || askedFor(t, words) ? now : dropped).push(t);
+  return { now, dropped };
 }
 
 /**
@@ -928,6 +993,13 @@ function readTool(t: unknown): AgentTool | string | null {
   if (!(TOOL_NAMES as readonly string[]).includes(name)) return typeof name === 'string' && name ? `"${name}" is not something Forma can do` : null;
   if (name === 'show') return (PANES as readonly string[]).includes(pane ?? '') ? { name, pane } : !pane ? { name, pane: 'preview' } : `there is no "${pane}" pane to show`;
   if (name === 'export') return (EXPORT_FORMATS as readonly string[]).includes(format ?? '') ? { name, format } : `export: ${format ? `Forma does not export ${String(format).toUpperCase()}` : 'no format was named'} (${EXPORT_FORMATS.join(', ')})`;
+  // The language kept (2026-11-11, the full audit's CV-01): it was dropped here,
+  // so every translation reached App with none and fell back on the words.
+  if (name === 'translate') {
+    const { language } = t as AgentTool;
+    const named = typeof language === 'string' ? language.trim().slice(0, 40) : '';
+    return named ? { name, language: named } : { name };
+  }
   return { name };
 }
 
@@ -1002,7 +1074,7 @@ export function readReportOutcome(parsed: { reply?: string; action?: string; edi
   const designs = action === 'rebuild' || action === 'new';
   const brief = designs && typeof parsed.brief === 'string' && parsed.brief.trim() ? parsed.brief.trim() : undefined;
   return {
-    reply: parsed.reply || (action === 'answer' && !tools.length ? 'Sorry — I did not catch that.' : ''),
+    reply: parsed.reply || (action === 'answer' && !tools.length ? NOT_FOLLOWED : ''),
     wantsReport: action === 'rebuild',
     action,
     edits: action === 'edit' ? edits : [],
@@ -1228,11 +1300,15 @@ export function checksMarkdown(after: readonly { severity: string; message: stri
   return `**${before ? `This change left ${count} worth checking` : `${count.charAt(0).toUpperCase()}${count.slice(1)} worth checking`}**\n${lines.join('\n')}`;
 }
 
-/** The reply's account of a turn: what changed, what was asked and not done, and what Forma did. */
-export function changesMarkdown(changes: readonly string[], declined: readonly string[] = [], done: readonly string[] = []): string {
+/**
+ * The reply's account of a turn: what changed, what was asked and not done,
+ * and what Forma is doing, the last as plain sentences (`toolSentence`), not
+ * a **Started** list (2026-11-11, the full audit's UI3).
+ */
+export function changesMarkdown(changes: readonly string[], declined: readonly string[] = [], doing: readonly string[] = []): string {
   const parts: string[] = [];
   if (changes.length) parts.push(`**Changed**\n${changes.map((c) => `- ${c}`).join('\n')}`);
   if (declined.length) parts.push(`**Not changed**\n${declined.map((d) => `- ${d}`).join('\n')}`);
-  if (done.length) parts.push(`**Started**\n${done.map((d) => `- ${d}`).join('\n')}`);
+  if (doing.length) parts.push(doing.join(' '));
   return parts.join('\n\n');
 }

@@ -419,12 +419,15 @@ export default function ConversationPanel<R>({
             currentTurn={currentId}
             isChatting={isChatting}
             isAnalyzing={isAnalyzing}
+            // Between a turn's steps too (2026-11-11, the full audit's WS-19): Try again,
+            // Edit and Withdraw cut the thread, and the turn under way refused what they sent.
+            busy={busy}
             renderAsk={({ id, ask }) => (
               <AskPill
                 key={id}
                 ask={ask}
                 initials={initials}
-                disabled={isChatting || isAnalyzing}
+                disabled={working}
                 onEdit={onEdit}
                 onWithdraw={onWithdraw}
                 onShowVersion={onShowVersion}

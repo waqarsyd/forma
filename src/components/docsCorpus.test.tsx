@@ -102,7 +102,7 @@ describe('the Docs page, as the chat reads it', () => {
   it('keeps what it sends within its budget, each under its title', () => {
     const picked = pickSections('How do I share a report and what does sharing need?', sections);
     const block = docsBlock(picked);
-    expect(block).toMatch(/^## Sharing a report \(forma docs, #share\)\n/);
+    expect(block).toMatch(/^## Sharing a report \(\/docs#share\)\n/);
     expect(block.length).toBeLessThan(7_400);
   });
 });

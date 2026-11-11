@@ -4,7 +4,69 @@
  * before, or one the change must not break.
  */
 import { describe, expect, it } from 'vitest';
-import { isPlainBuild, isRememberMessage, pendingQuestions, pendingReplyKind, queueStep, resumed, steered, turnBase, turnEnding, withSelection, type TurnMessage, type TurnQueued } from './chatTurn';
+import { firstReply, isPlainBuild, isRememberMessage, isVagueReportAsk, needsRowsConsent, NOT_FOLLOWED, pendingQuestions, pendingReplyKind, queueStep, resumed, steered, turnBase, turnEnding, vagueReportReply, vagueReportWord, withSelection, type TurnMessage, type TurnQueued } from './chatTurn';
+import { languageAsked } from './repxTranslate';
+
+// The full audit (2026-11-11, WS-01, CV-03 and CV-19): the Preview's rows are asked about once per project.
+describe('needsRowsConsent', () => {
+  it('asks only while nothing has been said, and never again after a yes or a no', () => {
+    expect(needsRowsConsent(null)).toBe(true);
+    expect(needsRowsConsent('yes')).toBe(false);
+    expect(needsRowsConsent('no')).toBe(false);
+    // The question sent again with the answer, before the state has caught up with it.
+    expect(needsRowsConsent(null, { consented: true })).toBe(false);
+    expect(needsRowsConsent(null, { declined: true })).toBe(false);
+    expect(needsRowsConsent(null, {})).toBe(true);
+  });
+});
+
+// The full audit (2026-11-11, UI2, CV-13 and PL-24): the first reply names what happened, never the ask.
+describe('firstReply', () => {
+  it('says what was made, and from what', () => {
+    expect(firstReply('open', true)).toBe("Done. I've changed the report as you asked.");
+    expect(firstReply('picture', true)).toBe("Here's the report from your page, with what you asked for.");
+    expect(firstReply('picture', false)).toBe("Here's the report from your page.");
+    expect(firstReply('pdf', false)).toBe("Here's the report from your PDF.");
+    expect(firstReply('repx', true)).toBe("Here's the report from your report, with what you asked for.");
+    expect(firstReply('description', true)).toBe("Here's the report you described.");
+    expect(firstReply('picture', true, 'German')).toBe("Here's the report from your page, in German.");
+    for (const kind of ['open', 'picture', 'pdf', 'repx', 'description'] as const) expect(firstReply(kind, true)).not.toMatch(/updated|instructions/);
+  });
+});
+
+// The full audit (2026-11-11, CV-14): "the report" with nothing open names no report.
+describe('a report named only as "the report"', () => {
+  // The language as App names it, from the lazy language table.
+  const isLanguage = (word: string) => languageAsked(`in ${word}`) !== null;
+
+  it('is vague with only a language or a format said of it, and asks which', () => {
+    for (const m of ['generate the report in German', 'Make my report in French please', 'translate this report into Spanish', 'export the report as a PDF', 'give me the report in Excel']) {
+      expect(isVagueReportAsk(m, isLanguage), m).toBe(true);
+      expect(isPlainBuild(m, isLanguage), m).toBe(false);
+    }
+    // A format is vague without the table; a language needs it.
+    expect(isVagueReportAsk('export the report as a PDF')).toBe(true);
+    expect(vagueReportWord('generate the report in German')).toBe('German');
+    for (const m of ['Create a sales report in German', 'make an invoice', 'Build a report of orders by region', 'make the title bold']) {
+      expect(isVagueReportAsk(m, isLanguage), m).toBe(false);
+    }
+    expect(vagueReportReply('German')).toBe("Which report? Attach a picture or a PDF of it, or tell me what it should list, and I'll make it in German.");
+    expect(vagueReportReply(null)).toBe("Which report? Attach a picture or a PDF of it, or tell me what it should list, and I'll make it.");
+  });
+
+  // The review of CV-14 (2026-11-11): a word that says what to design is not vague, and is designed.
+  it('designs "the report as an invoice": only a language or a format is vague', () => {
+    for (const m of ['create the report as an invoice', 'make the report as a payslip', 'build the report in landscape', 'make the report in bold']) {
+      expect(isVagueReportAsk(m, isLanguage), m).toBe(false);
+    }
+    expect(isPlainBuild('create the report as an invoice', isLanguage)).toBe(true);
+    expect(isPlainBuild('make the report as a payslip', isLanguage)).toBe(true);
+  });
+
+  it('says it did not follow an empty answer in a person’s words', () => {
+    expect(NOT_FOLLOWED).toBe("I didn't follow that. Could you say it another way?");
+  });
+});
 
 describe('isRememberMessage', () => {
   it('keeps only "remember" and "from now on" (items 2 and 92)', () => {

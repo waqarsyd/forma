@@ -3,7 +3,7 @@
  * second gap of docs/proposals/ai-designers.md).
  */
 import { describe, expect, it } from 'vitest';
-import { asksAboutData, consentReply, MAX_CHARS, MAX_ROWS, rowsBlock, rowsNote } from './previewRows';
+import { asksAboutData, consentReply, MAX_CHARS, MAX_ROWS, rowsBlock } from './previewRows';
 
 const fields = ['CompanyName', 'City', 'Balance'];
 
@@ -41,11 +41,11 @@ describe('the rows as they go', () => {
     expect(rowsBlock(rows, [])).toBe('');
   });
 
-  it('asks before they go, and says when they went', () => {
-    expect(consentReply(20, fields, 'sample rows')).toBe(
-      'To answer that, Forma would send the AI the 20 sample rows the Preview prints (CompanyName, City, Balance). Nothing of them has gone so far. Send them? They go with questions about the data for this project until you start a new one.',
+  // The full audit (2026-11-11, CV-19): in Forma's own voice, naming the AI, and no second line once they went.
+  it('asks before they go, in the first person, naming the AI they go to', () => {
+    expect(consentReply(20, ['Customer', 'Amount'], 'Gemini')).toBe(
+      "To answer that I'd send the 20 sample rows the Preview shows (Customer, Amount) to Gemini. Nothing has been sent yet. Send them? For this project they'll go with data questions until you start a new one.",
     );
-    expect(consentReply(80, ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'], 'test rows')).toMatch(/the 50 test rows .*\(A, B, C, D, E, F, G, H and 2 more\)/);
-    expect(rowsNote(20, 'sample rows')).toBe('Answered from the 20 sample rows the Preview prints, which went with your question.');
+    expect(consentReply(80, ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'])).toMatch(/the 50 sample rows .*\(A, B, C, D, E, F, G, H and 2 more\) to the AI\./);
   });
 });

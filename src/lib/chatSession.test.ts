@@ -421,6 +421,9 @@ describe('requestAnnouncement', () => {
     expect(requestAnnouncement({ id: 'u', ask, replies: [msg({ id: 'r', role: 'assistant', text: 'Two questions.', clarify: { answered: false, questions } })] })).toBe('Forma has 2 questions for you.');
     expect(requestAnnouncement({ id: 'u', ask, replies: [msg({ id: 'r', role: 'assistant', text: 'One question.', clarify: { answered: false, questions: questions.slice(0, 1) } })] })).toBe('Forma has a question for you.');
     expect(requestAnnouncement({ id: 'u', ask, replies: [msg({ id: 'r', role: 'assistant', text: 'That needs a redesign.', confirm: { prompt: 'x' } })] })).toBe('Forma asks whether to redesign the report.');
+    // A plan starts as it is said (2026-11-11, the full audit's WS-38): its words are read, nothing to start.
+    const plan = { files: [], mode: 'one' as const, skip: [], prompt: 'p', askId: 'u' };
+    expect(requestAnnouncement({ id: 'u', ask, replies: [msg({ id: 'r', role: 'assistant', text: "I'm making one report from all of them.", plan })] })).toBe("Forma replied: I'm making one report from all of them.");
   });
 
   it("says a report is ready, or the start of a reply, its Markdown taken out and long words cut", () => {

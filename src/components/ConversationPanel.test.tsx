@@ -196,6 +196,14 @@ describe('the pill and the fold', () => {
     expect((screen.getByRole('button', { name: 'Try again' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  // The full audit (2026-11-11, WS-19): between a turn's steps neither flag is set, and an Edit,
+  // a Withdraw or a Try again cut the thread for a send the turn under way refused.
+  it('holds Try again, Edit and Withdraw while a turn is busy between its steps', () => {
+    draw({ busy: true, onEdit: vi.fn(), onWithdraw: vi.fn(), onRegenerate: vi.fn(), requests: [{ id: 'q1', ask: { ...ask, error: 'failed' }, replies: [] }, { id: 'q2', ask: { ...ask, id: 'u2' }, replies: [reply] }] });
+    for (const b of screen.getAllByRole('button', { name: /^(Try again|Edit|Withdraw)$/ })) expect((b as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getAllByRole('button', { name: /^(Try again|Edit|Withdraw)$/ }).length).toBeGreaterThanOrEqual(4);
+  });
+
   // Agent audit item 61: the pill showed no time.
   it('says when the message was sent', () => {
     const at = new Date();

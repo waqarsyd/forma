@@ -105,15 +105,17 @@ export interface ChatMessage<R = unknown, M = unknown> {
    */
   standalone?: true;
   /**
-   * What a chat reply cost (2026-11-07, agent audit item 79), shown beside its
-   * time as a generation's is from its result. It was thrown away, so a turn
-   * that edited a report in place, the cheap path, showed no cost at all.
+   * What a chat reply cost (2026-11-07, agent audit item 79), kept with the
+   * message. It was shown beside its time until 2026-11-11 (the full audit's
+   * WS-38): tokens are machinery, and nothing in the thread names them.
    */
   usage?: { input: number; output: number; thinking: number; total: number } | null;
   /**
-   * What the reply offers to do rather than doing (2026-11-07, agent audit
-   * item 47, the owner's choice): an export or the designer the model asked
-   * for, drawn as buttons under the reply and run only when one is pressed.
+   * What the reply offered to do rather than doing (2026-11-07, agent audit
+   * item 47): an export or the designer the model asked for, drawn as
+   * buttons under the reply. Written no more since 2026-11-11 (the full
+   * audit's WS-09, the owner's rule that nothing waits on a press: such a
+   * tool is dropped), and drawn no more; kept so a saved thread still reads.
    */
   actions?: { name: string; pane?: string; format?: string; language?: string }[];
   /**
@@ -560,7 +562,7 @@ export function requestAnnouncement(request: ChatRequest): string {
     return n === 1 ? 'Forma has a question for you.' : `Forma has ${n} questions for you.`;
   }
   if (reply.confirm && !reply.confirm.answered) return 'Forma asks whether to redesign the report.';
-  if (reply.plan && !reply.plan.answered) return 'Forma has a plan for you to start.';
+  // A plan starts as it is said (2026-11-11, the full audit's WS-38): nothing waits to be started.
   if (reply.consent && !reply.consent.answered) return 'Forma asks whether to send the Preview’s rows.';
   const words = reply.text
     .replace(/```[\s\S]*?```/g, ' ')

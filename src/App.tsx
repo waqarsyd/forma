@@ -266,7 +266,7 @@ import {
 import { packChanges, unpackChanges, REPLY_CHANGES_KEY } from './lib/replyChanges';
 import { copyText } from './lib/clipboard';
 import { DRAFTS_KEY, keepQueue, keptQueueFor, LEGACY_DRAFT_KEY, movedDraft, NEW_DRAFT, parseDrafts, QUEUE_KEY, queuedFiles, withDraft, withoutFiles, type Drafts } from './lib/composerStore';
-import { isPlainBuild, isRememberMessage, pendingQuestions, pendingReplyKind, queueStep, resumed, steered, turnBase, turnEnding, withSelection } from './lib/chatTurn';
+import { firstReply, isPlainBuild, isRememberMessage, isVagueReportAsk, needsRowsConsent, pendingQuestions, pendingReplyKind, queueStep, resumed, steered, turnBase, turnEnding, vagueReportReply, vagueReportWord, withSelection, type ReplyKind } from './lib/chatTurn';
 import { formatSessionStamp } from './lib/datetime';
 import { pointsToUnits, pdfTopFromBaseline } from './lib/reportGeometry';
 // LogoPulse, the progress ring of the generation card, went with the card on
@@ -920,30 +920,28 @@ type RunCopy = {
   request: string;
   /** Logged once the transcript has the assistant's reply. */
   done: string;
-  /** The assistant's message, given whether the user actually typed a prompt. */
-  assistant: (fromPrompt: boolean) => string;
 };
 
+/*
+ * The assistant's message left RunCopy on 2026-11-11 (the full audit's UI2):
+ * "I've updated the report from your instructions" was said of a first report
+ * built from a picture. `firstReply` in lib/chatTurn.ts says what was made,
+ * and from what.
+ */
 const INITIAL_RUN: RunCopy = {
   start: 'Starting report generation process.',
   request: 'Sending request to Gemini API...',
   done: 'Report layout updated successfully.',
-  // No "on the right" (2026-11-06, the workspace audit): the views are the
-  // tabs over the report, which is open in front of the reader, and the reply
-  // says itself what changed and what the checks found.
-  assistant: (fromPrompt) =>
-    fromPrompt ? "I've updated the report from your instructions." : "I've built the report from your pictures.",
 };
+
+/** The test rows the AI made up, as the Preview's rows name their source: its own, never asked about (WS-01). */
+const MADE_UP_ROWS = 'made-up test rows';
 
 /** Prompt-to-Report: a description and no attachment. See lib/promptToReport.ts. */
 const DESCRIBE_RUN: RunCopy = {
   start: 'Starting report generation from a description.',
   request: 'Sending the description to Gemini API...',
   done: 'Report designed from the description.',
-  assistant: () =>
-    // The checks are the reply's own "Checked" line since 2026-11-05; the
-    // pointer at the REPX pane and "on the right" went on 2026-11-06.
-    "I've designed the report from your description.",
 };
 
 /**
@@ -1147,8 +1145,13 @@ export default function App() {
   const [activeQuery, setActiveQuery] = useState<ReportQuery | null>(null);
   /** Whether its names and sample values go to the AI (batch DE): on when attached, until unticked on the Data tab. */
   const [databaseShared, setDatabaseShared] = useState(false);
-  /** Whether the rows the Preview prints may go with a question about the data (2026-11-10, lib/previewRows.ts); per project. */
-  const [rowsShared, setRowsShared] = useState(false);
+  /**
+   * What the person said to the rows the Preview prints going with a question
+   * about the data (2026-11-10, lib/previewRows.ts): yes, no, or nothing yet.
+   * Per project (2026-11-11, the full audit's WS-01): a yes outlived the
+   * project it was given in, and a no was asked again at once.
+   */
+  const [rowsDecision, setRowsDecision] = useState<'yes' | 'no' | null>(null);
   /** What the Preview reads it as (batch DF), one object while neither changes. */
   const previewDatabase = useMemo(() => (activeDatabase ? { schema: activeDatabase, query: activeQuery } : null), [activeDatabase, activeQuery]);
   /** The databases kept on this device, by name, newest first. */
@@ -1888,6 +1891,8 @@ export default function App() {
   const turnBases = useRef(new Map<string, DesignResult | null>());
   /** The chat's tools waiting for the render that applies the turn's edits (2026-11-05). */
   const [pendingTools, setPendingTools] = useState<AgentTool[] | null>(null);
+  /** The reply that said what they do, which a translation finishes in place (2026-11-11, the full audit's UI3). */
+  const toolReplyRef = useRef<string | null>(null);
   /** Runs them; assigned beside `showPlate`, where the handlers it calls are. */
   const runToolsRef = useRef<((tools: AgentTool[]) => void) | null>(null);
   /** Does what a chat shortcut asks (2026-11-05, lib/shortcuts.ts); assigned beside `showPlate` too. */
@@ -3092,7 +3097,6 @@ export default function App() {
     setChatChanges({});
     // A new conversation owes no answers to the last one's questions.
     pendingClarifyRef.current = null;
-    setRowsShared(false);
     setShownRequestId(null);
     setChangedHighlight([]);
     setQueue([]);
@@ -3510,6 +3514,17 @@ export default function App() {
     setIsShareOpen(false);
     setSelectionReset((n) => n + 1);
     setPreviewZoom(1);
+    /*
+     * What was said for this project's data goes with it (2026-11-11, the
+     * full audit's WS-01 and WS-02), whichever way it is left: Projects,
+     * Recent, Ctrl+K, New report, a batch result, a sign-out. The rows
+     * answer is asked again, the shared database is ticked again, and the
+     * query chosen is the next project's own (`handleLoadReport`); the
+     * database itself stays kept on the device.
+     */
+    setRowsDecision(null);
+    setDatabaseShared(false);
+    setActiveQuery(null);
   };
 
   /*
@@ -3608,6 +3623,15 @@ export default function App() {
     setRailPanel('review');
     openReportId.current = report.id;
     setOpenProjectId(report.id);
+    // What it reads is its own data source's, when it has one and the kept database holds it (WS-02).
+    const ownXml = report.result?.repxContent;
+    if (ownXml && activeDatabaseRef.current) {
+      void import('./lib/sqlDrift').then(({ queryFromRepx }) => {
+        if (openReportId.current !== report.id || !activeDatabaseRef.current) return;
+        const own = queryFromRepx(ownXml, activeDatabaseRef.current);
+        if (own) setActiveQuery(own);
+      }).catch((err) => console.warn('The project opened; what it reads could not be read back.', err));
+    }
 
     if (!user) return;
     try {
@@ -4251,6 +4275,34 @@ export default function App() {
       console.debug(`Generated Layout Title: ${response.layout.title}`);
       console.debug(`Generated REPX length: ${response.repxContent.length} characters`);
 
+      /*
+       * A language the words name, carried out on a first report (2026-11-11,
+       * the full audit's CV-14): "Make this report in German" with a picture
+       * built the report in the picture's language and said it had been
+       * updated. Translated before the reply, so the reply says what is so;
+       * a translation that fails leaves the report as built, and says nothing
+       * of the language.
+       */
+      let translated: { xml: string; language: string } | null = null;
+      const askedLanguage = !open && response.repxContent
+        ? await import('./lib/repxTranslate').then((m) => m.languageAsked(currentPrompt || describeRequest?.description || '')).catch(() => null)
+        : null;
+      if (askedLanguage) {
+        try {
+          const done = await translateXml(response.repxContent, askedLanguage, signal);
+          if (signal.aborted) return;
+          translated = { xml: done.xml, language: askedLanguage };
+        } catch (translateError) {
+          if (signal.aborted) return;
+          console.warn(`The report could not be translated into ${askedLanguage}; it stays as built.`, translateError);
+        }
+      }
+      if (translated && translated.xml !== response.repxContent) {
+        const views = await import('./lib/repxViews');
+        const title = response.layout.title;
+        response = { ...response, repxContent: translated.xml, markdown: views.specFromRepx(translated.xml, title), layout: views.layoutFromRepx(translated.xml, title) };
+      }
+
       const newResult = {
         content: response.markdown,
         timestamp: new Date(),
@@ -4284,10 +4336,18 @@ export default function App() {
             ])
             .catch(() => ['', ''])
         : ['', ''];
+      // What was made, and from what (2026-11-11, the full audit's UI2, `firstReply`).
+      const kind: ReplyKind = describeRequest
+        ? 'description'
+        : open?.repxContent ? 'open'
+        : currentTexts.some((t) => /\.repx$/i.test(t.file ?? '')) ? 'repx'
+        : currentTexts.some((t) => /\.pdf$/i.test(t.file ?? '')) ? 'pdf'
+        : currentPreviews.length ? 'picture' : 'description';
+      const said = firstReply(kind, Boolean(currentPrompt.trim()), translated?.language);
       const newAssistantMsg: ChatMessage = {
         id: nextMessageId(),
         role: 'assistant',
-        text: [switched, credits ? `${copy.assistant(Boolean(currentPrompt))} ${credits}` : copy.assistant(Boolean(currentPrompt)), dataNote, changed, checked].filter(Boolean).join('\n\n'),
+        text: [switched, credits ? `${said} ${credits}` : said, dataNote, changed, checked].filter(Boolean).join('\n\n'),
         result: newResult
       };
       // The two imports above are a wait: a session left meanwhile is not this one.
@@ -4400,6 +4460,14 @@ export default function App() {
     // a steer is the next message, and goes.
     if (!steering && queue.length) setQueuePaused(true);
     const stopped = steering ? 'Stopped to change course.' : 'Stopped.';
+    /*
+     * Once per turn (2026-11-11, the full audit's WS-46): a second Stop, or a
+     * Steer after a Stop, came while the turn under way still held
+     * `turnBusy`, read `isChatting` as it was before the first, and said
+     * "Stopped." again. A turn whose controller is already aborted has been
+     * stopped and said so.
+     */
+    const turnCtl = turnAbortRef.current;
     if (isAnalyzing) {
       const running = abortControllerRef.current;
       setIsAnalyzing(false);
@@ -4408,6 +4476,8 @@ export default function App() {
       // A run that already finished has nothing to stop and nothing to say.
       if (!running) return;
       running.abort();
+      // The turn the run belongs to stops with it, so nothing it was to do next starts.
+      turnCtl?.abort();
       abortControllerRef.current = null;
       setMessages(prev => [...prev, {
         id: nextMessageId(),
@@ -4416,16 +4486,17 @@ export default function App() {
       }]);
       return;
     }
+    if (turnCtl?.signal.aborted) return;
     if (!isChatting) {
       // Between a turn's steps (pages read, the chat not yet asked), the turn
       // is still under way and stops the same way.
       if (turnBusyRef.current) {
-        turnAbortRef.current?.abort();
+        turnCtl?.abort();
         setMessages(prev => [...prev, { id: nextMessageId(), role: 'assistant', text: stopped }]);
       }
       return;
     }
-    turnAbortRef.current?.abort();
+    turnCtl?.abort();
     const partial = partialReplyRef.current.trim();
     partialReplyRef.current = '';
     setIsChatting(false);
@@ -4448,7 +4519,9 @@ export default function App() {
    * question in the transcript.
    */
   const handleRetryMessage = (id: string) => {
-    if (isChatting || isAnalyzing) return;
+    // Nor between a turn's steps (2026-11-11, the full audit's WS-19): the thread
+    // was cut here and the turn under way then refused what was sent.
+    if (isChatting || isAnalyzing || turnBusyRef.current) return;
     const failed = messages.find((m) => m.id === id);
     if (!failed) return;
     // Questions asked after it go with it, as for an edit (agent audit item 25):
@@ -4478,7 +4551,7 @@ export default function App() {
    * built stays in Revisions.
    */
   const handleRegenerate = (id: string) => {
-    if (isChatting || isAnalyzing) return;
+    if (isChatting || isAnalyzing || turnBusyRef.current) return;
     // A reply Forma wrote of its own accord answers no message (agent audit item 75).
     if (messages.find((m) => m.id === id)?.standalone) return;
     const asked = answeredBy(messages, id);
@@ -4556,21 +4629,16 @@ export default function App() {
       : prev));
   }, [result?.repxContent, chatChanges]);
 
-  /**
-   * The answer to a redesign Forma asked before making (2026-11-05): yes
-   * starts it from the words the reply asked about, no leaves the report.
+  /*
+   * The Redesign / Not now buttons of a redesign asked about (2026-11-05) and
+   * a plan's Start / Not now (2026-11-10) went on 2026-11-11 (the full audit's
+   * WS-38): nothing waits on a press. `handleConfirm` and `handlePlan`, which
+   * answered them, went with them; a typed yes still answers one an older
+   * thread holds (`runTurn`).
    */
-  const handleConfirm = async (id: string, yes: boolean) => {
-    if (isChatting || isAnalyzing) return;
-    const asked = messages.find((m) => m.id === id);
-    if (!asked?.confirm || asked.confirm.answered) return;
-    setMessages((prev) => prev.map((m) => (m.id === id && m.confirm ? { ...m, confirm: { ...m.confirm, answered: yes ? 'yes' : 'no' } } : m)));
-    if (!yes) return;
-    await startRedesign(asked.confirm.prompt);
-  };
 
   /**
-   * A plan answered (2026-11-10, the AI accuracy programme, batch AG item 22,
+   * A plan settled (2026-11-10, the AI accuracy programme, batch AG item 22,
    * lib/jobPlan.ts). Started, one report goes on as the message would have,
    * with the files kept; a report for each goes to Batch with the original
    * files, one at a time. Left, nothing was read or sent.
@@ -4579,28 +4647,29 @@ export default function App() {
     setMessages((prev) => prev.map((m) => (m.id === id && m.plan ? { ...m, plan: { ...m.plan, ...(plan ?? {}), answered: started ? 'yes' : 'no' } } : m)));
     if (!started) plannedJobs.current.delete(id);
   };
+  /*
+   * Run inside the turn that said the plan (2026-11-11, the full audit's
+   * PL-19), from `handleGenerate`'s continuation or a typed yes: it went
+   * through `handleGenerate` after a zero timer, which the turn still under
+   * way refused, so the plan said Started for a run that never began. It
+   * is marked started only once the run is under way.
+   */
   const startPlan = async (id: string, plan: JobPlan & { prompt: string; askId: string }) => {
     const job = plannedJobs.current.get(id);
-    settlePlan(id, true, plan);
     plannedJobs.current.delete(id);
-    if (!job) return;
+    if (!job) {
+      settlePlan(id, false, plan);
+      return;
+    }
     const jobs = await import('./lib/jobPlan');
+    settlePlan(id, true, plan);
     if (plan.mode === 'each' && jobs.keptFiles(plan).length > 1) {
       setBatchIncoming({ files: await jobs.filesForBatch(plan, job), id: Date.now() });
       showRailPanel('batch');
       return;
     }
-    await handleGenerate(plan.prompt, { ...jobs.keptAttachments(plan, job), base: job.base, planned: plan.askId });
-  };
-  const handlePlan = async (id: string, plan: JobPlan, start: boolean) => {
-    if (isChatting || isAnalyzing) return;
-    const asked = messages.find((m) => m.id === id)?.plan;
-    if (!asked || asked.answered) return;
-    if (!start) {
-      settlePlan(id, false, plan);
-      return;
-    }
-    await startPlan(id, { ...asked, ...plan });
+    const next = await runTurn(plan.prompt, { ...jobs.keptAttachments(plan, job), base: job.base, planned: plan.askId });
+    if (next) await next();
   };
 
   /**
@@ -4613,7 +4682,7 @@ export default function App() {
   const previewRowsFor = async (open: DesignResult | null): Promise<{ rows: Record<string, unknown>[]; fields: string[]; source: string } | null> => {
     if (!open?.repxContent) return null;
     const fields = boundFields.length ? boundFields : [];
-    if (testRows?.length) return { rows: testRows, fields: fields.length ? fields : Object.keys(testRows[0]), source: 'made-up test rows' };
+    if (testRows?.length) return { rows: testRows, fields: fields.length ? fields : Object.keys(testRows[0]), source: MADE_UP_ROWS };
     if (previewDatabase?.query) {
       const { sqlPreview } = await import('./lib/sqlPreview');
       const sql = sqlPreview(open.repxContent, previewDatabase.schema, previewDatabase.query);
@@ -4622,23 +4691,36 @@ export default function App() {
     return null;
   };
 
-  /** The answer to Forma's question whether the Preview's rows may go (2026-11-10): yes sends the question again with them, for this project. */
+  /**
+   * The answer to Forma's question whether the Preview's rows may go
+   * (2026-11-10): the question is sent again, with them on a yes and without
+   * them on a no, and the answer stands for the project (2026-11-11, the full
+   * audit's WS-01: a no was sent again as a question and asked at once).
+   */
   const handleConsent = async (id: string, yes: boolean) => {
-    if (isChatting || isAnalyzing) return;
+    if (isChatting || isAnalyzing || turnBusyRef.current) return;
     const asked = messages.find((m) => m.id === id)?.consent;
     if (!asked || asked.answered) return;
     setMessages((prev) => prev.map((m) => (m.id === id && m.consent ? { ...m, consent: { ...m.consent, answered: yes ? 'yes' : 'no' } } : m)));
-    if (yes) setRowsShared(true);
-    await handleGenerate(asked.prompt, { planned: asked.askId, base: turnBases.current.get(asked.askId), consented: yes, transcript: messages.filter((m) => m.id !== id) });
+    setRowsDecision(yes ? 'yes' : 'no');
+    await handleGenerate(asked.prompt, { planned: asked.askId, base: turnBases.current.get(asked.askId), consented: yes, declined: !yes, transcript: messages.filter((m) => m.id !== id) });
   };
 
+  /** A redesign under way, so a second one waits for it (2026-11-11, the full audit's PL-19). */
+  const redesigningRef = useRef(false);
   /** A redesign of the open report from words, as a refinement has always run. */
   const startRedesign = async (words: string) => {
-    setIsAnalyzing(true);
-    setProgress(startProgress());
-    setError(null);
-    activeDescribeRef.current = undefined;
-    await runGeneration(words, [], [], INITIAL_RUN);
+    if (redesigningRef.current) return;
+    redesigningRef.current = true;
+    try {
+      setIsAnalyzing(true);
+      setProgress(startProgress());
+      setError(null);
+      activeDescribeRef.current = undefined;
+      await runGeneration(words, [], [], INITIAL_RUN);
+    } finally {
+      redesigningRef.current = false;
+    }
   };
 
   /** The conversation downloaded as Markdown (2026-11-05, `conversationMarkdown`), named after the report. */
@@ -4719,7 +4801,7 @@ export default function App() {
    * that belonged to them is closed rather than answered by the next message.
    */
   const handleEditMessage = (id: string, text: string) => {
-    if (isChatting || isAnalyzing) return;
+    if (isChatting || isAnalyzing || turnBusyRef.current) return;
     const at = messages.findIndex((m) => m.id === id);
     if (at === -1 || messages[at].role !== 'user' || !text.trim()) return;
     const pending = pendingClarifyRef.current;
@@ -4751,7 +4833,7 @@ export default function App() {
 
   /** One of the person's messages and Forma's answers to it, withdrawn (2026-11-04). See `withdrawTurn`. */
   const handleWithdrawMessage = (id: string) => {
-    if (isChatting || isAnalyzing) return;
+    if (isChatting || isAnalyzing || turnBusyRef.current) return;
     const pending = pendingClarifyRef.current;
     if (pending) {
       const kept = withdrawTurn(messages, id);
@@ -4918,12 +5000,21 @@ export default function App() {
    * before the picture's reply. `turnBusy`, declared beside the queue, covers
    * the whole turn.
    */
+  /*
+   * What a turn hands on to run once its own chat step has let go
+   * (2026-11-11, the full audit's PL-19): a redesign it said it was starting,
+   * or a plan's job. Both ran after a zero timer, outside the turn, so the
+   * queue could send its next message between them, and a plan's job went
+   * through `handleGenerate`, which the turn under way refused. They run
+   * here, awaited, with `turnBusy` held until they end.
+   */
   const handleGenerate = async (...args: Parameters<typeof runTurn>) => {
     if (isChatting || isAnalyzing || turnBusyRef.current) return;
     turnBusyRef.current = true;
     setTurnBusy(true);
     try {
-      await runTurn(...args);
+      const next = await runTurn(...args);
+      if (next) await next();
     } finally {
       turnBusyRef.current = false;
       setTurnBusy(false);
@@ -4957,8 +5048,10 @@ export default function App() {
       planned?: string;
       /** Sent again after the person let the Preview's rows go with it (2026-11-10). */
       consented?: boolean;
+      /** Sent again after the person kept them back (2026-11-11): answered without them, not asked again. */
+      declined?: boolean;
     },
-  ) => {
+  ): Promise<(() => Promise<void>) | void> => {
     /*
      * Refuse re-entry while a request is already in flight.
      *
@@ -5088,8 +5181,9 @@ export default function App() {
       if (yes) {
         setMessages(prev => [...prev, { id: nextMessageId(), role: 'user', text: promptText }]);
         clearComposer();
-        await startPlan(lastMessage.id, lastMessage.plan);
-        return;
+        const asked = lastMessage.plan;
+        // After this turn has let go (PL-19), as the plan's own start runs.
+        return () => startPlan(lastMessage.id, asked);
       }
       settlePlan(lastMessage.id, false);
     }
@@ -5119,12 +5213,18 @@ export default function App() {
         setMessages(prev => [
           ...prev,
           { id: askId, role: 'user', text: promptText, images: stagedImages.length ? [...stagedImages] : undefined, imageMeta: stagedImages.length ? [...stagedImageMeta] : undefined, ...(base ? {} : { fresh: true as const }) },
+          /*
+           * Never a card waiting for Start (2026-11-11, the full audit's
+           * WS-38): it draws as words, and `startPlan` marks it started as the
+           * run begins, a moment later in this same turn (PL-19). Posted
+           * already answered, it said Started before anything had; a turn
+           * stopped first leaves it unstarted, and the next message settles it.
+           */
           { id: planId, role: 'assistant', text: jobs.planReply(plan), plan: { ...plan, prompt: promptText, askId } },
         ]);
         clearComposer();
-        // After this turn has let go, so the job's own turn starts clean.
-        setTimeout(() => void startPlan(planId, { ...plan, prompt: promptText, askId }), 0);
-        return;
+        // Once this step has let go, inside the turn (PL-19), so the job's own step starts clean.
+        return () => startPlan(planId, { ...plan, prompt: promptText, askId });
       }
     }
 
@@ -5232,7 +5332,21 @@ export default function App() {
     // one request of the key's free allowance saying so. Only one that says
     // what the report is (2026-11-07, `isPlainBuild`): "create a report" goes
     // to the chat, which asks what it should show.
-    if (!base && !isGenerationTurn(currentPreviews.length, currentTexts.length) && isPlainBuild(currentPrompt)) {
+    // "Generate the report in German" with nothing open and nothing attached names no
+    // report (2026-11-11, the full audit's CV-14): Forma asks which, the one question
+    // it asks because nothing can be started. Only a language or a format makes it vague
+    // ("create the report as an invoice" is designed): the language table is lazy, so it
+    // is loaded only for a message of that shape.
+    const nothingGiven = !base && !isGenerationTurn(currentPreviews.length, currentTexts.length);
+    const languages = nothingGiven && vagueReportWord(currentPrompt) ? await import('./lib/repxTranslate').catch(() => null) : null;
+    if (turn.signal.aborted) return;
+    const isLanguage = (word: string) => !!languages && languages.languageAsked(`in ${word}`) !== null;
+    if (nothingGiven && isVagueReportAsk(currentPrompt, isLanguage)) {
+      const named = languages?.languageAsked(currentPrompt) ?? null;
+      setMessages(prev => [...prev, { id: nextMessageId(), role: 'assistant', text: vagueReportReply(named) }]);
+      return;
+    }
+    if (nothingGiven && isPlainBuild(currentPrompt, isLanguage)) {
       await describeFromChat(currentPrompt, turn.signal, newUserMsg.id);
       return;
     }
@@ -5308,23 +5422,32 @@ export default function App() {
          * answer, and nothing is sent.
          */
         const previewRows = await previewRowsFor(open);
-        const aboutData = Boolean(open && previewRows && facts && (await import('./lib/previewRows')).asksAboutData(currentPrompt, facts.printed));
-        if (aboutData && previewRows && !rowsShared && !resend?.consented) {
-          const { consentReply } = await import('./lib/previewRows');
+        const rowsLib = open && previewRows && facts ? await import('./lib/previewRows') : null;
+        const aboutData = Boolean(rowsLib && previewRows && facts && rowsLib.asksAboutData(currentPrompt, facts.printed));
+        /*
+         * Asked once per project, and only of a database's rows (2026-11-11,
+         * the full audit's WS-01, CV-03 and CV-19): test rows the AI made up
+         * are its own and go without asking, and a yes or a no stands until
+         * the project is left (`needsRowsConsent`, `leaveSession`).
+         */
+        const madeUp = previewRows?.source === MADE_UP_ROWS;
+        if (aboutData && rowsLib && previewRows && !madeUp && needsRowsConsent(rowsDecision, resend)) {
           reportTurnRef.current = false;
           setMessages((prev) => [
             ...prev,
             {
               id: nextMessageId(),
               role: 'assistant',
-              text: consentReply(previewRows.rows.length, previewRows.fields, previewRows.source),
+              // "the AI", not the provider's name (the review, 2026-11-11): the turn goes through the
+              // free chain (askWithChain), so on a limit the rows may reach another provider.
+              text: rowsLib.consentReply(previewRows.rows.length, previewRows.fields),
               consent: { rows: previewRows.rows.length, fields: previewRows.fields, source: previewRows.source, prompt: currentPrompt, askId: newUserMsg.id },
             },
           ]);
           return;
         }
-        const rowsSent = aboutData && previewRows ? (await import('./lib/previewRows')).rowsBlock(previewRows.rows, previewRows.fields) : '';
-        const rowsLine = rowsSent ? (await import('./lib/previewRows')).rowsNote(Math.min(previewRows!.rows.length, (await import('./lib/previewRows')).MAX_ROWS), previewRows!.source) : '';
+        const rowsGo = aboutData && (madeUp || rowsDecision === 'yes' || Boolean(resend?.consented)) && !resend?.declined;
+        const rowsSent = rowsGo && rowsLib && previewRows ? rowsLib.rowsBlock(previewRows.rows, previewRows.fields) : '';
         // A question about Forma carries the Docs articles it is about (batch AG item 25, lib/docsKnowledge.ts).
         const docs = await import('./lib/docsKnowledge').then(async ({ docsFor }) => {
           const found = await docsFor(currentPrompt, () => import('./components/docsCorpus').then((m) => m.loadDocsSections()));
@@ -5345,14 +5468,14 @@ export default function App() {
         const answered = chained.value;
         /*
          * What the turn cost, kept on the reply it writes (2026-11-07, agent
-         * audit item 79) and shown beside its time as a generation's is; the
+         * audit item 79; no longer shown since 2026-11-11, WS-38); the
          * second pass below adds its own. The switch to another AI, when there
          * was one, is the reply's first line.
          */
         let turnUsage = answered.usage ?? null;
         const withCost = <T extends ChatMessage>(m: T): T => {
           const costed = turnUsage ? { ...m, usage: turnUsage } : m;
-          const notes = [chained.note, rowsLine].filter(Boolean);
+          const notes = [chained.note].filter(Boolean);
           return notes.length ? { ...costed, text: [...notes, costed.text].filter(Boolean).join('\n\n') } : costed;
         };
         // A report turn's answer is checked before anything is acted on.
@@ -5395,27 +5518,63 @@ export default function App() {
         /*
          * Forma's own actions the answer asked for (2026-11-05): queued, and
          * run by the effect beside `showPlate` once the edits have rendered,
-         * so an export carries the report as edited. Each says what it did;
-         * sample rows need a report that prints a field.
+         * so an export carries the report as edited.
+         *
+         * An export, the designer or a translation runs only when the
+         * person's own words asked for it (2026-11-07, agent audit item 47):
+         * a model can be told to bring one by a label in the report or the
+         * picture it reads. One the words did not ask for is dropped, with a
+         * console line, and never drawn as a button to press (2026-11-11, the
+         * full audit's WS-09 and TC-02, the owner's rule that nothing waits
+         * on a press; it was offered as one from 2026-11-07).
          */
         /*
-         * An export or the designer is offered as a button under the reply
-         * and runs only when pressed (2026-11-07, agent audit item 47, the
-         * owner's choice): a model can be told to ask for one by a label in
-         * the report it reads. The rest still run at once.
+         * A translation's language, resolved before anything says it starts
+         * (2026-11-11, the review of the full audit's CV-01): the model's, as
+         * one English name, else the one the message names (2026-11-10). One
+         * with neither is dropped here, so no "Translating it into ..." line
+         * is written that no result would ever replace.
          */
-        // A translation the model asked for without naming the language takes the one the message names (2026-11-10).
-        const asked = agent && outcome.tools?.some((t) => t.name === 'translate' && !t.language) ? (await import('./lib/repxTranslate')).languageAsked(currentPrompt) : null;
-        // What the person's own words asked for runs at once (2026-11-10, the full audit); the rest of the guarded tools are offered.
-        const split = agent ? agent.splitTools((outcome.tools ?? []).map((t) => (t.name === 'translate' && !t.language && asked ? { ...t, language: asked } : t)), currentPrompt) : { now: [], ask: [] };
+        const translateTools = agent && outcome.tools?.some((t) => t.name === 'translate') ? await import('./lib/repxTranslate') : null;
+        const asked = translateTools ? translateTools.languageAsked(currentPrompt) : null;
+        const fromModel = (outcome.tools ?? []).flatMap((t) => {
+          if (t.name !== 'translate' || !translateTools) return [t];
+          const language = translateTools.languageName(t.language) || asked;
+          return language ? [{ ...t, language }] : [];
+        });
+        // Said only when the words asked to translate; one the model brought alone is just dropped.
+        const noLanguage = !!agent && !!translateTools && (outcome.tools ?? []).some((t) => t.name === 'translate' && !translateTools.languageName(t.language) && !asked && agent.askedFor(t, currentPrompt));
+        const split = agent ? agent.splitTools(fromModel, currentPrompt) : { now: [], dropped: [] };
+        if (split.dropped.length) console.debug(`Dropped what the person's words did not ask for: ${split.dropped.map((t) => t.name).join(', ')}.`);
         const tools = split.now;
-        const offered = split.ask.length ? { actions: split.ask } : {};
+        /*
+         * What each tool is doing, one sentence each (2026-11-11, the full
+         * audit's UI3), and nothing for one that will not start: sample rows
+         * for a report that prints no field, an undo with nothing to undo.
+         * Those are said in plain words instead when the reply would
+         * otherwise be empty (the review: such a turn posted nothing at all).
+         */
+        const wontStart = (t: AgentTool) => (t.name === 'testData' && boundFields.length === 0) || (t.name === 'undo' && !undoableIds.size && historyDepth.back === 0);
         const toolsDone = agent
-          ? tools.map((t) =>
-              t.name === 'testData' && boundFields.length === 0 ? 'no sample rows: the report prints no fields'
-              : t.name === 'undo' && !undoableIds.size && historyDepth.back === 0 ? 'nothing to take back: no change has been made since the report opened'
-              : agent.toolLine(t))
+          ? tools
+              .filter((t) => !wontStart(t))
+              .map((t) => agent.toolSentence(t))
+              .filter(Boolean)
+              // Once: a reply that already says it is not followed by it again.
+              .filter((s) => !(outcome.reply ?? '').includes(s))
           : [];
+        const nonStarts = [
+          ...(tools.some((t) => t.name === 'testData' && wontStart(t)) ? ["There's nothing to fill yet: the report prints no fields."] : []),
+          ...(tools.some((t) => t.name === 'undo' && wontStart(t)) ? ["There's nothing to take back yet."] : []),
+          ...(noLanguage ? ["Tell me which language and I'll translate it."] : []),
+        ];
+        // The reply that says them, which a translation finishes in place (UI3).
+        const toolReply = (id: string) => {
+          if (tools.length) {
+            toolReplyRef.current = id;
+            setPendingTools(tools);
+          }
+        };
         // Tools asked for and refused, said under "Not done" (agent audit item 82).
         const toolsRefused = agent && 'toolsDeclined' in outcome ? outcome.toolsDeclined ?? [] : [];
 
@@ -5472,7 +5631,7 @@ export default function App() {
             // What Forma may learn from this edit (2026-11-10, lib/learning.ts): the operations by name.
             recordLearning({ kind: 'edit', request: 'edit', ai: aiKindOf(chained.by), repx: done.xml, ops: (outcome.edits ?? []).map((e) => e.op), prompt: currentPrompt });
             // The tools run once the edits are made (agent audit item 38).
-            if (tools.length) setPendingTools(tools);
+            toolReply(id);
             const changes = agent.describeChanges(now.repxContent!, done.xml);
             // Whatever the edit brought that the checks find, said here (2026-11-05).
             // File against file: the Mockup is read again from the edited file a moment later, so a band
@@ -5481,7 +5640,6 @@ export default function App() {
             setMessages(prev => [...prev, withCost({
               id,
               role: 'assistant',
-              ...offered,
               text: [
                 outcome.reply,
                 agent.changesMarkdown(changes, [...done.declined, ...toolsRefused], toolsDone),
@@ -5496,11 +5654,10 @@ export default function App() {
            * a title that was bold). Said so, with no redesign offered.
            */
           if (done.applied.length) {
-            if (tools.length) setPendingTools(tools);
+            toolReply(id);
             setMessages(prev => [...prev, withCost({
               id,
               role: 'assistant',
-              ...offered,
               text: ['Nothing needed changing: the report already reads that way.', agent.changesMarkdown([], [...done.declined, ...toolsRefused], toolsDone)].filter(Boolean).join('\n\n'),
             })]);
             return;
@@ -5516,36 +5673,39 @@ export default function App() {
           setMessages(prev => [...prev, withCost({
             id,
             role: 'assistant',
-            text: `That cannot be changed in place, so I'm redesigning the report from your words; it takes a minute or two, and Undo brings this one back.\n\n${agent.changesMarkdown([], [...done.declined, ...tools.map((t) => `${agent.toolLine(t)}: not started, as the edits were not made`)])}`,
+            text: `That cannot be changed in place, so I'm redesigning the report from your words; Undo brings this one back.\n\n${agent.changesMarkdown([], [...done.declined, ...tools.map((t) => `${agent.toolLine(t)}: not started, as the edits were not made`)])}`,
           })]);
-          setTimeout(() => void startRedesign(designWords), 0);
-          return;
+          // Inside the turn, once this step has let go (2026-11-11, the full audit's PL-19).
+          return () => (turn.signal.aborted ? Promise.resolve() : startRedesign(designWords));
         } else if (open && outcome.wantsReport && !withPictures) {
           /*
            * A change only a redesign can make starts at once (2026-11-10; it
            * was asked first from 2026-11-05, as a costly step). The reply says
-           * so; the whole report is rewritten, Undo brings this one back, and
-           * `handleConfirm` still answers a question an older thread holds.
+           * so; the whole report is rewritten and Undo brings this one back. A
+           * question an older thread holds is answered by a typed yes.
            */
           setMessages(prev => [...prev, withCost({
             id: nextMessageId(),
             role: 'assistant',
-            text: [outcome.reply, 'Redesigning the whole report now; it takes a minute or two, and Undo brings this one back.'].filter(Boolean).join(' '),
+            text: [outcome.reply, 'Redesigning the whole report now; Undo brings this one back.'].filter(Boolean).join(' '),
           })]);
-          setTimeout(() => void startRedesign(designWords), 0);
-          return;
+          // Inside the turn, once this step has let go (PL-19), so the queue waits for it.
+          return () => (turn.signal.aborted ? Promise.resolve() : startRedesign(designWords));
         } else if (!outcome.wantsReport) {
-          if (tools.length) setPendingTools(tools);
-          setMessages(prev => [...prev, withCost({
-            id: nextMessageId(),
-            role: 'assistant',
-            ...offered,
-            text: agent && (toolsDone.length || toolsRefused.length) ? [outcome.reply, agent.changesMarkdown([], toolsRefused, toolsDone)].filter(Boolean).join('\n\n') : outcome.reply,
-          })]);
+          const id = nextMessageId();
+          toolReply(id);
+          const said = agent && (toolsDone.length || toolsRefused.length) ? [outcome.reply, agent.changesMarkdown([], toolsRefused, toolsDone)].filter(Boolean).join('\n\n') : outcome.reply;
+          // A tool turn whose tools will not start, and whose reply was left to Forma, says why in plain words.
+          const text = said || nonStarts.join(' ');
+          if (text || chained.note) {
+            setMessages(prev => [...prev, withCost({ id, role: 'assistant', text: text || '' })]);
+          }
           return;
-        } else {
+        } else if (outcome.reply || chained.note) {
           // The user does want a report built or redesigned — fall through to
-          // generation below, after acknowledging.
+          // generation below, after what the reply says, when it says anything
+          // (2026-11-11, the full audit's CV-18: it is left empty, and the
+          // report's own first reply says what was made).
           setMessages(prev => [...prev, withCost({
             id: nextMessageId(),
             role: 'assistant',
@@ -5661,12 +5821,14 @@ export default function App() {
       const remembered = await import('./lib/memory').then((m) => m.instructionsOf(m.readMemory())).catch(() => '');
       const outcome = await clarifyReportRequest(request, config, signal, remembered);
       if (signal?.aborted) return;
-      if (!outcome.ready) {
+      // Not ready with no question to ask is designed from the words as they stand (the review, 2026-11-11: it said "0 questions first:").
+      if (!outcome.ready && outcome.questions.length) {
         const id = nextMessageId();
         setMessages((prev) => [...prev, {
           id,
           role: 'assistant',
-          text: `Before I design it, ${outcome.questions.length === 1 ? 'one question' : `${outcome.questions.length} questions`}. Keep the suggested answers, change them, or reply in your own words.`,
+          // Said as a person asks (2026-11-11, the full audit's CV-20), the form below holding the suggestions.
+          text: `${['One question', 'Two questions', 'Three questions'][outcome.questions.length - 1] ?? `${outcome.questions.length} questions`} first:`,
           // The description goes with the questions, so the form works after a reload (item 24).
           clarify: { questions: outcome.questions, answered: false, request },
         }]);
@@ -5803,56 +5965,82 @@ export default function App() {
    * hours on 2026-11-10, until the owner saw it); the next free AI answers
    * on a limit, as any request does.
    */
-  const translateReport = async (language: string) => {
+  /**
+   * A report's typed texts in another language (lib/repxTranslate.ts): one
+   * request with every distinct text, the answers put back, the layout
+   * untouched. Shared by a translation asked for in the chat and a first
+   * report whose words name a language (2026-11-11, the full audit's CV-14).
+   */
+  const translateXml = async (xml: string, language: string, signal: AbortSignal) => {
+    const [{ collectTexts, applyTranslations }, { translateTexts }, { askWithChain }] = await Promise.all([import('./lib/repxTranslate'), loadGemini(), import('./lib/fallbackChain')]);
+    const texts = collectTexts(xml);
+    if (!texts.length) return { xml, changed: 0, any: false, note: '', by: null };
+    const answered = await askWithChain(effectiveConfig(), (asked) => translateTexts(texts.map((t) => t.text), language, asked, signal), signal);
+    const out = applyTranslations(xml, answered.value);
+    return { xml: out.xml, changed: out.changed, any: true, note: answered.note, by: answered.by };
+  };
+
+  const translateReport = async (named: string, replyId?: string | null) => {
     const open = result;
     if (!open?.repxContent) return;
     if (!hasApiKey) {
       setIsConfigOpen(true);
       return;
     }
-    const say = (text: string) => setMessages((prev) => [...prev, { id: nextMessageId(), role: 'assistant', text }]);
-    if (!language.trim()) {
-      say('Which language should the report be translated into?');
+    /*
+     * The language as the model named it, else as the person's last message
+     * names it (2026-11-11, the full audit's CV-01): with neither, the
+     * translation is dropped, quietly. "Which language should the report be
+     * translated into?" was asked of "generate the report in German".
+     */
+    const { languageAsked, languageName } = await import('./lib/repxTranslate');
+    const lastAsk = [...messages].reverse().find((m) => m.role === 'user')?.text ?? '';
+    const language = languageName(named) || languageAsked(lastAsk) || '';
+    if (!language) {
+      console.debug('A translation with no language named anywhere was dropped.');
       return;
     }
+    /*
+     * One message for the turn (2026-11-11, the full audit's UI3): the reply
+     * that said "Translating it into German." becomes the result when it is
+     * done, with the Undo on it, where a second message said it again with
+     * counts and a pointer at Revisions.
+     */
+    const doing = `Translating it into ${language}.`;
+    const say = (text: string) => setMessages((prev) => (replyId && prev.some((m) => m.id === replyId)
+      ? prev.map((m) => (m.id === replyId ? { ...m, text: m.text.includes(doing) ? m.text.replace(doing, () => text) : [m.text, text].filter(Boolean).join('\n\n') } : m))
+      : [...prev, { id: nextMessageId(), role: 'assistant', text }]));
     const session = sessionId.current;
     setIsChatting(true);
     setStreamingReply('');
     try {
-      const [{ collectTexts, applyTranslations }, { translateTexts }, { askWithChain }] = await Promise.all([import('./lib/repxTranslate'), loadGemini(), import('./lib/fallbackChain')]);
-      const texts = collectTexts(open.repxContent);
-      if (!texts.length) {
-        say('This report has no typed text to translate: every text in it prints a field.');
-        return;
-      }
       // Stop stops it (2026-11-10, the full audit's FE2): the turn's controller, which handleStop aborts.
       const turn = new AbortController();
       turnAbortRef.current = turn;
-      const answered = await askWithChain(effectiveConfig(), (asked) => translateTexts(texts.map((t) => t.text), language, asked, turn.signal), turn.signal);
+      const done = await translateXml(open.repxContent, language, turn.signal);
       if (sessionId.current !== session || turn.signal.aborted) return;
-      const { xml, changed } = applyTranslations(open.repxContent, answered.value);
-      if (!changed) {
-        say(`Nothing changed: the ${PROVIDER_NAMES[answered.by]} answered with the texts as they were.`);
+      if (!done.any) {
+        say('There is nothing to translate: every text in this report prints a field.');
         return;
       }
-      const next: DesignResult = { ...open, repxContent: asConfigured(xml), timestamp: new Date() };
+      if (!done.changed) {
+        say(`Nothing changed: the texts are already in ${language}.`);
+        return;
+      }
+      const next: DesignResult = { ...open, repxContent: asConfigured(done.xml), timestamp: new Date() };
       setResult(next);
       recordRevision(`Translated into ${language}`, next);
-      const id = nextMessageId();
-      rememberChange(id, open, next);
-      recordLearning({ kind: 'translate', request: 'edit', ai: aiKindOf(answered.by), repx: next.repxContent, ops: ['translate'], prompt: language });
-      const printed = texts.reduce((n, t) => n + t.count, 0);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id,
-          role: 'assistant',
-          text: [
-            answered.note,
-            `Translated ${changed} of ${printed} texts into ${language}. The layout is untouched, so check the Preview for a translation that no longer fits its box; Undo puts the original back, and Revisions keeps both.`,
-          ].filter(Boolean).join('\n\n'),
-        },
-      ]);
+      // The Undo goes on the reply that asked, back to before its edits too when it made some.
+      const id = replyId && messages.some((m) => m.id === replyId) ? replyId : null;
+      if (id) setChatChanges((prev) => ({ ...prev, [id]: { before: prev[id]?.before ?? open, after: next } }));
+      if (done.by) recordLearning({ kind: 'translate', request: 'edit', ai: aiKindOf(done.by), repx: next.repxContent, ops: ['translate'], prompt: language });
+      const text = [done.note, `Done, the report is in ${language}. Some labels are longer now; worth a look in the Preview.`].filter(Boolean).join('\n\n');
+      if (id) say(text);
+      else {
+        const fresh = nextMessageId();
+        rememberChange(fresh, open, next);
+        setMessages((prev) => [...prev, { id: fresh, role: 'assistant', text }]);
+      }
     } catch (err: any) {
       if (sessionId.current !== session || turnAbortRef.current?.signal.aborted) return;
       if (isMissingApiKey(err)) setIsConfigOpen(true);
@@ -6361,7 +6549,7 @@ export default function App() {
         const last = [...undoableIds].pop();
         if (last) handleUndo(last);
         else undoReport();
-      } else if (tool.name === 'translate') void translateReport(tool.language ?? '');
+      } else if (tool.name === 'translate') void translateReport(tool.language ?? '', toolReplyRef.current);
     });
   };
   const railBtn = (panel: RailPanel, label: string, icon: React.ReactNode) => (
@@ -7363,13 +7551,7 @@ export default function App() {
                 onUndo={handleUndo}
                 redoable={redoableIds}
                 onRedo={handleRedo}
-                // An export or the designer a reply offered, run when pressed (agent audit item 47).
-                onAction={(id, index) => {
-                  const action = messages.find((m) => m.id === id)?.actions?.[index];
-                  if (action) runToolsRef.current?.([action as AgentTool]);
-                }}
-                onConfirm={(id, yes) => void handleConfirm(id, yes)}
-                onPlan={(id, plan, start) => void handlePlan(id, plan, start)}
+                // No offered tool, Redesign or Start to press (2026-11-11, the full audit's WS-38); the rows question is the one kept.
                 onConsent={(id, yes) => void handleConsent(id, yes)}
                 aiName={PROVIDER_NAMES[effectiveProvider(config)]}
                 onShowVersion={handleShowVersion}

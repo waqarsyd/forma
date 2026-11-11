@@ -121,9 +121,13 @@ export function isDocsQuestion(message: string): boolean {
   return text.length > 3 && text.length <= 400 && ASKS.test(text) && !CHANGE.test(text);
 }
 
-/** The articles as the chat is given them, each under its title. */
+/**
+ * The articles as the chat is given them, each under its title and the link
+ * the reply points to (2026-11-11, the full audit's CV-29): "(forma docs,
+ * #share)" came back in replies as written, a reference nobody could follow.
+ */
 export function docsBlock(sections: readonly DocsSection[]): string {
-  return sections.map((s) => `## ${s.title} (forma docs, #${s.id})\n${s.text}`).join('\n\n');
+  return sections.map((s) => `## ${s.title} (/docs#${s.id})\n${s.text}`).join('\n\n');
 }
 
 /** What reads as a block: the tags, and a span the page styles as one (a note's label). */

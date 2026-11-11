@@ -14,7 +14,13 @@ import {
   REPORT_CHAT_INSTRUCTIONS,
   nextFallbackModel,
   parseJsonAnswer,
+  HOW_TO_WRITE,
+  DOCS_RULE,
+  clarifyPrompt,
+  buildMockChatReply,
+  buildMockReportReply,
 } from './geminiService';
+import { STARTING_POINTS } from '../lib/startingPoints';
 import { noteModelOverloaded } from '../lib/modelCache';
 import { auditRepx } from '../lib/repxAudit';
 import { SUPPORTED_PAGE_SIZES } from '../lib/reportGeometry';
@@ -375,6 +381,46 @@ describe('the chat turn instructions', () => {
   it('still keep small talk and a request with no content out of generation', () => {
     expect(CHAT_INSTRUCTIONS).toMatch(/"wantsReport" to false for greetings/);
     expect(CHAT_INSTRUCTIONS).toMatch(/say nothing about what the report should contain/);
+  });
+
+  // The full audit (2026-11-11, CV-18, CV-29 and UI3): one voice with a report open or not.
+  it('carry the same voice with a report open or not, ban stock phrases, and name no cost or wait', () => {
+    for (const text of [CHAT_INSTRUCTIONS, REPORT_CHAT_INSTRUCTIONS]) {
+      expect(text).toContain(HOW_TO_WRITE);
+      expect(text).toContain('No stock openers or closers (Certainly, Great question, I hope this helps, Let me know if...)');
+      expect(text).not.toContain('which costs a request');
+      expect(text).not.toContain('a minute or two');
+    }
+    expect(CHAT_INSTRUCTIONS).toContain('When "wantsReport" is true, leave "reply" empty');
+    expect(CHAT_INSTRUCTIONS).not.toContain('reply in one short sentence that you are designing it');
+    expect(REPORT_CHAT_INSTRUCTIONS).toContain('When the message only asks for a tool, leave reply empty; Forma says what it does.');
+    expect(DOCS_RULE).toContain('[its title](/docs#id)');
+  });
+});
+
+// The full audit (2026-11-11, CV-20): ask only when nothing can be designed from, and once.
+describe('the clarification prompt', () => {
+  it('asks only when there is nothing to design from, at most one short question', () => {
+    const prompt = clarifyPrompt({ description: 'a sales report by region with a total per region' });
+    expect(prompt).toContain('Ask only when there is nothing to design from: no kind of report, no subject, no columns. Otherwise ready is true and the designer takes common practice');
+    expect(prompt).toContain('At most one question, under 12 plain words');
+    expect(prompt).toContain('a sales report by region with a total per region');
+  });
+});
+
+// The full audit (2026-11-11, CV-26 and CV-28): mock mode follows the real paths.
+describe('mock mode follows the real paths', () => {
+  const outline = 'REPORT\n  labelTitle: XRLabel "Invoice"';
+  it('translates "make it German" and "in espanol" as the real turn reads them, with no reply of its own', () => {
+    expect(buildMockReportReply('make it German', outline)).toMatchObject({ reply: '', tools: [{ name: 'translate', language: 'German' }] });
+    expect(buildMockReportReply('I need it in espanol', outline)).toMatchObject({ tools: [{ name: 'translate', language: 'Spanish' }] });
+  });
+
+  it('builds the Invoice starting point, a long description with no verb', () => {
+    const invoice = STARTING_POINTS.find((p) => p.title === 'Invoice')!.text;
+    expect(buildMockChatReply(invoice)).toMatchObject({ wantsReport: true, brief: invoice });
+    expect(buildMockChatReply('hello there')).toMatchObject({ wantsReport: false });
+    expect(buildMockChatReply('What file types does Forma read, and can it read a scanned PDF as well as a picture?')).toMatchObject({ wantsReport: false });
   });
 });
 

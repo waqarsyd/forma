@@ -421,19 +421,23 @@ describe("actions on Forma's replies", () => {
     expect(within(actions('a2')).queryByText('Redo')).toBeNull();
   });
 
-  // Agent audit item 47, the owner's choice: an export or the designer is a button, run only when pressed.
-  it('draws what a reply offers as buttons, and runs one only when it is pressed', () => {
-    const onAction = vi.fn();
-    const offering = [thread[0], msg({ id: 'a2', role: 'assistant', text: 'It is ready.', actions: [{ name: 'export', format: 'pdf' }, { name: 'designer' }, { name: 'translate', language: 'German' }] })];
-    const { unmount } = draw({ messages: offering, onAction });
-    const group = screen.getByRole('group', { name: 'Offered by this reply' });
-    expect([...group.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Export as PDF', 'Open in designer', 'Translate into German']);
-    expect(onAction).not.toHaveBeenCalled();
-    fireEvent.click(within(group).getByText('Open in designer'));
-    expect(onAction).toHaveBeenCalledWith('a2', 1);
-    unmount();
-    draw({ messages: offering });
+  // The full audit (2026-11-11, WS-09 and WS-38), the owner's rule: nothing in the thread waits on a
+  // press. A saved reply that offered an export, a redesign asked about, or a plan to start, is its words.
+  it('draws no tool button, no Redesign and no Start, even for a saved message that carried one', () => {
+    const plan = { files: [{ uploadId: '1', file: 'a.png', pages: 1 }, { uploadId: '2', file: 'b.png', pages: 1 }], mode: 'one' as const, skip: [], prompt: 'p', askId: 'u' };
+    const saved = [
+      thread[0],
+      msg({ id: 'a2', role: 'assistant', text: 'It is ready.', actions: [{ name: 'export', format: 'pdf' }, { name: 'designer' }, { name: 'translate', language: 'German' }] }),
+      msg({ id: 'a3', role: 'assistant', text: 'That needs a redesign. Redesign it?', confirm: { prompt: 'add a chart' } }),
+      msg({ id: 'a4', role: 'assistant', text: 'That is 2 files.', plan }),
+    ];
+    draw({ messages: saved });
     expect(screen.queryByRole('group', { name: 'Offered by this reply' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Redesign the report?' })).toBeNull();
+    const labels = [...document.querySelectorAll('button')].map((b) => b.textContent ?? '');
+    expect(labels.filter((t) => /Export as|Open in designer|Translate into|Redesign|Not now|Start/.test(t))).toEqual([]);
+    expect(screen.getByText('That needs a redesign. Redesign it?')).toBeTruthy();
+    expect(screen.getByText('One report from all of them')).toBeTruthy();
   });
 
   // Agent audit item 75: a report built from the OCR review answers no message.
@@ -446,19 +450,17 @@ describe("actions on Forma's replies", () => {
     expect(within(actions('a2')).getByLabelText('Try again')).toBeTruthy();
   });
 
-  // When it was made and what it cost (2026-11-05), read off the id and from App.
-  // The person's message says when it was sent on the card's pill (RequestCard.test.tsx).
-  it('says when a reply was made and what it cost', () => {
+  // When it was made (2026-11-05), read off the id; what it cost in tokens went on 2026-11-11 (WS-38).
+  // The person's message says when it was sent on the card's pill (ConversationPanel.test.tsx).
+  it('says when a reply was made, and nothing of what it cost', () => {
     const at = new Date();
     at.setHours(10, 42, 0, 0);
     const id = `${at.getTime()}-1`;
-    draw({
-      messages: [msg({ id, role: 'assistant', text: 'Built it.' })],
-      usageOf: (m) => (m.id === id ? '23.4k tokens' : null),
-    });
+    draw({ messages: [msg({ id, role: 'assistant', text: 'Built it.', usage: { input: 1, output: 2, thinking: 0, total: 23_400 } })] });
     const metas = [...document.querySelectorAll('.wb-note-meta')].map((m) => m.textContent);
     expect(metas).toHaveLength(1);
-    expect(metas[0]).toMatch(/^Today, .+ · 23\.4k tokens$/);
+    expect(metas[0]).toMatch(/^Today, [^·]+$/);
+    expect(document.body.textContent).not.toMatch(/tokens/);
   });
 
   // The Preview's rows asked for before they go (2026-11-10, lib/previewRows.ts).
@@ -477,19 +479,9 @@ describe("actions on Forma's replies", () => {
     expect(screen.getByText('Answered without the rows')).toBeTruthy();
   });
 
-  // A redesign asked before it is made (2026-11-05).
-  it('asks before a redesign with Redesign and Not now, and says Not redesigned after a no', () => {
-    const onConfirm = vi.fn();
-    const asking = [msg({ id: 'a', role: 'assistant', text: 'Forma would redesign it.', confirm: { prompt: 'add a chart' } })];
-    const { rerender } = draw({ messages: asking, onConfirm });
-    const group = screen.getByRole('group', { name: 'Redesign the report?' });
-    fireEvent.click(within(group).getByText('Redesign'));
-    expect(onConfirm).toHaveBeenCalledWith('a', true);
-    fireEvent.click(within(group).getByText('Not now'));
-    expect(onConfirm).toHaveBeenLastCalledWith('a', false);
-    const answered = asking.map((m) => (m.id === 'a' ? { ...m, confirm: { prompt: 'add a chart', answered: 'no' as const } } : m));
-    rerender(<ChatThread messages={answered} isChatting={false} isAnalyzing={false} streamingReply="" onConfirm={onConfirm} />);
-    expect(screen.queryByRole('group', { name: 'Redesign the report?' })).toBeNull();
+  // A redesign asked about in an older thread and answered no (2026-11-05).
+  it('says Not redesigned after a no', () => {
+    draw({ messages: [msg({ id: 'a', role: 'assistant', text: 'Forma would redesign it.', confirm: { prompt: 'add a chart', answered: 'no' } })] });
     expect(screen.getByText('Not redesigned')).toBeTruthy();
   });
 
@@ -501,6 +493,14 @@ describe("actions on Forma's replies", () => {
     unmount();
     draw({ messages: thread, onRegenerate, isChatting: true });
     expect((within(actions('a2')).getByLabelText('Try again') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  // The full audit (2026-11-11, WS-19): between a turn's steps neither flag is set, and Try again
+  // cut the thread for a send the turn under way then refused.
+  it('holds Try again and Undo while a turn is busy between its steps', () => {
+    draw({ messages: thread, onRegenerate: vi.fn(), undoable: new Set(['a2']), onUndo: vi.fn(), busy: true });
+    expect((within(actions('a2')).getByLabelText('Try again') as HTMLButtonElement).disabled).toBe(true);
+    expect((within(actions('a2')).getByText('Undo') as HTMLButtonElement).disabled).toBe(true);
   });
 });
 

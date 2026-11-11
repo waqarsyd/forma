@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 /**
  * A plan before a heavy job, in a reply (2026-11-10, the AI accuracy
- * programme, batch AG item 22). jsdom; this must stay line 1.
+ * programme, batch AG item 22). jsdom; this must stay line 1. Words only
+ * since 2026-11-11 (the full audit's WS-38): nothing to tick or press.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
 import PlanCard from './PlanCard';
 
 afterEach(cleanup);
@@ -20,30 +21,28 @@ const plan = {
 };
 
 describe('the plan card', () => {
-  it('lists each file to tick, and starts what is ticked', () => {
-    const onPlan = vi.fn();
-    render(<PlanCard id="p" plan={plan} ai="Gemini" disabled={false} onPlan={onPlan} />);
+  it('draws a plan an older thread left waiting as its words, with no button, box or OCR step', () => {
+    const { container } = render(<PlanCard plan={{ ...plan, mode: 'each', skip: ['3'] }} ai="Gemini" />);
     expect(screen.getByText('4 pages')).toBeTruthy();
-    expect(screen.getByText(/Read 6 pages with OCR/)).toBeTruthy();
-    fireEvent.click(screen.getByLabelText(/notes\.png/));
-    expect(screen.getByText(/Read 5 pages with OCR/)).toBeTruthy();
-    fireEvent.click(screen.getByLabelText('A report for each file, in Batch'));
+    expect(screen.getByText('left out')).toBeTruthy();
+    expect(screen.getByText('A report for each file, in Batch')).toBeTruthy();
     expect(screen.getByText(/Open Batch with the 2 files/)).toBeTruthy();
-    fireEvent.click(screen.getByText('Start'));
-    expect(onPlan).toHaveBeenCalledWith('p', { files: plan.files, mode: 'each', skip: ['3'] }, true);
+    expect(container.querySelectorAll('button, input')).toHaveLength(0);
+    expect(container.textContent).not.toMatch(/OCR|Start|Not now|request/);
+    expect(screen.getByText('Design them one at a time with Gemini. A limit pauses the batch, and it carries on from where it stopped.')).toBeTruthy();
   });
 
-  it('cannot start with nothing ticked, and is left with Not now', () => {
-    const onPlan = vi.fn();
-    render(<PlanCard id="p" plan={{ ...plan, skip: ['1', '2', '3'] }} ai="Gemini" disabled={false} onPlan={onPlan} />);
-    expect((screen.getByText('Start') as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByText('Not now'));
-    expect(onPlan).toHaveBeenCalledWith('p', expect.objectContaining({ skip: ['1', '2', '3'] }), false);
+  it('counts no requests in one report, and says nothing of boxes to tick', () => {
+    const one = render(<PlanCard plan={plan} ai="Gemini" />);
+    expect(screen.getByText('Design one report from 3 files with Gemini.')).toBeTruthy();
+    one.unmount();
+    const { container } = render(<PlanCard plan={{ ...plan, skip: ['1', '2', '3'] }} ai="Gemini" />);
+    expect(container.textContent).not.toMatch(/ticked|request/);
   });
 
   it('says what was started once answered, with nothing left to press', () => {
-    render(<PlanCard id="p" plan={{ ...plan, mode: 'each', answered: 'yes' }} ai="Gemini" disabled={false} onPlan={vi.fn()} />);
+    const { container } = render(<PlanCard plan={{ ...plan, mode: 'each', answered: 'yes' }} ai="Gemini" />);
     expect(screen.getByText('Started: 3 reports in Batch.')).toBeTruthy();
-    expect(screen.queryByText('Start')).toBeNull();
+    expect(container.querySelectorAll('button')).toHaveLength(0);
   });
 });

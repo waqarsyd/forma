@@ -14,8 +14,9 @@
  * with how many rows and which fields would go (`consentReply`). Answered
  * yes, the question is asked again with the rows fenced as `<preview_rows>`
  * data (`rowsBlock`), at most `MAX_ROWS` of them and `MAX_CHARS` in all, and
- * the reply says they were sent; answered no, the question goes without
- * them, as before.
+ * the reply says it is over those rows; answered no, the question goes
+ * without them, and is not asked again in that project (2026-11-11, the full
+ * audit's WS-01: a no asked it again at once, and a yes outlived the project).
  */
 
 /** The most rows and characters that go with one question. */
@@ -52,13 +53,15 @@ export function rowsBlock(rows: readonly Record<string, unknown>[], fields: read
   return `${kept} of ${rows.length} rows the Preview prints${left ? ` (${left} more not sent)` : ''}, one a line, fields separated by |:\n${lines.join('\n')}`;
 }
 
-/** What Forma asks before the rows go. */
-export function consentReply(rows: number, fields: readonly string[], source: string): string {
+/**
+ * What Forma asks before the rows go, in its own voice, naming the AI they
+ * would go to (2026-11-11, the full audit's CV-19). Asked only of a
+ * database's sample rows: test rows the AI made up are its own, and go with
+ * a question without asking. The line a reply carried once they had gone
+ * (`rowsNote`) went the same day: ROWS_RULE has the model say the answer is
+ * over these rows, and the two said it twice.
+ */
+export function consentReply(rows: number, fields: readonly string[], ai = 'the AI'): string {
   const which = fields.length > 8 ? `${fields.slice(0, 8).join(', ')} and ${fields.length - 8} more` : fields.join(', ');
-  return `To answer that, Forma would send the AI the ${Math.min(rows, MAX_ROWS)} ${source} the Preview prints (${which}). Nothing of them has gone so far. Send them? They go with questions about the data for this project until you start a new one.`;
-}
-
-/** The line a reply carries when the rows went with the question. */
-export function rowsNote(sent: number, source: string): string {
-  return `Answered from the ${sent} ${source} the Preview prints, which went with your question.`;
+  return `To answer that I'd send the ${Math.min(rows, MAX_ROWS)} sample rows the Preview shows (${which}) to ${ai}. Nothing has been sent yet. Send them? For this project they'll go with data questions until you start a new one.`;
 }

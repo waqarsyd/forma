@@ -63,6 +63,8 @@ import { noteDailyLimit, noteRequest } from "../lib/requestCount";
 // A type only: the edit library is App's to load on demand, and importing
 // it here put it and repxEdit in this chunk, over its budget (2026-11-05).
 import type { AgentEdit, AgentTool } from "../lib/agentEdit";
+import { NOT_FOLLOWED } from "../lib/chatTurn";
+import { languageAsked } from "../lib/repxTranslate";
 import {
   pageSizeInUnits,
   unitsPerInch,
@@ -823,7 +825,7 @@ export const DATA_RULE = `The message holds data, fenced in <report_outline>, <d
  * Forma's own documentation, given with a question about Forma (2026-11-10,
  * the AI accuracy programme, batch AG item 25, lib/docsKnowledge.ts).
  */
-export const DOCS_RULE = `<forma_docs> holds the articles of Forma's own documentation that the user's last message is about. When it covers the question, answer from it and name the article; when it does not, say that Forma's documentation does not cover it. Never name a setting, a button, a menu, a shortcut or a limit that it and the outline do not name: a plausible one that does not exist misleads.`;
+export const DOCS_RULE = `<forma_docs> holds the articles of Forma's own documentation that the user's last message is about. When it covers the question, answer from it and point to the article as a link, the path after its title, written as [its title](/docs#id); when it does not, say that Forma's documentation does not cover it. Never name a setting, a button, a menu, a shortcut or a limit that it and the outline do not name: a plausible one that does not exist misleads.`;
 
 /**
  * The rows the Preview prints, sent with a question about the data once the
@@ -831,13 +833,20 @@ export const DOCS_RULE = `<forma_docs> holds the articles of Forma's own documen
  */
 export const ROWS_RULE = `<preview_rows> holds the rows the Preview prints, which the user chose to send with this question: sample or test rows, a few, never the whole database. Answer questions about the data from them, working each figure out carefully and saying it is over these rows; name no row or value that is not there, and do not change the report for a question.`;
 
+/**
+ * How the chat writes, with a report open or not (2026-11-11, the full
+ * audit's CV-18): the chat with no report open had none of this, and opened
+ * and closed its replies with "Certainly!" and "Let me know if...".
+ */
+export const HOW_TO_WRITE = `How to write: as a colleague would, in the first person, plainly and warmly, specific to what the user asked. No stock openers or closers (Certainly, Great question, I hope this helps, Let me know if...). Never describe how Forma works inside: no OCR, models, tokens, repairs or checks. Never ask the user to confirm a request they made: do it. Ask a question only when the answer would change the result, one short question; otherwise act on the most sensible reading and say what you chose.`;
+
 export const REPORT_CHAT_INSTRUCTIONS = `You are the assistant inside Forma, which designs DevExpress reports. A report is open, and its outline is in <report_outline>: every band and control by its Name, where it is, what it says or prints, and its font. It IS the report the user is looking at.
 
 
 Decide what the user's last message needs, and set "action":
 - "answer": a question, about this report, Forma or DevExpress, or anything that changes nothing. Answer from the outline: it is the report, with each control's place, words or expression, font, alignment, colours, borders, format and totals. What it does not show (a style's name, a script, the data itself), say it does not show rather than guessing.
 - "edit": a change the edits below can make. List them in "edits", in order. Name controls exactly as the outline does. Positions and sizes are in the report's unit, as the outline gives them; font sizes are points; colours are #RRGGBB. Keep every control inside its band and the page.
-- "rebuild": a change the edits cannot make: a new table, chart or group, binding to data or new fields, totals, a different layout, or many controls redesigned at once. Forma then redesigns the whole report from the user's words, which takes a minute or two. List no edits.
+- "rebuild": a change the edits cannot make: a new table, chart or group, binding to data or new fields, totals, a different layout, or many controls redesigned at once. Forma then redesigns the whole report from the user's words. List no edits.
 - "new": the user asks for a different report, a new one rather than a change to this one ("create a new sales report", "now make me a payslip"). Forma keeps this report in its project and starts a new project for that one. List no edits.
 
 "brief": with "rebuild" or "new", the whole request in one paragraph, from everything the user has asked for in this conversation that still applies to it, in their terms, so the designer has all of it and not only the last message. Empty otherwise.
@@ -861,9 +870,9 @@ On a table, font, color, align, border and format name a cell by row and cell, a
 
 When the outline ends with SELECTED ON THE PREVIEW, the user has selected those controls, and "this", "it", "these" and "them" in the message mean them.
 
-"tools" are Forma's own actions, run after any edits, only when the user asks for one, with "answer" or "edit": show (pane: mockup, preview, data, spec or repx), testData (fills the Preview with sample rows, which costs a request), export (format: repx, pdf, csv, xlsx, docx, rtf, html or png), designer (opens the report in the DevExpress designer on the user's computer), undo (takes back the last change to the report, when the user asks to undo one), translate (language: the language the user named, as "German"; Forma translates every typed caption and title of the report and keeps the layout; list no edits for a translation). Every tool runs at once, and the reply says what is being done; never ask the user to press a button or to confirm what they asked for.
+"tools" are Forma's own actions, run after any edits, only when the user asks for one, with "answer" or "edit": show (pane: mockup, preview, data, spec or repx), testData (fills the Preview with sample rows), export (format: repx, pdf, csv, xlsx, docx, rtf, html or png), designer (opens the report in the DevExpress designer on the user's computer), undo (takes back the last change to the report, when the user asks to undo one), translate (language: the language the user named, as "German"; Forma translates every typed caption and title of the report and keeps the layout; list no edits for a translation). Every tool runs at once; never ask the user to press a button or to confirm what they asked for. When the message only asks for a tool, leave reply empty; Forma says what it does.
 
-How to write: as a colleague would, in the first person, plainly and warmly, specific to this report. Never describe how Forma works inside: no OCR, models, tokens, repairs or checks. Never ask the user to confirm a request they made: do it. Ask a question only when the answer would change the result, one short question; otherwise act on the most sensible reading and say what you chose.
+${HOW_TO_WRITE}
 
 When the user attaches a picture or a file with a report open, read it: answer about it, edit the report to match what it shows, or "rebuild" when it is a design to redesign the report from.
 
@@ -900,13 +909,15 @@ export const CHAT_INSTRUCTIONS = `You are the assistant inside Forma, which desi
 
 Answer the user's message briefly and helpfully — two or three sentences at most. You can explain what Forma does, how to use it, what DevExpress reports are, and what file types are supported. Your reply is drawn as Markdown: use **bold**, a short list or \`code\` where it helps, and no headings.
 
-Set "wantsReport" to true when the user is asking for a report to be built or changed right now: they say what a new report should show (what it lists, how it is grouped or sorted, what it totals, or its columns), or they ask for a change to a report that already exists. A written description is enough on its own: do NOT ask for an image, a PDF or a layout first. Forma asks its own follow-up questions about anything the description leaves open, so a short request such as "a report of our orders grouped by region with a total per region" is a report request. When "wantsReport" is true, reply in one short sentence that you are designing it, and ask nothing in the reply: Forma asks its own questions next.
+Set "wantsReport" to true when the user is asking for a report to be built or changed right now: they say what a new report should show (what it lists, how it is grouped or sorted, what it totals, or its columns), or they ask for a change to a report that already exists. A written description is enough on its own: do NOT ask for an image, a PDF or a layout first. Forma asks its own follow-up questions about anything the description leaves open, so a short request such as "a report of our orders grouped by region with a total per region" is a report request. When "wantsReport" is true, leave "reply" empty: Forma says what it makes, and asks its own questions next.
 
 Set "wantsReport" to false for greetings, questions about Forma or DevExpress, thanks, and requests that say nothing about what the report should contain (for example "make me a report"). For those, answer, and when they want a report but gave no content, ask what it should list, or invite them to attach an image or a PDF of one.
 
 When "wantsReport" is true, also write "brief": the whole report request in one paragraph, from everything the user has said about it in this conversation, in their terms, so the designer has all of it and not only the last message. Empty otherwise.
 
 When THE USER'S REMEMBERED PREFERENCES are given, they are standing instructions for every report; do not ask about anything they already answer.
+
+${HOW_TO_WRITE}
 
 Answer with one JSON object and nothing around it: {"reply": "...", "wantsReport": true or false, "brief": "..."}.`;
 
@@ -915,8 +926,10 @@ Answer with one JSON object and nothing around it: {"reply": "...", "wantsReport
  * rather than random so the mock behaves the same way twice — a build request
  * still falls through to generation, and small talk still does not.
  */
-function buildMockChatReply(userText: string): ChatOutcome {
-  const asks = /\b(build|create|generate|make|design|convert|turn|produce|draft)\b/i.test(userText);
+export function buildMockChatReply(userText: string): ChatOutcome {
+  // A long description with no question is a report asked for too (2026-11-11, the
+  // full audit's CV-28): the Invoice starting point names no verb, and stayed small talk.
+  const asks = /\b(build|create|generate|make|design|convert|turn|produce|draft)\b/i.test(userText) || (userText.trim().length > 80 && !userText.includes('?'));
   // A build request is one, as the comment above has always said; it returned
   // false until 2026-11-01, which left the chat box's description path
   // unreachable offline.
@@ -937,7 +950,7 @@ function buildMockChatReply(userText: string): ChatOutcome {
  * alignment, a colour and a paper are edits, a question is an answer, and
  * anything else is a redesign.
  */
-function buildMockReportReply(userText: string, outline: string, database?: string, rows = ''): ChatOutcome {
+export function buildMockReportReply(userText: string, outline: string, database?: string, rows = ''): ChatOutcome {
   // What is selected on the Preview first, as "this" would mean it.
   const first = /^SELECTED ON THE PREVIEW: ([^,\s]+)/m.exec(outline)?.[1] ?? /^ {2}([^\s:(]+): XR/m.exec(outline)?.[1];
   const text = userText.trim();
@@ -967,21 +980,24 @@ function buildMockReportReply(userText: string, outline: string, database?: stri
   const colour = /\b(red|blue|green|navy)\b/i.exec(text)?.[1];
   if (first && colour) return edit(`Coloured \`${first}\` ${colour.toLowerCase()}.`, [{ op: 'color', control: first, foreColor: colour[0].toUpperCase() + colour.slice(1).toLowerCase() }]);
   // The new edits and the undo tool (2026-11-07, agent audit items 22 and 85), so they can be exercised offline too.
-  if (/\bundo\b/i.test(text)) return { ...answer('Taking back the last change.'), tools: [{ name: 'undo' }] };
+  if (/\bundo\b/i.test(text)) return { ...answer(''), tools: [{ name: 'undo' }] };
   if (/\bpage numbers?\b/i.test(text)) return edit('Added a page number.', [{ op: 'pageNumber', x: 550, y: 0 }]);
   if (first && /\bduplicate|copy\b/i.test(text)) return edit(`Duplicated \`${first}\`.`, [{ op: 'duplicate', control: first }]);
   if (first && /\bborder\b/i.test(text)) return edit(`Gave \`${first}\` a border.`, [{ op: 'border', control: first, borders: 'All', borderColor: 'Black' }]);
   if (/\bline\b/i.test(text)) return edit('Drew a line under the header.', [{ op: 'line', band: 'ReportHeader', x: 0, y: 0 }]);
   const paper = /\b(A4|A3|Letter|Legal)\b/i.exec(text)?.[1];
   if (paper) return edit(`Set the paper to ${paper}.`, [{ op: 'paper', paper, landscape: /landscape/i.test(text) }]);
-  // A translation (2026-11-10), run at once as the real turn runs it.
-  const language = /\b[Tt]ranslat\w*\b.*?\b(?:into|to|in)\s+([A-Z][a-z]+)/.exec(text)?.[1];
-  if (language) return { ...answer(`Translating it into ${language}. Mock mode marks each text rather than translating it.`), tools: [{ name: 'translate', language }] };
+  // A translation (2026-11-10), run at once as the real turn runs it, read as the
+  // real turn reads it since 2026-11-11 ("make it German", "in espanol"; the full audit's CV-28).
+  // A reply left empty for a tool alone, as the real turn is told to: Forma says what it does.
+  const madeIn = /\b(?:make|put|set)\s+it\s+(?:in\s+)?(\p{L}+)/iu.exec(text)?.[1];
+  const language = languageAsked(text) ?? (madeIn ? languageAsked(`in ${madeIn}`) : null);
+  if (language) return { ...answer(''), tools: [{ name: 'translate', language }] };
   const format = /\bexport\b.*?\b(pdf|csv|xlsx|docx|rtf|html|png|repx)\b/i.exec(text)?.[1]?.toLowerCase();
-  if (format) return { ...answer(`Exporting it as ${format.toUpperCase()}.`), tools: [{ name: 'export', format: format as AgentTool['format'] }] };
-  if (/\bsample (data|rows)\b/i.test(text)) return { ...answer('Filling the Preview with sample rows.'), tools: [{ name: 'testData' }] };
+  if (format) return { ...answer(''), tools: [{ name: 'export', format: format as AgentTool['format'] }] };
+  if (/\bsample (data|rows)\b/i.test(text)) return { ...answer(''), tools: [{ name: 'testData' }] };
   const pane = /\bshow\b.*?\b(mockup|preview|data|spec|repx)\b/i.exec(text)?.[1]?.toLowerCase();
-  if (pane) return { ...answer(`Here is the ${pane}.`), tools: [{ name: 'show', pane: pane as AgentTool['pane'] }] };
+  if (pane) return { ...answer(''), tools: [{ name: 'show', pane: pane as AgentTool['pane'] }] };
   // A different report, in a project of its own (2026-11-07, agent audit item 20).
   if (/\bnew\b[^.?!]*\b(report|invoice|list|statement|payslip)\b/i.test(text)) {
     return { reply: 'Mock mode is on: Forma will start a new project for that report.', wantsReport: false, action: 'new', edits: [], brief: text };
@@ -1653,10 +1669,12 @@ export async function chatReply(
     // As the model wrote it; `readReportOutcome` decides what it means.
     const brief = typeof parsed.brief === 'string' && parsed.brief.trim() ? parsed.brief.trim() : undefined;
     if (report) return { reply: parsed.reply ?? '', wantsReport: parsed.action === 'rebuild', action: parsed.action, edits: parsed.edits, tools: parsed.tools, brief, usage };
+    // "true" from a model with no schema is true; "false" is not (agent audit item 16).
+    const wantsReport = parsed.wantsReport === true || (parsed.wantsReport as unknown) === 'true';
     return {
-      reply: parsed.reply || 'Sorry — I did not catch that.',
-      // "true" from a model with no schema is true; "false" is not (agent audit item 16).
-      wantsReport: parsed.wantsReport === true || (parsed.wantsReport as unknown) === 'true',
+      // Empty for a report asked for (2026-11-11, the full audit's CV-18): Forma says what it makes.
+      reply: parsed.reply || (wantsReport ? '' : NOT_FOLLOWED),
+      wantsReport,
       brief,
       usage,
     };
@@ -1885,6 +1903,21 @@ export interface ClarificationOutcome {
 const MAX_CLARIFICATION_QUESTIONS = 3;
 
 /**
+ * What the clarification call is told (2026-11-11, the full audit's CV-20):
+ * ask only when there is nothing to design from, and then once, in a few
+ * plain words. "A sales report by region with a total per region" was asked
+ * which columns it should have, a question common practice answers. The cap
+ * above stays as the code's bound; the prompt asks for one.
+ */
+export function clarifyPrompt(request: ReportDescriptionRequest, remembered = ''): string {
+  return `A user has described a DevExpress report they want designed. Decide whether there is enough to start designing from.
+
+Ask only when there is nothing to design from: no kind of report, no subject, no columns. Otherwise ready is true and the designer takes common practice (an invoice has line items and a total; a customer list has one row per customer; a sales report by region lists its sales grouped by region). Never ask about page size, orientation, fonts, colours or a title. At most one question, under 12 plain words, with a suggested answer.
+${remembered ? `\n${remembered}\nDo NOT ask about anything these preferences already answer.\n` : ''}
+${buildDescriptionBrief(request)}`;
+}
+
+/**
  * Ask whether a description is enough to design from, before spending a
  * generation on it.
  *
@@ -1927,11 +1960,7 @@ export async function clarifyReportRequest(
         {
           parts: [
             {
-              text: `A user has described a DevExpress report they want designed. Decide whether the description is enough to design a sensible report from, or whether up to ${MAX_CLARIFICATION_QUESTIONS} short questions would change what gets built.
-
-Ask ONLY about content the description leaves genuinely open and that would change the report: which columns, what to group or sort by, what a total is of, which fields a chart plots. Do NOT ask about things with a common-practice default for that kind of report (an invoice has line items and a total; a customer list has one row per customer), do NOT ask about page size, orientation, fonts or colours, and do NOT ask for a title when one can be read from the description. A detailed description gets no questions at all, and so does any description a designer could start from: when in doubt, ask nothing and let the designer take the common default. Each question should offer a reasonable suggested answer.
-${remembered ? `\n${remembered}\nDo NOT ask about anything these preferences already answer.\n` : ''}
-${buildDescriptionBrief(request)}`,
+              text: clarifyPrompt(request, remembered),
             },
           ],
         },

@@ -40,13 +40,86 @@ const EMPTY_WORDS = new Set([
  * what it shows, so it goes to the chat, which asks; it went straight to a
  * design until 2026-11-07.
  */
-export function isPlainBuild(text: string): boolean {
+export function isPlainBuild(text: string, isLanguage?: (word: string) => boolean): boolean {
+  // "Generate the report in German" with nothing open names no report (see `isVagueReportAsk`).
+  if (isVagueReportAsk(text, isLanguage)) return false;
   const m = PLAIN_BUILD.exec(text);
   if (!m) return false;
   const noun = m[6].toLowerCase().replace(/s$/, '');
   if (!VAGUE_NOUNS.has(noun)) return true;
   const said = `${m[5]} ${m[7]}`.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
   return said.some((w) => !EMPTY_WORDS.has(w));
+}
+
+/**
+ * "Generate the report in German", "make my report as a PDF": a report named
+ * only as "the", "this" or "my" report, with nothing but a language or a
+ * format said of it (2026-11-11, the full audit's CV-14). With nothing open
+ * and nothing attached there is no report it can mean, and it went to a
+ * design from those words alone. Forma asks which, the one question it asks
+ * because nothing can be started.
+ *
+ * Only a language or a format (the review of CV-14, 2026-11-11): "create the
+ * report as an invoice" or "make the report as a payslip" says what to design,
+ * and asking "Which report?" of it broke the rule that a request is carried
+ * out. The language is the caller's to name (`isLanguage`, from
+ * `repxTranslate.languageAsked`), because the language table lives in a lazy
+ * module and this one is in the workspace's own chunk; with none given, only
+ * a format counts.
+ */
+const VAGUE_REPORT = /^\s*(please\s+)?((can|could|would) you\s+)?(create|build|make|design|generate|produce|draft|prepare|give me|send me|i need|i want|put|do|translate|convert|export)?\s*(me\s+)?(the|this|that|my|our)\s+report\s+(in|into|as|to)\s+(an?\s+)?(?<word>[\p{L}.-]+)(\s+(please|file|format|language|now))?\s*[.!]?\s*$/iu;
+/** The formats a report is exported as, in the words a person uses for them. */
+const FORMAT_WORDS = new Set(['pdf', 'excel', 'xlsx', 'csv', 'word', 'docx', 'rtf', 'html', 'png', 'picture', 'image', 'spreadsheet', 'workbook', 'repx']);
+
+/** The one word said of "the report" in a vague ask's shape ("German" of "generate the report in German"), or null. */
+export function vagueReportWord(text: string): string | null {
+  return VAGUE_REPORT.exec(text)?.groups?.word ?? null;
+}
+
+export function isVagueReportAsk(text: string, isLanguage: (word: string) => boolean = () => false): boolean {
+  const word = vagueReportWord(text);
+  if (!word) return false;
+  return FORMAT_WORDS.has(word.toLowerCase().replace(/^\./, '')) || isLanguage(word);
+}
+
+/** What Forma asks of a vague report ask: which report, in the language it named when it named one. */
+export function vagueReportReply(language?: string | null): string {
+  return `Which report? Attach a picture or a PDF of it, or tell me what it should list, and I'll make it${language ? ` in ${language}` : ''}.`;
+}
+
+/**
+ * Whether a question about the data waits on the person's say before the
+ * Preview's rows go (2026-11-11, the full audit's WS-01 and CV-03): asked
+ * once per project, never again once answered either way. `resend` is the
+ * question sent again with the answer, which the state has not caught up
+ * with yet; a no sends it without the rows, never asks it twice.
+ */
+export function needsRowsConsent(decision: 'yes' | 'no' | null, resend?: { consented?: boolean; declined?: boolean }): boolean {
+  return decision === null && !resend?.consented && !resend?.declined;
+}
+
+/**
+ * What an answer with nothing in it says, the report turn's and the plain
+ * chat's (2026-11-11, the full audit's CV-26): a person's words, where "Sorry —
+ * I did not catch that." was an apology in a form nobody says.
+ */
+export const NOT_FOLLOWED = "I didn't follow that. Could you say it another way?";
+
+/** What a report was made from, for the first reply about it. */
+export type ReplyKind = 'open' | 'picture' | 'pdf' | 'repx' | 'description';
+
+/**
+ * Forma's first reply about a report it made (2026-11-11, the full audit's
+ * UI2, CV-13 and PL-24): what happened, in words, and never the person's own
+ * request said back. "I've updated the report from your instructions" was
+ * said of a first report built from a picture and "Make this report in German".
+ */
+export function firstReply(kind: ReplyKind, hasWords: boolean, language?: string | null): string {
+  if (kind === 'open') return "Done. I've changed the report as you asked.";
+  if (kind === 'description') return `Here's the report you described${language ? `, in ${language}` : ''}.`;
+  const from = kind === 'pdf' ? 'your PDF' : kind === 'repx' ? 'your report' : 'your page';
+  if (language) return `Here's the report from ${from}, in ${language}.`;
+  return hasWords ? `Here's the report from ${from}, with what you asked for.` : `Here's the report from ${from}.`;
 }
 
 /**
