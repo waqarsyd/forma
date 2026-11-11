@@ -42,6 +42,8 @@ import {
   recordCountFromLayout,
   pieShare,
   insetsPt,
+  withoutPanelChildren,
+  pageHolding,
   type Appearance,
   type ChartModel,
   type PreviewChartText,
@@ -65,7 +67,8 @@ import { canvasMeasurer, cssFace, lineSpacingPt, lineWidthPt, oneLinePt, turnedL
 import { exportFileName, layoutContinuous, reportToCsv } from '../lib/csvExport';
 import { reportToXlsxFiles, xlsxOptionsOf } from '../lib/xlsxExport';
 import { buildZip } from '../lib/zip';
-import { moveControl, resizeControl, setControlText, overflowsBand, deleteControl, addLabel, setCellText, duplicateControl, type ControlRef } from '../lib/repxEdit';
+import { moveControl, resizeControl, setControlText, overflowsBand, deleteControl, addLabel, setCellText, duplicateControl, boundTextNotice, type ControlRef } from '../lib/repxEdit';
+import { bundleName, isScriptRefusal, jobFormats, printFallbackNote, printsInBrowser, readsContinuous, readsPages, replyAfterExport, savedSentence, writingNotice, type ExportJob, type PrintFormat } from '../lib/exportJob';
 import type { FormatAction } from '../lib/agentEdit';
 import ControlMenu, { type MenuItem } from './ControlMenu';
 import SelectionToolbar from './SelectionToolbar';
@@ -87,9 +90,11 @@ interface Props {
    */
   /**
    * An edit made here, one per gesture: a drag is written once, on letting go
-   * (2026-11-11, PR-03), so it no longer says which frames continue a step.
+   * (2026-11-11, PR-03). `continues` is set for an arrow press of the same
+   * selection within 600 ms of the last (PX-21), which the history keeps as
+   * the step the first press began: a held arrow filled all fifty steps.
    */
-  onEdit?: (xml: string, reason: string) => void;
+  onEdit?: (xml: string, reason: string, continues?: boolean) => void;
   /**
    * AI-generated sample rows, keyed by bound field name. When present the
    * Detail band prints once per row with each bound cell showing that row's
@@ -111,13 +116,33 @@ interface Props {
   onClearTestData?: () => void;
   testDataBusy?: boolean;
   /**
+   * Stops the rows being written (2026-11-11, PX-28): while `testDataBusy` the
+   * button turns into Stop, the one way to reach a request that a chat tool,
+   * the command menu or this button started outside any turn.
+   */
+  onStopTestData?: () => void;
+  /**
    * An export the chat asked for (2026-11-05, `lib/agentEdit.ts`'s tools):
    * made once per `nonce`, as its button in the pane would make it, and then
    * reported done so the request does not run again when the pane is next
-   * opened.
+   * opened. `formats` (2026-11-11, PX-17): several asked in one turn are
+   * written together and saved as one .zip; `reply` is the chat's reply that
+   * said so, which `onExported` then says the file was saved in (CV-17).
    */
-  exportRequest?: { format: 'pdf' | 'pdf-outline' | 'csv' | 'xlsx' | 'docx' | 'rtf' | 'html' | 'png'; nonce: number } | null;
+  exportRequest?: { format?: PrintFormat; formats?: readonly PrintFormat[]; nonce: number; reply?: string | null } | null;
   onExportRequestDone?: () => void;
+  /**
+   * The conversation's messages, rewritten to say what was saved in the reply
+   * that asked (2026-11-11, CV-17): App hands over its setter as it is, so
+   * the rewrite is written here, in the lazy pane, not in the workspace.
+   */
+  onExported?: (update: <T extends { id: string; text: string }>(messages: T[]) => T[]) => void;
+  /**
+   * The report is someone else's, shared by a link (2026-11-11, the full
+   * audit's SE-14): each link says where it goes, as a title and beside its
+   * text on hover and focus, since a label reading "Sign in" can lead anywhere.
+   */
+  shared?: boolean;
   /**
    * The controls selected on the pane, by name, whenever that changes, and
    * none once the pane closes (2026-11-05): the chat's "this" and "these".
@@ -144,7 +169,7 @@ interface Props {
    * "Change the text of …" in the box so Forma writes the words.
    */
   onEditText?: (name: string) => void;
-  /** Describe a control for the AI (2026-11-10): App starts "Describe … for the AI as" in the box. */
+  /** Describe a control (2026-11-10): App starts "Describe … as" in the box; read aloud by screen readers. */
   onDescribe?: (name: string) => void;
   zoom?: number;
   onScaleChange?: (scale: number) => void;
@@ -188,6 +213,21 @@ function borderLine(look: Appearance): string {
 }
 
 /**
+ * Where a link goes, said plainly (2026-11-11, SE-14): the site's host, or the
+ * address an email link writes to. `safeLink` has already kept only web and
+ * email addresses, so anything else is named by its scheme.
+ */
+function destinationOf(href: string): string {
+  try {
+    const url = new URL(href);
+    if (url.protocol === 'mailto:') return `an email to ${decodeURIComponent(url.pathname)}`;
+    return url.host || url.protocol.replace(/:$/, '');
+  } catch {
+    return 'another page';
+  }
+}
+
+/**
  * The row's value for a bound field, or the control's own text: the engine's
  * fallback, for a placement the layout did not give a text of its own.
  */
@@ -226,7 +266,31 @@ type Gesture = {
   /** Where the pointer was last seen, in client px; unset until it moves. */
   lastX?: number;
   lastY?: number;
+  /**
+   * The scale the pages were drawn at when it began (2026-11-11, the PERF
+   * follow-up): a zoom during the drag divided the whole distance by the new
+   * scale, so the control landed short of the pointer or past it.
+   */
+  scale: number;
+  /** Past the few pixels a click wanders (PX-09): until then it is a click, and writes nothing. */
+  moved?: boolean;
 } | null;
+
+/** How far a press may wander and still be a click (2026-11-11, PX-09). */
+const CLICK_SLOP_PX = 4;
+
+/**
+ * Whether a gesture's edit lands where the control already is, in the file's
+ * whole units (PX-09): `moveControl` rewrites the position even then, so a
+ * press that came back to its start was written as a move and an Undo step.
+ */
+function lands(g: NonNullable<Gesture>, dx: number, dy: number): boolean {
+  const s = g.dpiScale;
+  const same = (a: number, b: number) => Math.round(a / s) === Math.round(b / s);
+  return g.mode === 'move'
+    ? same(g.originX + (g.mirrored ? -dx : dx), g.originX) && same(g.originY + dy, g.originY)
+    : same(g.originW + dx, g.originW) && same(g.originH + dy, g.originH);
+}
 
 /**
  * The edit a gesture makes, from how far the pointer went in report units:
@@ -458,6 +522,7 @@ function ControlBox({
   pageNumber,
   pageCount,
   record,
+  shared = false,
 }: {
   control: PreviewControl;
   /**
@@ -471,6 +536,8 @@ function ControlBox({
   pageCount: number;
   /** The sample row this band placement prints, when test data is shown. */
   record?: TestRow | null;
+  /** On a shared report's page: a link says where it goes (SE-14). */
+  shared?: boolean;
 }) {
   const u = (n: number) => unitsToPx(n, unit);
   // Resolved appearance: style, StylePriority, own attribute, then parent.
@@ -738,7 +805,7 @@ function ControlBox({
           {placed.inner.map((band, i) => (
             <div key={i} style={{ position: 'absolute', left: u(band.left), top: u(band.top), width: u(band.width), height: u(band.height) }}>
               {band.controls.map((pc) => (
-                <ControlBox key={pc.index} control={pc.control} placed={pc} unit={unit} pageNumber={pageNumber} pageCount={pageCount} />
+                <ControlBox key={pc.index} control={pc.control} placed={pc} unit={unit} pageNumber={pageNumber} pageCount={pageCount} shared={shared} />
               ))}
             </div>
           ))}
@@ -1023,8 +1090,19 @@ function ControlBox({
    * link looks like a link only when the report says so.
    */
   const Box = placed.url ? 'a' : 'div';
+  // Where it goes, on a shared report's page (2026-11-11, SE-14): the
+  // `rp-link` rules' note under it on hover and focus, and the same words as
+  // its description for a screen reader. No `title` as well: a mouse showed
+  // the browser's tooltip on top of the note, the same words twice.
+  const goes = placed.url && shared ? destinationOf(placed.url) : null;
   const link = placed.url
-    ? { href: placed.url, target: '_blank', rel: 'noopener noreferrer', style: { ...frame, color: frame.color ?? 'inherit', textDecoration: frame.textDecoration ?? 'none' } }
+    ? {
+        href: placed.url,
+        target: '_blank',
+        rel: 'noopener noreferrer',
+        ...(goes ? { 'aria-description': `Opens ${goes}`, className: 'rp-link', 'data-goes': `Opens ${goes}` } : {}),
+        style: { ...frame, color: frame.color ?? 'inherit', textDecoration: frame.textDecoration ?? 'none' },
+      }
     : { style: frame };
 
   /*
@@ -1143,6 +1221,48 @@ function ParameterInput({ type, multi, choices, value, onChange, label }: { type
   );
 }
 
+/** A text's lines as a text area hands them back: one break, `\n`, whatever the file wrote. */
+const asLines = (text: string) => text.replace(/\r\n?/g, '\n');
+
+/**
+ * The retype editor (2026-11-11, the full audit's PX-07): a text area for a
+ * text of several lines, where Enter keeps the words and Shift+Enter starts a
+ * new line; one line otherwise. Only ever an `<input>` until then, which drops
+ * the line breaks from its value, so the first key typed into a three-line
+ * address wrote it back as one run-together line.
+ */
+function RetypeField({ multiline, label, value, style, onChange, onDone, onCancel }: {
+  multiline: boolean;
+  label: string;
+  value: string;
+  style: React.CSSProperties;
+  onChange: (value: string) => void;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const props = {
+    className: 'rp-textedit',
+    autoFocus: true,
+    value,
+    'aria-label': label,
+    onPointerDown: (e: React.PointerEvent) => e.stopPropagation(),
+    onDoubleClick: (e: React.MouseEvent) => e.stopPropagation(),
+    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(e.target.value),
+    onBlur: onDone,
+    onKeyDown: (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && !e.nativeEvent.isComposing && !(multiline && e.shiftKey)) {
+        e.preventDefault();
+        e.currentTarget.blur();
+      }
+      // Escape abandons the edit rather than committing it, which is what
+      // Escape means everywhere else in this app.
+      if (e.key === 'Escape') onCancel();
+      e.stopPropagation();
+    },
+  };
+  return multiline ? <textarea {...props} rows={1} style={{ ...style, resize: 'none', lineHeight: 'normal' }} /> : <input {...props} style={style} />;
+}
+
 /*
  * A control drawn again only when what it prints changes (2026-11-11, PR-03):
  * a drag draws the pane once a frame, and every control on every page was
@@ -1156,15 +1276,37 @@ const PrintedControl = React.memo(ControlBox);
 // box and a streamed reply no longer draw every page again.
 export default React.memo(ReportPreview);
 
-function ReportPreview({ repxContent, layout, title, onEdit, records: given, database,onTestData, onClearTestData, testDataBusy, exportRequest, onExportRequestDone, onSelectionChange, highlight, historyElsewhere = false, onEditText, onDescribe, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true, marking = false, onMarked }: Props) {
+function ReportPreview({ repxContent, layout, title, onEdit, records: given, database, onTestData, onClearTestData, testDataBusy, onStopTestData, exportRequest, onExportRequestDone, onExported, shared = false, onSelectionChange, highlight, historyElsewhere = false, onEditText, onDescribe, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true, marking = false, onMarked }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const highlightKey = (highlight ?? []).join('\n');
   const changedNames = useMemo(() => new Set(highlightKey ? highlightKey.split('\n') : []), [highlightKey]);
-  // The first changed control into view, once per set of names.
+  /*
+   * The first changed control into view, once per set of names. On a page a
+   * long report does not draw (2026-11-11, PX-26), that page's frame first,
+   * which draws it, and then the control: until then Go to and a request's
+   * changes past the few pages around the view scrolled nowhere.
+   */
+  const reportRef = useRef<PaginatedReport | null>(null);
   useEffect(() => {
     if (!highlightKey) return;
-    const t = setTimeout(() => viewportRef.current?.querySelector('.rp-hit.is-changed')?.scrollIntoView?.({ block: 'center', behavior: scrollBehavior() }), 80);
-    return () => clearTimeout(t);
+    const toChanged = () => {
+      const hit = viewportRef.current?.querySelector('.rp-hit.is-changed');
+      hit?.scrollIntoView?.({ block: 'center', behavior: scrollBehavior() });
+      return !!hit;
+    };
+    let later = 0;
+    const t = setTimeout(() => {
+      if (toChanged() || !reportRef.current) return;
+      const index = pageHolding(reportRef.current, new Set(highlightKey.split('\n')));
+      const wrap = index < 0 ? null : viewportRef.current?.querySelectorAll('.rp-page-wrap')[index];
+      if (!wrap) return;
+      wrap.scrollIntoView?.({ block: 'start' });
+      later = window.setTimeout(toChanged, 120);
+    }, 80);
+    return () => {
+      clearTimeout(t);
+      clearTimeout(later);
+    };
   }, [highlightKey]);
   /* The width the pages fit, times the workspace's zoom (2026-11-05). */
   const [fitScale, setFitScale] = useState(1);
@@ -1251,17 +1393,20 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
   const undoStack = useRef<{ xml: string; reason: string }[]>([]);
   const [undoDepth, setUndoDepth] = useState(0);
 
-  const commit = (result: { xml: string; applied: boolean; reason: string }, previous: string) => {
+  /** `continues`: the edit carries on the last step, as a held arrow does (PX-21). */
+  const commit = (result: { xml: string; applied: boolean; reason: string }, previous: string, continues = false) => {
     if (!result.applied) setEditNote(result.reason);
     if (!result.applied || !onEdit) return;
     setEditNote(null);
+    lastWrote.current = result.xml;
     // None kept when the workspace keeps the history: this one was never
     // read there, and held a full copy of the file per edit (2026-11-06).
-    if (!historyElsewhere) {
+    if (!historyElsewhere && !(continues && undoStack.current.length)) {
       undoStack.current.push({ xml: previous, reason: result.reason });
       setUndoDepth(undoStack.current.length);
     }
-    onEdit(result.xml, result.reason);
+    if (continues) onEdit(result.xml, result.reason, true);
+    else onEdit(result.xml, result.reason);
   };
 
   /**
@@ -1269,7 +1414,7 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
    * to the file the one before left, so indexes must still hold: a delete
    * goes from the last control back to the first.
    */
-  const applyAll = (refs: readonly ControlRef[], edit: (xml: string, ref: ControlRef) => { xml: string; applied: boolean; reason: string }, what: string) => {
+  const applyAll = (refs: readonly ControlRef[], edit: (xml: string, ref: ControlRef) => { xml: string; applied: boolean; reason: string }, what: string, continues = false) => {
     if (!repxContent || !refs.length) return;
     let xml = repxContent;
     const reasons: string[] = [];
@@ -1282,7 +1427,36 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
       xml = result.xml;
       reasons.push(result.reason);
     }
-    commit({ xml, applied: true, reason: refs.length === 1 ? reasons[0] : `${what} ${refs.length} controls` }, repxContent);
+    commit({ xml, applied: true, reason: refs.length === 1 ? reasons[0] : `${what} ${refs.length} controls` }, repxContent, continues);
+  };
+  /** The last arrow press: which selection it moved, and when (PX-21). */
+  const lastNudge = useRef<{ key: string; at: number } | null>(null);
+  /**
+   * The file this pane last wrote: a press carries on the last step only while
+   * the report is still that file, so an Undo or a chat edit between two
+   * presses starts a new step rather than folding into one it no longer follows.
+   */
+  const lastWrote = useRef<string | null>(null);
+
+  /**
+   * Why a label or a cell that prints a field opens no editor (2026-11-11, the
+   * full audit's PX-08b): said under the bar and as the workspace's notice.
+   * The retype was refused only on letting go until then, and for a label not
+   * at all, so the typed words showed here and DevExpress printed the field.
+   */
+  const sayBound = (reason: string) => {
+    setEditNote(reason);
+    onNotice?.(reason.charAt(0).toUpperCase() + reason.slice(1));
+  };
+  /** The retype editor opened on one placement of a label, unless it prints a field. */
+  const startRetype = (ref: ControlRef, at: string, text: string) => {
+    const bound = repxContent ? boundTextNotice(repxContent, ref) : null;
+    if (bound) {
+      sayBound(bound);
+      return;
+    }
+    setEditingAt(at);
+    setEditingText(text);
   };
 
   /** The right-click menu, where it opened and on which placement of the control. */
@@ -1290,7 +1464,9 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
   /** The copies a duplicate made, selected once the file holding them is parsed. */
   const selectAfter = useRef<string[] | null>(null);
   /** Duplicate the selection, last first so the indexes hold, and select the copies (Ctrl+D). */
-  const duplicateSelection = (refs: readonly ControlRef[]) => {
+  const duplicateSelection = (chosen: readonly ControlRef[]) => {
+    // A panel's copy holds its children: they are not copied again (PX-10).
+    const refs = withoutPanelChildren(structureBands, chosen);
     if (!repxContent || !refs.length) return;
     let xml = repxContent;
     const names: string[] = [];
@@ -1313,7 +1489,8 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
    */
   const deleteSelected = () => {
     if (!selected) return;
-    applyAll([selected, ...also].sort((a, b) => b.band - a.band || b.control - a.control), deleteControl, 'deleted');
+    // A panel deleted takes its children with it (PX-10).
+    applyAll(withoutPanelChildren(structureBands, [selected, ...also]).sort((a, b) => b.band - a.band || b.control - a.control), deleteControl, 'deleted');
     setSelected(null);
     setAlso([]);
   };
@@ -1357,9 +1534,9 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
   useEffect(() => setDbRowsOn(false), [database]);
   /*
    * Live rows (2026-11-09, the SQL Server programme, Phase 2, item 37): the
-   * report's own data source filled on this PC by the companion, with the
+   * report's own data source filled on this PC by Forma Designer, with the
    * parameter values typed here, the database applying its filter. Offered
-   * only on a page the companion answers (lib/sqlCompanion.ts); a stored
+   * only on a page Forma Designer answers (lib/sqlCompanion.ts); a stored
    * procedure runs only from the button that names it.
    */
   const ownSource = useMemo(() => readRepxDataSources(repxContent ?? '')[0] ?? null, [repxContent]);
@@ -1371,8 +1548,13 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
   const [consented, setConsented] = useState(false);
   const liveKey = ownSource ? `${ownSource.connectionName}|${ownSource.queries.map((q) => q.name).join(',')}` : '';
   useEffect(() => {
+    // A read still under way is the old source's, and its rows must not land on this one (2026-11-11, PXB review).
+    liveRead.current?.abort();
+    liveRead.current = null;
+    setLiveReading(false);
     setLive(null);
     setLiveLine('');
+    setLiveLink(null);
     setLiveProcedures([]);
     setConsented(false);
   }, [liveKey]);
@@ -1392,11 +1574,37 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
     () => (live ? { rowTypes: live.hints, sourceFilter: null, related: live.related } : { rowTypes: sql?.hints, sourceFilter: sql?.sourceFilter ?? null, related: sql?.related }),
     [sql, live],
   );
+  /*
+   * A read under way (2026-11-11, the full audit's SD-23b and SD-14c): Live
+   * rows is greyed while it lasts, so a second press is not a second fill of
+   * the whole result, and Cancel stops waiting for it. Its way forward, the
+   * download or the DevExpress trial, is a link after the line (the SDW
+   * follow-up), where only the words were shown. It opens a new tab, as the
+   * Data tab's companion links do, even for Forma's own /download: the same
+   * tab left the workspace in the middle of the task.
+   */
+  const liveRead =useRef<AbortController | null>(null);
+  const [liveReading, setLiveReading] = useState(false);
+  const [liveLink, setLiveLink] = useState<{ href: string; label: string } | null>(null);
+  useEffect(() => () => liveRead.current?.abort(), []);
+  const cancelLive = () => {
+    liveRead.current?.abort();
+    liveRead.current = null;
+    setLiveReading(false);
+    setLiveLine('');
+  };
   const fillLive = async (procedures = consented) => {
-    if (!repxContent || !ownSource) return;
+    if (!repxContent || !ownSource || liveRead.current) return;
     if (procedures) setConsented(true);
+    const reading = new AbortController();
+    liveRead.current = reading;
+    setLiveReading(true);
+    setLiveLink(null);
     setLiveLine('Reading from your SQL Server…');
-    const out = await companionFill(repxContent, paramValues, procedures);
+    const out = await companionFill(repxContent, paramValues, procedures, reading.signal);
+    if (reading.signal.aborted) return;
+    liveRead.current = null;
+    setLiveReading(false);
     if (out.kind === 'filled') {
       const member = /<XtraReportsLayoutSerializer\b[^>]*\sDataMember="([^"]*)"/.exec(repxContent)?.[1]?.split('.')[0] ?? ownSource.queries[0]?.name ?? '';
       setLive(previewFromFill(out.queries, member, ownSource.relations, parameterLookups(repxContent)));
@@ -1409,6 +1617,7 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
       setLiveLine(`Forma Designer keeps no connection named ${out.names.join(', ')}. Add it from its tray menu, SQL Server connections.`);
     } else {
       setLiveLine(out.message);
+      setLiveLink(out.link ?? null);
     }
   };
   /*
@@ -1439,6 +1648,7 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
     };
   }, [repxContent, layout, records, measure, paramValues, drillToggled, dataOptions]);
 
+  reportRef.current = report;
   const boundFields = useMemo(() => readBoundFields(repxContent), [repxContent]);
   const structureBands = structure.bands;
 
@@ -1522,6 +1732,20 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
       return;
     }
     const same = (a: ControlRef) => a.band === ref.band && a.control === ref.control;
+    /*
+     * A finger on a control not yet selected only selects it (2026-11-11, the
+     * full audit's PR-13 and PX-11): every control is a hit target, so on a
+     * phone a swipe that began on text dragged it, an edit each time, where
+     * the person meant to scroll. The page scrolls under an unselected
+     * control (`touch-action` in the rules below); a selected one drags.
+     */
+    if (event.pointerType === 'touch' && mode === 'move' && !(selected && same(selected)) && !also.some(same)) {
+      setSelected(ref);
+      setAlso([]);
+      setEditingText(null);
+      setEditingCell(null);
+      return;
+    }
     // Shift+click adds a control to the selection or takes it away, and drags nothing.
     if (mode === 'move' && event.shiftKey && selected) {
       if (same(selected)) {
@@ -1542,26 +1766,35 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
     setSelected(ref);
     setEditingText(null);
     setEditingCell(null);
+    /*
+     * What the drag writes: the selection less every control whose panel is
+     * in it too (PX-10), which the panel's move carries. The one pressed may
+     * be such a child, so the write is led by the first that is left; the
+     * drawing still shifts every selected control, children included.
+     */
+    const [lead, ...rest] = mode === 'move' ? withoutPanelChildren(structureBands, [ref, ...group]) : [ref];
+    const leadControl = (lead && structureBands[lead.band]?.controls[lead.control]) || control;
     // One undo entry per gesture: the one write it makes, on letting go (`commit`).
     gesture.current = {
-      ref,
+      ref: lead ?? ref,
       mode,
       baseXml: repxContent,
       fromX: event.clientX,
       fromY: event.clientY,
       // The file's own x: a mirrored right-to-left layout (s63a) draws the
       // control elsewhere, and a drag there moves it the other way in the file.
-      originX: control.fileX ?? control.x,
-      mirrored: control.fileX !== undefined,
-      originY: control.y,
-      originW: control.width,
-      originH: control.height,
-      dpiScale: control.dpiScale ?? 1,
-      others: group.flatMap((r) => {
+      originX: leadControl.fileX ?? leadControl.x,
+      mirrored: leadControl.fileX !== undefined,
+      originY: leadControl.y,
+      originW: leadControl.width,
+      originH: leadControl.height,
+      dpiScale: leadControl.dpiScale ?? 1,
+      others: rest.flatMap((r) => {
         const c = structureBands[r.band]?.controls[r.control];
         return c ? [{ ref: r, originX: c.fileX ?? c.x, originY: c.y, mirrored: c.fileX !== undefined, dpiScale: c.dpiScale ?? 1 }] : [];
       }),
       keys: new Set([ref, ...group].map((r) => `${r.band}:${r.control}`)),
+      scale,
     };
   };
 
@@ -1575,17 +1808,21 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
    * new function each time.
    */
   const [dragShift, setDragShift] = useState<{ keys: ReadonlySet<string>; mode: 'move' | 'resize'; dx: number; dy: number } | null>(null);
-  const dragNow = useRef({ scale, unit: report.unit, commit });
-  dragNow.current = { scale, unit: report.unit, commit };
+  const dragNow = useRef({ unit: report.unit, commit });
+  dragNow.current = { unit: report.unit, commit };
   useEffect(() => {
     if (!editable) return;
     let frame = 0;
     // How far the pointer went in page px: the zoom divided out, as it is a
-    // presentation scale, not a unit.
-    const travel = (g: NonNullable<Gesture>) => ({ dx: ((g.lastX ?? g.fromX) - g.fromX) / dragNow.current.scale, dy: ((g.lastY ?? g.fromY) - g.fromY) / dragNow.current.scale });
+    // presentation scale, not a unit; the scale the drag began at, which a
+    // zoom part way through does not change (2026-11-11).
+    const travel = (g: NonNullable<Gesture>) => ({ dx: ((g.lastX ?? g.fromX) - g.fromX) / g.scale, dy: ((g.lastY ?? g.fromY) - g.fromY) / g.scale });
     const onMove = (event: PointerEvent) => {
       const g = gesture.current;
       if (!g) return;
+      // A click wanders a pixel or two: not a drag until past the slop (PX-09).
+      if (!g.moved && Math.hypot(event.clientX - g.fromX, event.clientY - g.fromY) < CLICK_SLOP_PX) return;
+      g.moved = true;
       g.lastX = event.clientX;
       g.lastY = event.clientY;
       frame ||= requestAnimationFrame(() => {
@@ -1600,10 +1837,13 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
       cancelAnimationFrame(frame);
       frame = 0;
       setDragShift(null);
-      if (!write || !g || g.lastX === undefined || (g.lastX === g.fromX && g.lastY === g.fromY)) return;
+      if (!write || !g || !g.moved || g.lastX === undefined) return;
       const { dx, dy } = travel(g);
       const { unit } = dragNow.current;
-      dragNow.current.commit(gestureEdit(g, pxToUnits(dx, unit), pxToUnits(dy, unit)), g.baseXml);
+      const [ux, uy] = [pxToUnits(dx, unit), pxToUnits(dy, unit)];
+      // Back where it began, in the file's whole units: a click, not an edit (PX-09).
+      if (lands(g, ux, uy)) return;
+      dragNow.current.commit(gestureEdit(g, ux, uy), g.baseXml);
     };
     const onUp = () => end(true);
     // A cancelled pointer (a touch taken over by a scroll) leaves the report as it was.
@@ -1661,9 +1901,16 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
       // Arrow keys are the precision half of direct manipulation: a drag gets
       // you close, one unit at a time gets you exact. A unit of the file's own
       // numbers, so they stay whole whatever the control's Dpi. Every selected
-      // control moves, as one undo step.
+      // control moves, as one undo step; a child with its panel only once,
+      // with it (PX-10). Presses of the same selection less than 600 ms apart,
+      // a held key's repeats among them, carry on one step (PX-21).
       event.preventDefault();
-      applyAll(chosen, (xml, ref) => {
+      const moving = withoutPanelChildren(structureBands, chosen);
+      const key = moving.map((r) => `${r.band}:${r.control}`).join(' ');
+      const now = Date.now();
+      const continues = lastNudge.current?.key === key && now - lastNudge.current.at < 600 && repxContent === lastWrote.current;
+      lastNudge.current = { key, at: now };
+      applyAll(moving, (xml, ref) => {
         const c = structureBands[ref.band]?.controls[ref.control];
         if (!c) return { xml, applied: false, reason: 'a selected control is gone' };
         const s = c.dpiScale ?? 1;
@@ -1671,7 +1918,7 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
         // which is right in the file.
         const mirrored = c.fileX !== undefined;
         return moveControl(xml, ref, (c.fileX ?? c.x) / s + (mirrored ? -delta[0] : delta[0]), c.y / s + delta[1]);
-      }, 'moved');
+      }, 'moved', continues);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -1723,15 +1970,6 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
     };
   }, [printing]);
 
-  const exportPdf = useCallback(() => setPrinting(true), []);
-
-  /*
-   * CSV as DevExpress exports it (parity row 20): one continuous page, a line
-   * per distinct top and a column per distinct left edge, the printed text in
-   * each. Thirteen parity cases came out byte for byte the same as
-   * DevExpress's own files. Laid out from the same report, rows and parameter
-   * values the pane shows, so the file holds what the reader sees.
-   */
   /**
    * Why the last export was not written, said under the bar rather than only
    * in the console. The PDF writer's alone until 2026-11-06 (the workspace
@@ -1739,172 +1977,242 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
    * Excel export that threw took the pane down with it.
    */
   const [exportNote, setExportNote] = useState<string | null>(null);
-  const failed = (what: string, err: unknown) => {
+  const failedText = (what: string, err: unknown) => {
     console.error(`Forma could not write the ${what}.`, err);
-    setExportNote(`Forma could not write the ${what}${err instanceof Error && err.message ? `: ${err.message}` : '.'}`);
+    return `Forma could not write the ${what}${err instanceof Error && err.message ? `: ${err.message}` : '.'}`;
   };
-  // Through lib/download.ts (2026-11-11, the full audit's PR-17): the address
-  // was let go straight after the click, before some browsers read it.
-  const download = useCallback((data: BlobPart, type: string, extension: string) => {
-    saveBlob(exportFileName(title, extension), new Blob([data], { type }));
-  }, [title]);
-  const exportCsv = useCallback(() => {
-    setExportNote(null);
-    try {
-      const count = records?.length ? records.length : recordCountFromLayout(layout);
-      download(reportToCsv(structure, count, { rows: records ?? null, parameters: paramValues, drillToggled, ...dataOptions }), 'text/csv;charset=utf-8', 'csv');
-    } catch (err) {
-      failed('CSV file', err);
-    }
-  }, [structure, records, layout, paramValues, drillToggled, download, dataOptions]);
+  /**
+   * A file handed to the browser to save, under its own name. Through
+   * lib/download.ts (2026-11-11, the full audit's PR-17): the address was let
+   * go straight after the click, before some browsers read it.
+   */
+  const save = useCallback((data: BlobPart, type: string, name: string) => saveBlob(name, new Blob([data], { type })), []);
 
   /*
-   * An Excel workbook as DevExpress exports one (parity row 19): the layout as
-   * a grid of merged cells, numbers and dates kept as values with the format
-   * string converted. The thirteen parity workbooks came out cell for cell the
-   * same as DevExpress's. It takes the pane's measurer, because a row is as tall
-   * as its grown text, and DevExpress's rows were.
+   * Every export is a job (2026-11-11, batch PXB; the decisions are
+   * lib/exportJob.ts's): the formats one request asked for, written one after
+   * another and saved as one download, one file or one .zip of them. Jobs
+   * queue, so a second request waits for the first instead of replacing it:
+   * a Word file still being written when the RTF arrived was dropped (PX-17).
+   *
+   * - CSV as DevExpress exports it (parity row 20): one continuous page, a
+   *   line per distinct top and a column per distinct left edge, the printed
+   *   text in each, byte for byte DevExpress's in thirteen cases; laid out with
+   *   the pane's measurer, as the workbook is, so grown text pushes the lines
+   *   below it in both (PX-19).
+   * - An Excel workbook as DevExpress exports one (parity row 19): the layout
+   *   as a grid of merged cells, numbers and dates kept as values; in the
+   *   file's own Excel options (row 74), a workbook per page among them.
+   * - Word, RTF, HTML and the picture (parity row 21) and Forma's own PDF
+   *   (row 18) read the pages drawn at true size into a hidden host, the paged
+   *   layout for the PDF, Word and RTF, the continuous one for HTML and the
+   *   picture. Each writer is loaded only when it is chosen.
+   * - "PDF" alone, from the Export panel, the command menu or a shared
+   *   report's button, for a report with no password or PDF/A of its own, is
+   *   the browser's print, which keeps the Preview's own fonts.
    */
-  const exportXlsx = useCallback(() => {
+  const [jobs, setJobs] = useState<ExportJob[]>([]);
+  const job = jobs[0] ?? null;
+  const enqueue = useCallback((formats: readonly PrintFormat[], reply?: string | null) => {
     setExportNote(null);
-    try {
-      const count = records?.length ? records.length : recordCountFromLayout(layout);
-      // The file's own Excel options (row 74): one sheet, a sheet per page, or a
-      // workbook per page, which goes as one .zip since a page cannot hand over
-      // several files at once.
-      const xlsx = xlsxOptionsOf(repxContent);
-      const files = reportToXlsxFiles(structure, count, { rows: records ?? null, parameters: paramValues, measure, drillToggled, ...dataOptions }, xlsx);
-      if (files.length === 1) {
-        download(files[0].bytes as BlobPart, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx');
-        return;
-      }
-      // Numbered as DevExpress numbered its files: report1.xlsx, report2.xlsx.
-      const base = exportFileName(title, 'xlsx').replace(/\.xlsx$/, '');
-      const zip = buildZip(files.map((x) => ({ name: `${base}${x.number}.xlsx`, content: x.bytes })), new Date(), { keepPaths: true });
-      if (zip.bytes) download(zip.bytes as BlobPart, 'application/zip', 'zip');
-    } catch (err) {
-      failed('Excel workbook', err);
-    }
-  }, [structure, records, layout, paramValues, measure, drillToggled, repxContent, title, download, dataOptions]);
-
-  /*
-   * Word, RTF, HTML and image, as DevExpress exports them (parity row 21).
-   * Word and RTF go page by page, as frames where the page printed each item;
-   * HTML and the image are the continuous layout CSV and XLSX use, a table
-   * whose grid is the layout and one picture of the whole report. The text
-   * comes from the layout, as for XLSX; the charts, and the image, from the
-   * pages drawn at true size into a hidden host, as for the PDF. Each writer
-   * is loaded only when it is chosen.
-   */
-  type ExportKind = 'docx' | 'rtf' | 'html' | 'png';
-  const [exportKind, setExportKind] = useState<ExportKind | null>(null);
-  const exportHostRef = useRef<HTMLDivElement>(null);
+    setJobs((queue) => [...queue, { formats: jobFormats(formats), reply: reply ?? null }]);
+  }, []);
+  /** The job whose pages are drawn into the hidden hosts, once it is known not to print. */
+  const [hosted, setHosted] = useState<ExportJob | null>(null);
+  const pagedHostRef = useRef<HTMLDivElement>(null);
+  const flowHostRef = useRef<HTMLDivElement>(null);
+  const flowNeeded = !!hosted?.formats.some(readsContinuous);
   const continuous = useMemo(() => {
-    if (exportKind !== 'html' && exportKind !== 'png') return null;
+    if (!flowNeeded) return null;
     const count = records?.length ? records.length : recordCountFromLayout(layout);
     return layoutContinuous(structure, count, { rows: records ?? null, parameters: paramValues, measure, drillToggled, ...dataOptions });
-  }, [exportKind, structure, records, layout, paramValues, measure, drillToggled, dataOptions]);
+  }, [flowNeeded, structure, records, layout, paramValues, measure, drillToggled, dataOptions]);
+  const alive = useRef(true);
   useEffect(() => {
-    if (!exportKind) return;
-    let cancelled = false;
-    (async () => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  /** What a job reads, as it is when it reads it: a job outlives the render that started it. */
+  const jobNow = useRef({ report, structure, continuous, title, repxContent, records, layout, paramValues, drillToggled, dataOptions, measure, onNotice, onExported });
+  jobNow.current = { report, structure, continuous, title, repxContent, records, layout, paramValues, drillToggled, dataOptions, measure, onNotice, onExported };
+
+  type JobFile = { name: string; type: string; content: string | Uint8Array | Blob };
+  const WHAT: Record<PrintFormat, string> = { pdf: 'PDF', 'pdf-outline': 'PDF', csv: 'CSV file', xlsx: 'Excel workbook', docx: 'Word file', rtf: 'RTF file', html: 'HTML page', png: 'image' };
+  /** The report's name as its files take it: "Monthly_Invoice". */
+  const baseName = () => exportFileName(jobNow.current.title, 'x').slice(0, -2);
+  /** The CSV and the workbooks, written at once from the layout. */
+  const tableFiles = (format: 'csv' | 'xlsx'): JobFile[] => {
+    const n = jobNow.current;
+    const count = n.records?.length ? n.records.length : recordCountFromLayout(n.layout);
+    const options = { rows: n.records ?? null, parameters: n.paramValues, measure: n.measure, drillToggled: n.drillToggled, ...n.dataOptions };
+    if (format === 'csv') return [{ name: `${baseName()}.csv`, type: 'text/csv;charset=utf-8', content: reportToCsv(n.structure, count, options) }];
+    const files = reportToXlsxFiles(n.structure, count, options, xlsxOptionsOf(n.repxContent));
+    const type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    // Numbered as DevExpress numbered its files, report1.xlsx, report2.xlsx, when there are several.
+    return files.length === 1
+      ? [{ name: `${baseName()}.xlsx`, type, content: files[0].bytes }]
+      : files.map((x) => ({ name: `${baseName()}${x.number}.xlsx`, type, content: x.bytes }));
+  };
+
+  /**
+   * The job's files saved, as one file or one .zip, and said: under the bar
+   * for what failed, in a notice for what was saved, and in the chat's reply
+   * when the chat asked (CV-17).
+   */
+  const finish = (done: ExportJob, files: JobFile[], notes: string[], printInstead: string | null) => {
+    if (!alive.current) return;
+    const names = files.map((f) => f.name);
+    let saved = bundleName(jobNow.current.title, names);
+    if (files.length === 1) save(files[0].content as BlobPart, files[0].type, files[0].name);
+    else if (files.length > 1) {
+      const zip = buildZip(files.map((f) => ({ name: f.name, content: f.content as string | Uint8Array })), new Date(), { keepPaths: true });
+      if (zip.bytes) save(zip.bytes as BlobPart, 'application/zip', saved!);
+      else {
+        notes.push(`Forma could not put the files in one .zip: ${zip.reason}.`);
+        saved = null;
+      }
+    }
+    if (printInstead) notes.unshift(printInstead);
+    setExportNote(notes.join(' ') || null);
+    const { onNotice: notice, onExported: exported } = jobNow.current;
+    if (saved) notice?.(`Saved ${saved}`);
+    const sentence = saved ? [savedSentence(saved, names), ...(printInstead ? [printInstead] : [])].join(' ') : notes.join(' ');
+    const reply = done.reply;
+    if (reply && exported && sentence) exported((messages) => messages.map((m) => (m.id === reply ? { ...m, text: replyAfterExport(m.text, sentence) } : m)));
+  };
+
+  /** A CSV and workbook job, written within the effect that starts it. */
+  const runNow = (now: ExportJob) => {
+    const files: JobFile[] = [];
+    const notes: string[] = [];
+    for (const format of now.formats) {
       try {
-        await document.fonts?.ready;
-        await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
-        const host = exportHostRef.current;
-        if (!host || cancelled) return;
-        const pages = [...host.querySelectorAll<HTMLElement>('.rp-page')];
-        const laid = continuous ?? report;
-        const dom = await import('../lib/exportFromDom');
-        if (exportKind === 'png') {
-          if (!cancelled) download(await dom.pageToPng(pages[0]), 'image/png', 'png');
-          return;
-        }
-        const pictures = await dom.picturesOf(pages, unitsPerInch(laid.unit) / 96);
-        if (cancelled) return;
-        if (exportKind === 'html') {
-          const { reportToHtml } = await import('../lib/htmlExport');
-          download(reportToHtml(laid, structure, title || 'Report', pictures), 'text/html;charset=utf-8', 'html');
-        } else if (exportKind === 'rtf') {
-          const { reportToRtf } = await import('../lib/rtfExport');
-          download(reportToRtf(laid, structure, pictures), 'application/rtf', 'rtf');
+        files.push(...tableFiles(format as 'csv' | 'xlsx'));
+      } catch (err) {
+        notes.push(failedText(WHAT[format], err));
+      }
+    }
+    finish(now, files, notes, null);
+  };
+
+  /** Any other job: the print decided first, then the pages drawn into the hosts and read. */
+  const runLater = async (later: ExportJob) => {
+    const [{ pdfSecurityOf }, { pdfaPartOf }] = await Promise.all([import('../lib/pdfCrypto'), import('../lib/pdfA')]);
+    // The report's own PDF passwords, which DevExpress encrypts its export
+    // with (row 73), and its PDF/A part (row 72); asking for both is refused,
+    // as DevExpress refuses it.
+    const security = pdfSecurityOf(jobNow.current.repxContent);
+    const pdfa = pdfaPartOf(jobNow.current.repxContent);
+    const secured = !!(security || pdfa);
+    if (!alive.current) return;
+    if (printsInBrowser(later, secured)) {
+      setPrinting(true);
+      return;
+    }
+    const writing = writingNotice(later.formats);
+    if (writing) jobNow.current.onNotice?.(writing);
+    setHosted(later);
+    const frame = () => new Promise((ok) => requestAnimationFrame(ok));
+    const needPages = later.formats.some(readsPages);
+    const needFlow = later.formats.some(readsContinuous);
+    for (let i = 0; i < 30 && ((needPages && !pagedHostRef.current) || (needFlow && !flowHostRef.current)); i++) await frame();
+    await document.fonts?.ready;
+    await frame();
+    await frame();
+    const files: JobFile[] = [];
+    const notes: string[] = [];
+    let printInstead: string | null = null;
+    const pagesIn = (host: HTMLDivElement | null) => [...(host?.querySelectorAll<HTMLElement>('.rp-page') ?? [])];
+    for (const format of later.formats) {
+      if (!alive.current) return;
+      const n = jobNow.current;
+      try {
+        if (format === 'csv' || format === 'xlsx') files.push(...tableFiles(format));
+        else if (format === 'pdf' || format === 'pdf-outline') {
+          const { pagesToPdf } = await import('../lib/pdfFromDom');
+          const blob = await pagesToPdf(pagesIn(pagedHostRef.current), n.report, n.title || 'Report', n.structure.outlineTitle || n.title || 'Report', { security, pdfa });
+          files.push({ name: `${baseName()}.pdf`, type: 'application/pdf', content: blob });
+        } else if (format === 'png') {
+          // Page by page into a .zip when the report is taller than one picture can be (PX-24).
+          const dom = await import('../lib/exportFromDom');
+          const page = pagesIn(flowHostRef.current)[0];
+          if (!page) throw new Error('the report has no page to draw.');
+          const picture = await dom.pageToPictures(page, baseName());
+          files.push(picture.extension === 'zip'
+            ? { name: `${baseName()}-pictures.zip`, type: 'application/zip', content: picture.blob }
+            : { name: `${baseName()}.png`, type: 'image/png', content: picture.blob });
+          if (picture.note) notes.push(picture.note);
         } else {
-          const { reportToDocx } = await import('../lib/docxExport');
-          download(reportToDocx(laid, structure, pictures) as BlobPart, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx');
+          const laid = format === 'html' ? n.continuous ?? n.report : n.report;
+          const dom = await import('../lib/exportFromDom');
+          const pictures = await dom.picturesOf(pagesIn(format === 'html' ? flowHostRef.current : pagedHostRef.current), unitsPerInch(laid.unit) / 96);
+          if (format === 'html') {
+            const { reportToHtml } = await import('../lib/htmlExport');
+            files.push({ name: `${baseName()}.html`, type: 'text/html;charset=utf-8', content: reportToHtml(laid, n.structure, n.title || 'Report', pictures) });
+          } else if (format === 'rtf') {
+            const { reportToRtf } = await import('../lib/rtfExport');
+            files.push({ name: `${baseName()}.rtf`, type: 'application/rtf', content: reportToRtf(laid, n.structure, pictures) });
+          } else {
+            const { reportToDocx } = await import('../lib/docxExport');
+            files.push({ name: `${baseName()}.docx`, type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', content: reportToDocx(laid, n.structure, pictures) as Uint8Array });
+          }
         }
       } catch (err) {
-        if (!cancelled) failed(({ docx: 'Word file', rtf: 'RTF file', html: 'HTML page', png: 'image' } as const)[exportKind], err);
-      } finally {
-        if (!cancelled) setExportKind(null);
+        const message = err instanceof Error ? err.message : '';
+        if (format === 'pdf' && isScriptRefusal(message)) {
+          // A script Forma's PDF cannot hold, which the print keeps: printed instead, and said.
+          printInstead = printFallbackNote(message, secured);
+          setPrinting(true);
+        } else if (format === 'pdf' || format === 'pdf-outline') {
+          // The PDF writer throws plain sentences only (the PXA review), shown as they are.
+          console.error('Forma could not write the PDF.', err);
+          notes.push(message || 'Forma could not write the PDF.');
+        } else notes.push(failedText(WHAT[format], err));
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [exportKind, continuous, report, structure, title, download]);
+    }
+    // Several files go in one .zip, which takes bytes.
+    if (files.length > 1) {
+      for (const f of files) if (f.content instanceof Blob) f.content = new Uint8Array(await f.content.arrayBuffer());
+    }
+    finish(later, files, notes, printInstead);
+  };
 
-  // An export the chat or the Export panel asked for, made once (2026-11-05): see `exportRequest`.
+  const started = useRef<ExportJob | null>(null);
+  useEffect(() => {
+    if (!job || started.current === job) return;
+    started.current = job;
+    const done = () => {
+      if (alive.current) setJobs((queue) => queue.filter((j) => j !== job));
+    };
+    if (job.formats.every((f) => f === 'csv' || f === 'xlsx')) {
+      runNow(job);
+      done();
+      return;
+    }
+    void runLater(job)
+      .catch((err) => console.error('Forma could not finish the export.', err))
+      .finally(() => {
+        if (alive.current) setHosted(null);
+        done();
+      });
+    // Started once per job; what it reads is `jobNow`'s.
+  }, [job]);
+
+  /*
+   * An export the chat, the Export panel or the command menu asked for, made
+   * once per request (2026-11-05): see `exportRequest`. Taken at once, and
+   * queued as a job, which says for itself what was saved or what failed.
+   */
   const exportedNonce = useRef<number | null>(null);
   useEffect(() => {
     if (!exportRequest || exportedNonce.current === exportRequest.nonce) return;
     exportedNonce.current = exportRequest.nonce;
-    const { format } = exportRequest;
-    // Taken: the request is cleared at once, and the export says for itself
-    // if it fails (`exportNote`).
     onExportRequestDone?.();
-    setExportNote(null);
-    if (format === 'pdf') exportPdf();
-    else if (format === 'pdf-outline') setWritingPdf(true);
-    else if (format === 'csv') exportCsv();
-    else if (format === 'xlsx') exportXlsx();
-    else setExportKind(format);
-  }, [exportRequest, exportPdf, exportCsv, exportXlsx, onExportRequestDone]);
-
-  /*
-   * A PDF of Forma's own writing, with the report's bookmarks as its outline
-   * (parity row 18). Printing cannot add an outline, so this reads the pages
-   * drawn at true size into a hidden host, as the printed copy is, and writes
-   * them with lib/pdfFromDom, loaded only now. It sits beside Export PDF
-   * rather than replacing it: printing keeps the Preview's own fonts, and this
-   * uses the PDF standard ones.
-   */
-  const [writingPdf, setWritingPdf] = useState(false);
-  const pdfHostRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!writingPdf) return;
-    let cancelled = false;
-    setExportNote(null);
-    (async () => {
-      try {
-        await document.fonts?.ready;
-        await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
-        const host = pdfHostRef.current;
-        if (!host || cancelled) return;
-        const [{ pagesToPdf }, { pdfSecurityOf }, { pdfaPartOf }] = await Promise.all([
-          import('../lib/pdfFromDom'),
-          import('../lib/pdfCrypto'),
-          import('../lib/pdfA'),
-        ]);
-        const pages = [...host.querySelectorAll<HTMLElement>('.rp-page')];
-        // The report's own PDF passwords, which DevExpress encrypts its export
-        // with (row 73), and its PDF/A part (row 72); asking for both is
-        // refused, as DevExpress refuses it.
-        const blob = await pagesToPdf(pages, report, title || 'Report', structure.outlineTitle || title || 'Report', {
-          security: pdfSecurityOf(repxContent),
-          pdfa: pdfaPartOf(repxContent),
-        });
-        if (!cancelled) download(blob, 'application/pdf', 'pdf');
-      } catch (err) {
-        console.error('Forma could not write the PDF.', err);
-        if (!cancelled) setExportNote(err instanceof Error && err.message ? err.message : 'Forma could not write the PDF.');
-      } finally {
-        if (!cancelled) setWritingPdf(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [writingPdf, report, structure, title, download, repxContent]);
+    const formats = exportRequest.formats ?? (exportRequest.format ? [exportRequest.format] : []);
+    if (formats.length) enqueue(formats, exportRequest.reply);
+  }, [exportRequest, enqueue, onExportRequestDone]);
 
   /*
    * Only the pages near the viewport are filled in (parity row 16). Every page
@@ -2066,6 +2374,7 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
                         pageNumber={page.number}
                         pageCount={report.pages.length}
                         record={placed.record !== null && records?.length ? records[(placed.record - 1) % records.length] : null}
+                        shared={shared}
                       />
                     );
                     return (
@@ -2160,6 +2469,11 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
                                 while (k < weights.length - 1 && (left + weights[k]) / sum < fx) left += weights[k++];
                                 setSelected({ band: bandIndex, control: c });
                                 setAlso([]);
+                                // A cell printing a field opens no editor; it says why (PX-08b).
+                                if (cells[k]?.field) {
+                                  sayBound('the cell prints a field, not typed text: bind another on the Data tab');
+                                  return;
+                                }
                                 setEditingCell({
                                   // The placement clicked: a Detail band prints once per record,
                                   // and an editor in every one would steal focus from the last.
@@ -2174,8 +2488,7 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
                               }
                               if (control.type !== 'XRLabel') return;
                               setSelected({ band: bandIndex, control: c });
-                              setEditingAt(`${pageIndex}:${i}`);
-                              setEditingText(control.text);
+                              startRetype({ band: bandIndex, control: c }, `${pageIndex}:${i}`, control.text);
                             }}
                           >
                             {isSelected && editingText === null && (
@@ -2187,64 +2500,50 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
                               />
                             )}
                             {isSelected && editingText !== null && editingAt === `${pageIndex}:${i}` && (
-                              <input
-                                className="rp-textedit"
-                                autoFocus
+                              <RetypeField
+                                multiline={!!control.multiline || /[\r\n]/.test(control.text)}
+                                label="Edit the control's text"
                                 value={editingText}
-                                aria-label="Edit the control's text"
                                 style={{
                                   inset: 0,
                                   fontSize: control.fontSize ? `${control.fontSize}pt` : '9pt',
                                   fontWeight: control.bold ? 700 : 400,
                                 }}
-                                onPointerDown={(e) => e.stopPropagation()}
-                                onChange={(e) => setEditingText(e.target.value)}
-                                onBlur={() => {
-                                  if (repxContent && editingText !== control.text) {
+                                onChange={setEditingText}
+                                onDone={() => {
+                                  if (repxContent && asLines(editingText) !== asLines(control.text)) {
                                     commit(setControlText(repxContent, { band: bandIndex, control: c }, editingText), repxContent);
                                   }
                                   setEditingText(null);
                                 }}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.currentTarget.blur(); }
-                                  // Escape abandons the edit rather than
-                                  // committing it, which is what Escape means
-                                  // everywhere else in this app.
-                                  if (e.key === 'Escape') { setEditingText(null); }
-                                  e.stopPropagation();
-                                }}
+                                onCancel={() => setEditingText(null)}
                               />
                             )}
-                            {editingCell && editingCell.at === `${pageIndex}:${i}` && editingCell.ref.band === bandIndex && editingCell.ref.control === c && (
-                              <input
-                                className="rp-textedit"
-                                autoFocus
-                                value={editingCell.text}
-                                aria-label="Edit the cell's text"
-                                style={{
-                                  left: `${editingCell.box.left * 100}%`,
-                                  top: `${editingCell.box.top * 100}%`,
-                                  width: `${editingCell.box.width * 100}%`,
-                                  height: `${editingCell.box.height * 100}%`,
-                                  fontSize: control.fontSize ? `${control.fontSize}pt` : '9pt',
-                                }}
-                                onPointerDown={(e) => e.stopPropagation()}
-                                onDoubleClick={(e) => e.stopPropagation()}
-                                onChange={(e) => setEditingCell({ ...editingCell, text: e.target.value })}
-                                onBlur={() => {
-                                  const before = control.rows[editingCell.row]?.cells[editingCell.cell]?.text;
-                                  if (repxContent && editingCell.text !== before) {
-                                    commit(setCellText(repxContent, editingCell.ref, editingCell.row, editingCell.cell, editingCell.text), repxContent);
-                                  }
-                                  setEditingCell(null);
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.currentTarget.blur();
-                                  if (e.key === 'Escape') setEditingCell(null);
-                                  e.stopPropagation();
-                                }}
-                              />
-                            )}
+                            {editingCell && editingCell.at === `${pageIndex}:${i}` && editingCell.ref.band === bandIndex && editingCell.ref.control === c && (() => {
+                              const before = control.rows[editingCell.row]?.cells[editingCell.cell];
+                              return (
+                                <RetypeField
+                                  multiline={!!before?.multiline || /[\r\n]/.test(before?.text ?? '')}
+                                  label="Edit the cell's text"
+                                  value={editingCell.text}
+                                  style={{
+                                    left: `${editingCell.box.left * 100}%`,
+                                    top: `${editingCell.box.top * 100}%`,
+                                    width: `${editingCell.box.width * 100}%`,
+                                    height: `${editingCell.box.height * 100}%`,
+                                    fontSize: control.fontSize ? `${control.fontSize}pt` : '9pt',
+                                  }}
+                                  onChange={(text) => setEditingCell({ ...editingCell, text })}
+                                  onDone={() => {
+                                    if (repxContent && asLines(editingCell.text) !== asLines(before?.text ?? '')) {
+                                      commit(setCellText(repxContent, editingCell.ref, editingCell.row, editingCell.cell, editingCell.text), repxContent);
+                                    }
+                                    setEditingCell(null);
+                                  }}
+                                  onCancel={() => setEditingCell(null)}
+                                />
+                              );
+                            })()}
                           </div>
                         )}
                       </React.Fragment>
@@ -2345,6 +2644,25 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
           background: #2f6fe4; border: 1px solid #fff; border-radius: 1px;
           cursor: nwse-resize; touch-action: none;
         }
+        /* On a touch screen (2026-11-11, the full audit's PR-13, PX-11 and
+           PR-11c): a swipe over a control scrolls the page, and only a selected
+           control or its handle takes the finger; the handle is a size a
+           finger can find. */
+        @media (pointer: coarse) {
+          .rp-hit { touch-action: pan-x pan-y; }
+          .rp-hit.is-selected, .rp-handle { touch-action: none; }
+          .rp-handle { width: 20px; height: 20px; right: -10px; bottom: -10px; }
+        }
+        /* Where a link on a shared report goes (2026-11-11, SE-14), under it on
+           hover and on keyboard focus; never printed. The frame clips what it
+           holds, so it lets the note out while it shows. */
+        .rp-link[data-goes]:hover, .rp-link[data-goes]:focus-visible { overflow: visible !important; z-index: 5; }
+        .rp-link[data-goes]:hover::after, .rp-link[data-goes]:focus-visible::after {
+          content: attr(data-goes); position: absolute; left: 0; top: 100%; margin-top: 2px;
+          padding: 1px 6px; background: #fff; color: #111418; border: 1px solid #c9d1dc; border-radius: 3px;
+          font: 400 11px/1.4 system-ui, sans-serif; font-style: normal; white-space: nowrap; text-decoration: none;
+        }
+        @media print { .rp-link[data-goes]::after { content: none !important; } }
         /* Drill-down (s56): the toggle beside a group's label, in the margin as
            DevExpress's viewer draws it. Viewer chrome, so no export or print
            carries it: pdfFromDom and exportFromDom skip it by class. */
@@ -2536,14 +2854,20 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
         {ownSource && liveReachable && !given && (
           /* Live rows from the database on this PC (2026-11-09, Phase 2, item 37). */
           <>
-            <button type="button" className="wb-pill wb-pill--outline" onClick={() => void fillLive()} title="The report’s own data source, filled on this PC by Forma Designer, with the values asked for above">
+            <button type="button" className="wb-pill wb-pill--outline" onClick={() => void fillLive()} disabled={liveReading} title="The report’s own data source, filled on this PC by Forma Designer, with the values asked for above">
               {live ? `Live: ${live.rows.length} rows · Refresh` : 'Live rows'}
             </button>
-            {live && <button type="button" className="wb-pill wb-pill--outline" onClick={() => setLive(null)}>Clear</button>}
-            {liveProcedures.length > 0 && (
+            {liveReading && <button type="button" className="wb-pill wb-pill--outline" onClick={cancelLive}>Cancel</button>}
+            {live && !liveReading && <button type="button" className="wb-pill wb-pill--outline" onClick={() => setLive(null)}>Clear</button>}
+            {liveProcedures.length > 0 && !liveReading && (
               <button type="button" className="wb-pill wb-pill--outline" onClick={() => void fillLive(true)}>Run {liveProcedures.join(', ')}</button>
             )}
-            {liveLine && <span className="rp-stat" role="status">{liveLine}</span>}
+            {liveLine && (
+              <span className="rp-stat" role="status">
+                {liveLine}
+                {liveLink && <> <a href={liveLink.href} target="_blank" rel="noopener noreferrer">{liveLink.label}</a></>}
+              </span>
+            )}
           </>
         )}
         {sql && !given && !live && (
@@ -2560,7 +2884,9 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
               {dbRowsOn ? `Sample rows: ${sql.rows.length} · Clear` : `Sample rows (${sql.rows.length})`}
             </button>
           ) : (
-            <span className="rp-stat" title={sql.note}>No sample rows</span>
+            /* Why there are none, as words on the bar (2026-11-11, SD-09b): a
+               title shows only to a pointer that waits, and never on a phone. */
+            <span className="rp-stat">{sql.note.charAt(0).toUpperCase() + sql.note.slice(1)}.</span>
           )
         )}
         {onTestData && !(dbRowsOn && sql?.rows?.length) && (
@@ -2576,6 +2902,15 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
               title="Back to the one placeholder record"
             >
               Test data: {records.length} rows · Clear
+            </button>
+          ) : testDataBusy && onStopTestData ? (
+            <button
+              type="button"
+              className="wb-pill wb-pill--outline"
+              onClick={onStopTestData}
+              title="Stop writing the sample rows"
+            >
+              Generating test data… · Stop
             </button>
           ) : (
             <button
@@ -2594,7 +2929,7 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
         {exportButtons && (<>
         <button
           className="wb-pill wb-pill--outline"
-          onClick={exportPdf}
+          onClick={() => enqueue(['pdf'])}
           disabled={!report.pages.length}
           style={editable ? undefined : { marginLeft: 'auto' }}
         >
@@ -2603,29 +2938,30 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
         <button
           type="button"
           className="wb-pill wb-pill--outline"
-          onClick={() => setWritingPdf(true)}
-          disabled={!report.pages.length || writingPdf}
-          title="A PDF Forma writes itself, with the report's bookmarks as its outline. Text is in the PDF standard fonts, or in embedded Liberation fonts when the report asks for PDF/A."
+          onClick={() => enqueue(['pdf-outline'])}
+          disabled={!report.pages.length}
+          title="A PDF Forma writes itself, with the report's bookmarks as its outline"
         >
-          {writingPdf ? 'Writing PDF…' : 'PDF with outline'}
+          {job?.formats.includes('pdf-outline') ? 'Writing PDF…' : 'PDF with outline'}
         </button>
-        <button type="button" className="wb-pill wb-pill--outline" onClick={exportXlsx} disabled={!report.pages.length}>
+        <button type="button" className="wb-pill wb-pill--outline" onClick={() => enqueue(['xlsx'])} disabled={!report.pages.length}>
           Export XLSX
         </button>
-        <button type="button" className="wb-pill wb-pill--outline" onClick={exportCsv} disabled={!report.pages.length}>
+        <button type="button" className="wb-pill wb-pill--outline" onClick={() => enqueue(['csv'])} disabled={!report.pages.length}>
           Export CSV
         </button>
         <select
           className="wb-pill wb-pill--outline"
           aria-label="Export in another format"
           value=""
-          disabled={!report.pages.length || !!exportKind}
+          disabled={!report.pages.length}
           onChange={(e) => {
-            const kind = e.target.value as ExportKind | '';
-            if (kind) setExportKind(kind);
+            const kind = e.target.value as PrintFormat | '';
+            // Queued behind any export under way, never in its place (PX-17).
+            if (kind) enqueue([kind]);
           }}
         >
-          <option value="">{exportKind ? 'Exporting…' : 'More exports'}</option>
+          <option value="">{job ? 'Exporting…' : 'More exports'}</option>
           <option value="docx">Word (DOCX)</option>
           <option value="rtf">RTF</option>
           <option value="html">HTML</option>
@@ -2772,10 +3108,13 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
             const chosen = [selected, ...also];
             const items: MenuItem[] = [];
             if (onAddToChat) items.push({ label: 'Add to chat', keys: 'Ctrl+L', run: onAddToChat });
-            if (chosen.length === 1 && selectedControl.type === 'XRLabel') {
-              items.push({ label: 'Retype', keys: 'Double-click', run: () => { setEditingAt(menu.at); setEditingText(selectedControl.text); } });
+            // Not offered for a label that prints a field (PX-08b), which no retype changes.
+            if (chosen.length === 1 && selectedControl.type === 'XRLabel' && repxContent && !boundTextNotice(repxContent, selected)) {
+              items.push({ label: 'Retype', keys: 'Double-click', run: () => startRetype(selected, menu.at, selectedControl.text) });
             }
-            if (onDescribe && chosen.length === 1 && selectedControl.name) items.push({ label: 'Describe for the AI', run: () => onDescribe(selectedControl.name!) });
+            // What it writes is read aloud by screen readers and kept in a tagged PDF, not
+            // something for the AI (2026-11-11, the full audit's CV-30).
+            if (onDescribe && chosen.length === 1 && selectedControl.name) items.push({ label: 'Describe this part', run: () => onDescribe(selectedControl.name!) });
             if (onFormat) {
               items.push({
                 label: 'Format',
@@ -2796,17 +3135,18 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
 
       {/* True size, outside the workspace tree, only while printing. */}
       {printing && createPortal(<div className="rp-print-host">{renderPages(1, false, false)}</div>, document.body)}
-      {/* The same, for the other exports: the continuous layout for HTML and the image. */}
-      {exportKind && createPortal(
-        <div ref={exportHostRef} aria-hidden style={{ position: 'fixed', left: -100000, top: 0, pointerEvents: 'none' }}>
-          {renderPages(1, false, false, continuous ?? report)}
+      {/* True size again, off screen but laid out, for an export job to read:
+          the pages as they print for the PDF, Word and RTF, and the one
+          continuous page for HTML and the picture. */}
+      {hosted?.formats.some(readsPages) && createPortal(
+        <div ref={pagedHostRef} aria-hidden style={{ position: 'fixed', left: -100000, top: 0, pointerEvents: 'none' }}>
+          {renderPages(1, false, false)}
         </div>,
         document.body,
       )}
-      {/* True size again, off screen but laid out, for the PDF writer to read. */}
-      {writingPdf && createPortal(
-        <div ref={pdfHostRef} aria-hidden style={{ position: 'fixed', left: -100000, top: 0, pointerEvents: 'none' }}>
-          {renderPages(1, false, false)}
+      {hosted && continuous && createPortal(
+        <div ref={flowHostRef} aria-hidden style={{ position: 'fixed', left: -100000, top: 0, pointerEvents: 'none' }}>
+          {renderPages(1, false, false, continuous)}
         </div>,
         document.body,
       )}

@@ -7,8 +7,11 @@
  * margin holding a label, and a turned, faded watermark: what is checked is
  * how pageOps reads them, which until now no test reached.
  */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { insetOf, pageOps, turnOf } from './pdfFromDom';
+import { FACES_UNAVAILABLE, insetOf, pageOps, pagesToPdf, turnOf } from './pdfFromDom';
+import type { PaginatedReport } from './reportPreview';
 import { MAX_CANVAS_PX, pictureParts } from './exportFromDom';
 import type { PdfImage, PdfOp } from './pdfWriter';
 
@@ -136,6 +139,62 @@ describe('pageOps', () => {
     const ops = await pageOps(sheet, images);
     expect(ops.find((o) => o.kind === 'fill')).toMatchObject({ alpha: 0.25 });
     expect(ops.find((o) => o.kind === 'text')).toMatchObject({ text: 'Hi', alpha: 0.25 });
+  });
+});
+
+/*
+ * Embed or refuse (PX-14), and the fetch of the faces failing (2026-11-11, the
+ * PXA follow-up in batch PXB): text Windows-1252 cannot hold is written in the
+ * Liberation face fetched from the site, a letter that face lacks too writes
+ * no file and says why, and a face that cannot be fetched says what to do
+ * rather than a file name and a status. fetch is stubbed, with the face read
+ * from assets/pdf-fonts/ where the build copies it from.
+ */
+describe('pagesToPdf and the Liberation faces', () => {
+  const REPORT = { pages: [], bookmarks: [] } as unknown as PaginatedReport;
+  const sheetWith = (text: string) => {
+    const sheet = element('div', rect(0, 0, 800, 1000), {}, undefined, 'rp-page');
+    sheet.appendChild(element('div', rect(10, 10, 300, 20), {}, text));
+    return sheet;
+  };
+  // From the repository's root, where vitest runs: under jsdom import.meta.url is not a file URL.
+  const face = readFileSync(resolve('assets/pdf-fonts/LiberationSans-Regular.ttf'));
+
+  it('says what to do, not a file name and a status, when the face cannot be fetched', async () => {
+    const fetched = vi.fn(async () => ({ ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) }));
+    vi.stubGlobal('fetch', fetched);
+    await expect(pagesToPdf([sheetWith('Zażółć gęślą jaźń')], REPORT, 'Polish', 'Polish')).rejects.toThrow(FACES_UNAVAILABLE);
+    expect(fetched).toHaveBeenCalledTimes(1);
+    expect(String((fetched.mock.calls[0] as unknown[])[0])).toMatch(/LiberationSans-Regular\.ttf$/);
+  });
+
+  it('refuses Arabic, which the face does not hold either, naming the script and the path that keeps it', async () => {
+    const fetched = vi.fn(async () => ({ ok: true, status: 200, arrayBuffer: async () => face.buffer.slice(face.byteOffset, face.byteOffset + face.byteLength) }));
+    vi.stubGlobal('fetch', fetched);
+    await expect(pagesToPdf([sheetWith('مرحبا بكم')], REPORT, 'Arabic', 'Arabic')).rejects.toThrow(
+      'This report has Arabic text that PDF with outline cannot hold; PDF keeps it as shown.',
+    );
+    // Asked for again: the failed fetch above was not kept.
+    expect(fetched).toHaveBeenCalledTimes(1);
+  });
+
+  it('embeds the face for Polish, which it holds, and writes the file', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, arrayBuffer: async () => face.buffer.slice(face.byteOffset, face.byteOffset + face.byteLength) })));
+    // No deflate, so jsdom's Blob is never asked for a stream.
+    vi.stubGlobal('CompressionStream', undefined);
+    const blob = await pagesToPdf([sheetWith('Zażółć gęślą jaźń')], REPORT, 'Polish', 'Polish');
+    expect(blob.type).toBe('application/pdf');
+    // The face is in the file: a page of one line is a few hundred bytes without it.
+    expect(blob.size).toBeGreaterThan(10_000);
+  });
+
+  it('fetches nothing for text the standard fonts hold', async () => {
+    const fetched = vi.fn();
+    vi.stubGlobal('fetch', fetched);
+    vi.stubGlobal('CompressionStream', undefined);
+    const blob = await pagesToPdf([sheetWith('Total 1,240.00')], REPORT, 'Plain', 'Plain');
+    expect(fetched).not.toHaveBeenCalled();
+    expect(blob.size).toBeLessThan(10_000);
   });
 });
 

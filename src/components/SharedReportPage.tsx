@@ -158,7 +158,8 @@ export default function SharedReportPage({ id, user, onSignIn, onHome }: Props) 
         )}
         {state.kind === 'shown' && state.report.repxContent && (
           <Suspense fallback={<p className="wb-shared-say">Drawing the report…</p>}>
-            <ReportPreview repxContent={state.report.repxContent} layout={(state.report.layout ?? null) as ReportLayout | null} title={state.name} />
+            {/* `shared` (2026-11-11, SE-14): each link in someone else's report says where it goes. */}
+            <ReportPreview repxContent={state.report.repxContent} layout={(state.report.layout ?? null) as ReportLayout | null} title={state.name} shared />
           </Suspense>
         )}
       </main>

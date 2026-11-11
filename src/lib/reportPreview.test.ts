@@ -33,6 +33,8 @@ import {
   decodeXmlText,
   fontDecoration,
   safeLink,
+  withoutPanelChildren,
+  pageHolding,
   type BandInstance,
   type PaginatedReport,
   type PlacedBand,
@@ -4106,5 +4108,62 @@ const S63D = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerial
     expect(header(S63B)[0]).toMatchObject({ rtl: true, x: 0 });
     expect(header(S63B)[0].fileX).toBeUndefined();
     expect(header(S63C)[0].rtl).toBeUndefined();
+  });
+});
+
+/*
+ * A panel moved or duplicated with its children (2026-11-11, the full audit's
+ * PX-10): the children are listed beside the panel at positions inside it, so
+ * moving each by the same step moved them twice. They are left out of the
+ * selection whenever their panel is in it.
+ */
+describe('withoutPanelChildren', () => {
+  const PANELLED = `<?xml version="1.0" encoding="utf-8"?>
+<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="P" ReportUnit="HundredthsOfAnInch" Margins="50, 50, 50, 50" PageWidth="850" PageHeight="1100" Version="20.1">
+  <Bands>
+    <Item1 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="200">
+      <Controls>
+        <Item1 Ref="3" ControlType="XRLabel" Name="loose" Text="LOOSE" LocationFloat="0,0" SizeF="100,20" />
+        <Item2 Ref="4" ControlType="XRPanel" Name="box" LocationFloat="0,40" SizeF="300,100">
+          <Controls>
+            <Item1 Ref="5" ControlType="XRLabel" Name="inner1" Text="IN1" LocationFloat="10,10" SizeF="100,20" />
+            <Item2 Ref="6" ControlType="XRLabel" Name="inner2" Text="IN2" LocationFloat="10,40" SizeF="100,20" />
+          </Controls>
+        </Item2>
+      </Controls>
+    </Item1>
+  </Bands>
+</XtraReportsLayoutSerializer>`;
+  const { bands } = parseReportStructure(PANELLED);
+  const index = (name: string) => bands[0].controls.findIndex((c) => c.name === name);
+  const ref = (name: string) => ({ band: 0, control: index(name) });
+
+  it('drops a child whose panel is selected, and keeps the rest', () => {
+    expect(bands[0].controls[index('inner1')].panel).toBe(index('box'));
+    const kept = withoutPanelChildren(bands, [ref('inner1'), ref('box'), ref('inner2'), ref('loose')]);
+    expect(kept.map((r) => bands[0].controls[r.control].name)).toEqual(['box', 'loose']);
+  });
+
+  it('keeps a child selected without its panel', () => {
+    expect(withoutPanelChildren(bands, [ref('inner1'), ref('loose')])).toEqual([ref('inner1'), ref('loose')]);
+  });
+});
+
+/*
+ * What a request changed, or what Go to names, on a page a long report does
+ * not draw (2026-11-11, the full audit's PX-26): the first page printing it.
+ */
+describe('pageHolding', () => {
+  it('finds the first page printing a control of one of the names, and -1 for none', () => {
+    const report = {
+      pages: [
+        { number: 1, bands: [{ controls: [{ control: { name: 'title' } }] }] },
+        { number: 2, bands: [{ controls: [{ control: { name: '' } }, { control: { name: 'total' } }] }] },
+      ],
+    } as unknown as PaginatedReport;
+    expect(pageHolding(report, new Set(['total']))).toBe(1);
+    expect(pageHolding(report, new Set(['title', 'total']))).toBe(0);
+    expect(pageHolding(report, new Set(['missing']))).toBe(-1);
+    expect(pageHolding(report, new Set())).toBe(-1);
   });
 });

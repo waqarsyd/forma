@@ -136,6 +136,12 @@ export interface ReportSection {
 export interface ReportLayout {
   title: string;
   pageWidth: number;
+  /**
+   * The paper's height in the same units, read off the REPX (2026-11-11, the
+   * full audit's PX-23). Absent in a layout the AI wrote, saved before
+   * 2026-11-05, which the Mockup then draws at least 1100 units tall.
+   */
+  pageHeight?: number;
   sections: ReportSection[];
 }
 

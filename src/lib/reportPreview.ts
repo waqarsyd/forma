@@ -4541,3 +4541,38 @@ export function recordCountFromLayout(
   // layout, so one row is chrome rather than a record.
   return best > 1 ? best - 1 : fallback;
 }
+
+/**
+ * A selection with every control whose panel is selected too left out
+ * (2026-11-11, the full audit's PX-10). A panel's children are listed beside
+ * it, at positions inside it (`parseControls`), so a panel moved with its
+ * children carried them once with itself and again by their own move, and a
+ * duplicate copied each child into the panel before copying the panel with
+ * them. Followed up the chain of panels, so a child of a child is left out too.
+ */
+export function withoutPanelChildren<T extends { band: number; control: number }>(
+  bands: readonly { controls: readonly { panel?: number }[] }[],
+  refs: readonly T[],
+): T[] {
+  const chosen = new Set(refs.map((r) => `${r.band}:${r.control}`));
+  return refs.filter((r) => {
+    const controls = bands[r.band]?.controls;
+    const seen = new Set<number>();
+    for (let parent = controls?.[r.control]?.panel; parent !== undefined && !seen.has(parent); parent = controls?.[parent]?.panel) {
+      if (chosen.has(`${r.band}:${parent}`)) return false;
+      seen.add(parent);
+    }
+    return true;
+  });
+}
+
+/**
+ * The first page printing a control of one of these names, or -1 (2026-11-11,
+ * the full audit's PX-26): a long report draws only the pages near the view,
+ * so what a request changed, or what Go to names, may be on a page not drawn,
+ * whose frame the Preview scrolls to first.
+ */
+export function pageHolding(report: Pick<PaginatedReport, 'pages'>, names: ReadonlySet<string>): number {
+  if (!names.size) return -1;
+  return report.pages.findIndex((page) => page.bands.some((band) => band.controls.some((pc) => !!pc.control.name && names.has(pc.control.name))));
+}

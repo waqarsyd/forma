@@ -30,6 +30,8 @@ import {
   type PreviewPage,
   type ReportStructure,
 } from './reportPreview';
+// The switch's own module since 2026-11-11, so the Export panel need not load this one.
+import { csvSafetyPreferred } from './csvSafety';
 
 /**
  * Controls that print no text of their own make no CSV cell. A subreport's
@@ -169,32 +171,6 @@ export function layoutContinuous(structure: ReportStructure, recordCount: number
  */
 export interface CsvOptions {
   safeForSpreadsheets?: boolean;
-}
-
-/*
- * The choice is the viewer's own, kept in this browser like a remembered tab:
- * the Export panel sets it, and every CSV written here follows it, whether
- * the panel or the chat asked for the file. Unreadable storage means off.
- */
-const SAFE_KEY = 'forma.csvSafeForSpreadsheets';
-
-/** Whether this browser asked for CSV safe for spreadsheets. */
-export function csvSafetyPreferred(): boolean {
-  try {
-    return globalThis.localStorage?.getItem(SAFE_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-/** Remember, in this browser, whether CSV is written safe for spreadsheets. */
-export function preferCsvSafety(on: boolean): void {
-  try {
-    if (on) globalThis.localStorage?.setItem(SAFE_KEY, '1');
-    else globalThis.localStorage?.removeItem(SAFE_KEY);
-  } catch {
-    // Storage refused (a private window): the switch holds for this visit only.
-  }
 }
 
 // A tab or carriage return first is on OWASP's list beside the four signs: a

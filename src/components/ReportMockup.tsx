@@ -354,8 +354,10 @@ const ReportMockup = ({
   const repeatedHeadings = useMemo(() => repeatedHeadingTables(layout), [layout]);
 
   const pageWidth = px(layout.pageWidth || 850);
+  // The report's own paper when the layout was read off its REPX (2026-11-11,
+  // PX-23); 1100 units only for an older layout, which carries no height.
   const pageHeight = Math.max(
-    px(1100),
+    px(layout.pageHeight || 1100),
     layout.sections.reduce((sum, s) => sum + px(s.height || 100), 0),
   );
 

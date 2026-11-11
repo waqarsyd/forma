@@ -11,7 +11,8 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { IconClose, IconDownload, IconExternal } from './landing/icons';
-import { csvSafetyPreferred, preferCsvSafety } from '../lib/csvExport';
+// Its own small module (2026-11-11): from csvExport it pulled the Preview's engine in.
+import { csvSafetyPreferred, preferCsvSafety } from '../lib/csvSafety';
 import './overlays.css';
 // For the switch's look, the one Settings uses (`.wb-set-switch`).
 import './dialogs.css';

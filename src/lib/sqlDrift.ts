@@ -22,7 +22,7 @@
  */
 import type { SqlSchema } from './sqlSchema';
 import { findObject, findProcedure, fieldKind, type QueryJoin, type ReportQuery } from './sqlQuery';
-import { readRepxDataSources, type RepxDataSource, type RepxQuery } from './repxSqlDataSource';
+import { detailRegions, memberAt, readRepxDataSources, resolveMember, type RepxDataSource, type RepxQuery } from './repxSqlDataSource';
 import { resultTypeOf, writeSqlDataSource, type DataSourceSpec } from './repxSqlWriter';
 import { parseParameters } from './repxParameters';
 import { renameField, scoreMatch } from './fieldMatch';
@@ -232,8 +232,8 @@ function renameInQuery(query: ReportQuery, r: { table: string; from: string; to:
  * null when the member names no query this report's sources hold.
  *
  * The same walk as `auditDataSources`' field check in repxSqlDataSource.ts,
- * which keeps its own copy private; the two answer the same question and
- * must agree.
+ * and since 2026-11-11 (batch PXB) the same code: `detailRegions`,
+ * `memberAt` and `resolveMember` are that module's, where this kept a copy.
  */
 function queryAt(xml: string): (at: number) => string | null {
   const sources = readRepxDataSources(xml);
@@ -241,33 +241,8 @@ function queryAt(xml: string): (at: number) => string | null {
   const relations = new Map(sources.flatMap((d) => d.relations.map((r) => [r.name, r.detail] as const)));
   const root = /<XtraReportsLayoutSerializer\b[^>]*>/.exec(xml)?.[0] ?? '';
   const rootMember = /\sDataMember="([^"]*)"/.exec(root)?.[1] || mainQueryOf(xml)?.query.name || '';
-  const resolve = (member: string): string | null => {
-    const path = member.split('.');
-    let query: string | null = queries.has(path[0]) ? path[0] : null;
-    for (let i = 1; i < path.length && query; i++) query = relations.get(path[i]) ?? null;
-    return query;
-  };
-  // The span of every DetailReportBand, with its DataMember.
-  const regions: { start: number; end: number; member: string }[] = [];
-  for (const open of xml.matchAll(/<(Item\d+)\s[^>]*ControlType="DetailReportBand"[^>]*>/g)) {
-    const tag = /<(\/?)Item\d+\b[^>]*?(\/?)>/g;
-    tag.lastIndex = open.index!;
-    let depth = 0;
-    let end = xml.length;
-    for (let m = tag.exec(xml); m; m = tag.exec(xml)) {
-      if (m[1]) {
-        if (--depth === 0) {
-          end = m.index + m[0].length;
-          break;
-        }
-      } else if (!m[2]) depth++;
-    }
-    regions.push({ start: open.index!, end, member: /\sDataMember="([^"]*)"/.exec(open[0])?.[1] ?? '' });
-  }
-  return (at) => {
-    const inside = regions.filter((r) => r.start <= at && at < r.end).sort((a, b) => a.end - a.start - (b.end - b.start))[0];
-    return resolve(inside ? inside.member : rootMember);
-  };
+  const regions = detailRegions(xml);
+  return (at) => resolveMember(memberAt(regions, at, rootMember), queries, relations);
 }
 
 const bare = (name: string) => name.replace(/^.*\./, '').toLowerCase();

@@ -415,8 +415,13 @@ export function connectionStringsSnippet(names: readonly string[], database = ''
 
 /* ------------------------------------------------------------- the audit */
 
-/** The span of every `DetailReportBand` item, with its DataMember, innermost spans found by position. */
-function detailRegions(xml: string): { start: number; end: number; member: string }[] {
+/**
+ * The span of every `DetailReportBand` item, with its DataMember, innermost
+ * spans found by position (`memberAt`). Exported on 2026-11-11 (the full
+ * audit's SD-26, batch PXB) with the two below, so sqlDrift.ts's `queryAt`
+ * walks the report as the field check here does instead of keeping a copy.
+ */
+export function detailRegions(xml: string): { start: number; end: number; member: string }[] {
   const regions: { start: number; end: number; member: string }[] = [];
   const opens = [...xml.matchAll(/<(Item\d+)\s[^>]*ControlType="DetailReportBand"[^>]*>/g)];
   for (const open of opens) {
@@ -437,6 +442,24 @@ function detailRegions(xml: string): { start: number; end: number; member: strin
     regions.push({ start: open.index!, end, member });
   }
   return regions;
+}
+
+/** The DataMember read at an offset: the innermost detail report's holding it, else `rootMember`. */
+export function memberAt(regions: readonly { start: number; end: number; member: string }[], at: number, rootMember: string): string {
+  const inside = regions.filter((r) => r.start <= at && at < r.end).sort((a, b) => a.end - a.start - (b.end - b.start))[0];
+  return inside ? inside.member : rootMember;
+}
+
+/**
+ * What a DataMember path reads: its first part when `roots` has it (a query,
+ * or a query's view), then each relation's detail along the path; null when
+ * a part names nothing the sources hold.
+ */
+export function resolveMember(member: string, roots: { has(name: string): boolean }, relations: ReadonlyMap<string, string>): string | null {
+  const path = member.split('.');
+  let at: string | null = roots.has(path[0]) ? path[0] : null;
+  for (let i = 1; i < path.length && at; i++) at = relations.get(path[i]) ?? null;
+  return at;
 }
 
 /**
@@ -477,20 +500,11 @@ export function auditDataSources(xml: string): { severity: 'error' | 'warning'; 
   if (!views.size) return out;
 
   // Each binding against the view of its band: a detail report reads its relation's detail query.
-  const viewOf = (member: string): string | null => {
-    const path = member.split('.');
-    let view: string | null = views.has(path[0]) ? path[0] : null;
-    for (let i = 1; i < path.length && view; i++) view = relations.get(path[i]) ?? null;
-    return view;
-  };
   const regions = detailRegions(xml);
   const reported = new Set<string>();
   // Every field an expression prints, and a group's FieldName (2026-11-09: a group on a field the query lacks prints one empty group).
   for (const m of xml.matchAll(/\s(Expression|FieldName)="([^"]*)"/g)) {
-    const at = m.index!;
-    const inside = regions.filter((r) => r.start <= at && at < r.end).sort((a, b) => a.end - a.start - (b.end - b.start))[0];
-    const member = inside ? inside.member : rootMember;
-    const view = viewOf(member);
+    const view = resolveMember(memberAt(regions, m.index!, rootMember), views, relations);
     if (!view) continue;
     const named = m[1] === 'FieldName' ? [decodeEntities(m[2])] : [...decodeEntities(m[2]).matchAll(/\[([^\[\]]+)\]/g)].map((f) => f[1]);
     for (const field of named) {

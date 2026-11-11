@@ -57,4 +57,29 @@ describe('ExportPanel', () => {
     expect((screen.getByRole('button', { name: /DevExpress report \(\.repx\)/ }) as HTMLButtonElement).disabled).toBe(false);
     expect(document.activeElement?.textContent).toMatch(/DevExpress report/);
   });
+
+  /*
+   * "Safe for spreadsheets" (SE-18), read from lib/csvSafety.ts since
+   * 2026-11-11 so this panel no longer loads the CSV writer: off at first,
+   * kept in this browser once set, and read back by the next panel.
+   */
+  it('keeps "Safe for spreadsheets" in this browser once it is switched on or off', () => {
+    localStorage.removeItem('forma.csvSafeForSpreadsheets');
+    const props = { onRepx: vi.fn(), onPrint: vi.fn(), onClose: vi.fn() };
+    const { unmount } = render(<ExportPanel {...props} />);
+    const toggle = () => screen.getByRole('switch', { name: /Safe for spreadsheets/ }) as HTMLInputElement;
+    expect(toggle().checked).toBe(false);
+    fireEvent.click(toggle());
+    expect(toggle().checked).toBe(true);
+    expect(localStorage.getItem('forma.csvSafeForSpreadsheets')).toBe('1');
+    // The next panel opens with it on, and switching it off forgets it.
+    unmount();
+    render(<ExportPanel {...props} />);
+    expect(toggle().checked).toBe(true);
+    fireEvent.click(toggle());
+    expect(toggle().checked).toBe(false);
+    expect(localStorage.getItem('forma.csvSafeForSpreadsheets')).toBeNull();
+    // Switching it is not choosing a row: the panel stays open.
+    expect(props.onClose).not.toHaveBeenCalled();
+  });
 });

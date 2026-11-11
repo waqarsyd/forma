@@ -111,6 +111,8 @@ describe('the Mockup read off the REPX', () => {
     expect(layout.title).toBe('Sales by Region');
     // The page DevExpress prints on, which PaperKind decides (repxPaper.ts): A4 is 8.27 inches wide.
     expect(layout.pageWidth).toBeCloseTo(826.77, 2);
+    // And its height (2026-11-11, PX-23): the Mockup's page is the report's paper, A4's 11.69 inches.
+    expect(layout.pageHeight).toBeCloseTo(1169.29, 1);
     expect(layout.sections.map((s) => s.name)).toEqual(['Report header', 'Page header', 'Group header', 'Detail, once per record', 'Report footer', 'Page footer']);
     expect(layout.sections.map((s) => s.type)).toEqual(['header', 'header', 'group', 'detail', 'footer', 'footer']);
   });

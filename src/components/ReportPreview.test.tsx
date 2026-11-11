@@ -173,6 +173,21 @@ describe('parameters over test data', () => {
     expect(screen.queryByLabelText('Value for Region')).toBeNull();
     expect(screen.getByText('North')).toBeTruthy();
   });
+
+  // PX-28 (2026-11-11): rows being written can be stopped from the pane, the one place outside a turn that reaches them.
+  it('turns Test data into Stop while the rows are written', () => {
+    const onTestData = vi.fn();
+    const onStopTestData = vi.fn();
+    const { rerender } = render(<ReportPreview repxContent={filtered} layout={null} title="Filtered" onTestData={onTestData} onStopTestData={onStopTestData} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Test data' }));
+    expect(onTestData).toHaveBeenCalledTimes(1);
+    rerender(<ReportPreview repxContent={filtered} layout={null} title="Filtered" onTestData={onTestData} onStopTestData={onStopTestData} testDataBusy />);
+    const stop = screen.getByRole('button', { name: /Stop/ }) as HTMLButtonElement;
+    expect(stop.disabled).toBe(false);
+    fireEvent.click(stop);
+    expect(onStopTestData).toHaveBeenCalledTimes(1);
+    expect(onTestData).toHaveBeenCalledTimes(1);
+  });
 });
 
 /* The field a group breaks on, chosen above the paper (2026-11-04). */
@@ -499,6 +514,138 @@ describe('editing in the pane', () => {
     expect(onEdit.mock.calls[0][1]).toBe('retyped the label "a"');
   });
 
+  /*
+   * Batch PXB (2026-11-11, the full audit). PX-09: a press that wanders a
+   * pixel or two, or goes out and comes back, is a click and writes nothing.
+   */
+  it('writes nothing for a press that wanders a few pixels, or goes out and comes back', () => {
+    const onEdit = vi.fn();
+    render(<Holder onEdit={onEdit} />);
+    fireEvent.pointerDown(hits()[0], { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(window, { clientX: 12, clientY: 11 });
+    fireEvent.pointerUp(window);
+    fireEvent.pointerDown(hits()[0], { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(window, { clientX: 60, clientY: 40 });
+    fireEvent.pointerMove(window, { clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(window);
+    expect(onEdit).not.toHaveBeenCalled();
+  });
+
+  /*
+   * PR-13 and PX-11: a finger on a control not yet selected selects it and
+   * drags nothing, so a swipe over the report scrolls it; a selected one drags.
+   */
+  it('only selects a control a finger presses before it is selected, and drags it once it is', () => {
+    const onEdit = vi.fn();
+    render(<Holder onEdit={onEdit} />);
+    fireEvent.pointerDown(hits()[0], { button: 0, pointerType: 'touch', clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(window, { clientX: 60, clientY: 10 });
+    fireEvent.pointerUp(window);
+    expect(onEdit).not.toHaveBeenCalled();
+    expect(hits()[0].classList.contains('is-selected')).toBe(true);
+    fireEvent.pointerDown(hits()[0], { button: 0, pointerType: 'touch', clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(window, { clientX: 60, clientY: 10 });
+    fireEvent.pointerUp(window);
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    expect(onEdit.mock.calls[0][1]).toMatch(/^moved/);
+  });
+
+  /*
+   * PX-21: presses of an arrow within 600 ms of the last, on the same
+   * selection, carry on the step the first began, as a held key's repeats do.
+   */
+  it('marks a quick second arrow press as carrying on the last step, and a later one as a new step', () => {
+    const now = vi.spyOn(Date, 'now');
+    try {
+      const onEdit = vi.fn();
+      function Stepping() {
+        const [xml, setXml] = useState(editable);
+        return <ReportPreview repxContent={xml} layout={null} title="Edit" onEdit={(next, reason, continues) => { setXml(next); onEdit(next, reason, continues); }} />;
+      }
+      render(<Stepping />);
+      fireEvent.pointerDown(hits()[0]);
+      fireEvent.pointerUp(window);
+      for (const at of [1_000, 1_200, 1_350, 3_000]) {
+        now.mockReturnValue(at);
+        fireEvent.keyDown(window, { key: 'ArrowRight' });
+      }
+      expect(onEdit.mock.calls.map((c) => c[2] ?? false)).toEqual([false, true, true, false]);
+      expect(onEdit.mock.calls[3][0]).toContain('Name="a" Text="ALPHA" LocationFloat="4,0"');
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  /*
+   * PX-07: a text of several lines is retyped in a text area, where
+   * Shift+Enter starts a line and Enter keeps the words; one line in a field.
+   */
+  it('retypes a text of several lines in a text area, keeping its lines', () => {
+    const lines = editable.replace('Text="ALPHA"', 'Text="Line one&#xD;&#xA;Line two"');
+    const onEdit = vi.fn();
+    function Lines() {
+      const [xml, setXml] = useState(lines);
+      return <ReportPreview repxContent={xml} layout={null} title="Edit" onEdit={(next, reason) => { setXml(next); onEdit(next, reason); }} />;
+    }
+    render(<Lines />);
+    fireEvent.doubleClick(hits()[0]);
+    const area = screen.getByLabelText("Edit the control's text") as HTMLTextAreaElement;
+    expect(area.tagName).toBe('TEXTAREA');
+    expect(area.value).toBe('Line one\nLine two');
+    fireEvent.change(area, { target: { value: 'Line one\nLine two\nLine three' } });
+    // Shift+Enter is a new line, not the end of the edit.
+    fireEvent.keyDown(area, { key: 'Enter', shiftKey: true });
+    expect(onEdit).not.toHaveBeenCalled();
+    fireEvent.keyDown(area, { key: 'Enter' });
+    fireEvent.blur(area);
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    expect(onEdit.mock.calls[0][0]).toMatch(/Line two(&#xD;)?&#xA;Line three/);
+    // A label of one line keeps the one-line field.
+    fireEvent.doubleClick(hits()[1]);
+    expect((screen.getByLabelText("Edit the control's text") as HTMLElement).tagName).toBe('INPUT');
+  });
+
+  /*
+   * PX-08b: a label that prints a field opens no editor; a double-click says
+   * why, under the bar and as the workspace's notice, and Retype is not offered.
+   */
+  it('opens no editor on a label that prints a field, and says why', () => {
+    const bound = editable.replace(
+      '<Item1 Ref="4" ControlType="XRLabel" Name="a" Text="ALPHA" LocationFloat="0,0" SizeF="100,20" />',
+      '<Item1 Ref="4" ControlType="XRLabel" Name="a" Text="ALPHA" LocationFloat="0,0" SizeF="100,20"><ExpressionBindings><Item1 Ref="40" EventName="BeforePrint" PropertyName="Text" Expression="[Customer]" /></ExpressionBindings></Item1>',
+    );
+    const onNotice = vi.fn();
+    render(<ReportPreview repxContent={bound} layout={null} title="Edit" onEdit={vi.fn()} onNotice={onNotice} />);
+    fireEvent.doubleClick(hits()[0]);
+    expect(screen.queryByLabelText("Edit the control's text")).toBeNull();
+    expect(onNotice).toHaveBeenCalledWith('This label prints the field [Customer], not typed text: bind another on the Data tab');
+    expect(document.body.textContent).toContain('this label prints the field [Customer], not typed text');
+  });
+
+  /*
+   * PX-10: a panel moved with one of its children selected too moves once,
+   * and the child, which its panel carries, is not moved again.
+   */
+  it('moves a panel and its selected child once, by the panel', () => {
+    const panelled = editable.replace(
+      '<Item2 Ref="5" ControlType="XRLabel" Name="b" Text="BETA" LocationFloat="200,0" SizeF="100,20" />',
+      '<Item2 Ref="5" ControlType="XRPanel" Name="box" LocationFloat="200,0" SizeF="150,30"><Controls><Item1 Ref="50" ControlType="XRLabel" Name="inner" Text="INNER" LocationFloat="10,5" SizeF="100,20" /></Controls></Item2>',
+    );
+    const onEdit = vi.fn();
+    render(<ReportPreview repxContent={panelled} layout={null} title="Edit" onEdit={onEdit} />);
+    // In the file's order, a panel's children listed after it: a 0, box 1, inner 2, t 3.
+    const box = hits().find((h) => h.dataset.control === '1')!;
+    const inner = hits().find((h) => h.dataset.control === '2')!;
+    fireEvent.pointerDown(box);
+    fireEvent.pointerUp(window);
+    fireEvent.pointerDown(inner, { shiftKey: true });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    const [xml] = onEdit.mock.calls[0];
+    expect(xml).toContain('Name="box" LocationFloat="201,0"');
+    expect(xml).toContain('Name="inner" Text="INNER" LocationFloat="10,5"');
+  });
+
   it('says why when an edit is declined', () => {
     const named = editable.replace('Name="Detail" HeightF="120"', 'Name="Detail" HeightF="120" DrillDownControl="#Ref-4"');
     const onEdit = vi.fn();
@@ -536,6 +683,21 @@ describe('links in the Preview', () => {
     expect(a.getAttribute('rel')).toBe('noopener noreferrer');
     expect(a.style.color).toBe('blue');
     expect(a.style.textDecoration).toBe('underline');
+  });
+
+  // SE-14 (2026-11-11): on a shared report's page a link says where it goes; in the workspace it does not.
+  it('says where a link goes on a shared report, and only there', () => {
+    const { unmount } = render(<ReportPreview repxContent={linked('https://example.com/pay')} layout={null} title="Links" shared />);
+    const a = screen.getByText('LINKED').closest('a') as HTMLAnchorElement;
+    // One note for a pointer, the CSS one: no native tooltip on top of it.
+    expect(a.title).toBe('');
+    expect(a.getAttribute('aria-description')).toBe('Opens example.com');
+    expect(a.getAttribute('data-goes')).toBe('Opens example.com');
+    unmount();
+    render(<ReportPreview repxContent={linked('https://example.com/pay')} layout={null} title="Links" />);
+    const plain = screen.getByText('LINKED').closest('a') as HTMLAnchorElement;
+    expect(plain.getAttribute('aria-description')).toBeNull();
+    expect(plain.getAttribute('data-goes')).toBeNull();
   });
 
   it('draws no anchor for a javascript: address', () => {
@@ -704,6 +866,46 @@ describe('Export CSV', () => {
     expect(done).toHaveBeenCalledTimes(1);
     rerender(<ReportPreview repxContent={geometry} layout={null} title="Geometry Case" exportRequest={request} onExportRequestDone={done} />);
     expect(clicked).toHaveLength(1);
+    click.mockRestore();
+    vi.unstubAllGlobals();
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  });
+
+  /*
+   * PX-17 and CV-17 (2026-11-11): several formats asked in one turn are saved
+   * as one .zip, and the chat's reply that asked says what was saved.
+   */
+  it('saves several formats asked together as one .zip, and says so in the reply that asked', async () => {
+    let blob: Blob | null = null;
+    vi.stubGlobal('URL', Object.assign(Object.create(URL), { createObjectURL: vi.fn((b: Blob) => { blob = b; return 'blob:zip'; }), revokeObjectURL: vi.fn() }));
+    const clicked: string[] = [];
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicked.push(this.download);
+    });
+    const onExported = vi.fn();
+    const onNotice = vi.fn();
+    render(
+      <ReportPreview repxContent={geometry} layout={null} title="Geometry Case" exportButtons={false}
+        exportRequest={{ formats: ['csv', 'xlsx'], nonce: 9, reply: 'm1' }} onExported={onExported} onNotice={onNotice} />,
+    );
+    expect(clicked).toEqual(['Geometry_Case.zip']);
+    const bytes = new Uint8Array(await (blob as unknown as Blob).arrayBuffer());
+    // A .zip, holding both files by name.
+    expect(String.fromCharCode(...bytes.slice(0, 2))).toBe('PK');
+    const text = new TextDecoder('latin1').decode(bytes);
+    expect(text).toContain('Geometry_Case.csv');
+    expect(text).toContain('Geometry_Case.xlsx');
+    expect(onNotice).toHaveBeenCalledWith('Saved Geometry_Case.zip');
+    expect(onExported).toHaveBeenCalledTimes(1);
+    // Handed the conversation's messages, it rewrites the one that asked and no other.
+    const [update] = onExported.mock.calls[0];
+    expect(update([
+      { id: 'm0', text: 'Exporting it as a PDF.' },
+      { id: 'm1', text: 'Exporting it as a CSV file. Exporting it as an Excel workbook.' },
+    ])).toEqual([
+      { id: 'm0', text: 'Exporting it as a PDF.' },
+      { id: 'm1', text: 'Saved Geometry_Case.zip to your downloads, with Geometry_Case.csv and Geometry_Case.xlsx in it.' },
+    ]);
     click.mockRestore();
     vi.unstubAllGlobals();
     vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });

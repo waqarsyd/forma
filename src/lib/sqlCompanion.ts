@@ -123,6 +123,9 @@ export function companionReachableFrom(origin: string): boolean {
 async function call(path: string, init: RequestInit = {}, timeoutMs = 60_000): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // The caller's own signal too: the Preview's Cancel on Live rows (2026-11-11, SD-14c).
+  if (init.signal?.aborted) controller.abort();
+  init.signal?.addEventListener('abort', () => controller.abort(), { once: true });
   try {
     return await fetch(`${DESIGNER_ORIGIN}${path}`, { ...init, signal: controller.signal, headers: { ...(init.headers ?? {}), [DESIGNER_CLIENT_HEADER]: '1' } });
   } finally {
@@ -177,14 +180,15 @@ export async function companionSamples(connection: string, objects: readonly str
  * The report filled from the database (item 37): each query's first rows, as
  * DevExpress filled them on the PC, with the parameter values the reader
  * typed. A stored procedure runs only with `procedures`, which only the
- * button that names them sets.
+ * button that names them sets. `signal` stops waiting for it (the Preview's
+ * Cancel, 2026-11-11, SD-14c); the caller then reads nothing from the result.
  */
-export async function companionFill(repx: string, values: Readonly<Record<string, string>>, procedures = false): Promise<FillResult> {
+export async function companionFill(repx: string, values: Readonly<Record<string, string>>, procedures = false, signal?: AbortSignal): Promise<FillResult> {
   const params = Object.entries(values).filter(([, v]) => v !== '').map(([k, v]) => `p.${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
   const query = [procedures ? 'procedures=1' : '', ...params].filter(Boolean).join('&');
   let res: Response;
   try {
-    res = await call(`/sql/fill${query ? `?${query}` : ''}`, { method: 'POST', body: repx, headers: { 'content-type': 'text/xml' } }, 120_000);
+    res = await call(`/sql/fill${query ? `?${query}` : ''}`, { method: 'POST', body: repx, headers: { 'content-type': 'text/xml' }, signal }, 120_000);
   } catch {
     const problem = notRunning();
     return { kind: 'error', message: problem.message, link: problem.link };

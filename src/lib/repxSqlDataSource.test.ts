@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readSchemaScript } from './sqlSchema';
-import { carryDataSource, encodeBase64, readRepxDataSources } from './repxSqlDataSource';
+import { carryDataSource, detailRegions, encodeBase64, memberAt, readRepxDataSources, resolveMember } from './repxSqlDataSource';
 import { writeSqlDataSource } from './repxSqlWriter';
 
 const schema = readSchemaScript(
@@ -88,5 +88,40 @@ describe('a redesign whose data source came back garbled', () => {
     expect(readRepxDataSources(kept.xml)).toEqual(readRepxDataSources(own));
     const storage = /<ComponentStorage>([\s\S]*?)<\/ComponentStorage>/.exec(kept.xml)![1];
     expect([...storage.matchAll(/<(Item\d+) /g)].map((m) => m[1])).toEqual(['Item1']);
+  });
+});
+
+/*
+ * The walk the field check and sqlDrift's renames share (2026-11-11, SD-26,
+ * batch PXB): which DataMember reads a place in the report, the innermost
+ * detail report's, and what that member resolves to through the relations.
+ */
+describe('detailRegions, memberAt and resolveMember', () => {
+  const NESTED = `<XtraReportsLayoutSerializer DataMember="Orders"><Bands>
+<Item1 Ref="2" ControlType="DetailBand" Name="Detail"><Controls><Item1 Ref="3" ControlType="XRLabel" Name="a" /></Controls></Item1>
+<Item2 Ref="4" ControlType="DetailReportBand" Name="Lines" DataMember="Orders.OrderLines"><Bands>
+<Item1 Ref="5" ControlType="DetailBand" Name="Detail1"><Controls><Item1 Ref="6" ControlType="XRLabel" Name="b" /></Controls></Item1>
+<Item2 Ref="7" ControlType="DetailReportBand" Name="Notes" DataMember="Orders.OrderLines.LineNotes"><Bands>
+<Item1 Ref="8" ControlType="DetailBand" Name="Detail2" /></Bands></Item2>
+</Bands></Item2>
+</Bands></XtraReportsLayoutSerializer>`;
+  const regions = detailRegions(NESTED);
+  const at = (name: string) => NESTED.indexOf(`Name="${name}"`);
+
+  it('finds each detail report\'s span, and the innermost one holding a place', () => {
+    expect(regions.map((r) => r.member)).toEqual(['Orders.OrderLines', 'Orders.OrderLines.LineNotes']);
+    expect(memberAt(regions, at('a'), 'Orders')).toBe('Orders');
+    expect(memberAt(regions, at('b'), 'Orders')).toBe('Orders.OrderLines');
+    expect(memberAt(regions, at('Detail2'), 'Orders')).toBe('Orders.OrderLines.LineNotes');
+  });
+
+  it('resolves a member through the relations to what it reads, and nothing for an unknown root', () => {
+    const relations = new Map([['OrderLines', 'Lines'], ['LineNotes', 'Notes']]);
+    const roots = new Set(['Orders']);
+    expect(resolveMember('Orders', roots, relations)).toBe('Orders');
+    expect(resolveMember('Orders.OrderLines', roots, relations)).toBe('Lines');
+    expect(resolveMember('Orders.OrderLines.LineNotes', roots, relations)).toBe('Notes');
+    expect(resolveMember('Customers', roots, relations)).toBeNull();
+    expect(resolveMember('Orders.Missing', roots, relations)).toBeNull();
   });
 });

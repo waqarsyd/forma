@@ -235,6 +235,7 @@ import { checkRepx } from './lib/repx';
 import { readBoundFields } from './lib/repxBindingPlan';
 import type { RepxAudit, RepxFinding } from './lib/repxAudit';
 import type { AgentTool, FormatAction } from './lib/agentEdit';
+import type { PrintFormat } from './lib/exportJob';
 import {
   describedRequest,
   isDescribable,
@@ -396,33 +397,10 @@ type ChatMessage = ChatSessionMessage<DesignResult, PreviewMeta> & { learning?: 
  * ------------------------------------------------------------------ */
 const loadIntake = () => import('./lib/repxIntake');
 
-/**
- * Firestore's hard ceiling is 1,048,576 bytes per document. This leaves headroom
- * for the field names, the id/name/timestamp fields and UTF-8 expansion, so a
- * save that passes this check is not going to be rejected for size alone.
- */
-const CLOUD_SAVE_BUDGET_BYTES = 900_000;
-
-/**
- * A project as its account document, inside that budget: whole when it fits,
- * else without the uploaded pictures (the spec, layout and REPX are what
- * matter), else null. Shared by the save and the title menu's Duplicate
- * (2026-11-06), which writes a new document the same way.
- */
-function cloudPayload(draft: SavedReport, uid: string): { payload: ReturnType<typeof toFirestoreDocument>; imagesDropped: boolean } | null {
-  const fits = (p: ReturnType<typeof toFirestoreDocument>) => p.messages.length + p.result.length <= CLOUD_SAVE_BUDGET_BYTES;
-  const whole = toFirestoreDocument(draft, uid);
-  if (fits(whole)) return { payload: whole, imagesDropped: false };
-  // The earlier versions of a message carry pictures too (2026-11-05).
-  const withoutImages = (list: ChatMessage[]): ChatMessage[] =>
-    list.map((m) => ({
-      ...m,
-      images: undefined,
-      branches: m.branches?.map((b) => ({ ...b, images: undefined, tail: withoutImages(b.tail) })),
-    }));
-  const lighter = toFirestoreDocument({ ...draft, messages: withoutImages(draft.messages) }, uid);
-  return fits(lighter) ? { payload: lighter, imagesDropped: true } : null;
-}
+/* `cloudPayload` and CLOUD_SAVE_BUDGET_BYTES, a project as its account
+   document inside Firestore's budget, went to lib/cloudPayload.ts on
+   2026-11-11 (batch PXB), loaded by the three places that write one. */
+const loadCloudPayload = () => import('./lib/cloudPayload');
 
 /* PLAIN_BUILD and REMEMBER_WORDS went to lib/chatTurn.ts on 2026-11-07 (the
    agent audit's batch B), as `isPlainBuild` and `isRememberMessage`: the
@@ -1587,8 +1565,9 @@ export default function App() {
     const uid = user.uid;
     setAddingDeviceProjects(true);
     try {
-      // Loaded when pressed (lib/deviceToAccount.ts). A sign-out while it runs leaves this browser's list as it was.
-      const done = await (await import('./lib/deviceToAccount')).addDeviceProjectsToAccount<ChatMessage, DesignResult>({
+      // Loaded when pressed (lib/deviceToAccount.ts, lib/cloudPayload.ts). A sign-out while it runs leaves this browser's list as it was.
+      const [{ addDeviceProjectsToAccount }, { cloudPayload }] = await Promise.all([import('./lib/deviceToAccount'), loadCloudPayload()]);
+      const done = await addDeviceProjectsToAccount<ChatMessage, DesignResult>({
         uid,
         inAccount: new Map(savedReportsRef.current.map((r) => [r.id, r.timestamp] as const)),
         fit: cloudPayload,
@@ -1700,8 +1679,12 @@ export default function App() {
    * report selecting what it touches, which returns to Select once drawn.
    */
   const [previewTool, setPreviewTool] = useState<'select' | 'mark'>('select');
-  /** An export the chat or the Export panel asked the Preview for, made once per nonce. */
-  const [exportRequest, setExportRequest] = useState<{ format: Exclude<AgentTool['format'], 'repx' | undefined> | 'pdf-outline'; nonce: number } | null>(null);
+  /**
+   * An export the chat or the Export panel asked the Preview for, made once per
+   * nonce: every format one turn asked for together, saved as one download, and
+   * the reply that asked, which then says what was saved (2026-11-11, PX-17, CV-17).
+   */
+  const [exportRequest, setExportRequest] = useState<{ formats: PrintFormat[]; nonce: number; reply?: string | null } | null>(null);
   /** The Export panel (2026-11-06, components/ExportPanel.tsx). */
   const [isExportOpen, setIsExportOpen] = useState(false);
   /*
@@ -1757,6 +1740,8 @@ export default function App() {
    */
   const [testRows, setTestRows] = useState<Record<string, string>[] | null>(null);
   const [testDataBusy, setTestDataBusy] = useState(false);
+  /** The rows being written, which the Preview's Stop aborts (2026-11-11, PX-28: see lib/testDataRun.ts). */
+  const testDataStop = useRef<AbortController | null>(null);
   /**
    * The attachment being viewed full size. Carries every image of that upload so
    * a multi-page PDF can be paged through in place — the pages exist, they just
@@ -2447,6 +2432,8 @@ export default function App() {
   const reportFuture = useRef<DesignResult[]>([]);
   const lastReport = useRef<DesignResult | null>(null);
   const movingInHistory = useRef(false);
+  /** The Preview's next write carries on the last step, as a held arrow's repeats do (2026-11-11, PX-21). */
+  const stepGoesOn = useRef(false);
   /* `previewStep`, which kept a drag's many writes one step, went on
      2026-11-11 (PR-03): a drag is written once, on letting go, so an edit on
      Preview is a step like any other change of the file, kept below. */
@@ -2460,6 +2447,8 @@ export default function App() {
   };
   useEffect(() => {
     const before = lastReport.current;
+    const goesOn = stepGoesOn.current;
+    stepGoesOn.current = false;
     lastReport.current = result;
     if (movingInHistory.current) {
       movingInHistory.current = false;
@@ -2473,7 +2462,7 @@ export default function App() {
       return;
     }
     if (!before?.repxContent || !result.repxContent || before.repxContent === result.repxContent) return;
-    pushHistory(before);
+    if (!goesOn) pushHistory(before);
   }, [result]);
   /** A project opened: its history starts with it. */
   const resetReportHistory = () => {
@@ -3170,7 +3159,7 @@ export default function App() {
 
     if (user) {
       try {
-        const { sdk, paths, db } = await loadFirebase();
+        const [{ sdk, paths, db }, { cloudPayload }] = await Promise.all([loadFirebase(), loadCloudPayload()]);
 
         // The transcript carries the user's uploads inline as base64 data URLs,
         // and one of those alone can be several times the size of an entire
@@ -3653,12 +3642,12 @@ export default function App() {
     };
     if (user) {
       try {
+        const [{ sdk, paths, db }, { cloudPayload }] = await Promise.all([loadFirebase(), loadCloudPayload()]);
         const fitted = cloudPayload(copy, user.uid);
         if (!fitted) {
           sayProjectsFailure('This project is too large to copy into your account.');
           return;
         }
-        const { sdk, paths, db } = await loadFirebase();
         await paths.writeReport(db, user.uid, copy.id, fitted.payload, true);
         await sdk.setDoc(paths.reportIndexDocRef(db, user.uid, copy.id), toIndexDocument(copy, user.uid)).catch((error) => {
           console.warn('The copy was saved; its entry in the projects index was not.', error);
@@ -4819,15 +4808,14 @@ export default function App() {
   /**
    * An export through the Preview, kept as one (2026-11-11, LM-12): the
    * Export panel, the command menu and the chat's export all come here, so no
-   * way of exporting is missed by the learning. `after` spaces the chat's
-   * several exports, since the Preview holds one request at a time.
+   * way of exporting is missed by the learning. The chat's several exports go
+   * as one request (2026-11-11, PX-17), where they went 1.5 s apart, one file
+   * each, and `reply` is the chat's reply that asked (CV-17).
    */
-  const exportThroughPreview = (format: NonNullable<typeof exportRequest>['format'], after = 0, nonce = Date.now()) => {
-    recordKept(format.replace('-outline', ''), result?.repxContent);
+  const exportThroughPreview = (formats: PrintFormat[], reply?: string | null) => {
+    for (const f of formats) recordKept(f.replace('-outline', ''), result?.repxContent);
     showPlate('print');
-    const request = { format, nonce };
-    if (after > 0) window.setTimeout(() => setExportRequest(request), after);
-    else setExportRequest(request);
+    setExportRequest({ formats, nonce: Date.now(), reply });
   };
 
   /**
@@ -6014,20 +6002,19 @@ export default function App() {
     setError(null);
     // Rows that arrive after another session opened are not its rows (2026-11-06).
     const session = sessionId.current;
+    // Its own controller (2026-11-11, PX-28), aborted by the Preview's Stop, and by the turn that asked while that is live.
+    const ctl = new AbortController();
+    const stop = ctl.signal;
+    testDataStop.current = ctl;
     try {
-      const { generateTestData } = await loadGemini();
-      // Each field's SQL type, when a database says it, so the rows come as it holds them (batch DF).
-      const types = activeDatabase && activeQuery ? (await import('./lib/sqlPreview')).fieldTypes(activeDatabase, activeQuery) : undefined;
-      const rows = await generateTestData(
-        boundFields,
-        { title: result.title, description: activeDescribeRef.current?.description ?? result.content?.slice(0, 600), types },
-        20,
-        config,
-      );
-      if (sessionId.current !== session) return;
+      const { runTestData, linkStop } = await import('./lib/testDataRun');
+      linkStop(ctl, turnAbortRef.current?.signal);
+      const rows = await runTestData(boundFields, { title: result.title, description: activeDescribeRef.current?.description ?? result.content?.slice(0, 600) }, activeDatabase, activeQuery, config, stop);
+      if (sessionId.current !== session || stop.aborted) return;
       setTestRows(rows);
       setSaveNotice(`${rows.length} sample rows generated for the preview.`);
     } catch (err: any) {
+      if (stop.aborted) return;
       if (isMissingApiKey(err)) {
         setError('Add your Gemini API key to use the workspace.');
         setIsConfigOpen(true);
@@ -6035,6 +6022,7 @@ export default function App() {
         setError(err?.message || 'Could not generate test data.');
       }
     } finally {
+      if (testDataStop.current === ctl) testDataStop.current = null;
       setTestDataBusy(false);
     }
   };
@@ -6505,9 +6493,13 @@ export default function App() {
     addToBox(`Change the text of ${name} to `);
     focusBox();
   };
-  /** A sentence about what a control is for (2026-11-10): the chat's `describe` edit writes it to AccessibleDescription. */
+  /**
+   * A sentence about what a control is for (2026-11-10): the chat's `describe`
+   * edit writes it to AccessibleDescription, which screen readers read, so the
+   * box says nothing of "the AI" (2026-11-11, CV-30).
+   */
   const askToDescribe = (name: string) => {
-    addToBox(`Describe ${name} for the AI as `);
+    addToBox(`Describe ${name} as `);
     focusBox();
   };
 
@@ -6619,7 +6611,7 @@ export default function App() {
       /* What has a button and had no command (2026-11-06, the workspace
          audit): every format, Share, the project's menu, the pin, Test data. */
       for (const [format, name] of [['pdf', 'PDF'], ['pdf-outline', 'PDF with outline'], ['xlsx', 'Excel workbook'], ['csv', 'CSV'], ['docx', 'Word document'], ['rtf', 'RTF'], ['html', 'HTML page'], ['png', 'image']] as const) {
-        list.push({ id: `export-${format}`, label: `Export as ${name}`, run: () => exportThroughPreview(format) });
+        list.push({ id: `export-${format}`, label: `Export as ${name}`, run: () => exportThroughPreview([format]) });
       }
       if (result.repxContent) list.push({ id: 'share', label: 'Share the report', run: () => setIsShareOpen(true) });
       if (boundFields.length) list.push({ id: 'testdata', label: 'Fill the Preview with test data', run: () => { showPlate('print'); void handleTestData(); } });
@@ -6675,19 +6667,16 @@ export default function App() {
 
   runToolsRef.current = (tools) => {
     const PANE_PLATES: Record<string, Plate> = { mockup: 'proof', preview: 'print', data: 'data', spec: 'spec', repx: 'xml' };
-    let exports = 0;
-    tools.forEach((tool, i) => {
+    const formats: PrintFormat[] = [];
+    tools.forEach((tool) => {
       if (tool.name === 'show') showPlate(PANE_PLATES[tool.pane ?? 'preview'] ?? 'print');
       else if (tool.name === 'testData') {
         showPlate('print');
         if (boundFields.length) void handleTestData();
       } else if (tool.name === 'export') {
         if (tool.format === 'repx') downloadDesign();
-        else if (tool.format) {
-          // One at a time (agent audit item 38): the Preview holds one
-          // request, and two set in one go made one export.
-          exportThroughPreview(tool.format, exports++ * 1500, Date.now() + i);
-        }
+        // Gathered, and asked of the Preview as one request below (PX-17).
+        else if (tool.format) formats.push(tool.format);
       } else if (tool.name === 'designer') void openInDesigner();
       // "Undo that" (agent audit item 85): the reply's own Undo when the last
       // change is a reply's, else the corner's.
@@ -6697,6 +6686,7 @@ export default function App() {
         else undoReport();
       } else if (tool.name === 'translate') void translateReport(tool.language ?? '', toolReplyRef.current);
     });
+    if (formats.length) exportThroughPreview(formats, toolReplyRef.current);
   };
   /** The open project as it is saved, or nothing for unsaved work (WS-23). */
   const openSaved = openProjectId ? savedReports.find((r) => r.id === openProjectId) : undefined;
@@ -7320,7 +7310,7 @@ export default function App() {
                   <ExportPanel
                     onRepx={result.repxContent ? downloadDesign : undefined}
                     onDesigner={result.repxContent && !designerOpen ? () => openInDesigner() : undefined}
-                    onPrint={(format) => exportThroughPreview(format)}
+                    onPrint={(format) => exportThroughPreview([format])}
                     onClose={() => setIsExportOpen(false)}
                   />
                 </Suspense>
@@ -7381,8 +7371,11 @@ export default function App() {
                       onTestData={handleTestData}
                       onClearTestData={() => setTestRows(null)}
                       testDataBusy={testDataBusy}
+                      onStopTestData={() => testDataStop.current?.abort()}
                       exportRequest={exportRequest}
                       onExportRequestDone={() => setExportRequest(null)}
+                      // The reply that asked says what was saved (CV-17).
+                      onExported={setMessages}
                       onSelectionChange={(names) => {
                         setPreviewSelection(names);
                         // An empty list on leaving the Preview is not a choice to forget it.
@@ -7407,10 +7400,12 @@ export default function App() {
                          still describe the source document, which is what the
                          Mockup is for — nudging a control in the file does not
                          change what was uploaded. */
-                      onEdit={(xml, reason) => {
+                      onEdit={(xml, reason, continues) => {
                         previewEditedXml.current = xml;
                         // One step of the history per edit, and per drag, kept by
-                        // the history's effect: a drag is written once (2026-11-11, PR-03).
+                        // the history's effect: a drag is written once (2026-11-11, PR-03);
+                        // a held arrow carries on the step its first press began (PX-21).
+                        stepGoesOn.current = !!continues;
                         setResult({ ...result, repxContent: xml });
                         setSaveNotice(reason);
                       }}

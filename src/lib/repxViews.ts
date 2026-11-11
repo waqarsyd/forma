@@ -217,7 +217,9 @@ export function layoutFromRepx(xml: string | undefined | null, title = reportTit
     sections.push({ id: `section-${b + 1}`, name: SECTION_NAME[band.kind], type: SECTION_TYPE[band.kind] ?? 'detail', height: band.height + top, elements });
     if (pageTop !== null) pageTop += band.height;
   });
-  return { title, pageWidth: structure.page.width, sections };
+  // The paper's height too (2026-11-11, PX-23): the Mockup drew at least 1100
+  // units whatever the unit, so an A4 page in tenths of a millimetre was 110 mm.
+  return { title, pageWidth: structure.page.width, ...(structure.page.height > 0 ? { pageHeight: structure.page.height } : {}), sections };
 }
 
 /**
