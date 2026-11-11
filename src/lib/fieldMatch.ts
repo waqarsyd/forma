@@ -175,21 +175,28 @@ export function matchColumns(columns: readonly ColumnEvidence[], fields: readonl
  * `[Old]` in an expression (a total's `sumSum([Old])` too) and a group's
  * `FieldName`. The one-click fix for a column bound to a field the chosen
  * query does not have; `Text`, the fallback, is left as it was.
+ *
+ * `where`, given an attribute's offset in `xml`, says whether that place is
+ * renamed (2026-11-11, the full audit, SD-26): a rename found for one query
+ * leaves a detail band reading another query's field of the same name alone.
+ * Both attributes are found in one pass, so every offset is the input's.
  */
-export function renameField(xml: string, from: string, to: string): { xml: string; count: number } {
+export function renameField(xml: string, from: string, to: string, where?: (at: number) => boolean): { xml: string; count: number } {
   const esc = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const field = new RegExp(`^${esc}$`, 'i');
   let count = 0;
-  const out = xml
-    .replace(/(\sExpression=")([^"]*)(")/g, (_, a: string, expr: string, b: string) => {
-      const next = expr.replace(new RegExp(`\\[${esc}\\]`, 'gi'), () => {
-        count++;
-        return `[${to}]`;
-      });
-      return `${a}${next}${b}`;
-    })
-    .replace(new RegExp(`(\\sFieldName=")${esc}(")`, 'gi'), (_, a: string, b: string) => {
+  const out = xml.replace(/(\s(?:Expression|FieldName)=")([^"]*)(")/g, (whole: string, a: string, value: string, b: string, at: number) => {
+    if (where && !where(at)) return whole;
+    if (a.includes('FieldName')) {
+      if (!field.test(value)) return whole;
       count++;
       return `${a}${to}${b}`;
+    }
+    const next = value.replace(new RegExp(`\\[${esc}\\]`, 'gi'), () => {
+      count++;
+      return `[${to}]`;
     });
+    return `${a}${next}${b}`;
+  });
   return { xml: out, count };
 }

@@ -72,4 +72,13 @@ describe('renaming a field', () => {
       count: 3,
     });
   });
+
+  it('renames only the places it is told to, by their offset in the report', () => {
+    const xml = '<a Expression="[City]" /><b FieldName="City" /><c Expression="[City]" />';
+    const second = xml.indexOf('<c');
+    expect(renameField(xml, 'City', 'Town$&', (at) => at < second)).toEqual({
+      xml: '<a Expression="[Town$&]" /><b FieldName="Town$&" /><c Expression="[City]" />',
+      count: 2,
+    });
+  });
 });

@@ -370,7 +370,7 @@ export default function DataBinding({ repxContent, onApply, onPromptToExpression
               aria-label="Paste a data sample or schema"
             />
             <p className="db-note">
-              Read in the browser, never sent anywhere. Forma connects to no database — a sample
+              Read in the browser, never sent anywhere. Forma in your browser connects to no database — a sample
               gives the field names, the types and a real value to format against, which is
               everything binding needs. Forma&apos;s SQL Server layout or sample script output can
               be pasted here too.

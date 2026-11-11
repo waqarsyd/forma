@@ -288,7 +288,8 @@ export function writeSqlDataSource(repx: string, spec: DataSourceSpec, version =
   spec = withDetails(spec);
   if (!/<XtraReportsLayoutSerializer\b/.test(repx)) return { xml: repx, applied: false, reason: 'there is no report to write into', parameters: [] };
   const connection = spec.connectionName.trim();
-  if (!connection || /[;=]/.test(connection)) return { xml: repx, applied: false, reason: 'the connection needs a name, as in your application’s <connectionStrings>, not a connection string', parameters: [] };
+  // In plain words (2026-11-11, the full audit's SDW follow-up): the name, never a server, a login or a password.
+  if (!connection || /[;=]/.test(connection)) return { xml: repx, applied: false, reason: 'the connection needs the name your application knows the database by, not a server, a login or a password', parameters: [] };
   const fields = queryFields(spec.schema, spec.query);
   if (!fields.length) return { xml: repx, applied: false, reason: `${queryName(spec.query)} has no columns Forma can read, so the report would have nothing to print`, parameters: [] };
 

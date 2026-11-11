@@ -159,18 +159,23 @@ function withoutStrings(sql: string): string {
 /**
  * Custom SQL's check: one SELECT statement, nothing that writes, runs or
  * grants, and the `@parameters` it names, which become query parameters.
+ *
+ * Each problem says what the query would do and that a report only reads
+ * (2026-11-11, the full audit's SDW follow-up): "Only a SELECT (or WITH ...
+ * SELECT) can feed a report" and "writes, runs or grants" read as the
+ * check's own rules rather than as the reason.
  */
 export function checkCustomSql(sql: string): { ok: boolean; problems: string[]; parameters: string[] } {
   const code = withoutStrings(stripComments(sql)).trim();
   const problems: string[] = [];
   if (!code) problems.push('Write a SELECT statement.');
   else {
-    if (!/^(\(?\s*SELECT\b|WITH\b[\s\S]*\bSELECT\b)/i.test(code)) problems.push('Only a SELECT (or WITH ... SELECT) can feed a report.');
+    if (!/^(\(?\s*SELECT\b|WITH\b[\s\S]*\bSELECT\b)/i.test(code)) problems.push('A report only reads, so its query starts with SELECT, or with WITH and then a SELECT.');
     const statements = code.split(';').map((s) => s.trim()).filter(Boolean);
-    if (statements.length > 1) problems.push('One statement only: a report reads one result.');
+    if (statements.length > 1) problems.push('Write one statement: a report reads one result.');
     const word = WRITES.exec(code);
-    if (word) problems.push(`"${word[1]}" is not allowed in a report’s query: it writes, runs or grants.`);
-    if (/\bSELECT\b[^;]*\bINTO\b/i.test(code)) problems.push('SELECT ... INTO creates a table; a report only reads.');
+    if (word) problems.push(`"${word[1]}" would change the database, run something else or give rights, and a report only reads.`);
+    if (/\bSELECT\b[^;]*\bINTO\b/i.test(code)) problems.push('SELECT ... INTO makes a new table, and a report only reads.');
   }
   const parameters = [...new Set([...code.matchAll(/(?<![@\w])@([A-Za-z_]\w*)/g)].map((m) => `@${m[1]}`))];
   return { ok: problems.length === 0, problems, parameters };

@@ -225,9 +225,60 @@ function renameInQuery(query: ReportQuery, r: { table: string; from: string; to:
 }
 
 /**
+ * Which query each place in the report reads (2026-11-11, the full audit,
+ * SD-26): given an offset, the query its innermost DetailReportBand's
+ * DataMember resolves to through the source's relations, or the report's own
+ * DataMember (its main query when it names none) outside every detail band.
+ * null when the member names no query this report's sources hold.
+ *
+ * The same walk as `auditDataSources`' field check in repxSqlDataSource.ts,
+ * which keeps its own copy private; the two answer the same question and
+ * must agree.
+ */
+function queryAt(xml: string): (at: number) => string | null {
+  const sources = readRepxDataSources(xml);
+  const queries = new Set(sources.flatMap((d) => d.queries.map((q) => q.name)));
+  const relations = new Map(sources.flatMap((d) => d.relations.map((r) => [r.name, r.detail] as const)));
+  const root = /<XtraReportsLayoutSerializer\b[^>]*>/.exec(xml)?.[0] ?? '';
+  const rootMember = /\sDataMember="([^"]*)"/.exec(root)?.[1] || mainQueryOf(xml)?.query.name || '';
+  const resolve = (member: string): string | null => {
+    const path = member.split('.');
+    let query: string | null = queries.has(path[0]) ? path[0] : null;
+    for (let i = 1; i < path.length && query; i++) query = relations.get(path[i]) ?? null;
+    return query;
+  };
+  // The span of every DetailReportBand, with its DataMember.
+  const regions: { start: number; end: number; member: string }[] = [];
+  for (const open of xml.matchAll(/<(Item\d+)\s[^>]*ControlType="DetailReportBand"[^>]*>/g)) {
+    const tag = /<(\/?)Item\d+\b[^>]*?(\/?)>/g;
+    tag.lastIndex = open.index!;
+    let depth = 0;
+    let end = xml.length;
+    for (let m = tag.exec(xml); m; m = tag.exec(xml)) {
+      if (m[1]) {
+        if (--depth === 0) {
+          end = m.index + m[0].length;
+          break;
+        }
+      } else if (!m[2]) depth++;
+    }
+    regions.push({ start: open.index!, end, member: /\sDataMember="([^"]*)"/.exec(open[0])?.[1] ?? '' });
+  }
+  return (at) => {
+    const inside = regions.filter((r) => r.start <= at && at < r.end).sort((a, b) => a.end - a.start - (b.end - b.start))[0];
+    return resolve(inside ? inside.member : rootMember);
+  };
+}
+
+const bare = (name: string) => name.replace(/^.*\./, '').toLowerCase();
+
+/**
  * The report's source written again from a layout (item 30's fix): the query
  * read back, any renames applied to it, its parameters and lookups kept, and
- * each renamed field renamed wherever the report prints or groups by it.
+ * each renamed field renamed wherever the report prints or groups by it from
+ * a query that reads the renamed table (2026-11-11, SD-26: until then every
+ * `[Old]` in the report, a detail band reading another table's field of the
+ * same name included). A place whose query cannot be told is renamed, as before.
  */
 export function refreshDataSource(repx: string, schema: SqlSchema, renames: readonly { table: string; from: string; to: string }[] = []): { xml: string; applied: boolean; reason: string } {
   let query = queryFromRepx(repx, schema);
@@ -238,7 +289,18 @@ export function refreshDataSource(repx: string, schema: SqlSchema, renames: read
   let xml = done.xml;
   const renamed: string[] = [];
   for (const r of renames) {
-    const out = renameField(xml, r.from, r.to);
+    // The queries that read the renamed table (or run the renamed procedure), in the source as written now.
+    const readers = new Set(
+      readRepxDataSources(xml)
+        .flatMap((d) => d.queries)
+        .filter((q) => q.tables.some((t) => bare(t) === bare(r.table)) || (q.procName !== undefined && bare(q.procName) === bare(r.table)))
+        .map((q) => q.name),
+    );
+    const at = queryAt(xml);
+    const out = renameField(xml, r.from, r.to, (offset) => {
+      const query = at(offset);
+      return query === null || readers.has(query);
+    });
     xml = out.xml;
     renamed.push(`[${r.from}] to [${r.to}]${out.count ? ` in ${out.count} place${out.count === 1 ? '' : 's'}` : ''}`);
   }

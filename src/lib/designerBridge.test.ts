@@ -16,6 +16,8 @@ import {
   designerLocalOrigin,
   loopbackPermission,
   DESIGNER_SITE_ORIGINS,
+  askDesigner,
+  healthTimeout,
 } from './designerBridge';
 import { readFileSync } from 'node:fs';
 
@@ -168,7 +170,7 @@ describe('sendToDesigner', () => {
     const pending = sendToDesigner('<XtraReportsLayoutSerializer/>', 'a.repx');
     // Assert the rejection before advancing, so an unhandled rejection cannot
     // escape between the two statements.
-    const assertion = expect(pending).rejects.toThrow(/did not respond|timed out/i);
+    const assertion = expect(pending).rejects.toThrow('Forma Designer did not answer. If a window of it is open, close it and try again.');
 
     await vi.advanceTimersByTimeAsync(20_000);
     await assertion;
@@ -216,9 +218,19 @@ describe('sendToDesigner', () => {
     expect(init.method).toBe('POST');
   });
 
-  it('reports a refusal from the companion', async () => {
+  it('reports a refusal from the companion, its status kept and its words plain', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 415 })));
-    await expect(sendToDesigner('<x/>', 'a.repx')).rejects.toThrow(/415/);
+    const error = await sendToDesigner('<x/>', 'a.repx').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(DesignerRefused);
+    expect((error as DesignerRefused).status).toBe(415);
+    // SD-18 (2026-11-11): no HTTP status and no "companion" in what the dialog shows.
+    expect((error as Error).message).toBe('Forma Designer could not open this report.');
+  });
+
+  it('says in words when it stopped answering, never the browser\'s "Failed to fetch"', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+    const error = (await sendToDesigner('<x/>', 'a.repx').catch((e: unknown) => e)) as Error;
+    expect(error.message).toBe('Forma Designer stopped answering before it took the report. Start it from the Start menu, then try again.');
   });
 
   it('resolves when the companion accepts', async () => {
@@ -415,6 +427,42 @@ describe('whether this browser is on Windows', () => {
     expect(onWindows({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)' })).toBe(false);
     expect(onWindows({ userAgent: 'Mozilla/5.0 (X11; Linux x86_64)' })).toBe(false);
     expect(onWindows({ userAgent: 'SomeBrowser/1.0' })).toBeNull();
+  });
+});
+
+/*
+ * SD-08 (2026-11-11): Chrome holds the request to 127.0.0.1 while it asks the
+ * person about it, so the first /health from the website waits long enough
+ * for an answer instead of 1.5 s, after which the dialog used to start Forma
+ * Designer (a second question) and call it not installed.
+ */
+describe('how long /health is waited for', () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  it('waits for the person while the browser asks, and briefly otherwise', () => {
+    expect(healthTimeout('prompt')).toBe(30_000);
+    expect(healthTimeout('granted')).toBe(1500);
+    expect(healthTimeout('unknown')).toBe(1500);
+    expect(healthTimeout('denied')).toBe(1500);
+  });
+
+  it('gets the answer that arrives after the person allowed it', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn((_u: string, init?: RequestInit) =>
+      new Promise<Response>((resolve, reject) => {
+        // The person answers the browser's question after ten seconds.
+        const timer = setTimeout(() => resolve(new Response(JSON.stringify({ app: 'RepxDesigner', designerVersion: '20.1.3.0' }), { status: 200 })), 10_000);
+        init?.signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          const e = new Error('aborted'); e.name = 'AbortError'; reject(e);
+        });
+      })));
+    const waited = askDesigner(healthTimeout('prompt'));
+    await vi.advanceTimersByTimeAsync(11_000);
+    expect((await waited)?.devexpress?.version).toBe('20.1');
+    const cut = askDesigner(healthTimeout('granted'));
+    await vi.advanceTimersByTimeAsync(11_000);
+    expect(await cut).toBeNull();
   });
 });
 

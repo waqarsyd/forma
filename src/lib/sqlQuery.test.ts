@@ -67,9 +67,10 @@ describe('custom SQL', () => {
   });
 
   it('refuses what writes, runs, grants or creates, and a second statement', () => {
-    expect(checkCustomSql('DELETE FROM dbo.Orders').problems).toEqual(['Only a SELECT (or WITH ... SELECT) can feed a report.', '"DELETE" is not allowed in a report’s query: it writes, runs or grants.']);
-    expect(checkCustomSql('SELECT 1; DROP TABLE dbo.Orders').problems).toContain('One statement only: a report reads one result.');
-    expect(checkCustomSql('SELECT * INTO dbo.Copy FROM dbo.Orders').problems).toContain('SELECT ... INTO creates a table; a report only reads.');
+    // In plain words, each ending on why (2026-11-11, the full audit's SDW follow-up).
+    expect(checkCustomSql('DELETE FROM dbo.Orders').problems).toEqual(['A report only reads, so its query starts with SELECT, or with WITH and then a SELECT.', '"DELETE" would change the database, run something else or give rights, and a report only reads.']);
+    expect(checkCustomSql('SELECT 1; DROP TABLE dbo.Orders').problems).toContain('Write one statement: a report reads one result.');
+    expect(checkCustomSql('SELECT * INTO dbo.Copy FROM dbo.Orders').problems).toContain('SELECT ... INTO makes a new table, and a report only reads.');
     expect(checkCustomSql("SELECT * FROM OPENROWSET('x','y','z')").ok).toBe(false);
     expect(checkCustomSql('').problems).toEqual(['Write a SELECT statement.']);
   });

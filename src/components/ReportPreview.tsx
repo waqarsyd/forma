@@ -1351,7 +1351,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
       setLiveProcedures(out.names);
       setLiveLine(`The report runs the stored procedure ${out.names.join(', ')}, which could change data: run it only if you know it only reads.`);
     } else if (out.kind === 'missing') {
-      setLiveLine(`The companion keeps no connection named ${out.names.join(', ')}: add it from its tray menu, SQL Server connections.`);
+      setLiveLine(`Forma Designer keeps no connection named ${out.names.join(', ')}. Add it from its tray menu, SQL Server connections.`);
     } else {
       setLiveLine(out.message);
     }
@@ -2473,7 +2473,7 @@ export default function ReportPreview({ repxContent, layout, title, onEdit, reco
         {ownSource && liveReachable && !given && (
           /* Live rows from the database on this PC (2026-11-09, Phase 2, item 37). */
           <>
-            <button type="button" className="wb-pill wb-pill--outline" onClick={() => void fillLive()} title="The report’s own data source, filled on this PC by the companion, with the values asked for above">
+            <button type="button" className="wb-pill wb-pill--outline" onClick={() => void fillLive()} title="The report’s own data source, filled on this PC by Forma Designer, with the values asked for above">
               {live ? `Live: ${live.rows.length} rows · Refresh` : 'Live rows'}
             </button>
             {live && <button type="button" className="wb-pill wb-pill--outline" onClick={() => setLive(null)}>Clear</button>}

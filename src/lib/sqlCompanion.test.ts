@@ -15,7 +15,12 @@ import {
   companionFill,
   companionLayout,
   companionReachableFrom,
+  CompanionProblem,
+  COMPANION_PAGE_PORTS,
   hintOfNetType,
+  NO_DEVEXPRESS_FOR_ROWS,
+  notRunning,
+  pagePortNote,
   previewFromFill,
   rowsOf,
   type FilledQuery,
@@ -55,7 +60,32 @@ describe('who may call it', () => {
 
   it('names a connection it does not keep in words', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ missing: ['Sales'] }), { status: 404 })));
-    await expect(companionLayout('Sales')).rejects.toThrow('The companion keeps no connection named Sales.');
+    await expect(companionLayout('Sales')).rejects.toThrow('Forma Designer keeps no connection named Sales. Add it from its tray menu, SQL Server connections.');
+  });
+
+  /* SD-09 (2026-11-11): every failure in the product's name and plain words, with the way forward. */
+  it('says it is not running, with the download, for no answer and for an older one', async () => {
+    const NOT_RUNNING = 'Forma Designer is not running, or is older than this feature. Start it from the Start menu, or download the latest.';
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+    const none = (await companionLayout('Sales').catch((e: unknown) => e)) as CompanionProblem;
+    expect(none).toBeInstanceOf(CompanionProblem);
+    expect(none.message).toBe(NOT_RUNNING);
+    expect(none.link).toEqual({ href: '/download', label: 'Download Forma Designer' });
+    // A Forma Designer from before the SQL routes answers them "Not found", as text.
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('Not found', { status: 404 })));
+    await expect(companionLayout('Sales')).rejects.toThrow(NOT_RUNNING);
+  });
+
+  it('names the page port the SQL routes do not answer, which reaches the page as no answer', () => {
+    expect(pagePortNote('http://localhost:3000')).toBe('');
+    expect(pagePortNote('http://127.0.0.1:3001')).toBe('');
+    expect(pagePortNote('http://localhost:5173')).toBe(' It reads databases only for Forma at port 3000 or 3001, and this page is at port 5173: start Forma Designer with --page-port 5173 to use it here.');
+    expect(notRunning('http://localhost:5173').message).toMatch(/--page-port 5173 to use it here\.$/);
+    // The website is told how elsewhere; it never asks.
+    expect(pagePortNote('https://openforma.web.app')).toBe('');
+    // Kept equal to the ports Forma Designer answers.
+    const program = readFileSync('tools/RepxDesigner/Program.cs', 'utf8');
+    expect(/PagePorts = new HashSet<int> \{ ([^}]*) \}/.exec(program)![1].split(',').map((p) => Number(p.trim()))).toEqual([...COMPANION_PAGE_PORTS]);
   });
 });
 
@@ -66,10 +96,22 @@ describe('a fill', () => {
     expect(await companionFill('<x/>', {})).toEqual({ kind: 'procedures', names: ['SalesByRegion'] });
     answer(404, { missing: ['Sales'] });
     expect(await companionFill('<x/>', {})).toEqual({ kind: 'missing', names: ['Sales'] });
+    // The database's own words, without the .NET type name in front of them.
     answer(502, { error: 'SqlException: Invalid column name' });
-    expect(await companionFill('<x/>', {})).toEqual({ kind: 'error', message: 'SqlException: Invalid column name' });
+    expect(await companionFill('<x/>', {})).toEqual({ kind: 'error', message: 'Forma Designer could not read the database: Invalid column name' });
+    // No DevExpress to fill it with: what is needed, and where the trial is.
+    answer(424, { devexpress: null, found: [], oldest: '20.1' });
+    expect(await companionFill('<x/>', {})).toEqual({
+      kind: 'error',
+      message: 'Live rows need DevExpress Reporting on this PC, since it fills the report as DevExpress does. Its free trial is at devexpress.com.',
+      link: { href: 'https://www.devexpress.com/products/try/', label: 'Get the DevExpress trial' },
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('Not found', { status: 404 })));
+    expect(await companionFill('<x/>', {})).toMatchObject({ kind: 'error', link: { href: '/download' } });
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
-    expect((await companionFill('<x/>', {})).kind).toBe('error');
+    expect(await companionFill('<x/>', {})).toMatchObject({ kind: 'error', message: /^Forma Designer is not running/ });
+    // Never the code's word for it.
+    for (const s of [notRunning('http://localhost:3000').message, NO_DEVEXPRESS_FOR_ROWS.message]) expect(s).not.toMatch(/companion|RepxDesigner|\d{3}\b/i);
   });
 
   it('asks for a procedure only when told, with each parameter value', async () => {

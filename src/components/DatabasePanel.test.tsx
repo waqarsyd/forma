@@ -117,7 +117,7 @@ describe('what the report reads', () => {
     const props = panel();
     fireEvent.click(screen.getByText('Write custom SQL'));
     fireEvent.change(screen.getByLabelText('Custom SQL'), { target: { value: 'DELETE FROM dbo.Orders' } });
-    expect(screen.getByText(/"DELETE" is not allowed/)).toBeTruthy();
+    expect(screen.getByText(/"DELETE" would change the database/)).toBeTruthy();
     expect((screen.getByText('Use this SQL') as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText('Custom SQL'), { target: { value: 'SELECT OrderID FROM dbo.Orders WHERE Freight > @Min' } });
     expect(screen.getByText(/Parameters: @Min/)).toBeTruthy();
@@ -216,8 +216,10 @@ CREATE TABLE dbo.Orders (OrderID int NOT NULL PRIMARY KEY, CustomerID int NOT NU
   });
 });
 
-/* Read from my SQL Server, through the companion on this PC (2026-11-09, Phase 2, item 36). */
-describe('the companion on this PC', () => {
+/* Read from my SQL Server, through Forma Designer on this PC (2026-11-09, Phase 2, item 36). */
+describe('Forma Designer on this PC', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   it('lists its connections and reads a layout through one, for App to keep', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (url.endsWith('/sql/connections')) return new Response(JSON.stringify({ connections: [{ name: 'FormaSample', mode: 'windows', database: 'FormaSample' }] }), { status: 200 });
@@ -226,19 +228,86 @@ describe('the companion on this PC', () => {
     }));
     const onLayoutText = vi.fn(async () => 'Database layout read: FormaSample.');
     panel({ database: null, onLayoutText });
-    fireEvent.click(screen.getByText('Look for the companion on this PC'));
+    fireEvent.click(screen.getByText('Look for Forma Designer on this PC'));
     expect(await screen.findByText('FormaSample (FormaSample)')).toBeTruthy();
     fireEvent.click(screen.getByText('Read the layout'));
     expect(await screen.findByText('Database layout read: FormaSample.')).toBeTruthy();
     expect(onLayoutText).toHaveBeenCalledWith('<?forma {"format":"forma-sql-schema"}?>');
-    vi.unstubAllGlobals();
   });
 
-  it('says how to start one when none answers', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+  /* SD-09 and SD-10 (2026-11-11): its name, the way forward, and a second look without leaving the tab. */
+  it('says how to start it when none answers, and looks again', async () => {
+    let up = false;
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      if (!up) throw new TypeError('Failed to fetch');
+      return new Response(JSON.stringify({ connections: [] }), { status: 200 });
+    }));
     panel({ database: null, onLayoutText: vi.fn(async () => null) });
-    fireEvent.click(screen.getByText('Look for the companion on this PC'));
-    expect(await screen.findByText(/No companion answered/)).toBeTruthy();
-    vi.unstubAllGlobals();
+    fireEvent.click(screen.getByText('Look for Forma Designer on this PC'));
+    expect(await screen.findByText(/^Forma Designer is not running, or is older than this feature/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Download Forma Designer' }).getAttribute('href')).toBe('/download');
+    up = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Look again' }));
+    expect(await screen.findByText(/Forma Designer keeps no connections yet/)).toBeTruthy();
+    // The empty answer can be asked again too, after a connection is added.
+    expect(screen.getByRole('button', { name: 'Look again' })).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/companion|RepxDesigner|--serve/i);
+  });
+
+  it('says a failed read in words, with the way forward', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/sql/connections')) return new Response(JSON.stringify({ connections: [{ name: 'FormaSample', mode: 'windows', database: 'FormaSample' }] }), { status: 200 });
+      throw new TypeError('Failed to fetch');
+    }));
+    panel({ database: null, onLayoutText: vi.fn(async () => 'read') });
+    fireEvent.click(screen.getByText('Look for Forma Designer on this PC'));
+    fireEvent.click(await screen.findByText('Read the layout'));
+    expect(await screen.findByText(/Forma Designer is not running/)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/Failed to fetch/);
+  });
+
+  /* SD-23 (2026-11-11): where the layout came from, said true next to the card that read it. */
+  it('says a layout read through it was read through it', async () => {
+    // A layout as a script names its database in its USE line.
+    const layoutText = 'USE [ShopDemo];\nCREATE TABLE dbo.Customers (CustomerID int NOT NULL PRIMARY KEY);';
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/sql/connections')) return new Response(JSON.stringify({ connections: [{ name: 'ShopDemo', mode: 'windows', database: 'ShopDemo' }] }), { status: 200 });
+      return new Response(layoutText, { status: 200 });
+    }));
+    const props = {
+      recent: ['ShopDemo'], onSwitch: vi.fn(), onForget: vi.fn(), query: null, onQuery: vi.fn(), selectionLabel: '', onBindField: vi.fn(), onCopy: vi.fn(async () => true),
+      onLayoutText: vi.fn(async () => 'Database layout read: ShopDemo.'),
+    };
+    const { rerender } = render(<DatabasePanel database={null} {...props} />);
+    fireEvent.click(screen.getByText('Look for Forma Designer on this PC'));
+    fireEvent.click(await screen.findByText('Read the layout'));
+    await screen.findByText('Database layout read: ShopDemo.');
+    rerender(<DatabasePanel database={schema} {...props} />);
+    expect(screen.getByText(/^Read through Forma Designer on this PC/)).toBeTruthy();
+    // A layout pasted or kept is not said to have been read through it.
+    cleanup();
+    panel();
+    expect(screen.getByText(/^Read from an SSMS script; kept in this browser, which never connects to your server\.$/)).toBeTruthy();
+  });
+});
+
+/* SD-11 (2026-11-11): the layout can always be pasted where it stays private. */
+describe('pasting the layout on this tab', () => {
+  it('has its own box, which reads what is pasted and says so', async () => {
+    const onLayoutText = vi.fn(async () => 'Database layout read: ShopDemo.');
+    panel({ database: null, onLayoutText });
+    expect(screen.getByText(/Paste it in the box below, where it stays in this browser/)).toBeTruthy();
+    expect((screen.getByText('Read what I pasted') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Paste the layout'), { target: { value: 'CREATE TABLE dbo.T (A int);' } });
+    fireEvent.click(screen.getByText('Read what I pasted'));
+    expect(await screen.findByText('Database layout read: ShopDemo.')).toBeTruthy();
+    expect(onLayoutText).toHaveBeenCalledWith('CREATE TABLE dbo.T (A int);');
+  });
+
+  it('says when what was pasted is not a layout', async () => {
+    panel({ database: null, onLayoutText: vi.fn(async () => null) });
+    fireEvent.change(screen.getByLabelText('Paste the layout'), { target: { value: 'hello' } });
+    fireEvent.click(screen.getByText('Read what I pasted'));
+    expect(await screen.findByText(/does not look like the layout script’s result/)).toBeTruthy();
   });
 });

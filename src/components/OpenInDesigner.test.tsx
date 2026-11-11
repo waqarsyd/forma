@@ -106,6 +106,56 @@ describe('Open in designer', () => {
     expect(screen.getByRole('button', { name: 'This is Windows: try anyway' })).toBeTruthy();
   });
 
+  /*
+   * SD-07 (2026-11-11): App passes a new onOpened on every render. With it in
+   * the asking's dependencies, each render while the dialog was open started
+   * the asking again, and a report already on its way was sent a second time.
+   */
+  it('asks once and sends once, however often App renders it', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/health')) return new Response(JSON.stringify({ app: 'RepxDesigner', version: '1.0.0', devexpress: { version: '20.1', build: '20.1.3' }, found: ['20.1'], oldest: '20.1' }), { status: 200 });
+      // The report is on its way while App renders again.
+      await gate;
+      return new Response('{"opened":"Invoice.repx"}', { status: 202 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const first = vi.fn();
+    const { rerender } = render(<OpenInDesigner {...props({ onOpened: first })} />);
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/open'))).toBe(true));
+    const latest = vi.fn();
+    for (let i = 0; i < 3; i++) rerender(<OpenInDesigner {...props({ onOpened: i === 2 ? latest : vi.fn(), repxContent: `<XtraReportsLayoutSerializer n="${i}" />` })} />);
+    release();
+    await waitFor(() => expect(latest).toHaveBeenCalledWith('Invoice.repx'));
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/open'))).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/health'))).toHaveLength(1);
+    expect(first).not.toHaveBeenCalled();
+  });
+
+  it('says what may be wrong when nothing answers, never only "not installed"', async () => {
+    companion(null);
+    render(<OpenInDesigner {...props()} />);
+    expect(await screen.findByText(/^Forma Designer did not answer\. It may not be installed, may be an older version, or your browser was not allowed to reach it\./, undefined, { timeout: 5000 })).toBeTruthy();
+    // The download comes first among the ways forward.
+    const actions = screen.getByRole('link', { name: 'Download Forma Designer' }).parentElement!;
+    expect(actions.firstElementChild!.textContent).toBe('Download Forma Designer');
+  });
+
+  it('names a DevExpress that lacks the WinForms designer, rather than calling it not installed', async () => {
+    companion({ app: 'RepxDesigner', version: '1.0.0', designerVersion: null, devexpress: null, found: ['23.2'], oldest: '20.1' });
+    render(<OpenInDesigner {...props()} />);
+    expect(await screen.findByRole('heading', { name: 'DevExpress 23.2 has no WinForms designer' })).toBeTruthy();
+    expect(screen.getByText(/this PC has DevExpress 23\.2, but not its WinForms report designer/)).toBeTruthy();
+  });
+
+  it('shows a refusal in words, with no HTTP status', async () => {
+    companion({ app: 'RepxDesigner', version: '1.0.0', designerVersion: '20.1.3.0', devexpress: { version: '20.1', build: '20.1.3' }, found: ['20.1'], oldest: '20.1' }, 500);
+    render(<OpenInDesigner {...props()} />);
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe('Forma Designer could not open this report.');
+  });
+
   it('offers Export .repx at every step, which closes it', async () => {
     companion(null);
     const onExport = vi.fn();

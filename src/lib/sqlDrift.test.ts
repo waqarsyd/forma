@@ -134,6 +134,30 @@ describe('drift against a newer layout', () => {
     expect(count(fixed.xml, 'DynamicListLookUpSettings')).toBe(1);
   });
 
+  /*
+   * SD-26 (2026-11-11, the full audit): two queries returning a field of the
+   * same name. A line's own City, printed in the detail band, is not the
+   * customer's City the rename was found for, and kept its name until now
+   * only by luck of there being one query.
+   */
+  it('renames a field only where the renamed table’s query is read', () => {
+    const both = LAYOUT.replace('UnitPrice decimal(10,2) NOT NULL)', 'UnitPrice decimal(10,2) NOT NULL, City nvarchar(40) NULL)');
+    const lines = layout(both);
+    const written = writeSqlDataSource(BASE, { connectionName: 'FormaSample', schema: lines, query: orders }).xml;
+    // The detail band prints the line's City; the Detail band the customer's.
+    expect(count(written, 'Expression="[City]"')).toBe(2);
+    const renamedLayout = layout(both.replace('City nvarchar(40) NULL, Region', 'CityName nvarchar(40) NULL, Region'));
+    const drift = driftOf(written, renamedLayout).filter((d) => d.kind === 'renamed');
+    expect(drift.map((d) => d.rename)).toEqual([{ table: 'Customers', from: 'City', to: 'CityName' }]);
+    const fixed = refreshDataSource(written, renamedLayout, [drift[0].rename!]);
+    expect(fixed.reason).toMatch(/renamed \[City\] to \[CityName\] in 1 place$/);
+    const detail = /ControlType="DetailReportBand"[\s\S]*$/.exec(fixed.xml)![0];
+    expect(detail).toContain('Expression="[City]"');
+    expect(detail).not.toContain('[CityName]');
+    expect(count(fixed.xml, 'Expression="[CityName]"')).toBe(1);
+    expect(driftOf(fixed.xml, renamedLayout).filter((d) => d.kind === 'renamed' || d.kind === 'missing-column')).toEqual([]);
+  });
+
   it('says what a rewrite stops reading', () => {
     const gone = layout(LAYOUT.replace('City nvarchar(40) NULL, ', ''));
     expect(driftOf(report, gone)[0]).toMatchObject({ kind: 'missing-column', message: 'Customers.City is not in FormaSample, so DevExpress refuses the query and the report prints nothing.' });

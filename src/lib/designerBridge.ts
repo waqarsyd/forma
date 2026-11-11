@@ -1,21 +1,18 @@
 /**
- * Talks to RepxDesigner, the local companion that opens a generated report in
- * the DevExpress designer.
+ * Talks to Forma Designer (tools/RepxDesigner, called "the companion" in the
+ * code), the Windows app that opens a generated report in the DevExpress
+ * designer. It listens on loopback.
  *
- * A browser cannot start a program unaided, so the "Open in designer" button
- * first asks whether something is already running on the machine.
- * `tools/RepxDesigner` listens on loopback.
- *
- * **The probe decides what a click does, not whether the button is drawn.**
- * This comment said "if nothing answers, Forma shows no button and Export is
- * the whole story", and that stopped being true when `launchDesigner()` was
- * added: `App.tsx` keeps the button in the bar always and says so at
- * `designerReady`, because requiring someone to remember a tray app before a
- * one-click action works is most of the reason the button went unused. A
- * running companion is handed the report; a silent port gets a
- * `forma-repx://` launch and a wait. Worth correcting rather than tidying —
- * the stale sentence had been copied into the public Terms, where it told
- * visitors the button would stay hidden (fixed 2026-09-08).
+ * **The Open in designer dialog asks when it is clicked, and at no other
+ * time** (components/OpenInDesigner.tsx, since 2026-11-09; this comment
+ * described a button App kept in its bar until the full audit of 2026-11-11,
+ * SD-19). The dialog reads the browser's permission without asking, asks
+ * /health, starts Forma Designer through `forma-repx://` and waits when
+ * nothing answers, then hands the report over; `designerStep` below decides
+ * what each state says. Every step offers Export .repx. The older sentence
+ * "if nothing answers, Forma shows no button" had once been copied into the
+ * public Terms, which is why a stale comment here is worth correcting rather
+ * than tidying.
  *
  * Export .repx remains the path that needs none of this, which is the actual
  * degradation guarantee: a Windows-and-DevExpress-only convenience bolted onto
@@ -93,6 +90,12 @@ export const DESIGNER_SITE_ORIGINS = ['https://openforma.web.app', 'https://form
  * companion's `/sql/` routes answer (Phase 2 of the SQL Server programme),
  * so `companionReachableFrom` in sqlCompanion.ts is this, not the wider
  * `designerReachableFrom`.
+ *
+ * Any port, as /open accepts. Since 2026-11-11 (SE-05) the `/sql/` routes
+ * answer only ports 3000 and 3001 and those Forma Designer was started with
+ * `--page-port N`, which a page cannot ask about: a refusal there reaches the
+ * page as no answer at all (no CORS header), so `COMPANION_PAGE_PORTS` in
+ * sqlCompanion.ts says it where the Data tab reports one.
  */
 export function designerLocalOrigin(origin: string): boolean {
   return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
@@ -274,22 +277,28 @@ export async function sendToDesigner(repxContent: string, fileName: string): Pro
   } catch (error: any) {
     // Distinguish "it never answered" from "it could not be reached": the first
     // means the companion is running and stuck, and the remedy is to look at
-    // it; the second means it is not running at all.
-    if (error?.name === 'AbortError') {
-      throw new Error(
-        `The designer companion did not respond within ${SEND_TIMEOUT_MS / 1000} seconds. ` +
-          'It may be waiting on a dialog — check the RepxDesigner window.'
-      );
-    }
-    throw error;
+    // it; the second means it stopped between /health and /open. Both in the
+    // product's name and plain words (2026-11-11, the full audit, SD-18): the
+    // dialog showed "The designer companion did not respond within 15
+    // seconds" and, for the second, the browser's own "Failed to fetch".
+    if (error?.name === 'AbortError') throw new Error(DESIGNER_STUCK);
+    throw new Error(DESIGNER_GONE);
   } finally {
     clearTimeout(timer);
   }
 
   if (!response.ok) {
-    throw new DesignerRefused(response.status, `The designer companion refused the report (HTTP ${response.status}).`);
+    // The status stays on the error for designerStep (424: no DevExpress); the words carry none.
+    throw new DesignerRefused(response.status, DESIGNER_REFUSED);
   }
 }
+
+/** Forma Designer accepted the connection and then said nothing: a dialog of its own is the usual cause. */
+export const DESIGNER_STUCK = 'Forma Designer did not answer. If a window of it is open, close it and try again.';
+/** It answered /health a moment before and could not be reached for the report. */
+export const DESIGNER_GONE = 'Forma Designer stopped answering before it took the report. Start it from the Start menu, then try again.';
+/** It answered, and refused the report. */
+export const DESIGNER_REFUSED = 'Forma Designer could not open this report.';
 
 /** A refusal by the companion, with its status: 424 says there is no DevExpress to open it in. */
 export class DesignerRefused extends Error {
@@ -346,8 +355,23 @@ export function readDesignerHealth(body: unknown): DesignerHealth | null {
   };
 }
 
+/**
+ * How long to wait for /health, by what the browser will do with the request
+ * (2026-11-11, the full audit, SD-08). Chrome holds a loopback request while
+ * it asks whether this site may reach apps on the device, so 1.5 s, right
+ * for an answer or a refused connection, cut off anyone who read the question
+ * before answering it: the dialog then started Forma Designer, which the
+ * browser asked about a second time, and called it not installed. While the
+ * browser will ask, the wait is long enough to read and answer.
+ */
+export const HEALTH_WAIT_MS = 1500;
+export const PROMPT_WAIT_MS = 30_000;
+export function healthTimeout(permission: LoopbackPermission): number {
+  return permission === 'prompt' ? PROMPT_WAIT_MS : HEALTH_WAIT_MS;
+}
+
 /** Asks the companion who it is; null when nothing answers, as pingDesigner. */
-export async function askDesigner(timeoutMs = 1500): Promise<DesignerHealth | null> {
+export async function askDesigner(timeoutMs = HEALTH_WAIT_MS): Promise<DesignerHealth | null> {
   if (typeof fetch === 'undefined') return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);

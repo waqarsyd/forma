@@ -6,7 +6,9 @@
  * Preview.
  *
  * Nothing here connects: the layout came from Forma's script or an SSMS file
- * (lib/sqlSchema.ts) and is kept on this device (lib/sqlSchemaStore.ts). The
+ * (lib/sqlSchema.ts), or was read by Forma Designer on this PC (the card at
+ * the foot, lib/sqlCompanion.ts), and is kept on this device
+ * (lib/sqlSchemaStore.ts). The
  * query chosen here is `ReportQuery` (lib/sqlQuery.ts), which batch DD writes
  * into the .repx as DevExpress's SqlDataSource, connection by name only.
  */
@@ -14,13 +16,22 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { DataField } from '../lib/dataSource';
 import type { CalcType, DataSourceSpec } from '../lib/repxSqlWriter';
 import type { SqlObject, SqlProcedure, SqlSchema } from '../lib/sqlSchema';
-import { resultFix, summarizeSchema, typeLabel } from '../lib/sqlSchema';
+import { readDatabaseText, resultFix, summarizeSchema, typeLabel } from '../lib/sqlSchema';
 import { SCHEMA_SCRIPT, sampleScript } from '../lib/sqlSchemaScript';
 import { checkSqlAgainstSchema } from '../lib/databaseAi';
 import { driftOf, mainQueryOf, mergeLayouts, queryFromRepx, refreshDataSource } from '../lib/sqlDrift';
 import { schemaFromRepx, type RepxQuery } from '../lib/repxSqlDataSource';
 import { parseParameters } from '../lib/repxParameters';
-import { companionConnections, companionLayout, companionReachableFrom, companionSamples, type CompanionConnection } from '../lib/sqlCompanion';
+import {
+  companionConnections,
+  companionLayout,
+  CompanionProblem,
+  companionReachableFrom,
+  companionSamples,
+  notRunning,
+  type CompanionConnection,
+  type CompanionLink,
+} from '../lib/sqlCompanion';
 import {
   checkCustomSql,
   describeQuery,
@@ -93,6 +104,7 @@ const CSS = `
 .dbx-btn:hover:not(:disabled) { background: var(--track, rgba(0,0,0,.05)); }
 .dbx-btn:disabled { opacity: .5; cursor: default; }
 .dbx-btn--solid { background: var(--ink, #1b2430); color: var(--panel, #fff); border-color: transparent; }
+a.dbx-btn { text-decoration: none; }
 .dbx-input { width: 100%; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--paper-rule, #d7dee7); background: var(--surface-container-lowest, #fff); color: inherit; font: inherit; font-size: 13px; outline: none; }
 .dbx-group { margin-top: 10px; }
 .dbx-group > h4 { margin: 0 0 4px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; opacity: .7; }
@@ -213,55 +225,83 @@ function ReportSource({ repx, database, onQuery, onApplyRepx, onAdopt }: {
 
 /**
  * Read from my SQL Server (2026-11-09, the SQL Server programme, Phase 2,
- * item 36): with Forma served from this PC and the companion running, its
+ * item 36): with Forma served from this PC and Forma Designer running, its
  * connections are listed and the layout or sample rows read through it, as
  * the scripts would read them, with no copy and paste. Anywhere else, the
- * deployed site above all, the page never calls 127.0.0.1 and says how.
+ * deployed site above all, the page never calls 127.0.0.1 for a database and
+ * says how.
+ *
+ * Said as the product is named, Forma Designer, never "the companion" or a
+ * command line, and every answer that is not a list can be asked again with
+ * Look again (2026-11-11, the full audit, SD-09 and SD-10): the card used to
+ * stay on "No companion answered" until the tab was left and reopened.
  */
-function CompanionCard({ onLayoutText, sampleObjects }: { onLayoutText: (text: string) => Promise<string | null>; sampleObjects: string[] }) {
+function CompanionCard({ onLayoutText, sampleObjects, onRead }: {
+  onLayoutText: (text: string) => Promise<string | null>;
+  sampleObjects: string[];
+  /** A layout or sample output read through Forma Designer, so the tab can say where it came from. */
+  onRead?: (text: string) => void;
+}) {
   const reachable = typeof window !== 'undefined' && companionReachableFrom(window.location.origin);
   const [connections, setConnections] = useState<CompanionConnection[] | null | undefined>(undefined);
   const [chosen, setChosen] = useState('');
   const [busy, setBusy] = useState(false);
-  const [line, setLine] = useState('');
+  const [looking, setLooking] = useState(false);
+  const [line, setLine] = useState<{ text: string; link?: CompanionLink }>({ text: '' });
   if (!reachable) {
     return (
       <p className="dbx-sub" style={{ margin: '10px 0 0' }}>
-        Forma on your own PC, with its companion running, reads your SQL Server directly, with no script to copy:{' '}
-        <a href="/docs#sql" style={{ color: 'inherit' }}>how</a>. This page cannot reach your PC, so it does not try.
+        Forma on your own PC, with Forma Designer installed, reads your SQL Server directly, with no script to copy:{' '}
+        <a href="/docs#sql" style={{ color: 'inherit' }}>how</a>. On the website, Forma Designer opens reports but does not
+        read your database, so here it is the script above.
       </p>
     );
   }
   const run = async (what: () => Promise<string>) => {
     setBusy(true);
-    setLine('');
+    setLine({ text: '' });
     try {
-      setLine((await onLayoutText(await what())) ?? 'Read, but it did not look like Forma’s layout or sample output.');
+      const text = await what();
+      const said = await onLayoutText(text);
+      if (said) onRead?.(text);
+      setLine({ text: said ?? 'Read, but it did not look like Forma’s layout or sample output.' });
     } catch (err) {
-      setLine(err instanceof Error ? err.message : 'The companion could not read it.');
+      setLine(err instanceof CompanionProblem ? { text: err.message, link: err.link } : { text: 'Forma Designer could not read it.' });
     } finally {
       setBusy(false);
     }
   };
+  const look = async () => {
+    setLooking(true);
+    const found = await companionConnections();
+    setConnections(found);
+    if (found?.length) setChosen(found[0].name);
+    setLooking(false);
+  };
+  const lookAgain = (
+    <button type="button" className="dbx-btn" disabled={looking} onClick={() => void look()}>
+      {looking ? 'Looking…' : 'Look again'}
+    </button>
+  );
+  const notRunningNow = notRunning();
   return (
     <div className="dbx-group" aria-label="Read from my SQL Server">
       <h4>Read from my SQL Server</h4>
       {connections === undefined ? (
-        <button
-          type="button"
-          className="dbx-btn"
-          onClick={async () => {
-            const found = await companionConnections();
-            setConnections(found);
-            if (found?.length) setChosen(found[0].name);
-          }}
-        >
-          Look for the companion on this PC
+        <button type="button" className="dbx-btn" disabled={looking} onClick={() => void look()}>
+          {looking ? 'Looking…' : 'Look for Forma Designer on this PC'}
         </button>
       ) : connections === null ? (
-        <p className="dbx-sub" style={{ margin: 0 }}>No companion answered. Start <code>RepxDesigner.exe --serve</code> on this PC, then look again.</p>
+        <div className="dbx-row">
+          <p className="dbx-sub" style={{ margin: 0 }}>{notRunningNow.message}</p>
+          {notRunningNow.link && <a className="dbx-btn" href={notRunningNow.link.href} target="_blank" rel="noopener">{notRunningNow.link.label}</a>}
+          {lookAgain}
+        </div>
       ) : connections.length === 0 ? (
-        <p className="dbx-sub" style={{ margin: 0 }}>The companion keeps no connections yet. Add one from its tray menu, <em>SQL Server connections</em>: a login’s password is typed there and stays on this PC.</p>
+        <div className="dbx-row">
+          <p className="dbx-sub" style={{ margin: 0 }}>Forma Designer keeps no connections yet. Add one from its tray menu, <em>SQL Server connections</em>: a login’s password is typed there and stays on this PC.</p>
+          {lookAgain}
+        </div>
       ) : (
         <div className="dbx-row">
           <select className="dbx-input" style={{ width: 'auto' }} aria-label="Connection on this PC" value={chosen} onChange={(e) => setChosen(e.target.value)}>
@@ -271,7 +311,12 @@ function CompanionCard({ onLayoutText, sampleObjects }: { onLayoutText: (text: s
           <button type="button" className="dbx-btn" disabled={busy || !chosen || !sampleObjects.length} title={sampleObjects.length ? undefined : 'Choose what the report reads first'} onClick={() => run(() => companionSamples(chosen, sampleObjects))}>Read sample rows</button>
         </div>
       )}
-      {line && <p className="dbx-sub" role="status" style={{ margin: '6px 0 0' }}>{line}</p>}
+      {line.text && (
+        <p className="dbx-sub" role="status" style={{ margin: '6px 0 0' }}>
+          {line.text}
+          {line.link && <> <a href={line.link.href} target="_blank" rel={line.link.href.startsWith('/') ? 'noopener' : 'noopener noreferrer'} style={{ color: 'inherit' }}>{line.link.label}</a></>}
+        </p>
+      )}
     </div>
   );
 }
@@ -303,8 +348,23 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
   const [sentence, setSentence] = useState('');
   const [asking, setAsking] = useState(false);
   const [asked, setAsked] = useState('');
+  // The layout pasted here, which stays in this browser (SD-11).
+  const [pasted, setPasted] = useState('');
+  const [pasteLine, setPasteLine] = useState('');
+  const [pasting, setPasting] = useState(false);
+  /*
+   * The databases whose layout or rows were read through Forma Designer on
+   * this PC, by name (SD-23, 2026-11-11): the line under the name said
+   * "never connected to" right beside the card that had just read the server.
+   */
+  const [readByDesigner, setReadByDesigner] = useState<ReadonlySet<string>>(() => new Set());
+  const noteRead = (text: string) => {
+    const found = readDatabaseText(text);
+    const name = found ? (found.kind === 'schema' ? found.schema.database : found.database) : '';
+    if (name) setReadByDesigner((prev) => new Set(prev).add(name.toLowerCase()));
+  };
 
-  const copy = async (label: string, text: string) => setCopied((await onCopy(text)) ? `${label} copied.` : `Copy did not work here; use Download instead.`);
+  const copy =async (label: string, text: string) => setCopied((await onCopy(text)) ? `${label} copied.` : `Copy did not work here; use Download instead.`);
 
   const fields = useMemo(() => (database && query ? queryFields(database, query) : []), [database, query]);
   const duplicates = useMemo(() => duplicateFields(fields), [fields]);
@@ -335,13 +395,52 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
           <ol className="dbx-sub" style={{ margin: '8px 0', paddingLeft: 18, lineHeight: 1.6 }}>
             <li>Copy Forma&apos;s layout script. It only reads SQL Server&apos;s catalog: no rows, no logins, nothing changed.</li>
             <li>Run it in SSMS on your database, click the one result cell (it opens in full), select all and copy.</li>
-            <li>Paste it in the box below, or drop the file into the chat. Forma never connects to your server.</li>
+            {/* The box is this card's own (2026-11-11, SD-11): it pointed at the mapping's, which is not
+                drawn for a bound report, leaving only the chat, which shares the layout with the AI. */}
+            <li>
+              {onLayoutText
+                ? 'Paste it in the box below, where it stays in this browser, or drop the file into the chat, which shares its names with the AI.'
+                : 'Drop the file into the chat, which shares its names with the AI.'}{' '}
+              Forma in your browser never connects to your server.
+            </li>
           </ol>
           <div className="dbx-row">
             <button type="button" className="dbx-btn dbx-btn--solid" onClick={() => copy('The layout script', SCHEMA_SCRIPT)}>Copy the layout script</button>
             <button type="button" className="dbx-btn" onClick={() => download('forma-schema.sql', SCHEMA_SCRIPT)}>Download it (.sql)</button>
             {copied && <span className="dbx-sub" role="status">{copied}</span>}
           </div>
+          {onLayoutText && (
+            <div style={{ display: 'grid', gap: 6, marginTop: 10 }}>
+              <textarea
+                className="dbx-input"
+                aria-label="Paste the layout"
+                placeholder="Paste the result of the layout script, or a script of CREATE TABLE statements, here."
+                value={pasted}
+                onChange={(e) => setPasted(e.target.value)}
+                spellCheck={false}
+              />
+              <div className="dbx-row">
+                <button
+                  type="button"
+                  className="dbx-btn dbx-btn--solid"
+                  disabled={!pasted.trim() || pasting}
+                  onClick={async () => {
+                    setPasting(true);
+                    try {
+                      const said = await onLayoutText(pasted);
+                      setPasteLine(said ?? 'That does not look like the layout script’s result or a script of CREATE TABLE statements.');
+                      if (said) setPasted('');
+                    } finally {
+                      setPasting(false);
+                    }
+                  }}
+                >
+                  {pasting ? 'Reading…' : 'Read what I pasted'}
+                </button>
+                {pasteLine && <span className="dbx-sub" role="status">{pasteLine}</span>}
+              </div>
+            </div>
+          )}
           {recent.length > 0 && (
             <div className="dbx-row" style={{ marginTop: 10 }}>
               <span className="dbx-sub">Kept in this browser:</span>
@@ -350,7 +449,7 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
               ))}
             </div>
           )}
-          {onLayoutText && <CompanionCard onLayoutText={onLayoutText} sampleObjects={[]} />}
+          {onLayoutText && <CompanionCard onLayoutText={onLayoutText} sampleObjects={[]} onRead={noteRead} />}
         </section>
         {repx && <ReportSource repx={repx} database={null} onQuery={onQuery} onApplyRepx={onApplyRepx} onAdopt={onAdopt} />}
       </div>
@@ -456,7 +555,11 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
           )}
           <button type="button" className="dbx-btn" onClick={() => onForget(database.database)}>Forget</button>
         </div>
-        <p className="dbx-sub" style={{ margin: '6px 0 10px' }}>Read from {database.source === 'repx' ? 'the report' : database.source === 'script' ? 'an SSMS script' : 'Forma’s layout script'}; kept in this browser, never connected to.</p>
+        <p className="dbx-sub" style={{ margin: '6px 0 10px' }}>
+          {database.source !== 'repx' && readByDesigner.has((database.database || '').toLowerCase())
+            ? 'Read through Forma Designer on this PC; kept in this browser, which never connects to your server itself.'
+            : `Read from ${database.source === 'repx' ? 'the report' : database.source === 'script' ? 'an SSMS script' : 'Forma’s layout script'}; kept in this browser, which never connects to your server.`}
+        </p>
         {onShare && (
           /* The owner's rule (2026-11-08): names and sample values go to the AI only when the user says so. */
           <label className="dbx-row" style={{ margin: '0 0 10px', fontSize: 13 }}>
@@ -486,6 +589,7 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
         {onLayoutText && (
           <CompanionCard
             onLayoutText={onLayoutText}
+            onRead={noteRead}
             sampleObjects={query?.kind === 'table' ? [query.object, ...query.joins.map((j) => j.table), ...(query.details ?? []).map((d) => d.table)] : []}
           />
         )}
@@ -590,7 +694,7 @@ export default function DatabasePanel({ database, recent, onSwitch, onForget, qu
             <div className="dbx-group" style={{ display: 'grid', gap: 8 }} aria-label="Into the report">
               <h4>Into the report</h4>
               <label className="dbx-sub" style={{ display: 'grid', gap: 4 }}>
-                Connection name, as your application’s &lt;connectionStrings&gt; knows it (never a password)
+                Connection name, the one your application knows the database by (never a password)
                 <input className="dbx-input" aria-label="Connection name" value={connection || database.database} onChange={(e) => setConnection(e.target.value.replace(/[;=]/g, ''))} />
               </label>
               {params.map((p) => {

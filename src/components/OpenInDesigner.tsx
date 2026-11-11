@@ -16,8 +16,11 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   askDesigner,
+  DESIGNER_GONE,
+  DESIGNER_SITE_ORIGINS,
   DesignerRefused,
   designerStep,
+  healthTimeout,
   launchDesigner,
   loopbackPermission,
   onWindows,
@@ -49,6 +52,19 @@ export default function OpenInDesigner({ repxContent, fileName, onExport, onOpen
   const [facts, setFacts] = useState<DesignerFacts>({ origin, windows: onWindows(), permission: 'unknown', health: undefined, started: false });
   const [tryAnyway, setTryAnyway] = useState(false);
   const run = useRef(0);
+  /*
+   * What App passes, read when it is needed rather than as dependencies of
+   * `ask` (2026-11-11, the full audit, SD-07). App hands a new `onOpened`
+   * on every render, and with it in the dependencies each render while the
+   * dialog was open abandoned the run and began again: a second "Open Forma
+   * Designer?" from the browser, the 12-second wait restarting, and a report
+   * sent twice when the first send was already on its way. The asking now
+   * starts on opening, on Try again and on "try anyway", and at no other time.
+   */
+  const opened = useRef(onOpened);
+  opened.current = onOpened;
+  const report = useRef({ repxContent, fileName });
+  report.current = { repxContent, fileName };
 
   const ask = useCallback(async () => {
     const id = ++run.current;
@@ -59,7 +75,8 @@ export default function OpenInDesigner({ repxContent, fileName, onExport, onOpen
     const first = designerStep(base);
     if (first.kind !== 'checking') return;
 
-    let health = await askDesigner();
+    // While the browser asks the person about this site reaching the PC, wait for their answer (SD-08).
+    let health = await askDesigner(healthTimeout(base.permission));
     if (!live()) return;
     let started = false;
     if (!health) {
@@ -80,18 +97,20 @@ export default function OpenInDesigner({ repxContent, fileName, onExport, onOpen
     if (!health.devexpress) return;
 
     let sent: DesignerFacts['sent'];
+    const { repxContent: xml, fileName: name } = report.current;
     try {
-      await sendToDesigner(repxContent, fileName);
+      await sendToDesigner(xml, name);
       sent = { ok: true };
     } catch (error) {
-      sent = { ok: false, status: error instanceof DesignerRefused ? error.status : undefined, message: error instanceof Error ? error.message : String(error) };
+      // sendToDesigner words every failure itself; anything else is still never the browser's own "Failed to fetch".
+      sent = { ok: false, status: error instanceof DesignerRefused ? error.status : undefined, message: error instanceof Error && !(error instanceof TypeError) ? error.message : DESIGNER_GONE };
     }
     if (!live()) return;
     const done = { ...base, health, started, sent };
     setFacts(done);
     const step = designerStep(done);
-    if (step.kind === 'opened' && !step.newer) onOpened(fileName);
-  }, [origin, tryAnyway, repxContent, fileName, onOpened, launchWaitMs]);
+    if (step.kind === 'opened' && !step.newer) opened.current(name);
+  }, [origin, tryAnyway, launchWaitMs]);
 
   useEffect(() => {
     void ask();
@@ -135,7 +154,8 @@ export default function OpenInDesigner({ repxContent, fileName, onExport, onOpen
     case 'starting':
       body = (
         <>
-          <p role="status">Starting Forma Designer… If your browser asks to open RepxDesigner, choose Open.</p>
+          {/* The browser names the handler by its app name, the exe's description "Forma Designer" (SD-22). */}
+          <p role="status">Starting Forma Designer… If your browser asks to open Forma Designer, choose Open.</p>
           <div className="wb-designer-actions">{exportInstead}</div>
         </>
       );
@@ -144,11 +164,16 @@ export default function OpenInDesigner({ repxContent, fileName, onExport, onOpen
       title = 'Get Forma Designer';
       body = (
         <>
+          {/* Not "not installed" alone (SD-08): a version from before the website could reach it, or a
+              browser told not to, looks the same from here. */}
           <p>
-            Forma Designer is not running on this PC, or is not installed. It is a free Windows app that hands your report
-            to the DevExpress report designer, and it installs for you alone, with no administrator.
+            Forma Designer did not answer. It may not be installed, may be an older version, or your browser was not
+            allowed to reach it. It is a free Windows app that hands your report to the DevExpress report designer, and it
+            installs for you alone, with no administrator.
           </p>
-          <p className="wb-share-note">Installed already? Start Forma Designer from the Start menu, then try again.</p>
+          <p className="wb-share-note">
+            Installed already? Start Forma Designer from the Start menu, then try again. The download updates an older one.
+          </p>
           <div className="wb-designer-actions">
             <a className="wb-pill wb-pill--accent" href="/download" target="_blank" rel="noopener">
               Download Forma Designer
@@ -161,13 +186,25 @@ export default function OpenInDesigner({ repxContent, fileName, onExport, onOpen
       break;
     case 'no-devexpress': {
       const old = step.found.filter((v) => v.localeCompare(step.oldest, 'en', { numeric: true }) < 0);
-      title = old.length ? `DevExpress ${old.join(', ')} is too old` : 'DevExpress is not installed';
+      /*
+       * A version new enough that Forma Designer still cannot use lacks the
+       * WinForms report designer (2026-11-11, SD-13: a PC with DevExpress for
+       * the web alone). It was told "DevExpress is not installed", which its
+       * owner knows to be false; it is named, with what is missing. As
+       * MissingDevExpress.Headline in tools/RepxDesigner says it.
+       */
+      const noDesigner = step.found.filter((v) => v.localeCompare(step.oldest, 'en', { numeric: true }) >= 0);
+      title = noDesigner.length
+        ? `DevExpress ${noDesigner.join(', ')} has no WinForms designer`
+        : old.length ? `DevExpress ${old.join(', ')} is too old` : 'DevExpress is not installed';
       body = (
         <>
           <p>
-            {old.length
-              ? `Forma Designer is running, and this PC has DevExpress ${old.join(', ')}. It needs DevExpress Reporting ${step.oldest} or later.`
-              : 'Forma Designer is running, but DevExpress Reporting is not installed on this PC, and the designer is part of it.'}
+            {noDesigner.length
+              ? `Forma Designer is running, and this PC has DevExpress ${noDesigner.join(', ')}, but not its WinForms report designer, which Forma Designer opens reports in. Install DevExpress Reporting for WinForms.`
+              : old.length
+                ? `Forma Designer is running, and this PC has DevExpress ${old.join(', ')}. It needs DevExpress Reporting ${step.oldest} or later.`
+                : 'Forma Designer is running, but DevExpress Reporting is not installed on this PC, and the designer is part of it.'}
           </p>
           <p className="wb-share-note">
             DevExpress is a separate commercial product of Developer Express Inc. Its free 30-day trial needs no registration.
@@ -217,7 +254,11 @@ export default function OpenInDesigner({ repxContent, fileName, onExport, onOpen
     case 'unreachable':
       body = (
         <>
-          <p>Open in designer works on openforma.web.app and in a Forma running on your PC, not from this address.</p>
+          {/* Every host Forma Designer answers, from the list it is kept equal to (Program.cs's SiteOrigins). */}
+          <p>
+            Open in designer works on {DESIGNER_SITE_ORIGINS.map((o) => o.replace(/^https:\/\//, '')).join(' and ')} and in a
+            Forma running on your PC, not from this address.
+          </p>
           <div className="wb-designer-actions">{exportInstead}</div>
         </>
       );

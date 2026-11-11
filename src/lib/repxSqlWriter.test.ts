@@ -169,7 +169,8 @@ describe('writing into a report', () => {
   });
 
   it('refuses a connection string, a query with nothing to print, and text that is not a report', () => {
-    expect(writeSqlDataSource(report, { ...spec, connectionName: 'Data Source=srv;Password=x' }).reason).toMatch(/needs a name/);
+    // In plain words, with no configuration file's element named (2026-11-11, the full audit's SDW follow-up).
+    expect(writeSqlDataSource(report, { ...spec, connectionName: 'Data Source=srv;Password=x' }).reason).toBe('the connection needs the name your application knows the database by, not a server, a login or a password');
     expect(writeSqlDataSource(report, { ...spec, query: { kind: 'procedure', procedure: 'dbo.usp_Nothing' } }).reason).toMatch(/has no columns Forma can read/);
     expect(writeSqlDataSource('<root/>', spec).applied).toBe(false);
   });

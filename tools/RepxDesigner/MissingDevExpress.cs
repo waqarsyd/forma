@@ -23,9 +23,21 @@ namespace RepxDesigner
     /// </summary>
     internal static class MissingDevExpress
     {
-        /// <summary>One line naming what is wrong: none at all, or only versions too old.</summary>
+        /// <summary>
+        /// One line naming what is wrong: a version new enough without its WinForms
+        /// report designer, only versions too old, or none at all. The first was told
+        /// "not installed" until 2026-11-11 (the full audit, SD-13), which a person
+        /// with DevExpress for the web knows to be false. The page says the same from
+        /// /health's "found" (components/OpenInDesigner.tsx).
+        /// </summary>
         public static string Headline(List<DevExpressInstall> found)
         {
+            var noDesigner = found.Where(i => i.Number >= DevExpressLocator.Oldest && i.Extensions == null).Select(i => i.Version).ToList();
+            if (noDesigner.Count > 0)
+            {
+                return "This PC has DevExpress " + string.Join(", ", noDesigner) +
+                    ", but not its WinForms report designer, which Forma Designer opens reports in.";
+            }
             var old = found.Where(i => i.Number < DevExpressLocator.Oldest).Select(i => i.Version).ToList();
             if (old.Count > 0)
             {
