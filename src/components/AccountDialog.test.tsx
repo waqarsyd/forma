@@ -224,6 +224,56 @@ describe('changing the password', () => {
 });
 
 /*
+ * 2026-11-12, the end-to-end retest: the fields sit in no form, so Enter did
+ * nothing, and a display name typed and "entered" stayed unsaved. Enter now
+ * does what the section's button does, only when that button could be
+ * pressed, and never deletes the account.
+ */
+describe('Enter in a field', () => {
+  it('saves the name, but not a name that has not changed or is too short', async () => {
+    draw();
+    fireEvent.keyDown(field(/display name/i), { key: 'Enter' });
+    fireEvent.change(field(/display name/i), { target: { value: 'A' } });
+    fireEvent.keyDown(field(/display name/i), { key: 'Enter' });
+    expect(setDisplayName).not.toHaveBeenCalled();
+    fireEvent.change(field(/display name/i), { target: { value: 'Ada Lovelace' } });
+    fireEvent.keyDown(field(/display name/i), { key: 'Enter' });
+    await waitFor(() => expect(setDisplayName).toHaveBeenCalledWith(passwordUser, 'Ada Lovelace'));
+  });
+
+  it('changes the password from the last field once both copies agree', async () => {
+    draw();
+    open('Password');
+    fireEvent.change(field(/^current password$/i), { target: { value: 'old-secret' } });
+    fireEvent.change(field(/^new password$/i), { target: { value: 'new-secret' } });
+    fireEvent.keyDown(field(/^new password$/i), { key: 'Enter' });
+    expect(changePassword).not.toHaveBeenCalled();
+    fireEvent.change(field(/confirm new password/i), { target: { value: 'new-secret' } });
+    fireEvent.keyDown(field(/confirm new password/i), { key: 'Enter' });
+    await waitFor(() => expect(changePassword).toHaveBeenCalledWith(passwordUser, 'old-secret', 'new-secret'));
+  });
+
+  it('sends the email change from either of its fields', async () => {
+    draw();
+    open('Email address');
+    fireEvent.change(field(/new email address/i), { target: { value: 'new@example.com' } });
+    fireEvent.change(field(/password, to confirm the email change/i), { target: { value: 'email-pass' } });
+    fireEvent.keyDown(field(/password, to confirm the email change/i), { key: 'Enter' });
+    await waitFor(() => expect(requestEmailChange).toHaveBeenCalledWith(passwordUser, 'new@example.com', 'email-pass'));
+  });
+
+  it('never deletes the account, which stays a click', () => {
+    draw();
+    open('Delete account');
+    fireEvent.change(field(/password, to confirm deletion/i), { target: { value: 'delete-pass' } });
+    fireEvent.change(field(/type delete to confirm/i), { target: { value: 'DELETE' } });
+    fireEvent.keyDown(field(/type delete to confirm/i), { key: 'Enter' });
+    fireEvent.keyDown(field(/password, to confirm deletion/i), { key: 'Enter' });
+    expect(deleteAccountAndData).not.toHaveBeenCalled();
+  });
+});
+
+/*
  * The three sections shared one `currentPassword` state between them, and only
  * two of them had an input. So the email section required a password typed into
  * a field in the other column with nothing on screen saying so; typing a

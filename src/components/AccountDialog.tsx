@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { User } from 'firebase/auth';
 import {
   changePassword,
@@ -292,6 +292,21 @@ export default function AccountDialog({
   const passwordsDiffer = confirmPassword.length > 0 && nextPassword !== confirmPassword;
   const canChangePassword =
     passwordForChange.length > 0 && nextPassword.length >= MIN_PASSWORD && nextPassword === confirmPassword;
+  const canSaveName = busy === null && !nameTooShort && !nameUnchanged;
+  const canSavePassword = busy === null && canChangePassword;
+  const canSaveEmail = busy === null && !!newEmail.trim() && !!passwordForEmail;
+
+  /*
+   * Enter in a field does what its section's button does, when that button
+   * could be pressed (2026-11-12, the end-to-end retest): the fields sit in no
+   * form, so Enter did nothing and a name typed and "entered" stayed unsaved.
+   * Not in the delete section, which stays a deliberate click.
+   */
+  const onEnter = (ready: boolean, act: () => unknown) => (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter' || e.nativeEvent.isComposing || !ready) return;
+    e.preventDefault();
+    void act();
+  };
 
   return (
     <SectionedDialog title="Your account" sections={sections} section={section} onSection={openSection} onClose={onClose}>
@@ -342,12 +357,13 @@ export default function AccountDialog({
                 className={FIELD}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                onKeyDown={onEnter(canSaveName, saveName)}
                 placeholder="Your name"
                 autoComplete="name"
                 aria-invalid={nameTooShort}
                 aria-describedby={nameTooShort ? 'acct-name-error' : undefined}
               />
-              <button type="button" onClick={saveName} disabled={busy !== null || nameTooShort || nameUnchanged} className="wb-pill wb-pill--outline">
+              <button type="button" onClick={saveName} disabled={!canSaveName} className="wb-pill wb-pill--outline">
                 {busy === 'name' ? 'Saving…' : 'Save'}
               </button>
             </div>
@@ -374,6 +390,7 @@ export default function AccountDialog({
               className={FIELD}
               value={passwordForChange}
               onChange={(e) => setPasswordForChange(e.target.value)}
+              onKeyDown={onEnter(canSavePassword, savePassword)}
               autoComplete="current-password"
             />
           </div>
@@ -385,6 +402,7 @@ export default function AccountDialog({
               className={FIELD}
               value={nextPassword}
               onChange={(e) => setNextPassword(e.target.value)}
+              onKeyDown={onEnter(canSavePassword, savePassword)}
               placeholder={`At least ${MIN_PASSWORD} characters`}
               autoComplete="new-password"
             />
@@ -401,6 +419,7 @@ export default function AccountDialog({
               className={FIELD}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
+              onKeyDown={onEnter(canSavePassword, savePassword)}
               placeholder="Type it again"
               autoComplete="new-password"
               aria-invalid={passwordsDiffer}
@@ -413,7 +432,7 @@ export default function AccountDialog({
             )}
           </div>
           <div className="wb-set-actions">
-            <button type="button" onClick={savePassword} disabled={busy !== null || !canChangePassword} className="wb-pill wb-pill--outline">
+            <button type="button" onClick={savePassword} disabled={!canSavePassword} className="wb-pill wb-pill--outline">
               {busy === 'password' ? 'Changing…' : 'Change password'}
             </button>
           </div>
@@ -434,6 +453,7 @@ export default function AccountDialog({
               className={FIELD}
               value={newEmail}
               onChange={(e) => setNewEmail(e.target.value)}
+              onKeyDown={onEnter(canSaveEmail, saveEmail)}
               placeholder="name@company.com"
               autoComplete="email"
             />
@@ -450,11 +470,12 @@ export default function AccountDialog({
               className={FIELD}
               value={passwordForEmail}
               onChange={(e) => setPasswordForEmail(e.target.value)}
+              onKeyDown={onEnter(canSaveEmail, saveEmail)}
               autoComplete="current-password"
             />
           </div>
           <div className="wb-set-actions">
-            <button type="button" onClick={saveEmail} disabled={busy !== null || !newEmail.trim() || !passwordForEmail} className="wb-pill wb-pill--outline">
+            <button type="button" onClick={saveEmail} disabled={!canSaveEmail} className="wb-pill wb-pill--outline">
               {busy === 'email' ? 'Sending…' : 'Send confirmation'}
             </button>
           </div>

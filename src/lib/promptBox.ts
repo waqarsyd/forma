@@ -17,7 +17,7 @@ export interface PromptBox {
   get(): string;
   /** New words, or a change of the words there, as a state setter takes them. */
   set(next: string | ((typed: string) => string)): void;
-  /** Words put in for the person to finish: after what is typed, on a line of their own. */
+  /** Words put in for the person to finish: after what is typed, on a line of their own, and not again when the box holds them already. */
   insert(text: string): void;
   clear(): void;
   /** Called after each change; returns the way to stop. */
@@ -35,7 +35,19 @@ export function createPromptBox(initial = ''): PromptBox {
       text = value;
       for (const listener of [...listeners]) listener();
     },
-    insert: (words) => box.set((typed) => (typed.trim() ? `${typed.replace(/\s+$/, '')}\n${words}` : words)),
+    /*
+     * The same words are not put in twice (2026-11-12, the end-to-end
+     * retest): a starting point picked with no key opens Settings at the key,
+     * and picked again after closing it, it stood in the box twice, as did a
+     * second click on the same point. The words stay where they are, so
+     * nothing typed around them is lost.
+     */
+    insert: (words) =>
+      box.set((typed) => {
+        if (!typed.trim()) return words;
+        if (words.trim() && typed.includes(words.trim())) return typed;
+        return `${typed.replace(/\s+$/, '')}\n${words}`;
+      }),
     clear: () => box.set(''),
     subscribe: (listener) => {
       listeners.add(listener);
