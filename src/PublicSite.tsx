@@ -1,7 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
-import LandingPage from './components/LandingPage';
-import { preloadPublicRoute, publicPageFor } from './components/publicPages';
+import { HomePage, preloadPublicRoute, publicPageFor } from './components/publicPages';
 import { useTheme } from './components/useTheme';
 import { useLinkNavigation } from './components/useLinkNavigation';
 import { currentPath, migrateLegacyHashUrl, navigate, onRouteChange, scrollToHash } from './lib/router';
@@ -146,11 +145,13 @@ export default function PublicSite() {
   // page fetched here is drawn at once when it is opened. The eight info pages
   // too (2026-11-11, full audit PS-33): the header's Pricing and the footer
   // link them. Not on a connection that asked to save data, or a 2G one
-  // (PR-22): a guess at the next page is not worth that visitor's bytes.
+  // (PR-22): a guess at the next page is not worth that visitor's bytes. The
+  // home page too since it left the entry (2026-11-12): every header's logo
+  // links it.
   useEffect(() => {
     if (savingData()) return;
     return whenIdle(() => {
-      for (const route of ['/features', '/docs', '/contact', '/terms', '/changelog', '/pricing']) {
+      for (const route of ['/', '/features', '/docs', '/contact', '/terms', '/changelog', '/pricing']) {
         void preloadPublicRoute(route)?.catch(() => {});
       }
     }, 2000);
@@ -196,7 +197,7 @@ export default function PublicSite() {
             <NotFoundPage {...common} />
           ) : (
             // Every other public page, through the switch App shares (components/publicPages.tsx).
-            publicPageFor(route, common) ?? <LandingPage {...common} />
+            publicPageFor(route, common) ?? <HomePage {...common} />
           )}
         </Suspense>
       </div>

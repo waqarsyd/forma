@@ -89,10 +89,10 @@ describe.each([...PRERENDERED])('%s, as the build draws it', (route) => {
     expect(rest).not.toMatch(/opacity:\s*0(?![.\d])/);
   });
 
+  // The home page too since 2026-11-12, when it left the entry chunk.
   it('names the chunk of its page, which the build preloads', () => {
     const pageModule = pageModuleOf(route);
-    if (route === '/') expect(pageModule).toBeNull();
-    else expect(pageModule && existsSync(pageModule)).toBeTruthy();
+    expect(pageModule && existsSync(pageModule)).toBeTruthy();
   });
 });
 
@@ -123,6 +123,13 @@ describe('the stat strips, as the build draws them', () => {
  */
 describe('the preloads the build writes into a page head', () => {
   const shell = '<html><head><title>x</title></head><body><div id="root"></div></body></html>';
+
+  // The sign-in card opens over the home page, so its two routes need the home
+  // page's chunk before their first draw as / does (2026-11-12).
+  it('preloads the home page for / and for the sign-in card drawn over it', () => {
+    for (const route of ['/', '/login', '/signup']) expect(pageModuleOf(route)).toBe('src/components/LandingPage.tsx');
+    expect(pageModuleOf('/workspace')).toBeNull();
+  });
 
   it('puts a modulepreload for /docs before the head closes', () => {
     expect(pageModuleOf('/docs')).toBe('src/components/DocsPage.tsx');

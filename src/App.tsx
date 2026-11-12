@@ -176,17 +176,16 @@ const SettingsDialog = lazy(() => import('./components/SettingsDialog'));
    handwriting) went on 2026-11-04, with the choices they offered: Forma works
    those out per request now (lib/autoConfig.ts, lib/ocrScript.ts).
    `git log --diff-filter=D -- src/components/OcrSettings.tsx` finds them. */
-import LandingPage from './components/LandingPage';
 /* Lazy as of 2026-09-05, measured: these five were 105 kB of a 597 kB entry
    chunk, and a visitor renders exactly one of the six. Sourcemap attribution put
    DocsPage at 40,891 B, FeaturesPage at 34,498 and ContactPage at 20,269 — every
    one of them downloaded by someone who opened /workspace and will never see a
    marketing page.
 
-   `LandingPage` stays eager, deliberately. It is the default route, so deferring
-   it puts a second round trip in front of the home page's first paint — the one
-   page that cannot afford one, and the reason index.html carries a pre-paint
-   theme resolver at all. 24 kB is a fair price for that.
+   `LandingPage` stayed eager until 2026-11-12, on the reasoning that deferring
+   it put a second round trip in front of the home page's first paint. The
+   built pages and their preloads answered that (components/publicPages.tsx,
+   `HomePage`): it is lazy like the others now, and drawn here as `HomePage`.
 
    The `LegalDoc` import below must stay a TYPE import. Making it a value import
    again pulls LegalPage straight back into the entry chunk, exactly as a static
@@ -194,7 +193,7 @@ import LandingPage from './components/LandingPage';
    report it except this chunk's budget. */
 /* The release notes (2026-11-07), lazy like the other marketing pages. */
 const NotFoundPage = lazy(() => import('./components/NotFoundPage'));
-import { publicPageFor } from './components/publicPages';
+import { HomePage, publicPageFor } from './components/publicPages';
 import Logo from './components/Logo';
 import { currentPath, navigate, onRouteChange, migrateLegacyHashUrl, scrollToHash } from './lib/router';
 import { readyTitle, sharedReportId, titleForRoute, viewForRoute, type ReadyWhat } from './lib/routes';
@@ -6346,7 +6345,7 @@ export default function App() {
         ) : otherPage ? (
           otherPage
         ) : (
-          <LandingPage {...publicPage} />
+          <HomePage {...publicPage} />
           )}
           </Suspense>
         </div>

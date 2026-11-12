@@ -106,7 +106,7 @@ for each test file the full audit's waves created.
 | `components/LibraryPanel` | 25 | jsdom |
 | `components/MobileNav` | 3 | jsdom; the phone menu is a modal dialog (2026-11-08, site audit item 41): focus inside, Escape closes it and gives focus back to its button once the sheet's exit animation unmounts it, sentence-case labels and the repository's link |
 | `components/infoPages` | 13 | 8 from one table, one per page the site audit's batch SJ added (2026-11-08) and the download page (2026-11-09): a route, a title, a case in `viewForRoute`, a description, a sitemap entry, a prerendered file and a hosting rewrite on both sites; the list `publicPageFor` draws equal to the pages `infoPages.tsx` defines; the share limit, the six starting points and no shares listed until there are some, read from the code; and `public/security.txt` valid under RFC 9116, with the contact SECURITY.md gives and an `Expires` still to come, which fails on purpose once it passes |
-| `prerender` | 101 | since 2026-11-11 (batch PPUB) per-route cases under three describes, the eager reveal and the preloads the build writes; four from one `describe.each` over every page (sixteen since the download page, 2026-11-09) `renderRoute` draws, which is the markup the build ships (2026-11-08, the site audit's batch SL, item 88): one heading, the main landmark its skip link names, real words and the footer; no two elements with one id; every link to a section on the page, to another page and the section it names there, or to a file the site serves, resolving; and every new-tab link with `noopener` and every image with an `alt`. Checked by breaking one cross-page link, which it named |
+| `prerender` | 102 | since 2026-11-12 (owner decision 18) every page naming a chunk to preload, the home page's for `/`, `/login` and `/signup`; since 2026-11-11 (batch PPUB) per-route cases under three describes, the eager reveal and the preloads the build writes; four from one `describe.each` over every page (sixteen since the download page, 2026-11-09) `renderRoute` draws, which is the markup the build ships (2026-11-08, the site audit's batch SL, item 88): one heading, the main landmark its skip link names, real words and the footer; no two elements with one id; every link to a section on the page, to another page and the section it names there, or to a file the site serves, resolving; and every new-tab link with `noopener` and every image with an `alt`. Checked by breaking one cross-page link, which it named |
 | `components/publicContrast` | 12 | 11 from one table; the public pages' colours read out of `src/index.css` and every pairing a visitor reads computed against WCAG's 4.5:1, light and dark (2026-11-08, site audit item 17), and the bright brand orange kept for what carries no words |
 | `components/NotFoundPage` | 2 | jsdom; the 404 page's `noindex`, added while it is shown and taken away when it goes |
 | `components/OcrDialog` | 7 | jsdom, the engine replaced; pages read one at a time, a failed page left out and said so, Stop aborting the run and the pages not read marked stopped (2026-11-06), low-confidence text listed and named or left out, a report built after the app's checks, a PDF page read at its resolution, and pages the chat box read already shown without reading them again; `reportNameFor`'s case moved to `lib/ocrRepx` on 2026-11-06 |
@@ -338,12 +338,12 @@ for each test file the full audit's waves created.
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 4,290 in 258 files**, recounted from a fresh run on 2026-11-12 (a JSON report
+**Total: 4,291 in 258 files**, recounted from a fresh run on 2026-11-12 (a JSON report
 compared row by row) after that day's merges: the CodeQL triage's seven cases, the owner's
 decisions 1, 3 and 9 (the composer's edge, the Data features' two questions, the note on
 the other addresses), 10, 15 and 20 (error reports, 90 days, the box reader's page
-pairs), Forma Designer 1.1.0's case, the two of `hooksAboveEarlyReturn` and the deploy's
-two live-check cases in `ownerScripts`, on the 4,204
+pairs), Forma Designer 1.1.0's case, the two of `hooksAboveEarlyReturn`, the deploy's
+two live-check cases in `ownerScripts` and the home page's preload in `prerender`, on the 4,204
 the run after the full audit's last merges counted, with every row above set from that run's
 per-file counts. That total is the arithmetic sum of
 the column above it, which is the point of writing both down. A mismatch between them is the cheapest

@@ -18,7 +18,7 @@ import ContactPage from './components/ContactPage';
 import ChangelogPage from './components/ChangelogPage';
 import LegalPage from './components/LegalPage';
 import InfoRoutePage from './components/InfoRoutePage';
-import { INFO_ROUTES } from './components/publicPages';
+import { HOME_ROUTES, INFO_ROUTES } from './components/publicPages';
 import { PrerenderContext } from './components/landing/sections';
 import type { InfoRoute } from './components/infoPages';
 
@@ -62,9 +62,12 @@ export function renderRoute(route: (typeof PRERENDERED)[number]): string {
  * made of it and names that chunk in the route's head as a modulepreload, so
  * the browser fetches it alongside the entry rather than after it has run,
  * and `main.tsx`, which waits for it before drawing, waits for nothing. The
- * home page is not here: it is part of the entry.
+ * home page too since 2026-11-12, when it left the entry chunk: for `/` and
+ * for the sign-in card's two routes, which draw it behind the card
+ * (`HOME_ROUTES`, components/publicPages.tsx).
  */
 export function pageModuleOf(route: string): string | null {
+  if (HOME_ROUTES.includes(route)) return 'src/components/LandingPage.tsx';
   switch (route) {
     case '/features':
       return 'src/components/FeaturesPage.tsx';

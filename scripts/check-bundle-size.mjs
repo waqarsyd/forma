@@ -161,7 +161,15 @@ const BUDGETS = [
   // prefix: it watches the entry alone now, 387,396 B in the build of
   // 2026-11-11 19:47 (wave 10's merge). 446_000 would leave it at 86.9%, room
   // to hide a regression; 412_000 is 94.0%.
-  { prefix: 'index-', ext: '.js', max: 412_000, note: 'eager entry chunk (the public site)' },
+  //
+  // Lowered to 318_000 on 2026-11-12 (owner decision 18), when the home page
+  // left the entry and joined the lazy public pages (publicPages.tsx,
+  // `HomePage`), taking the header, footer, icons and menus only it had pulled
+  // in: 388,437 -> 298,570 B, -89,867. Its head preloads its chunk beside the
+  // entry. 412_000 would sit at 72.5%; 318_000 is 93.9%. React 19.3 and motion
+  // 12.43, which this cut made room for, come in the next commit with their own
+  // readout.
+  { prefix: 'index-', ext: '.js', max: 318_000, note: 'eager entry chunk (the public site)' },
   /*
    * The Gemini SDK and tesseract.js, named chunks since 2026-11-11 (TC-10;
    * chunkFileNames in vite.config.ts), each loaded only when a request or a
