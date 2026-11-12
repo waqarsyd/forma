@@ -17,7 +17,7 @@
  * pane still have drawn every border 1px black.
  */
 import { describe, it, expect, afterEach, beforeAll, vi } from 'vitest';
-import { act, render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { act, render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import ReportPreview from './ReportPreview';
 import { pxToUnits } from '../lib/reportGeometry';
@@ -1036,5 +1036,82 @@ describe('languages and the original', () => {
     render(<ReportPreview repxContent={geometry} layout={null} title="One" compareWith={['data:image/png;base64,iVBORw0KGgo=']} />);
     expect(screen.getByLabelText('How much of the original shows')).toBeTruthy();
     expect(screen.getByLabelText('How far across the page the original reaches')).toBeTruthy();
+  });
+});
+
+/*
+ * Live rows on a report that runs a stored procedure (2026-11-12, the owner's
+ * decision 3 of the 2026-11-11 audit): asked in the chat's rows question's
+ * look, not a line and a Run button; a no runs nothing, and a yes is kept for
+ * the project, so a refresh runs it with no question. Forma Designer is a
+ * stubbed fetch answering as measured: 409 with the query names until the
+ * request says the person asked (`procedures=1`), then the rows.
+ */
+describe('Live rows over a stored procedure', () => {
+  const procedureReport = async () => {
+    const { readSchemaScript } = await import('../lib/sqlSchema');
+    const { writeSqlDataSource } = await import('../lib/repxSqlWriter');
+    const schema = readSchemaScript('CREATE PROCEDURE dbo.usp_SalesByRegion AS SELECT 1;', 'FormaSample')!;
+    schema.procedures[0].result = [{ name: 'Region', type: 'nvarchar', length: 20 }, { name: 'Total', type: 'decimal', precision: 38, scale: 2 }];
+    const base = '<?xml version="1.0" encoding="utf-8"?><XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport" Name="R" PageWidth="850" PageHeight="1100" Version="20.1" Dpi="100"><Bands><Item1 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="25" Dpi="100"><Controls><Item1 Ref="3" ControlType="XRLabel" Name="labelRegion" Text="x" SizeF="150,20" Dpi="100"><ExpressionBindings><Item1 Ref="4" EventName="BeforePrint" PropertyName="Text" Expression="[Region]" /></ExpressionBindings></Item1></Controls></Item1></Bands></XtraReportsLayoutSerializer>';
+    return writeSqlDataSource(base, { connectionName: 'FormaSample', schema, query: { kind: 'procedure', procedure: 'dbo.usp_SalesByRegion' } }).xml;
+  };
+  let urls: string[] = [];
+  const companion = () => {
+    urls = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      urls.push(url);
+      if (!url.includes('procedures=1')) return new Response(JSON.stringify({ procedures: ['SalesByRegion'] }), { status: 409 });
+      return new Response(JSON.stringify({ queries: [{ name: 'SalesByRegion', columns: [{ name: 'Region', type: 'String' }, { name: 'Total', type: 'Decimal' }], rows: [['North', '104.24'], ['South', '31.00']] }] }), { status: 200 });
+    }));
+  };
+  const ran = () => urls.filter((u) => u.includes('procedures=1')).length;
+  const question = () => screen.queryByRole('group', { name: 'Run SalesByRegion?' });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  });
+
+  it('asks before running it, in words, and a no runs nothing', async () => {
+    companion();
+    const onRunProcedures = vi.fn();
+    render(<ReportPreview repxContent={await procedureReport()} layout={null} title="Sales" ranProcedures={[]} onRunProcedures={onRunProcedures} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Live rows' }));
+    await waitFor(() => expect(question()).toBeTruthy());
+    expect(question()!.textContent).toMatch(/^To print live rows I'd run the stored procedure SalesByRegion on your SQL Server\. A stored procedure can change data as well as read it, so run it only if you know it only reads\. Nothing has run yet\. Run it\? For this project it'll run with Live rows until you start a new one\./);
+    expect(ran()).toBe(0);
+    fireEvent.click(screen.getByRole('button', { name: "Don't run it" }));
+    expect(question()).toBeNull();
+    expect(screen.getByText('Nothing was run.')).toBeTruthy();
+    expect(ran()).toBe(0);
+    expect(onRunProcedures).not.toHaveBeenCalled();
+  });
+
+  it('runs it on a yes, which the project keeps, so a refresh asks nothing', async () => {
+    companion();
+    const onRunProcedures = vi.fn();
+    const repx = await procedureReport();
+    const { rerender } = render(<ReportPreview repxContent={repx} layout={null} title="Sales" ranProcedures={[]} onRunProcedures={onRunProcedures} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Live rows' }));
+    await waitFor(() => expect(question()).toBeTruthy());
+    // The yes still names what it runs.
+    fireEvent.click(screen.getByRole('button', { name: 'Run SalesByRegion' }));
+    expect(onRunProcedures).toHaveBeenCalledWith([expect.stringContaining('FormaSample|SalesByRegion|')]);
+    await screen.findByRole('button', { name: 'Live: 2 rows · Refresh' });
+    expect(ran()).toBe(1);
+    // App hands the yes back for the project: the refresh is answered 409 and runs it again, unasked.
+    rerender(<ReportPreview repxContent={repx} layout={null} title="Sales" ranProcedures={onRunProcedures.mock.calls[0][0]} onRunProcedures={onRunProcedures} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Live: 2 rows · Refresh' }));
+    await waitFor(() => expect(ran()).toBe(2));
+    expect(question()).toBeNull();
+    expect(onRunProcedures).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks again in a project that has not said yes', async () => {
+    companion();
+    render(<ReportPreview repxContent={await procedureReport()} layout={null} title="Sales" ranProcedures={['FormaSample|SalesByRegion|dbo.usp_Other']} onRunProcedures={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Live rows' }));
+    await waitFor(() => expect(question()).toBeTruthy());
+    expect(ran()).toBe(0);
   });
 });

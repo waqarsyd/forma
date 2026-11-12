@@ -16,10 +16,11 @@ import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { DataField } from '../lib/dataSource';
 import type { CalcType, DataSourceSpec } from '../lib/repxSqlWriter';
 import type { SqlObject, SqlProcedure, SqlSchema } from '../lib/sqlSchema';
-import { readDatabaseText, resultFix, summarizeSchema, typeLabel } from '../lib/sqlSchema';
+import { AI_SAMPLE_VALUES, readDatabaseText, resultFix, summarizeSchema, typeLabel } from '../lib/sqlSchema';
 import { SCHEMA_SCRIPT, sampleScript } from '../lib/sqlSchemaScript';
 import { forgetDatabase, loadDatabases, storedName } from '../lib/sqlSchemaStore';
-import { checkSqlAgainstSchema, layoutFor } from '../lib/databaseAi';
+import { checkSqlAgainstSchema, layoutFor, MAX_AI_OBJECTS } from '../lib/databaseAi';
+import ConsentQuestion from './ConsentQuestion';
 import { driftOf, mainQueryOf, mergeLayouts, queryFromRepx, refreshDataSource } from '../lib/sqlDrift';
 import { schemaFromRepx, type RepxQuery } from '../lib/repxSqlDataSource';
 import { parseParameters } from '../lib/repxParameters';
@@ -92,6 +93,16 @@ interface Props {
    * 2026-11-11.
    */
   onAskSql?: (sentence: string, layout: string) => Promise<{ sql: string; name: string; explanation: string }>;
+  /**
+   * Whether the person said yes, in this project, to the sentence and the
+   * layout going to the AI to write SQL (2026-11-12, the owner's decision 3
+   * of the 2026-11-11 audit), and the function that remembers it. Asked, in
+   * the chat's rows question's look, only while `shared` is off: the switch
+   * already covers a sentence turned into SQL. App forgets it when the
+   * project is left; without App the panel remembers it while it is open.
+   */
+  sqlConsented?: boolean;
+  onSqlConsent?: () => void;
   /** The open report, whose own data source is shown and checked (batch DG). */
   repx?: string | null;
   /** A REPX changed here (a drift fixed), for App to apply with a revision. */
@@ -350,7 +361,7 @@ const download = (name: string, text: string) => saveText(name, text);
 // keeps the functions it is handed the same between draws).
 export default memo(DatabasePanel);
 
-function DatabasePanel({ database, recent, onNotice, query, onQuery, selection, onBindField, onCopy, onFieldsChange, onWrite, shared = false, onShare, onAskSql, repx, onApplyRepx, onAdopt, onLayoutText }: Props) {
+function DatabasePanel({ database, recent, onNotice, query, onQuery, selection, onBindField, onCopy, onFieldsChange, onWrite, shared = false, onShare, onAskSql, sqlConsented = false, onSqlConsent, repx, onApplyRepx, onAdopt, onLayoutText }: Props) {
   const selectionLabel = selection.length === 1 ? selection[0] : selection.length > 1 ? `${selection.length} controls` : '';
   /** A database kept in this browser made the active one. */
   const switchTo = async (name: string) => {
@@ -380,6 +391,9 @@ function DatabasePanel({ database, recent, onNotice, query, onQuery, selection, 
   const [sentence, setSentence] = useState('');
   const [asking, setAsking] = useState(false);
   const [asked, setAsked] = useState('');
+  // The question before the sentence and the layout go (2026-11-12, owner decision 3), and a yes given here.
+  const [askingConsent, setAskingConsent] = useState(false);
+  const [saidYes, setSaidYes] = useState(false);
   // The layout pasted here, which stays in this browser (SD-11).
   const [pasted, setPasted] = useState('');
   const [pasteLine, setPasteLine] = useState('');
@@ -572,6 +586,23 @@ function DatabasePanel({ database, recent, onNotice, query, onQuery, selection, 
   };
   const sortable = query?.kind === 'table' ? fields : [];
 
+  /** SQL written from the sentence, once it may go: the switch is on, or the person said yes. */
+  const writeSql = async (ask: NonNullable<Props['onAskSql']>) => {
+    setAsking(true);
+    setAsked('');
+    try {
+      // The part of the layout the sentence is about, read here (PERF: App's chunk is budgeted).
+      const out = await ask(sentence, layoutFor(database, sentence));
+      setCustomSql(out.sql);
+      setCustomName(out.name);
+      setAsked(out.explanation || 'Written. Check it below before using it.');
+    } catch (err) {
+      setAsked(err instanceof Error ? err.message : 'The SQL could not be written.');
+    } finally {
+      setAsking(false);
+    }
+  };
+
   return (
     <div className="dbx">
       <style>{CSS}</style>
@@ -601,7 +632,7 @@ function DatabasePanel({ database, recent, onNotice, query, onQuery, selection, 
               <span className="dbx-sub" style={{ display: 'block' }}>
                 {shared
                   ? 'On: a report generated or changed in the chat binds to these columns, and Forma writes the data source. Never a login: Forma has none.'
-                  : 'Off: the AI sees none of this database, and binding stays on this tab.'}
+                  : 'Off: the AI sees none of this database, and binding stays on this tab. Writing SQL from a sentence asks first.'}
               </span>
             </span>
           </label>
@@ -635,29 +666,36 @@ function DatabasePanel({ database, recent, onNotice, query, onQuery, selection, 
                 <button
                   type="button"
                   className="dbx-btn"
-                  disabled={!shared || !sentence.trim() || asking}
-                  title={shared ? undefined : 'Tick “Send names and sample values to the AI” first: the sentence goes to the AI with the layout.'}
-                  onClick={async () => {
-                    setAsking(true);
+                  disabled={!sentence.trim() || asking}
+                  onClick={() => {
                     setAsked('');
-                    try {
-                      // The part of the layout the sentence is about, read here (PERF: App's chunk is budgeted).
-                      const out = await onAskSql(sentence, layoutFor(database, sentence));
-                      setCustomSql(out.sql);
-                      setCustomName(out.name);
-                      setAsked(out.explanation || 'Written. Check it below before using it.');
-                    } catch (err) {
-                      setAsked(err instanceof Error ? err.message : 'The SQL could not be written.');
-                    } finally {
-                      setAsking(false);
-                    }
+                    // Asked first unless the switch is on or a yes was given in this project (owner decision 3, 2026-11-12).
+                    if (shared || (onSqlConsent ? sqlConsented : saidYes)) void writeSql(onAskSql);
+                    else setAskingConsent(true);
                   }}
                 >
                   {asking ? 'Writing…' : 'Write the SQL'}
                 </button>
               </div>
             )}
-            {onAskSql && !shared && <p className="dbx-sub" style={{ margin: 0 }}>Writing it from a sentence sends the sentence and this layout to the AI, so it needs “Send names and sample values to the AI”.</p>}
+            {onAskSql && askingConsent && !shared && (
+              <ConsentQuestion
+                label="Send the names to the AI?"
+                text={`To write it I'd send your sentence to the AI, with the names of up to ${MAX_AI_OBJECTS} tables, views and procedures in ${database.database || 'this database'} it is likeliest about${database.samples && Object.keys(database.samples).length ? `, and up to ${AI_SAMPLE_VALUES} sample values a column` : ''}. Nothing has been sent yet. Send them? For this project they'll go each time you write SQL from a sentence, until you start a new one.`}
+                yes="Send the names"
+                no="Don't send them"
+                onAnswer={(yes) => {
+                  setAskingConsent(false);
+                  if (!yes) {
+                    setAsked('Nothing was sent.');
+                    return;
+                  }
+                  if (onSqlConsent) onSqlConsent();
+                  else setSaidYes(true);
+                  void writeSql(onAskSql);
+                }}
+              />
+            )}
             {asked && <p className="dbx-sub" role="status" style={{ margin: 0 }}>{asked}</p>}
             <input className="dbx-input" aria-label="Query name" value={customName} onChange={(e) => setCustomName(e.target.value.replace(/[^\w]/g, ''))} />
             <textarea className="dbx-input" aria-label="Custom SQL" value={customSql} onChange={(e) => setCustomSql(e.target.value)} placeholder="SELECT o.OrderID, c.CompanyName FROM dbo.Orders o JOIN dbo.Customers c ON c.CustomerID = o.CustomerID WHERE c.Region = @Region" spellCheck={false} />

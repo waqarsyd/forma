@@ -787,16 +787,26 @@ export default function App() {
    * project it was given in, and a no was asked again at once.
    */
   const [rowsDecision, setRowsDecision] = useState<'yes' | 'no' | null>(null);
+  /**
+   * The Data features' two questions answered yes in this project (2026-11-12,
+   * the owner's decision 3 of the 2026-11-11 audit): the stored procedures
+   * Live rows may run, and the layout going to the AI to write SQL from a
+   * sentence. Forgotten with the rows answer when the project is left.
+   */
+  const [ranProcedures, setRanProcedures] = useState<readonly string[]>([]);
+  const [sqlConsent, setSqlConsent] = useState(false);
   /** What the Preview reads it as (batch DF), one object while neither changes. */
   const previewDatabase = useMemo(() => (activeDatabase ? { schema: activeDatabase, query: activeQuery } : null), [activeDatabase, activeQuery]);
   /** The databases kept on this device, by name, newest first. */
   const [keptDatabases, setKeptDatabases] = useState<string[]>([]);
   /** The chosen query's fields, for the Data tab's column mapping. */
   const [queryFieldList, setQueryFieldList] = useState<{ fields: DataField[]; label: string }>({ fields: [], label: '' });
-  // Another database means another layout: what was chosen from the last one no longer applies.
+  // Another database means another layout: what was chosen from the last one no longer applies,
+  // nor a yes to its names going to the AI for SQL (2026-11-12), since the question named that database.
   const activeDatabaseName = activeDatabase?.database ?? '';
   useEffect(() => {
     setActiveQuery(null);
+    setSqlConsent(false);
   }, [activeDatabaseName]);
   useEffect(() => {
     let live = true;
@@ -3272,9 +3282,12 @@ export default function App() {
      * Recent, Ctrl+K, New report, a batch result, a sign-out. The rows
      * answer is asked again, the shared database is ticked again, and the
      * query chosen is the next project's own (`handleLoadReport`); the
-     * database itself stays kept on the device.
+     * database itself stays kept on the device. So do the Data features'
+     * two yeses (2026-11-12): a procedure to run, SQL written from a sentence.
      */
     setRowsDecision(null);
+    setRanProcedures([]);
+    setSqlConsent(false);
     setDatabaseShared(false);
     setActiveQuery(null);
   };
@@ -7246,6 +7259,9 @@ export default function App() {
                       title={result.title}
                       records={testRows}
                       database={previewDatabase}
+                      // Live rows' stored procedures said yes to in this project (owner decision 3, 2026-11-12).
+                      ranProcedures={ranProcedures}
+                      onRunProcedures={(keys) => setRanProcedures((had) => [...had, ...keys])}
                       onTestData={handleTestData}
                       onClearTestData={() => setTestRows(null)}
                       testDataBusy={testDataBusy}
@@ -7320,6 +7336,9 @@ export default function App() {
                       // Read through the companion on this PC (Phase 2), as a pasted layout is.
                       onLayoutText={databaseFromText}
                       onAskSql={async (sentence, layout) => (await loadGemini()).promptToSql(sentence, layout, effectiveConfig())}
+                      // Asked once per project before the sentence and the layout go (owner decision 3, 2026-11-12).
+                      sqlConsented={sqlConsent}
+                      onSqlConsent={() => setSqlConsent(true)}
                       // A kept database chosen, or the active one forgotten, comes
                       // back through onAdopt (2026-11-11, PERF: the panel's own store).
                       onNotice={setSaveNotice}

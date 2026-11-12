@@ -323,7 +323,9 @@ src/
                        The workspace's panes and menus are here too, each
                        loaded on demand: ReportPreview, ReportMockup,
                        RepxViewer, DataBinding with DatabasePanel (the Data
-                       tab's SQL Server database), the selection toolbar
+                       tab's SQL Server database), ConsentQuestion (what the
+                       Data tab and Live rows ask before the layout goes to
+                       the AI or a stored procedure runs), the selection toolbar
                        (SelectionToolbar), the command menu (CommandMenu),
                        the shortcuts list (ShortcutsDialog), the right-click
                        menu (ControlMenu), the zoom field (ZoomField), the

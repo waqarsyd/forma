@@ -73,6 +73,7 @@ import { moveControl, resizeControl, setControlText, overflowsBand, deleteContro
 import { bundleName, isScriptRefusal, jobFormats, printFallbackNote, printsInBrowser, readsContinuous, readsPages, replyAfterExport, savedSentence, writingNotice, type ExportJob, type PrintFormat } from '../lib/exportJob';
 import type { FormatAction } from '../lib/agentEdit';
 import ControlMenu, { type MenuItem } from './ControlMenu';
+import ConsentQuestion from './ConsentQuestion';
 import SelectionToolbar from './SelectionToolbar';
 import { observeFit } from './useFitScale';
 import { hasOpenLayer, isOutsideReport } from '../lib/layers';
@@ -216,6 +217,16 @@ interface Props {
    * `exportRequest`; on where nothing else offers them, a shared report's page.
    */
   exportButtons?: boolean;
+  /**
+   * The stored procedures Live rows may run in this project, as `procKey`
+   * writes them, and the function that adds those the person said yes to
+   * (2026-11-12, the owner's decision 3 of the 2026-11-11 audit). App keeps
+   * them for the project and forgets them when it is left, as it forgets the
+   * rows answer; without App the pane keeps them while the report's source
+   * stays the same.
+   */
+  ranProcedures?: readonly string[];
+  onRunProcedures?: (keys: string[]) => void;
 }
 
 export type TestRow = RecordValues;
@@ -1294,7 +1305,7 @@ const PrintedControl = React.memo(ControlBox);
 // box and a streamed reply no longer draw every page again.
 export default React.memo(ReportPreview);
 
-function ReportPreview({ repxContent, layout, title, onEdit, records: given, database, onTestData, onClearTestData, testDataBusy, onStopTestData, exportRequest, onExportRequestDone, onExported, onKept, shared = false, onSelectionChange, highlight, historyElsewhere = false, onEditText, onDescribe, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true, marking = false, onMarked, compareWith }: Props) {
+function ReportPreview({ repxContent, layout, title, onEdit, records: given, database, onTestData, onClearTestData, testDataBusy, onStopTestData, exportRequest, onExportRequestDone, onExported, onKept, shared = false, onSelectionChange, highlight, historyElsewhere = false, onEditText, onDescribe, zoom = 1, onScaleChange, resetSelection, onAddToChat, onFormat, onFocusSelection, onNotice, exportButtons = true, marking = false, onMarked, compareWith, ranProcedures, onRunProcedures }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const highlightKey = (highlight ?? []).join('\n');
   const changedNames = useMemo(() => new Set(highlightKey ? highlightKey.split('\n') : []), [highlightKey]);
@@ -1563,9 +1574,19 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
   const liveReachable = typeof window !== 'undefined' && companionReachableFrom(window.location.origin);
   const [live, setLive] = useState<ReturnType<typeof previewFromFill> | null>(null);
   const [liveLine, setLiveLine] = useState('');
+  /*
+   * The procedures a fill found the report runs, asked about in the chat's
+   * rows question's look (ConsentQuestion; 2026-11-12, the owner's decision 3
+   * of the 2026-11-11 audit, where it was a line and a Run button). A yes is
+   * kept for the project by connection, query and procedure (`procKey`), so a
+   * refresh runs them with no question and another procedure asks again.
+   */
   const [liveProcedures, setLiveProcedures] = useState<string[]>([]);
-  // Once the person has run this report's procedure, a refresh runs it again; another source asks again.
-  const [consented, setConsented] = useState(false);
+  const [ranHere, setRanHere] = useState<readonly string[]>([]);
+  const ran = ranProcedures ?? ranHere;
+  const procKey = (name: string) => `${ownSource?.connectionName ?? ''}|${name}|${ownSource?.queries.find((q) => q.name === name)?.procName ?? ''}`;
+  const procNames = liveProcedures.join(', ');
+  const oneProc = liveProcedures.length === 1;
   const liveKey = ownSource ? `${ownSource.connectionName}|${ownSource.queries.map((q) => q.name).join(',')}` : '';
   useEffect(() => {
     // A read still under way is the old source's, and its rows must not land on this one (2026-11-11, PXB review).
@@ -1576,7 +1597,7 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
     setLiveLine('');
     setLiveLink(null);
     setLiveProcedures([]);
-    setConsented(false);
+    setRanHere([]);
   }, [liveKey]);
   const records = given ?? (live ? live.rows : dbRowsOn && sql?.rows?.length ? sql.rows : null);
   const choices = useMemo(() => {
@@ -1613,9 +1634,9 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
     setLiveReading(false);
     setLiveLine('');
   };
-  const fillLive = async (procedures = consented) => {
+  const fillLive = async (procedures = false): Promise<void> => {
     if (!repxContent || !ownSource || liveRead.current) return;
-    if (procedures) setConsented(true);
+    setLiveProcedures([]);
     const reading = new AbortController();
     liveRead.current = reading;
     setLiveReading(true);
@@ -1631,8 +1652,10 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
       setLiveProcedures([]);
       setLiveLine('');
     } else if (out.kind === 'procedures') {
+      // Each already said yes to in this project: run them, as a refresh after the first yes did.
+      if (!procedures && out.names.every((n) => ran.includes(procKey(n)))) return fillLive(true);
       setLiveProcedures(out.names);
-      setLiveLine(`The report runs the stored procedure ${out.names.join(', ')}, which could change data: run it only if you know it only reads.`);
+      setLiveLine('');
     } else if (out.kind === 'missing') {
       setLiveLine(`Forma Designer keeps no connection named ${out.names.join(', ')}. Add it from its tray menu, SQL Server connections.`);
     } else {
@@ -2953,7 +2976,24 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
             {liveReading && <button type="button" className="wb-pill wb-pill--outline" onClick={cancelLive}>Cancel</button>}
             {live && !liveReading && <button type="button" className="wb-pill wb-pill--outline" onClick={() => setLive(null)}>Clear</button>}
             {liveProcedures.length > 0 && !liveReading && (
-              <button type="button" className="wb-pill wb-pill--outline" onClick={() => void fillLive(true)}>Run {liveProcedures.join(', ')}</button>
+              /* Asked as the chat asks before rows go (owner decision 3, 2026-11-12); the yes still names what it runs. */
+              <ConsentQuestion
+                label={`Run ${procNames}?`}
+                text={`To print live rows I'd run the stored procedure${oneProc ? '' : 's'} ${procNames} on your SQL Server. A stored procedure can change data as well as read it, so run ${oneProc ? 'it only if you know it only reads' : 'them only if you know they only read'}. Nothing has run yet. Run ${oneProc ? 'it' : 'them'}? For this project ${oneProc ? 'it' : 'they'}'ll run with Live rows until you start a new one.`}
+                yes={`Run ${procNames}`}
+                no={`Don't run ${oneProc ? 'it' : 'them'}`}
+                onAnswer={(yes) => {
+                  if (!yes) {
+                    setLiveProcedures([]);
+                    setLiveLine('Nothing was run.');
+                    return;
+                  }
+                  const keys = liveProcedures.map(procKey);
+                  if (onRunProcedures) onRunProcedures(keys);
+                  else setRanHere([...ranHere, ...keys]);
+                  void fillLive(true);
+                }}
+              />
             )}
             {liveLine && (
               <span className="rp-stat" role="status">

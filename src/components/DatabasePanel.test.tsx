@@ -192,13 +192,8 @@ describe('sharing the database with the AI', () => {
     expect(onShare).toHaveBeenCalledWith(true);
   });
 
-  it('writes SQL from a sentence only when shared, and holds it to the layout', async () => {
+  it('writes SQL from a sentence at once when shared, and holds it to the layout', async () => {
     const onAskSql = vi.fn(async () => ({ sql: 'SELECT o.OrderID, o.Discount FROM dbo.Orders o', name: 'Orders', explanation: 'Every order.' }));
-    panel({ shared: false, onShare: vi.fn(), onAskSql });
-    fireEvent.click(screen.getByText('Write custom SQL'));
-    fireEvent.change(screen.getByLabelText('Describe the query'), { target: { value: 'every order' } });
-    expect((screen.getByText('Write the SQL') as HTMLButtonElement).disabled).toBe(true);
-    cleanup();
     panel({ shared: true, onShare: vi.fn(), onAskSql });
     fireEvent.click(screen.getByText('Write custom SQL'));
     fireEvent.change(screen.getByLabelText('Describe the query'), { target: { value: 'every order' } });
@@ -210,6 +205,57 @@ describe('sharing the database with the AI', () => {
     // A column the layout does not have is refused, not run.
     expect(screen.getByText('dbo.Orders has no column "Discount"')).toBeTruthy();
     expect((screen.getByText('Use this SQL') as HTMLButtonElement).disabled).toBe(true);
+    // The switch already said yes: no question was asked.
+    expect(screen.queryByRole('group', { name: 'Send the names to the AI?' })).toBeNull();
+  });
+
+  /*
+   * The owner's decision 3 of the 2026-11-11 audit (2026-11-12): the button was
+   * disabled until the switch was ticked; now it asks, in the chat's rows
+   * question's look, once per project, and a no sends nothing.
+   */
+  const asked = () => screen.getByRole('group', { name: 'Send the names to the AI?' });
+  const writeFromSentence = () => {
+    fireEvent.click(screen.getByText('Write custom SQL'));
+    fireEvent.change(screen.getByLabelText('Describe the query'), { target: { value: 'every order' } });
+    fireEvent.click(screen.getByText('Write the SQL'));
+  };
+
+  it('asks before the sentence and the names go when not shared, and a no sends nothing', () => {
+    const onAskSql = vi.fn(async () => ({ sql: 'SELECT o.OrderID FROM dbo.Orders o', name: 'Orders', explanation: 'Every order.' }));
+    const onSqlConsent = vi.fn();
+    panel({ shared: false, onShare: vi.fn(), onAskSql, onSqlConsent });
+    writeFromSentence();
+    expect(asked().textContent).toMatch(/^To write it I'd send your sentence to the AI, with the names of up to 12 tables, views and procedures in ShopDemo it is likeliest about\. Nothing has been sent yet\. Send them\? For this project they'll go each time you write SQL from a sentence, until you start a new one\./);
+    expect(onAskSql).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: "Don't send them" }));
+    expect(onAskSql).not.toHaveBeenCalled();
+    expect(onSqlConsent).not.toHaveBeenCalled();
+    expect(screen.getByText('Nothing was sent.')).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Send the names to the AI?' })).toBeNull();
+  });
+
+  it('on a yes writes it and has the project remember, so the next sentence goes without asking', async () => {
+    const onAskSql = vi.fn(async () => ({ sql: 'SELECT o.OrderID FROM dbo.Orders o', name: 'Orders', explanation: 'Every order.' }));
+    const onSqlConsent = vi.fn();
+    const props = panel({ shared: false, onShare: vi.fn(), onAskSql, onSqlConsent });
+    writeFromSentence();
+    fireEvent.click(screen.getByRole('button', { name: 'Send the names' }));
+    expect(onSqlConsent).toHaveBeenCalledTimes(1);
+    await screen.findByText('Every order.');
+    expect(onAskSql).toHaveBeenCalledWith('every order', expect.stringContaining('Orders'));
+    // App holds the yes for the project and hands it back: no question the second time.
+    cleanup();
+    panel({ ...props, sqlConsented: true });
+    writeFromSentence();
+    expect(screen.queryByRole('group', { name: 'Send the names to the AI?' })).toBeNull();
+    await waitFor(() => expect(onAskSql).toHaveBeenCalledTimes(2));
+  });
+
+  it('names the sample values in the question when the layout has them', () => {
+    panel({ database: { ...schema, samples: { 'dbo.Orders': [{ OrderID: 1, CustomerID: 1, Freight: 2 }] } }, shared: false, onShare: vi.fn(), onAskSql: vi.fn() });
+    writeFromSentence();
+    expect(asked().textContent).toMatch(/likeliest about, and up to 3 sample values a column\. Nothing has been sent yet\./);
   });
 });
 
