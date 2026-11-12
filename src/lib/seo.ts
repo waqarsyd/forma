@@ -12,8 +12,9 @@
  * pages and every shared report open to indexing, and no robots.txt, sitemap
  * or security.txt (each answered with the home page).
  */
-import { ROUTES } from './router';
-import { NOT_FOUND_TITLE, ROUTE_TITLES, SHARED_REPORT_TITLE, sharedReportId } from './routes';
+// Extensions written out: vite.config.ts loads this module (see its imports).
+import { ROUTES } from './router.ts';
+import { NOT_FOUND_TITLE, ROUTE_TITLES, SHARED_REPORT_TITLE, sharedReportId } from './routes.ts';
 
 /**
  * The address the site is known by. Four hosts serve it (openforma and

@@ -6,11 +6,15 @@ import {createHash} from 'node:crypto';
 import {execSync} from 'node:child_process';
 import {createRequire} from 'node:module';
 import {dirname, relative, resolve} from 'node:path';
-import {atomFeed, RELEASES} from './src/lib/releases';
-import {headFor, llmsTxt, pageFile, robotsTxt, securityTxt, sitemapXml, softwareJsonLd, withHead} from './src/lib/seo';
-import {ROUTES} from './src/lib/router';
-import {licenceNotice, licenseOf, packageDirOf, type LicensedWork} from './src/lib/licenceNotice';
-import {serviceWorkerSource} from './src/lib/serviceWorker';
+// With their extensions (2026-11-12, Vite 8), as must the imports inside these
+// modules that reach other files (seo.ts, routes.ts): Vite's native config
+// loader, planned to become its default, resolves no extensionless path, and
+// Vite 8 warned on every build until they were written out.
+import {atomFeed, RELEASES} from './src/lib/releases.ts';
+import {headFor, llmsTxt, pageFile, robotsTxt, securityTxt, sitemapXml, softwareJsonLd, withHead} from './src/lib/seo.ts';
+import {ROUTES} from './src/lib/router.ts';
+import {licenceNotice, licenseOf, packageDirOf, type LicensedWork} from './src/lib/licenceNotice.ts';
+import {serviceWorkerSource} from './src/lib/serviceWorker.ts';
 
 /**
  * OCR's runtime, served from this site rather than a CDN (2026-11-01). The
@@ -97,6 +101,10 @@ const HANDWRITING_MODEL = 'vendor/handwriting/Xenova/trocr-small-handwritten';
  * day without anyone deciding to. README's *Handwriting* has the decision.
  */
 const WITH_HANDWRITING = process.env.FORMA_HANDWRITING === '1';
+
+/** The Firebase SDK's database and its channel, and its App Check: the two lazy halves `build.rolldownOptions` keeps apart. */
+const FIRESTORE_MODULE = /node_modules[\\/](@firebase[\\/](firestore|webchannel-wrapper)|firebase[\\/]firestore)[\\/]/;
+const APP_CHECK_MODULE = /node_modules[\\/](@firebase[\\/]app-check|firebase[\\/]app-check)[\\/]/;
 const HANDWRITING_ASSETS: Record<string, string> = WITH_HANDWRITING
   ? Object.fromEntries(
       ['config.json', 'generation_config.json', 'preprocessor_config.json', 'tokenizer.json', 'tokenizer_config.json', 'onnx/encoder_model_quantized.onnx', 'onnx/decoder_model_merged_quantized.onnx']
@@ -541,7 +549,15 @@ export default defineConfig(() => {
        * budgets, chunk by chunk; this number only keeps the log quiet.
        */
       chunkSizeWarningLimit: 950,
-      rollupOptions: {
+      // `rolldownOptions` since Vite 8 (2026-11-12, owner decision 18), which
+      // bundles with Rolldown; `rollupOptions` is its deprecated alias.
+      rolldownOptions: {
+        // Rolldown's timing report printed on every build that the prerender
+        // (`forma-pages-and-crawlers`' closeBundle, every public page drawn
+        // with React) is most of it, which is by design; a log that says the
+        // same thing every time teaches nobody to read it (chunkSizeWarningLimit
+        // above, TC-09). `node --cpu-prof` still profiles a build when wanted.
+        checks: { bundlerTimings: false },
         output: {
           /**
            * The Firebase SDK in two chunks: `firebase` (the app, auth and the
@@ -564,20 +580,33 @@ export default defineConfig(() => {
            * first, and auth is always first. If a static import of either half
            * reappears in the entry graph it turns eager again — the entry chunk's
            * own budget is what will catch that.
+           *
+           * App Check (2026-11-08) is a third chunk: lib/appCheck.ts imports it
+           * only on the way to the database, and named into `firebase` it put
+           * 13 kB in front of every page instead.
+           *
+           * Groups with priorities since Vite 8 (2026-11-12, owner decision 18),
+           * not `manualChunks`, which Rolldown keeps only as a deprecated shim.
+           * Under that shim the same three names came out wrong: a group takes
+           * in its modules' dependencies, and where two groups wanted one module
+           * Rollup let the module's own name win, Rolldown did not. App Check's
+           * group took the shared internals (app, util, component, logger) as its
+           * dependencies, so the auth chunk every public page loads imported
+           * App Check's 41 kB to get them. Now `firebase` claims every Firebase
+           * module that is neither the database nor App Check, at the highest
+           * priority, so the internals are its before the other two groups look
+           * at their dependencies.
            */
-          manualChunks(id: string) {
-            if (/node_modules[\\/](@firebase[\\/](firestore|webchannel-wrapper)|firebase[\\/]firestore)[\\/]/.test(id)) {
-              return 'firestore';
-            }
-            // App Check (2026-11-08), a third chunk: lib/appCheck.ts imports it
-            // only on the way to the database, and named into `firebase` it
-            // put 13 kB in front of every page instead.
-            if (/node_modules[\\/](@firebase[\\/]app-check|firebase[\\/]app-check)[\\/]/.test(id)) {
-              return 'appcheck';
-            }
-            if (id.includes('node_modules/@firebase') || id.includes('node_modules/firebase')) {
-              return 'firebase';
-            }
+          codeSplitting: {
+            groups: [
+              {
+                name: 'firebase',
+                priority: 3,
+                test: (id: string) => /node_modules[\\/]@?firebase[\\/]/.test(id) && !FIRESTORE_MODULE.test(id) && !APP_CHECK_MODULE.test(id),
+              },
+              { name: 'firestore', priority: 2, test: FIRESTORE_MODULE },
+              { name: 'appcheck', priority: 2, test: APP_CHECK_MODULE },
+            ],
           },
           /*
            * The Gemini SDK's and tesseract.js's chunks renamed, not regrouped

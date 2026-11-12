@@ -11,7 +11,8 @@
  * purpose; copy and app view state do not belong in it.
  */
 
-import { ROUTES } from './router';
+// Extension written out: vite.config.ts loads this module through seo.ts.
+import { ROUTES } from './router.ts';
 
 /**
  * Per-route document titles.

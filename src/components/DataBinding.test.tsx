@@ -189,8 +189,6 @@ describe('reading a source it cannot use', () => {
 });
 
 describe('prompt-to-expression', () => {
-  const flush = () => new Promise((r) => setTimeout(r, 0));
-
   it('is not drawn without a handler', () => {
     render(<DataBinding repxContent={bindable} onApply={() => {}} />);
     expect(screen.queryByLabelText('Describe an expression')).toBeNull();
@@ -207,9 +205,9 @@ describe('prompt-to-expression', () => {
     paste('Qty, Price');
     fireEvent.change(screen.getByLabelText('Describe an expression'), { target: { value: 'line total as currency' } });
     fireEvent.click(screen.getByText('Generate'));
-    await flush();
     expect(onPromptToExpression).toHaveBeenCalledWith('line total as currency', ['Qty', 'Price']);
-    expect(screen.getByLabelText('Generated expression').textContent).toBe("FormatString('{0:c2}', [Qty] * [Price])");
+    // Waited for, as the case below is: one tick is not always enough under load.
+    expect((await screen.findByLabelText('Generated expression')).textContent).toBe("FormatString('{0:c2}', [Qty] * [Price])");
 
     // Use it for the second column (Amount), then apply.
     fireEvent.change(screen.getByLabelText('Use for column'), { target: { value: '1' } });
@@ -230,8 +228,9 @@ describe('prompt-to-expression', () => {
     paste('Qty, Price');
     fireEvent.change(screen.getByLabelText('Describe an expression'), { target: { value: 'line total' } });
     fireEvent.click(screen.getByText('Generate'));
-    await flush();
-    expect(screen.getByText(/\[UnitCost\] is not a field/)).toBeTruthy();
+    // Waited for, not read after one tick (2026-11-12): under the whole suite's
+    // load React committed the answer after `flush` and this failed once.
+    expect(await screen.findByText(/\[UnitCost\] is not a field/)).toBeTruthy();
     expect((screen.getByText('Use expression') as HTMLButtonElement).disabled).toBe(true);
   });
 });

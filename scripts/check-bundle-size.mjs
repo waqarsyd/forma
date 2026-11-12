@@ -49,7 +49,7 @@
  * Usage:  node scripts/check-bundle-size.mjs        (exit 1 on any breach)
  *         node scripts/check-bundle-size.mjs --print (report only, exit 0)
  */
-import { readdirSync, statSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 const DIST = 'dist';
@@ -62,6 +62,25 @@ const PRINT_ONLY = process.argv.includes('--print');
  * chunk was named (TC-10) and given a budget of its own. A prefix matches in
  * every folder of dist/ and every budget is applied, not the first match, so
  * a new prefix must not be the start of any other file's name.
+ *
+ * Retuned together on 2026-11-12, for Vite 8 (owner decision 18), a retune
+ * naming each percentage. Vite 8 bundles with Rolldown and minifies with Oxc
+ * where Vite 6 used Rollup and esbuild, which moved every chunk at once with no
+ * change in what it holds, and mostly down: the same source came out 313 kB
+ * smaller (dist/ total 6,709,090 -> 6,395,508). A cap left where it was would
+ * keep that as headroom and could not fire, so each cap that moved three points
+ * or more, or tripped, is set back to the percentage it held under Vite 6:
+ * index- 328,835 -> 302,992 B, 322_500 (93.9%); gemini-sdk- 278,414 -> 256,349,
+ * 273_000 (93.9%); ocr-engine- 15,829 -> 17,252, 18_500 (93.3%), Rolldown's
+ * CommonJS interop for tesseract.js; ReportPreview- 99,789 -> 96,629, 102_500
+ * (94.3%); DocsPage- 79,537 -> 81,521, 86_500 (94.2%), out of the 99.4% it had
+ * crept to; reportPreview- 64,865 -> 61,825, 66_000 (93.7%); FeaturesPage-
+ * 45,392 -> 46,243, 49_000 (94.4%), out of 96.6%; geminiService- 129,299 ->
+ * 124,894, 133_000 (93.9%); pdf- 501,336 -> 444,231, 468_000 (94.9%); firebase-
+ * 172,964 -> 107,168, 112_000 (95.7%); firestore- 449,408 -> 346,913, 369_000
+ * (94.0%); transformers.web 890,205 -> 836,276 in a FORMA_HANDWRITING=1 build,
+ * 890_000 (94.0%). The rest moved less than three points and stay. The eager
+ * total below is new with the same change: Rolldown split the entry.
  */
 const BUDGETS = [
   // Lowered from 1,160,000 on 2026-09-01, when Firebase was deferred behind
@@ -174,7 +193,11 @@ const BUDGETS = [
   // +30,265. A source-mapped build puts react-dom at 209,766 B of it (+28,875
   // on 19.2.4's 180,891), motion-dom +717, react +323, scheduler +54. Still
   // 59,602 B under 1.6.0's entry. 350_000 is 94.0%.
-  { prefix: 'index-', ext: '.js', max: 350_000, note: 'eager entry chunk (the public site)' },
+  //
+  // Retuned to 322_500 the same day for Vite 8 (the paragraph above BUDGETS):
+  // 302,992 B, 93.9%. Since Vite 8 this is the entry file alone; what it
+  // imports statically has its own budget, the eager total.
+  { prefix: 'index-', ext: '.js', max: 322_500, note: 'eager entry chunk (the public site)' },
   /*
    * The Gemini SDK and tesseract.js, named chunks since 2026-11-11 (TC-10;
    * chunkFileNames in vite.config.ts), each loaded only when a request or a
@@ -189,20 +212,20 @@ const BUDGETS = [
    * tesseract-core-*.wasm.js builds in dist/ocr/ (about 3.9 MB each) also
    * start with: three breaches of a 17 kB cap on every build.
    */
-  { prefix: 'gemini-sdk-', ext: '.js', max: 296_000, note: '@google/genai, lazy, loaded with the first request' },
-  { prefix: 'ocr-engine-', ext: '.js', max: 17_000, note: 'tesseract.js, lazy, loaded with the first picture' },
+  { prefix: 'gemini-sdk-', ext: '.js', max: 273_000, note: '@google/genai, lazy, loaded with the first request' },
+  { prefix: 'ocr-engine-', ext: '.js', max: 18_500, note: 'tesseract.js, lazy, loaded with the first picture' },
   /*
    * The six largest route and pane chunks, unbudgeted until 2026-11-11 (TC-10):
    * each grew with no number watching it. Measured in the 19:47 build above
    * and set at 94%, the band this file keeps. Case matters: `ReportPreview-`
    * is the Preview pane's component, `reportPreview-` the engine it draws with.
    */
-  { prefix: 'ReportPreview-', ext: '.js', max: 105_000, note: 'the Preview pane, lazy (98,725 B at 94.0%)' },
-  { prefix: 'DocsPage-', ext: '.js', max: 80_000, note: 'the Docs page, lazy (75,105 B at 93.9%)' },
-  { prefix: 'reportPreview-', ext: '.js', max: 69_000, note: 'the Preview engine, lazy (64,916 B at 94.1%)' },
+  { prefix: 'ReportPreview-', ext: '.js', max: 102_500, note: 'the Preview pane, lazy (96,629 B at 94.3%, Vite 8)' },
+  { prefix: 'DocsPage-', ext: '.js', max: 86_500, note: 'the Docs page, lazy (81,521 B at 94.2%, Vite 8)' },
+  { prefix: 'reportPreview-', ext: '.js', max: 66_000, note: 'the Preview engine, lazy (61,825 B at 93.7%, Vite 8)' },
   // Raised to 55,500 on 2026-11-12, at 51,921 B (102.8%): the 1.6.0 entry, the full audit's release note, in a visitor's words (DOCS, dc85c04). 93.6%.
   { prefix: 'releases-', ext: '.js', max: 55_500, note: 'the changelog and What\'s new, lazy (51,921 B at 93.6%)' },
-  { prefix: 'FeaturesPage-', ext: '.js', max: 47_000, note: 'the Features page, lazy (44,081 B at 93.8%)' },
+  { prefix: 'FeaturesPage-', ext: '.js', max: 49_000, note: 'the Features page, lazy (46,243 B at 94.4%, Vite 8)' },
   { prefix: 'DatabasePanel-', ext: '.js', max: 37_700, note: 'the Data tab\'s database, lazy (35,468 B at 94.1%)' },
   // The workspace itself (2026-11-08), lazy since the cut above, budgeted so
   // it is watched like the rest: 143,209 B, 152_500 is 93.9%.
@@ -378,7 +401,7 @@ const BUDGETS = [
   // geminiService.ts and reportBands.ts, the agent audit's batches of 2026-11-07,
   // the SQL Server programme's of 2026-11-09 and batch AB among them. Measured by building HEAD
   // (d32e682) in a throwaway worktree, not inferred. 138_000 puts it at 94.1%.
-  { prefix: 'geminiService-', ext: '.js', max: 138_000, note: 'the mega-prompt + generation service + its output passes, lazy' },
+  { prefix: 'geminiService-', ext: '.js', max: 133_000, note: 'the mega-prompt + generation service + its output passes, lazy' },
   // Raised from 112,000 on 2026-08-30: the six @font-face rules for the
   // self-hosted families add ~1,935 B of CSS, which took this to 98.4% of the
   // old cap -- tight enough that the next unrelated line would have tripped it
@@ -456,7 +479,8 @@ const BUDGETS = [
   // old 470_000). Both load only when a PDF is attached. 2_330_000 is 96.5% and
   // 528_000 is 94.9%, the headroom each had before.
   { prefix: 'pdf.worker-', ext: '.mjs', max: 2_330_000, note: 'pdfjs worker, lazy' },
-  { prefix: 'pdf-', ext: '.js', max: 528_000, note: 'pdfjs entry, lazy' },
+  // Retuned to 468_000 the same day for Vite 8: 444,231 B, 94.9% as before.
+  { prefix: 'pdf-', ext: '.js', max: 468_000, note: 'pdfjs entry, lazy' },
   { prefix: 'Markdown-', ext: '.js', max: 175_000, note: 'react-markdown + remark-gfm, lazy' },
   /*
    * The Firebase SDK, lazy as of 2026-09-01 and grouped into one chunk by the
@@ -478,8 +502,13 @@ const BUDGETS = [
    * one whose growth now reaches every visitor. The 2.9 kB `firebase-` beside it
    * is services/firebase.ts itself and matches this prefix too.
    */
-  { prefix: 'firebase-', ext: '.js', max: 181_000, note: 'firebase app + auth, lazy, loaded by every page' },
-  { prefix: 'firestore-', ext: '.js', max: 478_000, note: 'firestore, lazy, loaded once signed in' },
+  // Retuned for Vite 8 on 2026-11-12 (the paragraph above BUDGETS): firebase-
+  // 107,168 B at 112_000 (95.7%), firestore- 346,913 B at 369_000 (94.0%). The
+  // first Vite 8 build had put the SDK's shared internals in App Check's chunk,
+  // which this cap could not see: auth imported the 41 kB `appcheck` chunk on
+  // every page. vite.config.ts's codeSplitting groups explain the fix.
+  { prefix: 'firebase-', ext: '.js', max: 112_000, note: 'firebase app + auth, lazy, loaded by every page' },
+  { prefix: 'firestore-', ext: '.js', max: 369_000, note: 'firestore, lazy, loaded once signed in' },
   /*
    * Every self-hosted font, checked individually. An empty prefix matches all
    * of them; the cap is the largest (inter-latin-ext, 85,068 B) plus a little.
@@ -523,7 +552,12 @@ const BUDGETS = [
    * FORMA_HANDWRITING=1 compiles the handwriting branch out of lib/ocr.ts
    * (`__FORMA_HANDWRITING__`), so its 890 kB chunk is not emitted at all.
    */
-  { prefix: 'transformers.web', ext: '.js', max: 947_000, note: 'Transformers.js, handwriting only', optional: true },
+  // Retuned to 890_000 for Vite 8 on 2026-11-12: 836,276 B in a
+  // FORMA_HANDWRITING=1 build, 94.0%. A build without handwriting no longer
+  // emits the chunk at all: Rolldown drops the import that the false
+  // __FORMA_HANDWRITING__ makes unreachable, where Rollup shipped 890 kB that
+  // nothing could load.
+  { prefix: 'transformers.web', ext: '.js', max: 890_000, note: 'Transformers.js, handwriting only', optional: true },
   { prefix: 'ort-wasm-simd-threaded', ext: '.wasm', max: 22_970_000, note: "ONNX Runtime's WebAssembly, handwriting and PaddleOCR" },
   { prefix: 'encoder_model_quantized', ext: '.onnx', max: 24_550_000, note: 'TrOCR encoder, handwriting only', optional: true },
   { prefix: 'decoder_model_merged_quantized', ext: '.onnx', max: 43_110_000, note: 'TrOCR decoder, handwriting only', optional: true },
@@ -822,6 +856,37 @@ const OCR_TOTAL_MAX = 24_450_000;
 const fontTotal = files.filter(isPdfFont).reduce((a, f) => a + f.size, 0);
 const FONT_TOTAL_MAX = 4_640_000;
 
+/*
+ * The eager total (2026-11-12, owner decision 18): the entry chunk and every
+ * chunk it imports statically, followed to the end, which is what a visitor
+ * downloads before the first draw of any page. The `index-` cap above measured
+ * that while it was one file. Rollup kept a module the entry shared with a lazy
+ * chunk inside the entry; Rolldown (Vite 8) gives such modules chunks of their
+ * own, and the first Vite 8 build split the entry into twelve files (react,
+ * react-dom, the JSX runtime, the router, the preload helper and six more),
+ * 21,742 B that `index-` no longer saw. Growth in any of them is growth every
+ * visitor pays, so this follows the imports rather than a name.
+ *
+ * The entry is the script dist/index.html names; a static import is a
+ * `from"./x.js"` or `import"./x.js"` in it, never `import("./x.js")`, which is
+ * a dynamic import and loads later. 324,734 B in the first Vite 8 build (the
+ * entry 302,992 and eleven chunks), against 328,835 B for the single-file entry
+ * of the last Vite 6 build. 345_500 is 94.0%.
+ */
+const EAGER_TOTAL_MAX = 345_500;
+const STATIC_IMPORT = /(?:\bfrom|\bimport)\s*["']\.\/([^"'()]+?\.m?js)["']/g;
+const assetsDir = join(DIST, 'assets');
+const indexHtml = join(DIST, 'index.html');
+const entryName = existsSync(indexHtml) ? /<script type="module"[^>]*src="\/assets\/([^"]+\.js)"/.exec(readFileSync(indexHtml, 'utf8'))?.[1] : undefined;
+const eager = new Set();
+for (const queue = entryName ? [entryName] : []; queue.length; ) {
+  const name = queue.shift();
+  if (eager.has(name) || !existsSync(join(assetsDir, name))) continue;
+  eager.add(name);
+  for (const m of readFileSync(join(assetsDir, name), 'utf8').matchAll(STATIC_IMPORT)) queue.push(m[1]);
+}
+const eagerTotal = [...eager].reduce((a, name) => a + statSync(join(assetsDir, name)).size, 0);
+
 const rows = [];
 const breaches = [];
 
@@ -852,6 +917,12 @@ for (const budget of BUDGETS) {
   }
 }
 
+rows.push({ name: `eager total (${eager.size} files)`, size: eagerTotal, max: EAGER_TOTAL_MAX, pct: ((eagerTotal / EAGER_TOTAL_MAX) * 100).toFixed(1), note: 'the entry and what it imports statically' });
+if (!entryName || eager.size === 0) {
+  breaches.push('MISSING  the entry chunk — dist/index.html names no module script, or its file is not in dist/assets. The eager total cannot be measured.');
+} else if (eagerTotal > EAGER_TOTAL_MAX) {
+  breaches.push(`OVER     eager total — ${eagerTotal.toLocaleString()} B in ${eager.size} files exceeds the ${EAGER_TOTAL_MAX.toLocaleString()} B budget (${[...eager].join(', ')})`);
+}
 rows.push({ name: 'dist/ total', size: total, max: TOTAL_MAX, pct: ((total / TOTAL_MAX) * 100).toFixed(1), note: 'everything deployed but dist/ocr, dist/pdf-fonts, dist/model, handwriting, PaddleOCR and the pages' });
 rows.push({ name: 'pages total', size: pagesTotal, max: PAGES_TOTAL_MAX, pct: ((pagesTotal / PAGES_TOTAL_MAX) * 100).toFixed(1), note: 'one HTML page per route, the marketing pages drawn in full' });
 if (pagesTotal > PAGES_TOTAL_MAX) {
