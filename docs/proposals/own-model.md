@@ -726,7 +726,10 @@ reading.
   in training, prediction and the deployment check.
 - **The Forma side:** `src/lib/boxText.ts` holds the question (a test keeps
   it word for word with render.py's), reads an answer, makes it a skeleton
-  on the boxes' places, and scores it box by box.
+  on the boxes' places, and scores it box by box. Since the design was not
+  wired, nothing in the app calls it and only its test does; the owner
+  decided on 2026-11-12 to keep it while the vision model is paused and to
+  delete it with the vision model, never alone.
 - **Its length:** measured on 300 of version 4's layouts. The median page
   has 91 boxes (90th percentile 274, most 547). Question and answer
   together run a median 2,390 characters, against the skeleton text's
