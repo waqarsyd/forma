@@ -35,7 +35,7 @@ import { forgetAccountLocally } from '../lib/signOut';
  * reads or writes it; account deletion loads it below when it runs.
  */
 const pageHost = typeof window === 'undefined' ? undefined : window.location.hostname;
-/** Sign-in on the site's own host once the owner has allowed it (lib/authDomain.ts, site audit item 98). */
+/** Sign-in on the site's own host where it is listed (lib/authDomain.ts, site audit item 98, on since 2026-11-12). */
 const authDomain = authDomainFor(pageHost, firebaseConfig.authDomain);
 export const app = initializeApp({ ...firebaseConfig, authDomain });
 /** The Firestore database this project's data lives in; `loadFirebase` opens it. */

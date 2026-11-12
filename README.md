@@ -741,8 +741,8 @@ src/
                        projects), keyHandoff (the keys reaching a new
                        tab), passwordPolicy (the
                        shortest password a form accepts), authDomain
-                       (sign-in on the site's own host, prepared and off
-                       until the owner's console step) and appCheck (App
+                       (sign-in on the site's own host, on since
+                       2026-11-12) and appCheck (App
                        Check with reCAPTCHA Enterprise, on since 2026-11-08,
                        enforced after a week), signOut (what a sign-out
                        removes from the tab), serviceWorker (the offline
@@ -1081,7 +1081,7 @@ The site audit of 2026-11-07 left these prepared in the repository and waiting f
 2. **Dependabot security updates and private vulnerability reporting** (items 92 and 81): in the repository's Settings, under Code security. `SECURITY.md` and the contact page already point at the private reporting form, which is off until then; [`.github/dependabot.yml`](.github/dependabot.yml) asks for security updates only on npm.
 3. **A password policy** (item 61): *Firebase console → Authentication → Settings → Password policy*, minimum 8. The forms already ask for 8 (`src/lib/passwordPolicy.ts`); this makes Firebase refuse fewer.
 4. **App Check** (item 56): the three steps in [`src/lib/appCheck.ts`](src/lib/appCheck.ts). On 2026-11-08 a reCAPTCHA key was created in the Forma-Dev project (`forma-201ba`) and the web app registered in App Check with the **reCAPTCHA Enterprise** provider, which the Firebase console now steers new registrations to (and which takes the key itself, no secret). The key has been in the code since release 1.1.1, which added reCAPTCHA to the CSP and the privacy policy by itself. Take `localhost` off the key's domains before enforcing: Firebase advises against it on a production key. Left: step 3, enforcing for Cloud Firestore, once a week of App Check's metrics shows almost every request verified **and** well under reCAPTCHA's free 10,000 assessments a month. A project without billing gets errors past that allowance, which with enforcement on would lock people out of their projects. reCAPTCHA's badge is hidden (`.grecaptcha-badge` in `src/index.css`) because it sat over the workspace's corner buttons; Google allows that where its notice is shown, which the sign-in page and a shared report's footer do.
-5. **Google sign-in on Forma's own address** (item 98): add each site's `https://<site>.web.app/__/auth/handler` to the OAuth client's redirect URIs, then list the hosts in [`src/lib/authDomain.ts`](src/lib/authDomain.ts). That also turns on the redirect fallback when a browser blocks the pop-up.
+5. **Google sign-in on Forma's own address** (item 98): done on 2026-11-12. Each site's `https://<site>.web.app/__/auth/handler` was already among the OAuth client's redirect URIs (Firebase adds an authorised domain's handler to the client it made), so both hosts are listed in [`src/lib/authDomain.ts`](src/lib/authDomain.ts), which also turns on the redirect fallback when a browser blocks the pop-up. A fork lists its own sites the same way, after checking that Google accepts each handler; its doc comment says how.
 6. **Back the database up now and then** (item 66): the free plan has no managed backup. [`scripts/backup.mjs`](scripts/backup.mjs) writes every Firestore document as one JSON line to a folder outside the repository, with a service account key and the Admin SDK installed for the run only; its header has the three steps. Each person can also download their own projects from Settings, under General.
 7. **Log the deploy and push tools out of the shared Windows profile** (item 58): `npx firebase logout` and `gh auth logout` on the shared server, and log in again only for the minutes a deploy needs.
 
