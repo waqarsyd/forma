@@ -291,7 +291,9 @@ const encoder = new TextEncoder();
  * and stream is under its object's key, and only the encryption dictionary
  * and the trailer are not.
  */
-export async function writePdf(doc: PdfDocument): Promise<Uint8Array> {
+// `<ArrayBuffer>` (2026-11-12, TypeScript 7): its bytes go into a Blob, which
+// takes a view of an ArrayBuffer only; they are always a fresh array.
+export async function writePdf(doc: PdfDocument): Promise<Uint8Array<ArrayBuffer>> {
   const pdfa = doc.pdfa ?? null;
   // DevExpress refuses PDF/A with a password and writes nothing (s62a, s62b).
   if (pdfa && doc.security) throw new Error(PDFA_WITH_PASSWORD);
@@ -503,7 +505,18 @@ export async function writePdf(doc: PdfDocument): Promise<Uint8Array> {
 }
 
 /** zlib compression where the platform has it, for `PdfDocument.deflate`. */
-export function platformDeflate(): ((bytes: Uint8Array) => Promise<Uint8Array>) | null {
+export function platformDeflate(): ((bytes: Uint8Array) => Promise<Uint8Array<ArrayBuffer>>) | null {
   if (typeof CompressionStream === 'undefined') return null;
-  return async (bytes) => new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
+  return async (bytes) => new Uint8Array(await new Response(new Blob([ownBuffer(bytes)]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
+}
+
+/**
+ * The bytes as a view of an ArrayBuffer, which a Blob takes and a view of a
+ * SharedArrayBuffer is not (2026-11-12, TypeScript 7's DOM types say so): the
+ * same view when its buffer is one already, else a copy. This app never makes
+ * a SharedArrayBuffer (it would need cross-origin isolation), so the copy is
+ * the type's case, not a path that runs; the test checks both.
+ */
+export function ownBuffer(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
+  return bytes.buffer instanceof ArrayBuffer ? (bytes as Uint8Array<ArrayBuffer>) : new Uint8Array(bytes);
 }

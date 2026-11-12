@@ -12,7 +12,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { deflateSync } from 'node:zlib';
 import { readFileSync } from 'node:fs';
 import { paginate, parseReportStructure } from './reportPreview';
-import { fitsWinAnsi, reportOutline, unprintableReason, winAnsiHex, writePdf, type OutlineEntry } from './pdfWriter';
+import { fitsWinAnsi, ownBuffer, reportOutline, unprintableReason, winAnsiHex, writePdf, type OutlineEntry } from './pdfWriter';
 import { parseTrueType } from './trueType';
 
 const S54A = "<?xml version=\"1.0\" encoding=\"utf-8\"?><XtraReportsLayoutSerializer SerializerVersion=\"20.1.3.0\" Ref=\"0\" ControlType=\"DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1, Version=20.1.3.0, Culture=neutral, PublicKeyToken=b88d1754d700e49a\" Name=\"s54a-bookmarks\" Bookmark=\"Sales by region\" Margins=\"50, 50, 50, 50\" PageWidth=\"850\" PageHeight=\"1100\" Version=\"20.1\" DataMember=\"Items\"><Bands><Item1 Ref=\"1\" ControlType=\"TopMarginBand\" HeightF=\"50\" /><Item2 Ref=\"2\" ControlType=\"ReportHeaderBand\" HeightF=\"40\"><Controls><Item1 Ref=\"3\" ControlType=\"XRLabel\" Name=\"title\" Text=\"Sales report\" Bookmark=\"Title\" SizeF=\"400,30\" LocationFloat=\"0,0\" /></Controls></Item2><Item3 Ref=\"4\" ControlType=\"GroupHeaderBand\" HeightF=\"30\"><GroupFields><Item1 Ref=\"5\" FieldName=\"Region\" /></GroupFields><Controls><Item1 Ref=\"6\" ControlType=\"XRLabel\" Name=\"region\" SizeF=\"300,25\" LocationFloat=\"0,0\"><ExpressionBindings><Item1 Ref=\"7\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Region]\" /><Item2 Ref=\"8\" EventName=\"BeforePrint\" PropertyName=\"Bookmark\" Expression=\"[Region]\" /></ExpressionBindings></Item1></Controls></Item3><Item4 Ref=\"9\" ControlType=\"DetailBand\" HeightF=\"25\"><Controls><Item1 Ref=\"10\" ControlType=\"XRLabel\" Name=\"customer\" BookmarkParent=\"#Ref-6\" SizeF=\"300,25\" LocationFloat=\"20,0\"><ExpressionBindings><Item1 Ref=\"11\" EventName=\"BeforePrint\" PropertyName=\"Text\" Expression=\"[Customer]\" /><Item2 Ref=\"12\" EventName=\"BeforePrint\" PropertyName=\"Bookmark\" Expression=\"[Customer]\" /></ExpressionBindings></Item1></Controls></Item4><Item5 Ref=\"13\" ControlType=\"ReportFooterBand\" HeightF=\"30\"><Controls><Item1 Ref=\"14\" ControlType=\"XRLabel\" Name=\"totals\" Text=\"Totals\" Bookmark=\"Totals\" SizeF=\"300,25\" LocationFloat=\"0,0\" /></Controls></Item5><Item6 Ref=\"15\" ControlType=\"BottomMarginBand\" HeightF=\"50\" /></Bands></XtraReportsLayoutSerializer>";
@@ -211,3 +211,17 @@ async function writePdfA1(pages: Parameters<typeof writePdf>[0]['pages']): Promi
   const bytes = await writePdf({ title: 'T', pages, pdfa: { part: 1, fonts: { Helvetica: face }, date: new Date(0) } });
   return new TextDecoder('latin1').decode(bytes);
 }
+
+// The bytes a Blob takes (2026-11-12, TypeScript 7): a view of an ArrayBuffer.
+describe('ownBuffer', () => {
+  it('passes a view of an ArrayBuffer through as itself, and copies one of a SharedArrayBuffer', () => {
+    const plain = new Uint8Array([1, 2, 3]).subarray(1);
+    expect(ownBuffer(plain)).toBe(plain);
+    const shared = new Uint8Array(new SharedArrayBuffer(3));
+    shared.set([4, 5, 6]);
+    const copy = ownBuffer(shared);
+    expect(copy).not.toBe(shared);
+    expect(copy.buffer).toBeInstanceOf(ArrayBuffer);
+    expect([...copy]).toEqual([4, 5, 6]);
+  });
+});

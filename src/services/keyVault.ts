@@ -77,13 +77,16 @@ function requireSubtle(): SubtleCrypto {
 const toBase64 = (bytes: Uint8Array): string =>
   btoa(String.fromCharCode(...bytes));
 
-const fromBase64 = (value: string): Uint8Array =>
+// `<ArrayBuffer>` (2026-11-12, TypeScript 7): Web Crypto takes a view of an
+// ArrayBuffer only, never a SharedArrayBuffer, and a bare `Uint8Array` admits
+// either. This one is always fresh, which the type now says.
+const fromBase64 = (value: string): Uint8Array<ArrayBuffer> =>
   Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 
 /** Stretch the passphrase into an AES-GCM key. Deliberately slow — that is the point. */
 async function deriveAesKey(
   passphrase: string,
-  salt: Uint8Array,
+  salt: Uint8Array<ArrayBuffer>,
   iterations: number
 ): Promise<CryptoKey> {
   const subtle = requireSubtle();

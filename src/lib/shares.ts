@@ -123,7 +123,7 @@ const MAX_SHARED_RESULT = 1_000_000;
 export const MAX_SHARES = 100;
 
 /** A new share id: 22 random base64url characters. */
-export function makeShareId(random: (bytes: Uint8Array) => Uint8Array = (b) => crypto.getRandomValues(b)): string {
+export function makeShareId(random: (bytes: Uint8Array<ArrayBuffer>) => Uint8Array<ArrayBuffer> = (b) => crypto.getRandomValues(b)): string {
   const bytes = random(new Uint8Array(17));
   let text = '';
   for (const byte of bytes) text += String.fromCharCode(byte);

@@ -217,7 +217,7 @@ for each test file the full audit's waves created.
 | `lib/pdfA` | 15 | PDF/A (row 72) against s60 and s62: the root's `PdfACompatibility` read, dates and XMP that agree, the sRGB ICC 2.1 profile's header, tags and curve, pictures flattened over white; the embedded fonts' `?` for a missing character, widths, Unicode map in blocks of a hundred and beyond the BMP, CIDSet, subset tag; a written PDF/A file (1.4, output intent, uncompressed XMP, Type 0 over CIDFontType2, CIDSet, `Length1`, identifier, dates, link print flag, no SMask for part 1), read back as text by pdf.js; PDF/A with a password refused; a report not asking for it unchanged. The same writer's files passed veraPDF 1.30.3 as 1b, 2b and 3b |
 | `lib/pdfCrypto` | 8 | 3 from one loop; MD5, RC4 and AES-128/256 against their published vectors; the file's `PasswordSecurityOptions` as DevExpress wrote them (s61); Forma's encrypted PDF opened by pdf.js at AES-128, RC4 and AES-256 with either password, its text, title, link and outline read, and refused without; the permissions under each password (row 73) |
 | `lib/pictureBox` | 11 | an XRPictureBox as DevExpress 20.1 printed every Sizing mode (row 76): PNG, JPEG, GIF and BMP headers read for the pixels and the DPI, 96 when unsaid; the settings with their defaults; the same pixels at 192 dpi half as large; Normal, CenterImage, StretchImage, AutoSize, ZoomImage, Squeeze and Tile in a 180 by 100 box, with a small and a large image; a written ImageAlignment in every mode; an image of unknown size drawn zoomed |
-| `lib/pdfWriter` | 9 | pdfjs warmed in a `beforeAll` since 2026-11-02, when its cold import timed the first case out in a full run; the PDF outline against DevExpress's for s54a to s54c, Windows-1252 text, and a written PDF read back with pdfjs: pages, text, an image, a link and the outline, compressed and not |
+| `lib/pdfWriter` | 10 | since 2026-11-12 (TypeScript 7) `ownBuffer`, the bytes a Blob takes, passed through or copied from a SharedArrayBuffer; pdfjs warmed in a `beforeAll` since 2026-11-02, when its cold import timed the first case out in a full run; the PDF outline against DevExpress's for s54a to s54c, Windows-1252 text, and a written PDF read back with pdfjs: pages, text, an image, a link and the outline, compressed and not |
 | `lib/promptSections` | 48 |  |
 | `lib/promptToReport` | 9 | the pure half of Prompt-to-Report (its six predefined prompts and their test went on 2026-11-05); a description typed into the chat box, its fenced or CREATE TABLE schema taken as the data source |
 | `lib/readCoverage` | 8 | what a report kept of what Forma read on the page (2026-11-10, batch AD): the draft's titles and captions, in labels and cells, with their bands, values and totals not; found whatever the case and punctuation, as whole words, the top margin counting as the page header; and asking once more only for a real loss, the note naming at most twenty texts |
@@ -338,12 +338,13 @@ for each test file the full audit's waves created.
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 4,291 in 258 files**, recounted from a fresh run on 2026-11-12 (a JSON report
+**Total: 4,292 in 258 files**, recounted from a fresh run on 2026-11-12 (a JSON report
 compared row by row) after that day's merges: the CodeQL triage's seven cases, the owner's
 decisions 1, 3 and 9 (the composer's edge, the Data features' two questions, the note on
 the other addresses), 10, 15 and 20 (error reports, 90 days, the box reader's page
 pairs), Forma Designer 1.1.0's case, the two of `hooksAboveEarlyReturn`, the deploy's
-two live-check cases in `ownerScripts` and the home page's preload in `prerender`, on the 4,204
+two live-check cases in `ownerScripts`, the home page's preload in `prerender` and `ownBuffer` in
+`pdfWriter`, on the 4,204
 the run after the full audit's last merges counted, with every row above set from that run's
 per-file counts. That total is the arithmetic sum of
 the column above it, which is the point of writing both down. A mismatch between them is the cheapest

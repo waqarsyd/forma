@@ -538,7 +538,9 @@ export default defineConfig(() => {
     // PaddleOCR's worker (2026-11-10, lib/paddleWorker.ts) imports ONNX
     // Runtime, which finds its own files through `import.meta.url`: an ES
     // module worker keeps that, where Vite's default IIFE worker cannot.
-    worker: { format: 'es' },
+    // `as const` since TypeScript 7 (2026-11-12), which no longer narrows the
+    // literal through defineConfig's callback overload and read it as string.
+    worker: { format: 'es' as const },
     build: {
       /*
        * Vite's 500 kB warning is off the scale this site works at (2026-11-11,

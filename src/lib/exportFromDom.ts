@@ -19,7 +19,8 @@ import { buildZip } from './zip';
 
 const PX_PER_PT = 4 / 3;
 
-async function canvasPng(canvas: HTMLCanvasElement): Promise<Uint8Array> {
+// `<ArrayBuffer>` (2026-11-12, TypeScript 7): the PNG goes into a Blob, which takes a view of an ArrayBuffer only.
+async function canvasPng(canvas: HTMLCanvasElement): Promise<Uint8Array<ArrayBuffer>> {
   const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/png'));
   if (!blob) throw new Error('The browser could not encode the picture.');
   return new Uint8Array(await blob.arrayBuffer());
@@ -125,7 +126,7 @@ export function pictureParts(top: number, bottom: number, boxes: readonly (reado
 }
 
 /** Draws `ops` onto a canvas covering the region given in points, at 96 dpi, as a PNG. */
-async function regionPng(ops: readonly PdfOp[], images: readonly PdfImage[], left: number, top: number, right: number, bottom: number): Promise<Uint8Array> {
+async function regionPng(ops: readonly PdfOp[], images: readonly PdfImage[], left: number, top: number, right: number, bottom: number): Promise<Uint8Array<ArrayBuffer>> {
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round((right - left) * PX_PER_PT));
   canvas.height = Math.max(1, Math.round((bottom - top) * PX_PER_PT));
