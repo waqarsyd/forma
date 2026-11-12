@@ -76,7 +76,7 @@ export const REPO_URL = 'https://github.com/waqarsyd/forma';
 export const RELEASES: Release[] = [
   {
     id: '2026-11-11-full-audit',
-    date: '2026-11-11',
+    date: '2026-11-12',
     version: '1.6.0',
     title: 'Your page beside the report, two languages, and a report that prints like the page',
     summary:
@@ -97,11 +97,17 @@ export const RELEASES: Release[] = [
       { kind: 'new', area: 'workspace', text: 'Deleting a project can be undone for a few seconds, and an account keeps up to 1,000 projects.' },
       { kind: 'changed', area: 'workspace', text: 'Projects saved without an account are kept in the browser’s own database, so two tabs open at once no longer overwrite each other’s projects.' },
       { kind: 'changed', area: 'chat', text: 'The chat carries out what you ask at once and says what it made in plain words; the one thing it still asks is whether the rows the Preview prints may go to the AI.' },
+      { kind: 'changed', area: 'data', text: 'Writing SQL from a sentence asks once per project before your database’s names go to the AI, instead of needing a switch turned on first, and Live rows asks once per project before it runs a stored procedure, which can change data as well as read it.' },
+      { kind: 'new', area: 'site', text: 'On forma-201ba.web.app, a note says Forma’s main address is openforma.web.app, and why: projects kept while you are signed out stay on the address they were made on.' },
       { kind: 'fixed', area: 'workspace', text: 'A click draws no ring, edge or border anywhere in the workspace; the keyboard still shows where it is.' },
       { kind: 'improved', area: 'workspace', text: 'The workspace stays smooth while you type, drag a control or watch a reply arrive, and on a phone it no longer zooms into the box when you type.' },
       { kind: 'improved', area: 'site', text: 'The public pages show their content before their scripts load, and load less to do it.' },
       { kind: 'security', area: 'sharing', text: 'The people a report is shared with can no longer see who else it was shared with, and a shared report that carries code says so on its page.' },
-      { kind: 'security', area: 'export', text: 'The next Forma Designer download works with any DevExpress 20.1 build, answers only the Windows user who started it, and runs no code in a report unless you say so.' },
+      { kind: 'fixed', area: 'data', text: 'A stored procedure with a long list of WITH options no longer freezes the tab, one ending WITH EXECUTE AS reads its parameters’ types right, and a relation or calculated field whose name has & or brackets in it is written once, in a file that opens.' },
+      { kind: 'fixed', area: 'export', text: 'An Excel number format with a quote in it opens in Excel, and a link in an RTF export keeps its quotes and backslashes.' },
+      { kind: 'fixed', area: 'generation', text: 'An SSRS or FastReport file with a comment inside a CDATA section converts whole, and a word OCR was unsure of shows in full in the Spec when it holds a backslash.' },
+      { kind: 'new', area: 'export', text: 'Forma Designer 1.1.0 comes with this release. Once you have opened a report in it, the REPX view also lists what DevExpress itself kept of each new report you make in that tab and how it printed it, all on your own computer.' },
+      { kind: 'security', area: 'export', text: 'Forma Designer 1.1.0 works with any DevExpress 20.1 build, answers only the Windows user who started it, runs no code in a report unless you say so, and is never handed a report, unasked, that names a type other than DevExpress’s own or a file on another computer.' },
     ],
   },
   {
