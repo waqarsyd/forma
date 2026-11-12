@@ -305,8 +305,9 @@ src/
                        MemorySettings (what Forma remembers, to switch off,
                        change or forget), LearningSettings (what Forma may
                        learn from use, its two switches and the button that
-                       deletes what was kept) and UsageSettings (the day's
-                       requests),
+                       deletes what was kept), ErrorReportSettings (General's
+                       "Send error reports", off until turned on) and
+                       UsageSettings (the day's requests),
                        ConversationPanel (the thread down the left: every
                        request with its ask pinned, the box at its foot,
                        search and download), ChatThread
@@ -707,6 +708,12 @@ src/
                        brings in, loaded only when one arrives), buildInfo (which build runs,
                        for Settings and a problem report), problemReport (a
                        GitHub issue prefilled when an area fails),
+                       errorSink (where an error caught on the page goes:
+                       nowhere unless error reports are on; a few lines the
+                       error boundaries import) and errorReport (the opt-in
+                       error reports: the message scrubbed and cut to 200
+                       characters, noise left out, each sent once a page,
+                       and the switch kept per account in this browser),
                        projectExport (every saved project in one .zip),
                        downloadEverything (Settings' Download everything,
                        loaded on its click) and deviceToAccount (this
@@ -904,7 +911,9 @@ scripts/               dev.mjs (npm run dev:log) and build-server.mjs; the
                        (the owner's, on the owner's own PC: google.mjs, how
                        those scripts reach Firebase with no dependency;
                        orphans.mjs, data an account left behind; stats.mjs,
-                       usage as counts only); make-icons.mjs,
+                       usage as counts only; pull-errors.ts, the error reports
+                       people chose to send, saved and then deleted from
+                       Firestore); make-icons.mjs,
                        fetch-handwriting.mjs and fetch-paddle.mjs (the
                        picture reader's models, SHA-256 pinned);
                        package-designer.ts and companion-scripts.ts (Forma

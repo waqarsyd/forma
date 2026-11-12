@@ -19,7 +19,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc, deleteDoc, deleteField, updateDoc, collection, getDocs, query, where, writeBatch, setLogLevel, increment, serverTimestamp, Timestamp, type Firestore } from 'firebase/firestore';
 import fs from 'node:fs';
-import { MAX_FULL_EVENTS_A_DAY, deleteReportAndVersions, writeLearning, writeReport } from '../src/lib/accountData';
+import { MAX_ERRORS_A_DAY, MAX_FULL_EVENTS_A_DAY, deleteReportAndVersions, writeErrorReport, writeLearning, writeReport } from '../src/lib/accountData';
 import { learningEvent, LEARNING_AIS, LEARNING_DRAFTS, LEARNING_DROPPED, LEARNING_HOWS, LEARNING_KINDS, LEARNING_REQUESTS, LEARNING_SOURCES } from '../src/lib/learning';
 
 // Every denial this file expects is also logged by the SDK as a
@@ -847,6 +847,89 @@ describe('the write counts', () => {
     await assertFails(updateDoc(usageOf(aliceDb()), { report: deleteField(), event: deleteField(), events: 0 }));
     await assertFails(updateDoc(usageOf(aliceDb()), { report: 'other' }));
     await assertSucceeds(updateDoc(usageOf(aliceDb()), { report: deleteField(), event: deleteField() }));
+  });
+});
+
+/*
+ * Error reports (2026-11-12, Owner decision 10, the full audit's SA-15;
+ * lib/errorReport.ts): five fields naming no account, created only by a
+ * verified address with the day's count raised in the same batch, never read,
+ * changed or deleted by a client.
+ */
+const validError = (extra: Record<string, unknown> = {}) => ({ day: today(), version: '1.6.0+abc1234', area: 'preview', code: 'TypeError', message: 'Cannot read properties of null', ...extra });
+const ERROR_ID = 'Er4ErrorReportIdAbcd';
+/** A report and the day's count in one batch, as writeErrorReport writes them; `count` is what the batch sets. */
+const sendError = (db: ReturnType<typeof aliceDb>, data: Record<string, unknown>, id = ERROR_ID, count: Record<string, unknown> = { errors: 1, errorDay: today() }, uid = ALICE) => {
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'errors', id), data as any);
+  batch.set(usageOf(db, uid), { ...count, errorAt: serverTimestamp(), error: id }, { merge: true });
+  return batch.commit();
+};
+
+describe('error reports (2026-11-12, Owner decision 10)', () => {
+  it('lets a verified account send one with its count, and nobody else', async () => {
+    await assertSucceeds(sendError(aliceMail(), validError()));
+    await assertFails(sendError(aliceDb(), validError(), 'Er4Unverified000000a'));
+    await assertFails(sendError(anonDb(), validError(), 'Er4Anonymous0000000a'));
+    await assertFails(setDoc(doc(aliceMail(), 'errors', 'Er4NoCount000000000a'), validError()));
+    // Bob cannot count one against Alice's account, nor send one without his own count.
+    await assertFails(sendError(bobMail(), validError(), 'Er4BobForAlice00000a'));
+  });
+
+  it('pins the shape: five fields, the server day, a listed area, codes and sizes', async () => {
+    const write = (data: Record<string, unknown>, id: string) => sendError(aliceMail(), data, id);
+    await assertFails(write(validError({ userId: ALICE }), 'Er4Extra00000000000a'));
+    const { message: _left, ...missing } = validError();
+    await assertFails(write(missing, 'Er4Missing000000000a'));
+    await assertFails(write(validError({ day: '2020-01-01' }), 'Er4OldDay0000000000a'));
+    await assertFails(write(validError({ area: 'telemetry' }), 'Er4Area000000000000a'));
+    await assertFails(write(validError({ code: 'has a space' }), 'Er4Code000000000000a'));
+    await assertFails(write(validError({ version: 'v 1' }), 'Er4Version000000000a'));
+    await assertFails(write(validError({ message: 'm'.repeat(201) }), 'Er4Long000000000000a'));
+    await assertFails(write(validError({ message: 7 }), 'Er4NotText000000000a'));
+    await assertFails(sendError(aliceMail(), validError(), 'not/an/id'.replace(/\//g, '.')));
+    await assertSucceeds(write(validError({ message: 'm'.repeat(200), area: 'rejection', code: 'forma/report-limit' }), 'Er4AtTheLimit000000a'));
+  });
+
+  it('is never read, changed or deleted by a client, its sender included', async () => {
+    await seed(['errors', ERROR_ID], validError());
+    await assertFails(getDoc(doc(aliceMail(), 'errors', ERROR_ID)));
+    await assertFails(getDocs(collection(aliceMail(), 'errors')));
+    await assertFails(updateDoc(doc(aliceMail(), 'errors', ERROR_ID), { message: 'changed' }));
+    await assertFails(deleteDoc(doc(aliceMail(), 'errors', ERROR_ID)));
+    await assertFails(getDoc(doc(anonDb(), 'errors', ERROR_ID)));
+  });
+
+  it('takes at most 20 a day, ten seconds apart, and starts again the next day', async () => {
+    const recent = Timestamp.fromMillis(Date.now() - 2_000);
+    const earlier = Timestamp.fromMillis(Date.now() - 60_000);
+    await seed(['users', ALICE, 'meta', 'usage'], { errors: 20, errorDay: today(), errorAt: earlier, error: 'before' });
+    await assertFails(sendError(aliceMail(), validError(), 'Er4TwentyFirst00000a', { errors: 21 }));
+    await seed(['users', ALICE, 'meta', 'usage'], { errors: 3, errorDay: today(), errorAt: recent, error: 'before' });
+    await assertFails(sendError(aliceMail(), validError(), 'Er4TooSoon000000000a', { errors: 4 }));
+    await seed(['users', ALICE, 'meta', 'usage'], { errors: 3, errorDay: today(), errorAt: earlier, error: 'before' });
+    await assertFails(sendError(aliceMail(), validError(), 'Er4Skipped000000000a', { errors: 5 }));
+    await assertSucceeds(sendError(aliceMail(), validError(), 'Er4Fourth0000000000a', { errors: 4 }));
+    await seed(['users', ALICE, 'meta', 'usage'], { errors: 20, errorDay: '2020-01-01', errorAt: earlier, error: 'before' });
+    await assertSucceeds(sendError(aliceMail(), validError(), 'Er4NextDay000000000a'));
+  });
+
+  it('is sent by writeErrorReport, which stops at the day\'s cap', async () => {
+    const db = aliceMail() as unknown as Firestore;
+    await writeErrorReport(db, ALICE, { id: ERROR_ID, version: '1.6.0', area: 'spec', code: 'RangeError', message: 'Invalid array length' });
+    expect((await getDoc(usageOf(aliceDb()))).data()).toMatchObject({ errors: 1, errorDay: today(), error: ERROR_ID });
+    await seed(['users', ALICE, 'meta', 'usage'], { errors: MAX_ERRORS_A_DAY, errorDay: today(), errorAt: Timestamp.fromMillis(Date.now() - 60_000), error: 'before' });
+    await expect(writeErrorReport(db, ALICE, { id: 'Er4OverTheCap000000a', version: '1.6.0', area: 'spec', code: 'RangeError', message: 'x' })).rejects.toMatchObject({ name: 'ErrorReportLimitError' });
+  });
+
+  it('moves the count only with a report, keeps it on a day one was sent, and gives up its id at zero projects', async () => {
+    await assertFails(setDoc(usageOf(aliceMail()), { errors: 1, errorDay: today(), errorAt: serverTimestamp(), error: 'Er4NothingSent00000a' }));
+    await seed(['users', ALICE, 'meta', 'usage'], { reports: 0, errors: 2, errorDay: today(), errorAt: Timestamp.now(), error: 'e' });
+    await assertFails(deleteDoc(usageOf(aliceDb())));
+    await assertFails(updateDoc(usageOf(aliceDb()), { error: deleteField(), errors: 0 }));
+    await assertSucceeds(updateDoc(usageOf(aliceDb()), { report: deleteField(), event: deleteField(), error: deleteField() }));
+    await seed(['users', ALICE, 'meta', 'usage'], { reports: 0, errors: 2, errorDay: '2020-01-01', errorAt: Timestamp.now(), error: 'e' });
+    await assertSucceeds(deleteDoc(usageOf(aliceDb())));
   });
 });
 

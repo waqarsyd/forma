@@ -1340,6 +1340,19 @@ export default function App() {
     // settleLearning is keyed by uid through its ref; the account, its verification and the SDK are what start it.
   }, [user?.uid, user?.emailVerified, firebase]);
 
+  // Error reports, only with "Send error reports" on (2026-11-12, Owner decision
+  // 10; lib/errorReport.ts): a verified account's, never in mock mode. The
+  // module loads for a signed-in account, and is told when there is none.
+  const errorReportsLoaded = useRef(false);
+  useEffect(() => {
+    const uid = user?.emailVerified && firebase && !MOCK_MODE ? user.uid : null;
+    if ((!uid || !firebase) && !errorReportsLoaded.current) return;
+    errorReportsLoaded.current = true;
+    void import('./lib/errorReport')
+      .then((m) => m.startErrorReports(uid && firebase ? { uid, send: (report) => firebase.paths.writeErrorReport(firebase.db, uid, report) } : null))
+      .catch(() => undefined);
+  }, [user?.uid, user?.emailVerified, firebase]);
+
   /*
    * The account's projects, from its index (2026-11-08, site audit item 63).
    *
@@ -7920,7 +7933,7 @@ export default function App() {
           <SettingsDialog
             config={config}
             onChange={(changes) => setConfig((prev) => ({ ...prev, ...changes }))}
-            user={user ? { uid: user.uid } : null}
+            user={user ? { uid: user.uid, emailVerified: user.emailVerified } : null}
             workedOut={detectedRef.current?.reasons ?? null}
             start={configStart}
             onExportProjects={exportAllProjects}

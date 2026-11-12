@@ -31,7 +31,7 @@ import { loadFirebase } from '../lib/firebaseClient';
  * counts stay and its two ids are taken out (lib/accountData.ts). The privacy
  * policy says the same, and legalDisclosure.test.ts holds the two together.
  */
-export const COUNT_LEFT = 'If you delete your account on a day you sent something to learn from, a count stays under the deleted account: no projects, how many events were sent that day and when the last one was, and no ids.';
+export const COUNT_LEFT = 'If you delete your account on a day you sent something to learn from or an error report, a count stays under the deleted account: no projects, how many of each were sent that day and when the last one was, and no ids.';
 
 export interface LearningSettingsProps {
   /** Who is signed in, whose account holds the shared events; null when signed out. */

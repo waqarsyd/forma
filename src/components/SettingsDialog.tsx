@@ -36,6 +36,7 @@ import UsageSettings from './UsageSettings';
 import ProviderSettings from './ProviderSettings';
 import MemorySettings from './MemorySettings';
 import LearningSettings from './LearningSettings';
+import ErrorReportSettings from './ErrorReportSettings';
 import { versionLabel, versionUrl } from '../lib/buildInfo';
 import { isStorageKept } from '../lib/storagePersist';
 import { keysAcrossTabs, setKeysAcrossTabs } from '../lib/keyHandoff';
@@ -97,8 +98,8 @@ export function passphraseProblem(passphrase: string): string | null {
 export interface SettingsDialogProps {
   config: ReportConfig;
   onChange: (changes: Partial<ReportConfig>) => void;
-  /** Who is signed in, for the encrypted copy of the key; null when signed out. */
-  user: { uid: string } | null;
+  /** Who is signed in, for the encrypted copy of the key and the error reports; null when signed out. */
+  user: { uid: string; emailVerified?: boolean } | null;
   /** What the last request worked out, and why (lib/autoConfig.ts); null before the first. */
   workedOut: string[] | null;
   onClose: () => void;
@@ -333,6 +334,9 @@ export default function SettingsDialog({ config, onChange, user, workedOut, onCl
                   {exportNote && <Note notice={exportNote} />}
                 </div>
               )}
+
+              {/* Error reports, off until turned on, signed in only (2026-11-12, Owner decision 10). */}
+              {user && <ErrorReportSettings user={user} />}
 
               {/* Which build this is (2026-11-08, site audit item 103, lib/buildInfo.ts). */}
               <div className="wb-set-row">

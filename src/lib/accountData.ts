@@ -211,6 +211,53 @@ async function sendLearning(db: Firestore, uid: string, event: DocumentData & { 
  */
 export const LEARNING_PAGE = 50;
 
+/**
+ * Error reports (2026-11-12, Owner decision 10, the full audit's SA-15;
+ * lib/errorReport.ts), only from an account whose "Send error reports" is on:
+ * top-level `errors/{id}` documents of five fields that name no account, so
+ * the account's own collection never holds them, and the account's count of
+ * them moved in the same batch (`errors`, `errorDay`, `errorAt`, `error` in
+ * `meta/usage`), at most `MAX_ERRORS_A_DAY` a server day and
+ * `ERROR_SPACING_MS` apart. Created only: no client reads, changes or deletes
+ * one, and the owner's `scripts/admin/pull-errors.ts` reads and deletes them.
+ */
+const ERRORS_COLLECTION = 'errors';
+export const MAX_ERRORS_A_DAY = 20;
+
+/** Thrown when an account has sent its day's error reports: the rest are dropped, never kept. */
+class ErrorReportLimitError extends Error {
+  readonly code = 'forma/error-report-limit';
+  constructor() {
+    super(`An account sends at most ${MAX_ERRORS_A_DAY} error reports a day.`);
+    this.name = 'ErrorReportLimitError';
+  }
+}
+
+export function errorReportDocRef(db: Firestore, id: string): DocumentReference {
+  return doc(db, ERRORS_COLLECTION, id);
+}
+
+/** One error report and the day's count, in one batch. The day is the send's, which the rules hold to the server's. */
+export async function writeErrorReport(
+  db: Firestore,
+  uid: string,
+  report: { id: string; version: string; area: string; code: string; message: string },
+  now: () => number = Date.now,
+): Promise<void> {
+  const usage = await readUsage(db, uid);
+  const day = new Date(now()).toISOString().slice(0, 10);
+  const sameDay = usage.errorDay === day;
+  if (sameDay && count(usage.errors) >= MAX_ERRORS_A_DAY) throw new ErrorReportLimitError();
+  const batch = writeBatch(db);
+  batch.set(errorReportDocRef(db, report.id), { day, version: report.version, area: report.area, code: report.code, message: report.message });
+  batch.set(
+    usageDocRef(db, uid),
+    sameDay ? { errors: increment(1), errorAt: serverTimestamp(), error: report.id } : { errors: 1, errorDay: day, errorAt: serverTimestamp(), error: report.id },
+    { merge: true },
+  );
+  await batch.commit();
+}
+
 /** Every event the account holds, removed a page at a time; tolerated when there are none. */
 export async function deleteLearning(db: Firestore, uid: string): Promise<void> {
   for (;;) {
@@ -603,10 +650,11 @@ export async function deleteAccountData(db: Firestore, uid: string): Promise<voi
   });
   // The write counts (2026-11-11, SA-01), at zero projects now; tolerated like
   // the share count. The rules keep it on a day the account sent learning
-  // events, since deleting it would restart that day's count. So its two ids
-  // go first (the last project's, which is when it was made, and the last
-  // event's), and on such a day what stays is the counts and a time alone.
-  await updateDoc(usageDocRef(db, uid), { report: deleteField(), event: deleteField() }).catch(() => undefined);
+  // events or an error report, since deleting it would restart that day's
+  // count. So its ids go first (the last project's, which is when it was
+  // made, the last event's and, since 2026-11-12, the last error report's),
+  // and on such a day what stays is the counts and a time alone.
+  await updateDoc(usageDocRef(db, uid), { report: deleteField(), event: deleteField(), error: deleteField() }).catch(() => undefined);
   await deleteDoc(usageDocRef(db, uid)).catch((error) => {
     console.warn('Could not remove the write counts while deleting the account:', error);
   });

@@ -47,7 +47,7 @@ describe('LearningSettings', () => {
     render(<LearningSettings user={{ uid: 'alice' }} />);
     await waitFor(() => expect(screen.getByText(/7 events shared/)).toBeTruthy());
     expect(document.body.textContent).toContain(COUNT_LEFT);
-    expect(COUNT_LEFT).toMatch(/no projects, how many events were sent that day and when the last one was, and no ids/);
+    expect(COUNT_LEFT).toMatch(/no projects, how many of each were sent that day and when the last one was, and no ids/);
     cleanup();
     render(<LearningSettings user={null} />);
     await waitFor(() => expect(screen.getByText(/Nothing kept on this device\./)).toBeTruthy());

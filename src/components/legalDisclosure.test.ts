@@ -262,6 +262,8 @@ const STORED: Record<string, RegExp> = {
   // The signed-in account's own memory (lib/memory.ts, memoryKey).
   'forma.memory:': /your memories and the style of reports you kept/,
   'forma:learning': /the Learning switches, with which account they belong to/,
+  // "Send error reports" (2026-11-12, lib/errorReport.ts), for one account at a time.
+  'forma:errorReports': /whether this browser sends error reports, and for which account/,
   'forma:pinnedProjects': /which projects you pinned or archived/,
   'forma:archivedProjects': /which projects you pinned or archived/,
   'forma:indexCheckedAt:': /when each account’s project list was last checked, under that account’s id/,
@@ -400,8 +402,43 @@ describe('the policy and Settings → Learning say what account deletion leaves'
     expect(policy.slice(at)).toContain(sentence!);
     // Still true: the ids go first, then the counts are deleted only where the rules allow.
     const account = read('src/lib/accountData.ts');
-    expect(account).toMatch(/updateDoc\(usageDocRef\(db, uid\), \{ report: deleteField\(\), event: deleteField\(\) \}\)/);
+    expect(account).toMatch(/updateDoc\(usageDocRef\(db, uid\), \{ report: deleteField\(\), event: deleteField\(\), error: deleteField\(\) \}\)/);
     expect(read('firestore.rules')).toMatch(/resource\.data\.get\('eventDay', ''\) != serverDay\(\)/);
+    expect(read('firestore.rules')).toMatch(/resource\.data\.get\('errorDay', ''\) != serverDay\(\)/);
+  });
+});
+
+/*
+ * Error reports, held to lib/errorReport.ts, lib/accountData.ts and the rules
+ * (2026-11-12, Owner decision 10, the full audit's SA-15): off until turned
+ * on, what a note holds and how long its message may be, the day's cap, and
+ * that the owner's pull deletes what it saves.
+ */
+describe('the policy says of error reports what the code does', () => {
+  const WORDS: Record<number, string> = { 10: 'ten', 20: 'twenty', 50: 'fifty' };
+
+  it('says they are off until turned on, as the switch reads it', () => {
+    const source = read('src/lib/errorReport.ts');
+    expect(source).toMatch(/return !!kept && kept\.uid === uid && kept\.on === true;/);
+    expect(policy).toMatch(/Error reports are sent only if you turn them on, in Settings → General/);
+    expect(policy).toMatch(/only if you turn on “Send error reports” in Settings → General, which is off unless you turn it on/);
+  });
+
+  it('gives the message length and the day cap the code and the rules hold', () => {
+    const max = Number(/export const MAX_MESSAGE = (\d+);/.exec(read('src/lib/errorReport.ts'))?.[1]);
+    expect(policy).toContain(`cut to ${max} characters`);
+    expect(read('firestore.rules')).toContain(`data.message.size() <= ${max}`);
+    const day = Number(/export const MAX_ERRORS_A_DAY = (\d+);/.exec(read('src/lib/accountData.ts'))?.[1]);
+    expect(WORDS[day], `MAX_ERRORS_A_DAY is ${day}: add its word here and in the policy`).toBeTruthy();
+    expect(policy).toContain(`it cannot send more than ${WORDS[day]} a day`);
+    expect(read('firestore.rules')).toContain(`after.errors <= ${day}`);
+  });
+
+  it('says the operator\'s download deletes them, while scripts/admin/pull-errors.ts does', () => {
+    const pull = read('scripts/admin/pull-errors.ts');
+    expect(pull).toMatch(/method: 'DELETE'/);
+    expect(policy).toMatch(/the operator downloads them to find what broke, which deletes them from the database/);
+    expect(policy).toMatch(/An error report stays in Forma’s database until the operator downloads it, which deletes it there/);
   });
 });
 
@@ -667,9 +704,14 @@ describe('the legal copy and its date change together', () => {
      (components/OtherHostNotice.tsx). A new thing stored, so the date moved.
      The same day (owner decision 3), a database's names also go when the
      person says yes to the Data view's question before SQL is written from a
-     sentence: substantive, and already that day's date.
+     sentence: substantive, and already that day's date. And the same day
+     (Owner decision 10, the full audit's SA-15): error reports, off until
+     "Send error reports" is turned on, what a note holds and what is taken
+     out of it first, that the operator's download deletes it from the
+     database, the local storage key that keeps the switch, and what account
+     deletion leaves of their count. Substantive, and already that day's date.
      */
-  const EXPECTED_COPY_HASH = '92ff7a8c9ca9';
+  const EXPECTED_COPY_HASH = 'edf92274e64a';
   const EXPECTED_UPDATED = '12 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {

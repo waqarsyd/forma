@@ -2,6 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { isStaleChunkError, reloadForStaleChunk } from '../lib/staleChunks';
 import { problemReportUrl } from '../lib/problemReport';
 import { versionLabel } from '../lib/buildInfo';
+import { reportError } from '../lib/errorSink';
 
 /**
  * An error boundary for one part of the app (2026-11-08, site audit item 64).
@@ -38,6 +39,8 @@ export default class ErrorBoundary extends Component<Props, State> {
     // than show this (site audit item 1, lib/staleChunks.ts).
     if (isStaleChunkError(error) && reloadForStaleChunk()) return;
     console.error(`Something failed in ${this.props.area}:`, error, info.componentStack);
+    // To the owner, scrubbed, only when the person turned on "Send error reports" (2026-11-12, lib/errorSink.ts).
+    reportError(this.props.area, error);
   }
 
   render() {

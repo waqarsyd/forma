@@ -18,7 +18,9 @@
  *   name (SD-21);
  * - orphans.mjs and stats.mjs print what Google answers, and stats only
  *   counts (SA-20a, SA-28a); backup.mjs backs up every collection the rules
- *   name (SA-14).
+ *   name (SA-14);
+ * - pull-errors.ts saves every error report and deletes only what it saved
+ *   (2026-11-12, Owner decision 10).
  * The scratch folder is made and removed by the suite: beside the
  * repository on the owner's server (never C:, which fills up), the system's
  * temporary folder elsewhere.
@@ -31,6 +33,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { main as pull } from '../../scripts/model/pull-learning';
 import { main as gate } from '../../scripts/model/gate';
+import { errorsQuery, main as pullErrors } from '../../scripts/admin/pull-errors';
 import { connect, countOf, lookupAccounts } from '../../scripts/admin/google.mjs';
 import { findOrphans, orphansOf } from '../../scripts/admin/orphans.mjs';
 import { countAll } from '../../scripts/admin/stats.mjs';
@@ -320,6 +323,85 @@ describe('the admin scripts', () => {
   });
 
   it('backs up every collection the rules name', () => {
-    expect(collectionsOf(fs.readFileSync('firestore.rules', 'utf8'))).toEqual(['users', 'vault', 'reports', 'reportIndex', 'shares', 'acl', 'meta', 'learning', 'versions']);
+    expect(collectionsOf(fs.readFileSync('firestore.rules', 'utf8'))).toEqual(['users', 'vault', 'reports', 'reportIndex', 'shares', 'acl', 'meta', 'learning', 'errors', 'versions']);
+  });
+});
+
+/*
+ * The error reports' pull (2026-11-12, Owner decision 10, SA-15): every
+ * report saved on the owner's PC, then deleted from Firestore, never one
+ * deleted before the line holding it is written.
+ */
+describe('pull-errors.ts against a stand-in for Google', () => {
+  const errorDoc = (id: string, message = 'Cannot read properties of null') => ({
+    name: `projects/made-up-project/databases/(default)/documents/errors/${id}`,
+    fields: { day: { stringValue: '2026-11-12' }, version: { stringValue: '1.6.0+abc1234' }, area: { stringValue: 'preview' }, code: { stringValue: 'TypeError' }, message: { stringValue: message } },
+  });
+  /** A Google holding `docs` in `errors`, which a DELETE removes; `refuse` answers every DELETE 403. */
+  function errorsGoogle(docs: ReturnType<typeof errorDoc>[], refuse = false) {
+    const held = [...docs];
+    const asked: { url: string; method: string; body: Record<string, unknown> | null }[] = [];
+    const fetchFn: FetchLike = async (url, init) => {
+      const body = init.body && init.body.startsWith('{') ? (JSON.parse(init.body) as Record<string, unknown>) : null;
+      asked.push({ url, method: init.method, body });
+      if (url.includes('oauth2')) return reply({ access_token: 'made-up-token', expires_in: 3600 });
+      if (url.endsWith(':runAggregationQuery')) return reply([{ result: { aggregateFields: { n: { integerValue: String(held.length) } } } }]);
+      if (url.endsWith(':runQuery')) {
+        const q = body!.structuredQuery as { startAt?: { values: { referenceValue: string }[] }; limit: number };
+        const sorted = [...held].sort((a, b) => (a.name < b.name ? -1 : 1));
+        const start = q.startAt ? sorted.filter((d) => d.name > q.startAt!.values[0].referenceValue) : sorted;
+        const page = start.slice(0, q.limit);
+        return reply(page.length ? page.map((document) => ({ document })) : [{ readTime: 'now' }]);
+      }
+      if (init.method === 'DELETE') {
+        if (refuse) return reply({ error: 'PERMISSION_DENIED' }, 403);
+        const at = held.findIndex((d) => url.endsWith(d.name));
+        if (at >= 0) held.splice(at, 1);
+        return reply({});
+      }
+      return reply({ error: 'not stood in for' }, 404);
+    };
+    return { fetchFn, asked, held };
+  }
+
+  it('saves every report, then deletes each one it saved', async () => {
+    const out = join(scratch, 'errors');
+    const g = errorsGoogle([errorDoc('e1'), errorDoc('e2', 'Maximum update depth exceeded')]);
+    expect(await pullErrors(['--out', out, '--key', keyFile], g.fetchFn)).toBe(0);
+    const lines = fs.readFileSync(join(out, 'errors.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Record<string, string>);
+    expect(lines).toEqual([
+      { id: 'e1', day: '2026-11-12', version: '1.6.0+abc1234', area: 'preview', code: 'TypeError', message: 'Cannot read properties of null' },
+      { id: 'e2', day: '2026-11-12', version: '1.6.0+abc1234', area: 'preview', code: 'TypeError', message: 'Maximum update depth exceeded' },
+    ]);
+    expect(g.held).toEqual([]);
+    // The first DELETE comes after the query that read the page it deletes from.
+    const firstDelete = g.asked.findIndex((a) => a.method === 'DELETE');
+    expect(firstDelete).toBeGreaterThan(g.asked.findIndex((a) => a.url.endsWith(':runQuery')));
+    const summary = JSON.parse(fs.readFileSync(join(out, 'summary.json'), 'utf8')) as { pulled: number; deleted: number; byArea: Record<string, number> };
+    expect(summary).toMatchObject({ pulled: 2, deleted: 2, byArea: { preview: 2 } });
+  });
+
+  it('with --keep deletes nothing, and a second pull writes nothing twice', async () => {
+    const out = join(scratch, 'errors-kept');
+    const g = errorsGoogle([errorDoc('k1')]);
+    expect(await pullErrors(['--out', out, '--key', keyFile, '--keep'], g.fetchFn)).toBe(0);
+    expect(g.asked.some((a) => a.method === 'DELETE')).toBe(false);
+    expect(await pullErrors(['--out', out, '--key', keyFile], g.fetchFn)).toBe(0);
+    expect(fs.readFileSync(join(out, 'errors.jsonl'), 'utf8').trim().split('\n')).toHaveLength(1);
+    // The second run deletes what the first saved.
+    expect(g.held).toEqual([]);
+  });
+
+  it('says which role a refused delete needs, with the page already saved', async () => {
+    const out = join(scratch, 'errors-viewer');
+    const g = errorsGoogle([errorDoc('v1')], true);
+    await expect(pullErrors(['--out', out, '--key', keyFile], g.fetchFn)).rejects.toThrow(/roles\/datastore\.user, or --keep/);
+    expect(fs.readFileSync(join(out, 'errors.jsonl'), 'utf8')).toContain('"id":"v1"');
+  });
+
+  it('pages by document name, never by offset, and refuses a folder inside the repository', async () => {
+    expect(errorsQuery('projects/p/databases/(default)/documents/errors/x')).toMatchObject({ startAt: { values: [{ referenceValue: 'projects/p/databases/(default)/documents/errors/x' }], before: false } });
+    expect(errorsQuery(null)).not.toHaveProperty('offset');
+    expect(await pullErrors(['--out', 'errors-here', '--key', keyFile], errorsGoogle([]).fetchFn)).toBe(2);
   });
 });

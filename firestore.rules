@@ -393,7 +393,7 @@ service cloud.firestore {
       return string(request.time.year()) + '-' + pad2(request.time.month()) + '-' + pad2(request.time.day());
     }
     function isValidUsage(data) {
-      return data.keys().hasOnly(['reports', 'report', 'events', 'eventDay', 'eventAt', 'event']);
+      return data.keys().hasOnly(['reports', 'report', 'events', 'eventDay', 'eventAt', 'event', 'errors', 'errorDay', 'errorAt', 'error']);
     }
     function reportAdded(before, after, uid) {
       return after.diff(before).affectedKeys().hasOnly(['reports', 'report'])
@@ -426,13 +426,32 @@ service cloud.firestore {
         && !exists(learningPath(uid, after.event))
         && existsAfter(learningPath(uid, after.event));
     }
-    // The two ids taken out at zero projects (2026-11-11), as deleting the
-    // account does before it deletes the counts: on a day an event was sent
-    // the counts must stay, and the ids need not.
+    // An error report counted (2026-11-12, Owner decision 10, SA-15): at most
+    // 20 a server day, ten seconds apart, moved only in the batch that
+    // creates the report it names (`errors` below), as an event's count is.
+    function errorPath(id) {
+      return /databases/$(database)/documents/errors/$(id);
+    }
+    function errorAdded(before, after) {
+      return after.diff(before).affectedKeys().hasOnly(['errors', 'errorDay', 'errorAt', 'error'])
+        && after.errorAt == request.time
+        && after.errorDay == serverDay()
+        && after.errors is int
+        && after.errors <= 20
+        && (before.get('errorDay', '') == serverDay()
+          ? (after.errors == before.errors + 1 && request.time >= before.errorAt + duration.value(10, 's'))
+          : after.errors == 1)
+        && isValidId(after.error)
+        && !exists(errorPath(after.error))
+        && existsAfter(errorPath(after.error));
+    }
+    // The ids taken out at zero projects (2026-11-11), as deleting the
+    // account does before it deletes the counts: on a day an event or an
+    // error report was sent the counts must stay, and the ids need not.
     function idsCleared(before, after) {
       return before.get('reports', 0) == 0
-        && after.diff(before).affectedKeys().hasOnly(['report', 'event'])
-        && !after.keys().hasAny(['report', 'event']);
+        && after.diff(before).affectedKeys().hasOnly(['report', 'event', 'error'])
+        && !after.keys().hasAny(['report', 'event', 'error']);
     }
 
     match /users/{userId}/meta/{metaId} {
@@ -466,19 +485,22 @@ service cloud.firestore {
         && incoming().full is bool;
 
       // The write counts (SA-01): read by the owner, moved only by a write
-      // they count (or its two ids cleared at zero projects), and deleted only
-      // at zero projects on a day with no learning event sent, so deleting
-      // them cannot restart a day's count.
+      // they count (or its ids cleared at zero projects), and deleted only
+      // at zero projects on a day with no learning event and no error report
+      // sent, so deleting them cannot restart a day's count.
       allow get: if isSignedIn() && userId == request.auth.uid && metaId == 'usage';
       allow create, update: if isSignedIn() && userId == request.auth.uid && metaId == 'usage'
         && isValidUsage(incoming())
         && (reportAdded(resource == null ? {} : resource.data, incoming(), userId)
           || reportRemoved(resource == null ? {} : resource.data, incoming(), userId)
           || eventAdded(resource == null ? {} : resource.data, incoming(), userId)
+          || errorAdded(resource == null ? {} : resource.data, incoming())
           || (resource != null && idsCleared(resource.data, incoming())));
       allow delete: if isSignedIn() && userId == request.auth.uid && metaId == 'usage'
         && (resource == null
-          || (resource.data.get('reports', 0) == 0 && resource.data.get('eventDay', '') != serverDay()));
+          || (resource.data.get('reports', 0) == 0
+            && resource.data.get('eventDay', '') != serverDay()
+            && resource.data.get('errorDay', '') != serverDay()));
     }
 
     // What a person lets Forma learn from (2026-11-10, the full audit;
@@ -543,6 +565,34 @@ service cloud.firestore {
         && (incoming().full == '' || getAfter(usagePath(userId)).data.get('events', 0) <= 20);
 
       allow delete: if isSignedIn() && isValidId(userId) && userId == request.auth.uid;
+    }
+
+    // Error reports (2026-11-12, Owner decision 10, the full audit's SA-15;
+    // lib/errorReport.ts), sent only by an account that turned on "Send
+    // error reports" in Settings. Five fields and no account: the server's
+    // day, the version, the area from lib/errorReport.ts's ERROR_AREAS, the
+    // error's code or name, and its message scrubbed in the browser and cut
+    // to 200 characters. Created only, by a verified address (an unverified
+    // account is anyone's to make), with the account's count raised in the
+    // same batch (`errorAdded`, at most 20 a day). No client reads, changes
+    // or deletes one: the owner's scripts/admin/pull-errors.ts reads them with
+    // a credential and deletes each once it is saved.
+    function isValidErrorReport(data) {
+      return data.keys().hasOnly(['day', 'version', 'area', 'code', 'message'])
+        && data.keys().hasAll(['day', 'version', 'area', 'code', 'message'])
+        && data.day == serverDay()
+        && data.version is string && data.version.matches('[0-9A-Za-z/._+-]{1,40}')
+        && data.area in ['page', 'mockup', 'preview', 'data', 'spec', 'repx', 'conversation', 'uncaught', 'rejection', 'other']
+        && data.code is string && data.code.matches('[0-9A-Za-z/._-]{1,40}')
+        && data.message is string && data.message.size() <= 200;
+    }
+    match /errors/{errorId} {
+      allow create: if isSignedIn()
+        && request.auth.token.email_verified == true
+        && isValidId(errorId)
+        && isValidErrorReport(incoming())
+        && getAfter(usagePath(request.auth.uid)).data.get('error', '') == errorId
+        && getAfter(usagePath(request.auth.uid)).data.get('errorAt', null) == request.time;
     }
 
     // A report's revision history.
