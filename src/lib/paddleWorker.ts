@@ -64,9 +64,14 @@ function session(base: string, name: string): Promise<OrtSessionLike> {
   if (!s) {
     ort.env.wasm.wasmPaths = { mjs: ortMjs, wasm: ortWasm };
     ort.env.wasm.numThreads = 1;
+    // Errors only (2026-11-12): at its default, warning, loading det.onnx printed
+    // 108 "Removing initializer ... not used" notices from the graph optimizer
+    // through console.error, a wall of red in DevTools on every page read that
+    // hid any real error behind it. The notices change nothing about the reading.
+    ort.env.logLevel = 'error';
     s = fetched(base, name)
       .then((r) => r.arrayBuffer())
-      .then((bytes) => ort.InferenceSession.create(new Uint8Array(bytes), { executionProviders: ['wasm'] }))
+      .then((bytes) => ort.InferenceSession.create(new Uint8Array(bytes), { executionProviders: ['wasm'], logSeverityLevel: 3 }))
       .then((made) => made as unknown as OrtSessionLike);
     s.catch(() => sessions.delete(name));
     sessions.set(name, s);
