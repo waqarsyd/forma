@@ -75,7 +75,7 @@ describe('RELEASES', () => {
      scripts/deploy.mjs made (`git ls-remote --tags origin`); the newest
      version may be one the next deploy has still to tag, and nothing else.
      Add a version here when its deploy has tagged it. */
-  const TAGGED = ['1.0.0', '1.1.0', '1.1.1', '1.2.0', '1.4.0', '1.4.1', '1.5.0', '1.5.1', '1.6.0'];
+  const TAGGED = ['1.0.0', '1.1.0', '1.1.1', '1.2.0', '1.4.0', '1.4.1', '1.5.0', '1.5.1', '1.6.0', '1.6.1'];
 
   it('carries no version that was never tagged, apart from the one the next deploy tags', () => {
     const versions = RELEASES.flatMap((r) => (r.version ? [r.version] : []));
