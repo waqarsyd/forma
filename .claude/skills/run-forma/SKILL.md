@@ -89,7 +89,10 @@ inside the project, such as `docs/media/screenshot.png`: an upload from outside
 the workspace roots is refused), `browser_evaluate` to read state,
 `browser_console_messages`, `browser_network_requests` and
 `browser_take_screenshot`. Snapshots and screenshots land in the output folder
-above, never in DevFiles. Finish with `browser_close`.
+above **only when no `filename` is given**: a relative `filename` resolves
+against the workspace root, so `ws-1.png` lands in the repository (measured
+2026-11-12). Omit it, or pass an absolute path under
+`%LOCALAPPDATA%\playwright-mcp\output`. Finish with `browser_close`.
 
 The tools appear only in a session started after the server was registered. If
 `mcp__playwright__*` is missing, say so and ask the owner to restart Claude Code,
