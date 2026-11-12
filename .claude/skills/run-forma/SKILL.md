@@ -1,6 +1,6 @@
 ---
 name: run-forma
-description: Launch Forma and drive it end to end — a mock dev server on 3001, the owner's Chrome through the extension (a CDP driver only when the owner asks for one), attach a file, generate a report, send a chat turn, screenshot, and read back what the REPX audit actually says. Use for running the app, confirming a change works in the real UI, or capturing screenshots. Covers the Windows-specific launch and teardown that make this work here.
+description: Launch Forma and drive it end to end — a mock dev server on 3001, a private Chrome through Playwright MCP (never the Claude in Chrome extension, forbidden here since 2026-11-12; a CDP driver only when the owner asks for one), attach a file, generate a report, send a chat turn, screenshot, and read back what the REPX audit actually says. Use for running the app, confirming a change works in the real UI, or capturing screenshots. Covers the Windows-specific launch and teardown that make this work here.
 ---
 
 # Running Forma
@@ -54,27 +54,59 @@ Drop `VITE_FORMA_MOCK` only if the user supplies a real key and asks for real
 output. Never put a key on a command line or in `.env`; type it into the Settings
 dialog, where it goes to `sessionStorage` and never to disk.
 
-### 2. Open it in the owner's Chrome
+### 2. Open it in Chrome through Playwright MCP
 
-Browser work happens in the owner's own Chrome, through the Claude-in-Chrome
-extension, or in the owner's own Edge. That is the owner's standing rule since
-2026-11-01, so the headless Edge below is not a fallback: it runs only when the
-owner asks for it. Open `localhost:3001/workspace` in a tab of it and drive
-it there: `find` for a control, `file_upload` to attach (paths in the session's
-scratchpad, 10 MB a call), `javascript_tool` to read state. Its screenshots can
-stall on a heavy pane, such as the REPX source, or in the unpainted RDP window;
-reading the DOM answers anyway. Until 2026-10-31 the extension could not reach
-this machine's localhost (*"Frame with ID 0 is showing error page"*); since the
-owner logged it in on this server it does.
+**The Claude in Chrome extension is forbidden on this server since 2026-11-12**
+(company policy: it signs into claude.ai in the browser as well, and the shared
+account then shows extra logins). Never call `mcp__claude-in-chrome__*`, and never
+ask the owner to connect it.
 
-If the extension is not connected, say so and ask the owner rather than starting
-a browser of your own.
+Browser work goes through **Playwright MCP**, registered for the owner's Windows
+user only (`claude mcp get playwright` says user scope, in
+`C:\Users\waqar\.claude.json`). It runs `@playwright/mcp` 0.0.85 from
+`%LOCALAPPDATA%\playwright-mcp` with `--browser chrome --isolated --output-dir
+%LOCALAPPDATA%\playwright-mcp\output`. Why it is set up that way, each point
+measured on 2026-11-12 with the browser open:
+
+- **Private to the owner.** Claude Code starts it as its own child over stdio, and
+  it drives Chrome through `--remote-debugging-pipe`, so neither Chrome nor the
+  server listens on any TCP port (`Get-NetTCPConnection` showed none). No other
+  user's process on this shared server can reach it. That is what went wrong with
+  the extension, whose bridge let another user's session open tabs in the owner's
+  Chrome. The window opens in the owner's own RDP session, owned by the owner.
+- **Nothing left on disk.** `--isolated` keeps the profile in a temporary folder
+  under the owner's own `%TEMP%`, deleted when the browser closes (checked). Nothing
+  signs in, and nothing should ever be signed into in it, claude.ai least of all.
+- **Installed in the profile, not in DevFiles.** Every level of
+  `E:\DevelopmentINDIA\...\DevFiles` grants Authenticated Users Modify, so even a
+  locked folder there could be swapped by renaming a parent, and the swapped code
+  would run as the owner. `C:\Users\waqar` is closed to other users.
+
+Open `http://localhost:3001/workspace` with `browser_navigate` and drive it:
+`browser_snapshot` to read the page and get element refs, `browser_click`,
+`browser_type` and `browser_fill_form`, `browser_file_upload` to attach (a file
+inside the project, such as `docs/media/screenshot.png`: an upload from outside
+the workspace roots is refused), `browser_evaluate` to read state,
+`browser_console_messages`, `browser_network_requests` and
+`browser_take_screenshot`. Snapshots and screenshots land in the output folder
+above, never in DevFiles. Finish with `browser_close`.
+
+The tools appear only in a session started after the server was registered. If
+`mcp__playwright__*` is missing, say so and ask the owner to restart Claude Code,
+rather than starting a browser of your own. To update it, check `npm view
+@playwright/mcp@<version>` and its two dependencies for install scripts first, then
+`npm install --prefix "$env:LOCALAPPDATA\playwright-mcp" @playwright/mcp@<version>
+--ignore-scripts`, still pinned.
 
 ### 3. The CDP driver, only when the owner asks for it
 
 Everything from here to the end of step 3 is for a run the owner has asked to be
 made with the driver (an unattended check, say). It launches a headless Edge
 from the shell, which is exactly what the rule in step 2 otherwise rules out.
+**On this shared server it is also the less private way:** it opens
+`--remote-debugging-port=9222`, and any user's process on the machine can connect
+to that port and drive the browser (Chrome's own warning). Prefer step 2; when the
+driver is asked for, keep the run short and tear it down at once.
 
 #### Launch headless Edge
 
