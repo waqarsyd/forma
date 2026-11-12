@@ -416,7 +416,9 @@ describe('editing in the pane', () => {
       });
       // Every placement of it (the Detail band prints once per record), and nothing else.
       expect(alpha().length).toBeGreaterThan(1);
-      for (const h of alpha()) expect(h.style.transform).toBe('translate(40px, 0px)');
+      // Either spelling of the same shift: jsdom 31 (2026-11-12) keeps the
+      // shortest, translate(40px), where 30 kept translate(40px, 0px) as written.
+      for (const h of alpha()) expect(h.style.transform).toMatch(/^translate\(40px(, 0px)?\)$/);
       expect(hits().filter((h) => h.dataset.control !== '0').every((h) => !h.style.transform)).toBe(true);
       fireEvent.pointerUp(window);
       expect(onEdit).toHaveBeenCalledTimes(1);
