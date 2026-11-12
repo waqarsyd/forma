@@ -6266,7 +6266,23 @@ export default function App() {
     }
     return undefined;
   }, [previews, messages]);
+  /** The report's parts in words for Go to, read when the menu opens (2026-11-11, R1-10: "Go to xrLabel3"). */
+  const [goTo, setGoTo] = useState<[string, string][]>([]);
+  useEffect(() => {
+    const xml = result?.repxContent;
+    // Cleared first, so no other report's parts show while this one's load.
+    setGoTo([]);
+    if (isCommandOpen && xml) void import('./lib/agentEdit').then((m) => setGoTo(m.controlWords(xml)));
+  }, [isCommandOpen, result?.repxContent]);
 
+  /*
+   * Every hook stays above this line. The public pages return here, so a hook
+   * below it runs only once the workspace shows, and the first render that
+   * crosses from a public page into the workspace then calls one hook more than
+   * the last and throws "Rendered more hooks than during the previous render"
+   * (2026-11-12: Go to's state, put below it on 2026-11-11, took the whole
+   * workspace down on every load; hooksAboveEarlyReturn.test.ts holds the line).
+   */
   if (!showWorkspace) {
     const isNotFound = viewForRoute(currentRoute).notFound;
     // The other public pages, through the switch PublicSite shares (2026-11-08,
@@ -6496,14 +6512,6 @@ export default function App() {
     return true;
   };
   /** Everything the command menu offers, from what is open (2026-11-05, components/CommandMenu.tsx). */
-  /** The report's parts in words for Go to, read when the menu opens (2026-11-11, R1-10: "Go to xrLabel3"). */
-  const [goTo, setGoTo] = useState<[string, string][]>([]);
-  useEffect(() => {
-    const xml = result?.repxContent;
-    // Cleared first, so no other report's parts show while this one's load.
-    setGoTo([]);
-    if (isCommandOpen && xml) void import('./lib/agentEdit').then((m) => setGoTo(m.controlWords(xml)));
-  }, [isCommandOpen, result?.repxContent]);
   const buildCommands = (): Command[] => {
     const list: Command[] = [
       { id: 'new', label: 'New report', keys: keysFor('Ctrl+Shift+O'), run: () => chatShortcutRef.current?.('newReport') },

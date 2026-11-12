@@ -290,6 +290,7 @@ for each test file the full audit's waves created.
 | `lib/reportFile` | 4 | whether an attachment is a report Forma builds on (2026-11-11, the re-audit's R3-08), one predicate for App and Batch: a .repx, .rdl, .rdlc or .frx whose text holds a DevExpress report; an RDL that did not convert is a source to design from, and with no text the name decides |
 | `lib/exportJob` | 8 | exports as jobs that queue (2026-11-11, batch PXB): which PDF a job writes, each format once in the order asked, what is said while it writes and where the file went, a .zip named for what it holds, the reply's "Exporting it as" replaced once, and a script Forma's PDF cannot hold printed instead and said |
 | `lib/focusRules` | 12 | the owner's focus rule read out of every stylesheet and inline style (2026-11-11, batch FO): the checks themselves, then no border, outline, ring or gradient edge on a pointer focus, since 2026-11-12 the composer's gradient edge kept for the keyboard and no longer allowlisted, no orange or amber edge in the workspace, a selection by fill or blue, the keyboard given a ring back wherever one is turned off, a flagged public field's red edge kept, and the pointer reset last in `index.css` |
+| `lib/hooksAboveEarlyReturn` | 2 | reads `App.tsx` (2026-11-12): no hook called below `if (!showWorkspace)`, the public pages' early return, after Go to's state put there took the workspace down on every load ("Rendered more hooks than during the previous render") and no test noticed, because nothing renders App; and the scan itself, on a hook with a type argument and a comment that names one |
 | `lib/formatFromText` | 22 | 13 from one `it.each`; a value's format read off the page's text (2026-11-11, batch CCB): dates, numbers, money and percentages as .NET formats, kept only when it prints every sample, none for a code or text, `isRatio` and the narrower `saysRatio`, and `applyFormats` on the values and totals that print one field |
 | `lib/importForeign` | 30 | SSRS and FastReport files as DevExpress reports (2026-11-11, batch FEAT1): XML text, CDATA and entities, SSRS lengths, fields, parameters, totals and page numbers converted and the rest kept as text, each table row in the band that prints it, totals with their running scope, what sits beside or below the table under its total row, no repair errors and the paper named, a 2005 Table, an `.frx` mapped, the name and the notices; since 2026-11-12 a comment skipped where it starts, not inside a CDATA section or a processing instruction |
 | `lib/learningLoop` | 12 | the per-person learning loop (2026-11-11, batch LRN2): a kept report teaching the memory and joining the library without its words, once, nothing with learning off, a habit from two reports forgotten on Forget and held back by an undo; the nearest kept report given stripped to a first report only, never someone else's, nothing after Forget, "Laid out like" only when it visibly is; a described report given the person's style from two kept reports. jsdom |
@@ -337,12 +338,13 @@ for each test file the full audit's waves created.
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 4,286 in 257 files**, recounted from a fresh run on 2026-11-12 (a JSON report
+**Total: 4,288 in 258 files**, recounted from a fresh run on 2026-11-12 (a JSON report
 compared row by row) after that day's merges: the CodeQL triage's seven cases, the owner's
 decisions 1, 3 and 9 (the composer's edge, the Data features' two questions, the note on
 the other addresses), 10, 15 and 20 (error reports, 90 days, the box reader's page
-pairs) and Forma Designer 1.1.0's case, on the 4,204 the run after the full audit's last
-merges counted, with every row above set from that run's per-file counts. That total is the arithmetic sum of
+pairs), Forma Designer 1.1.0's case and the two of `hooksAboveEarlyReturn`, on the 4,204
+the run after the full audit's last merges counted, with every row above set from that run's
+per-file counts. That total is the arithmetic sum of
 the column above it, which is the point of writing both down. A mismatch between them is the cheapest
 possible signal that this table went stale, so adding a case changes **two** numbers
 here, not one.
