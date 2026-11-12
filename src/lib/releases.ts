@@ -75,6 +75,20 @@ export const REPO_URL = 'https://github.com/waqarsyd/forma';
 
 export const RELEASES: Release[] = [
   {
+    id: '2026-11-12-steadier-lighter',
+    date: '2026-11-12',
+    version: '1.6.1',
+    title: 'Steadier answers and a lighter site',
+    summary:
+      'Answers from Google’s AI come through in one go instead of stopping partway and starting over, reading a first English picture downloads 7.6 MB less, the site’s pages download less before they show, and keys in Google’s newer format are kept out of error and problem reports.',
+    changes: [
+      { kind: 'improved', area: 'generation', text: 'An answer from Google’s AI no longer stops partway and starts over, which could add minutes to a report; it now arrives in one go.' },
+      { kind: 'improved', area: 'ocr', text: 'Reading your first English picture downloads 7.6 MB less, and reads it exactly as before.' },
+      { kind: 'improved', area: 'site', text: 'The site’s pages download less before they show: each page fetches only what it draws, and the home page no longer comes with every other page.' },
+      { kind: 'security', area: 'workspace', text: 'A Gemini key in Google AI Studio’s newer format, which starts AQ., is now kept out of error reports and problem reports, as the older kind already was.' },
+    ],
+  },
+  {
     id: '2026-11-11-full-audit',
     date: '2026-11-12',
     version: '1.6.0',

@@ -235,7 +235,8 @@ const BUDGETS = [
   { prefix: 'DocsPage-', ext: '.js', max: 86_500, note: 'the Docs page, lazy (81,521 B at 94.2%, Vite 8)' },
   { prefix: 'reportPreview-', ext: '.js', max: 66_000, note: 'the Preview engine, lazy (61,825 B at 93.7%, Vite 8)' },
   // Raised to 55,500 on 2026-11-12, at 51,921 B (102.8%): the 1.6.0 entry, the full audit's release note, in a visitor's words (DOCS, dc85c04). 93.6%.
-  { prefix: 'releases-', ext: '.js', max: 55_500, note: 'the changelog and What\'s new, lazy (51,921 B at 93.6%)' },
+  // Raised to 58,700 the same day, at 55,155 B (99.4%): the 1.6.1 entry, +1,096 B, the releases' own words. 94.0%.
+  { prefix: 'releases-', ext: '.js', max: 58_700, note: 'the changelog and What\'s new, lazy (55,155 B at 94.0%)' },
   { prefix: 'FeaturesPage-', ext: '.js', max: 49_000, note: 'the Features page, lazy (46,243 B at 94.4%, Vite 8)' },
   { prefix: 'DatabasePanel-', ext: '.js', max: 37_700, note: 'the Data tab\'s database, lazy (35,468 B at 94.1%)' },
   // The workspace itself (2026-11-08), lazy since the cut above, budgeted so
