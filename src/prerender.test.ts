@@ -17,7 +17,8 @@ import { ROUTES } from './lib/router';
 import { COPYRIGHT } from './components/SiteFooter';
 
 const pages = new Map<string, string>(PRERENDERED.map((route) => [route, renderRoute(route)]));
-const decode = (s: string) => s.replace(/&amp;/g, '&').replace(/&#x27;/g, "'").replace(/&quot;/g, '"');
+// &amp; last (2026-11-12, CodeQL js/double-escaping): first, it turned a written "&amp;quot;" into a quote.
+const decode = (s: string) => s.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&');
 const attrs = (html: string, name: string) => [...html.matchAll(new RegExp(`\\s${name}="([^"]*)"`, 'g'))].map((m) => decode(m[1]));
 const tags = (html: string, tag: string) => [...html.matchAll(new RegExp(`<${tag}\\b[^>]*>`, 'g'))].map((m) => m[0]);
 const textOf = (html: string) => decode(html.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();

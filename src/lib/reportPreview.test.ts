@@ -580,7 +580,7 @@ describe('charts and cross-tabs', () => {
     // Two charts in a band: an unbounded search for <SeriesSerializable> gives
     // the first chart both series and the second none.
     const xml = chartReport(
-      chart('first', series('A', 'R', 'X'), 3).replace('<Item1 Ref="3"', '<Item1 Ref="3"') +
+      chart('first', series('A', 'R', 'X'), 3) +
       chart('second', series('B', 'Q', 'Y'), 10).replace('<Item1 Ref="10"', '<Item2 Ref="10"').replace('</Item1>', '</Item2>'),
     );
     const structure = parseReportStructure(xml);

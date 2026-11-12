@@ -183,6 +183,13 @@ async function startServer() {
     // src/server/appRoutes.ts), as firebase.json now rewrites only those:
     // anything else is a 404 with the built 404.html, which the app draws as
     // Not found and search engines do not index as a copy of the home page.
+    //
+    // No rate limit here, by decision (2026-11-12, CodeQL js/missing-rate-limiting):
+    // this sends one of the files the build wrote, chosen from a fixed list
+    // (pageFile), the same work express.static does above for every other path.
+    // The live site is Firebase Hosting and never runs this; a self-hosted
+    // `npm start` sits behind the proxy src/server/bindHost.ts expects, which
+    // is where a limit belongs, and a limiter here would be a dependency.
     app.get('*', (req, res) => {
       res.setHeader('Cache-Control', REVALIDATE);
       if (isAppPath(req.path)) {
