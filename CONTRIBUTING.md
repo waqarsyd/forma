@@ -38,7 +38,8 @@ fails if `package.json` and the lockfile disagree, which is a check nothing else
 **14.64 MB above** what the lockfile specified.
 
 **`npm run test:rules` needs Java** — the Firestore emulator is a JVM process. A JRE is
-enough; no JDK, no admin.
+enough; no JDK, no admin. It also needs **Node 24.12 or later**, which
+`@firebase/rules-unit-testing` 6 asks for; everything else runs on the project's floor.
 
 ### Optional, recommended once per clone
 

@@ -34,7 +34,7 @@
  * reading the layout")`, the vision model's two `say(...)` and a `setError`
  * offering "to repair by hand"), and over the tree after it none.
  */
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createElement } from 'react';
@@ -413,6 +413,14 @@ function wordsShown(html: string): string {
  * their words held to the same rule.
  */
 describe('the panels that draw their own words', () => {
+  // Their cold imports paid here, not inside a case's five seconds (2026-11-12):
+  // OcrDialog's took the second case to 5,013 ms in the full run after a large
+  // npm install, where it had been 0.6 to 1 s. testing.md, the cold-cache note.
+  beforeAll(async () => {
+    await import('../components/LibraryPanel');
+    await import('../components/OcrDialog');
+  }, 60_000);
+
   it('the report library says what it holds, never how it searches', async () => {
     const { default: LibraryPanel } = await import('../components/LibraryPanel');
     const sources = [{ name: 'Invoice.repx', chunks: 4, embedded: 1 }, { name: 'Statement.repx', chunks: 2, embedded: 2 }] as unknown as Parameters<typeof LibraryPanel>[0]['sources'];

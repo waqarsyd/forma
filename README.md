@@ -143,7 +143,7 @@ There is no ESLint config, no state-management library, no date library, no HTTP
 
 - **Node 22.22.2 or later on 22, 24.15.0 or later on 24, or 26+** (`^22.22.2 || ^24.15.0 || >=26`; developed on Node 24.21.0 / npm 11.19.0, and `node -v; npm -v` is the current answer). Node 20 is out: it reached end of life on 2026-04-30, and jsdom, which the tests run on, needs those patch releases. The odd-numbered lines **23 and 25 are outside the range too**, even though they are newer: Vitest skips 23 and jsdom skips 25.
 - **A Gemini API key** from [Google AI Studio](https://aistudio.google.com/apikey) — supplied in the app at runtime, never in a file.
-- **A JRE** — only for `npm run test:rules`, which starts the Firestore emulator (a JVM process). A runtime is enough; no JDK.
+- **A JRE** — only for `npm run test:rules`, which starts the Firestore emulator (a JVM process). A runtime is enough; no JDK. That suite also needs Node 24.12 or later (`@firebase/rules-unit-testing` 6).
 - **A Firebase project** — only if you want sign-in and cloud sync. Everything else works without one.
 
 <sup>`package.json`'s `engines` field is the declaration; several other files restate it, and the table *Facts stated in more than one file* in [`CLAUDE.md`](CLAUDE.md) lists every copy, so raising the floor is a change to each of them.</sup>
@@ -977,7 +977,7 @@ firebase-applet-config.json
 | `npm test` | Unit tests (Vitest; `node` by default, jsdom per file where needed) |
 | `npm run test:watch` | The same suite in watch mode |
 | `npm run test:coverage` | Coverage over `lib/`, `services/` and `server/`, held to the thresholds in `vitest.config.ts` — see the note there about what is deliberately excluded |
-| `npm run test:rules` | Firestore security-rule tests — **needs Java** |
+| `npm run test:rules` | Firestore security-rule tests — **needs Java** and Node 24.12+ |
 | `npm run bench:fidelity` | The fidelity benchmark: generates every case under `scripts/fidelity/cases` through the real pipeline with your own key (`FORMA_BENCH_KEY`) and scores the result. A benchmark, not a check — it spends quota, so it is not in CI |
 | `npm run model:train` | Learns Forma's own model (`assets/model/formaModel.json`) from a folder of `.repx` reports, from their structure only, and refuses to write it if any word of theirs would reach it. Takes `--reports` and `--data` (a folder outside the repository); see `docs/proposals/own-model.md` |
 | `npm run model:dataset` | Packs those skeletons as a private Kaggle dataset for the vision model: every rare font made Arial, every target checked for stray words, nothing written if one is left. Takes `--data` (more than one set allowed) and `--out` (outside the repository). Then `python scripts/model/render.py <out>` draws each skeleton as page images with placeholder text. Crystal Reports `.rpt` files become a set through `scripts/model/crystal.ps1` and `crystal.ts`, which need the Crystal runtime 13 |

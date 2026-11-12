@@ -507,8 +507,16 @@ const BUDGETS = [
   // first Vite 8 build had put the SDK's shared internals in App Check's chunk,
   // which this cap could not see: auth imported the 41 kB `appcheck` chunk on
   // every page. vite.config.ts's codeSplitting groups explain the fix.
-  { prefix: 'firebase-', ext: '.js', max: 112_000, note: 'firebase app + auth, lazy, loaded by every page' },
-  { prefix: 'firestore-', ext: '.js', max: 369_000, note: 'firestore, lazy, loaded once signed in' },
+  //
+  // Raised the same day for firebase 12.12.1 -> 13.3.0, the owner's choice
+  // (decision 18) made with these numbers in hand, the firing these vendored
+  // caps exist for: firebase- 107,168 -> 110,556 B (+3,388), 117_500 (94.1%);
+  // firestore- 346,913 -> 584,217 B (+237,304), 621_500 (94.0%), of which
+  // 149,959 B is re2js, a regular-expression engine Firestore 4.20 imports,
+  // and the rest Firestore's own growth. Every signed-in visitor downloads it;
+  // no advisory was fixed (package.json, comment:not-overridden).
+  { prefix: 'firebase-', ext: '.js', max: 117_500, note: 'firebase app + auth, lazy, loaded by every page' },
+  { prefix: 'firestore-', ext: '.js', max: 621_500, note: 'firestore, lazy, loaded once signed in' },
   /*
    * Every self-hosted font, checked individually. An empty prefix matches all
    * of them; the cap is the largest (inter-latin-ext, 85,068 B) plus a little.
@@ -726,8 +734,13 @@ const BUDGETS = [
  * code in more chunks, each with its own wrapper, and each page's head naming
  * more of them), then React 19.3.1 and motion 12.43, +30,549 B, react-dom
  * +28,875 of it (itemised on the `index-` cap). 6,800,000 is 98.7% again.
+ *
+ * Left at 6,800,000 through Vite 8 (6,395,508 B, 94.1%), and raised to
+ * 7,060,000 the same day for firebase 13: 6,395,588 -> 6,639,195 B, +243,607,
+ * the Firestore chunk +237,304 and auth +3,388 (itemised on their caps) and
+ * the rest chunk names and wrappers. 7,060,000 is 94.0%.
  */
-const TOTAL_MAX = 6_800_000;
+const TOTAL_MAX = 7_060_000;
 
 if (!existsSync(DIST)) {
   console.error(`No ${DIST}/ directory. Run \`npm run build\` first.`);
