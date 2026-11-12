@@ -1026,7 +1026,8 @@ report.ExportToPdf("report.pdf");`}
               <Note label="What the AI sees" tone="safe">
                 Nothing of your database unless you share it: attaching the layout in the chat shares it, and{' '}
                 <strong className="font-semibold text-on-surface">Send names and sample values to the AI</strong> on
-                the Data view says which and turns it off. Shared, a report designed or changed in the chat is given
+                the Data view says which and turns it off; with it off, writing SQL from a sentence there asks
+                first, and a yes covers only that. Shared, a report designed or changed in the chat is given
                 the 12 likeliest tables, views and procedures for your request, with up to 3 sample values a column,
                 and binds to your real columns; Forma checks every name it uses and writes the data source itself.
               </Note>

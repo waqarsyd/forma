@@ -665,8 +665,11 @@ describe('the legal copy and its date change together', () => {
      audit): local storage keeps, on another of Forma's addresses, that the
      note pointing to its main one was dismissed
      (components/OtherHostNotice.tsx). A new thing stored, so the date moved.
+     The same day (owner decision 3), a database's names also go when the
+     person says yes to the Data view's question before SQL is written from a
+     sentence: substantive, and already that day's date.
      */
-  const EXPECTED_COPY_HASH = '9983bcdf76d2';
+  const EXPECTED_COPY_HASH = '92ff7a8c9ca9';
   const EXPECTED_UPDATED = '12 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {
