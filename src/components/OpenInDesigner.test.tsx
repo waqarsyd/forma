@@ -110,7 +110,8 @@ describe('Open in designer', () => {
     const onOpened = vi.fn();
     render(<OpenInDesigner {...props({ onOpened })} />);
     expect(await screen.findByRole('heading', { name: 'Opened in the designer' })).toBeTruthy();
-    expect(screen.getByText(new RegExp(`^Forma Designer ${CURRENT.replace(/\./g, '\\.')} is available; this PC has 0\\.9\\.0\\.`))).toBeTruthy();
+    // A plain prefix, not a RegExp built from the version: nothing in it needs escaping.
+    expect(screen.getByText((text) => text.startsWith(`Forma Designer ${CURRENT} is available; this PC has 0.9.0.`))).toBeTruthy();
     expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/open'))).toBe(true);
     // App's own "opened" line would close the dialog before the offer is read.
     expect(onOpened).not.toHaveBeenCalled();
