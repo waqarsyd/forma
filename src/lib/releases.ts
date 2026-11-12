@@ -75,6 +75,19 @@ export const REPO_URL = 'https://github.com/waqarsyd/forma';
 
 export const RELEASES: Release[] = [
   {
+    id: '2026-11-12-sign-in-own-address',
+    date: '2026-11-12',
+    version: '1.6.2',
+    title: 'Google sign-in on Forma’s own address',
+    summary:
+      'Signing in with Google now opens on the Forma address you are using rather than a second one, a browser that blocks the sign-in window no longer stops you signing in, and account emails come from Forma.',
+    changes: [
+      { kind: 'improved', area: 'site', text: 'Sign in with Google opens on the Forma address you are using, openforma.web.app, instead of forma-201ba.firebaseapp.com.' },
+      { kind: 'improved', area: 'site', text: 'When your browser blocks the Google sign-in window, Forma takes you to Google and back in the same tab instead of stopping there.' },
+      { kind: 'improved', area: 'site', text: 'The emails that confirm your address or reset your password now come from Forma.' },
+    ],
+  },
+  {
     id: '2026-11-12-steadier-lighter',
     date: '2026-11-12',
     version: '1.6.1',
