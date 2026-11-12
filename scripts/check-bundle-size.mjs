@@ -576,8 +576,24 @@ const BUDGETS = [
   // emits the chunk at all: Rolldown drops the import that the false
   // __FORMA_HANDWRITING__ makes unreachable, where Rollup shipped 890 kB that
   // nothing could load.
-  { prefix: 'transformers.web', ext: '.js', max: 890_000, note: 'Transformers.js, handwriting only', optional: true },
-  { prefix: 'ort-wasm-simd-threaded', ext: '.wasm', max: 22_970_000, note: "ONNX Runtime's WebAssembly, handwriting and PaddleOCR" },
+  //
+  // Retuned to 578_500 the same day for Transformers.js 3.7.6 -> 4.3.2: its
+  // chunk 836,276 -> 543,658 B in a FORMA_HANDWRITING=1 build, 94.0%.
+  { prefix: 'transformers.web', ext: '.js', max: 578_500, note: 'Transformers.js, handwriting only', optional: true },
+  /*
+   * ONNX Runtime's WebAssembly, one file per use since 2026-11-12 (onnxruntime-
+   * web 1.22-dev -> 1.31-dev, with Transformers.js 4). Until then PaddleOCR
+   * and handwriting shared the JSEP build, 21,596,019 B, one budget for both.
+   * 1.31 grew it to 28,352,885, and PaddleOCR, which runs on the CPU, moved to
+   * the CPU-only build (lib/paddleWorker.ts): 14,264,838 B, in every build, the
+   * one a first English picture downloads. The JSEP build is handwriting's
+   * alone now, and a handwriting build also emits the asyncify build,
+   * 26,861,777 B, which Transformers.js's runtime names and never fetches (the
+   * reader asks for the JSEP files, measured 2026-11-12). Each at 94%.
+   */
+  { prefix: 'ort-wasm-simd-threaded-', ext: '.wasm', max: 15_200_000, note: "ONNX Runtime's CPU-only WebAssembly, PaddleOCR" },
+  { prefix: 'ort-wasm-simd-threaded.jsep', ext: '.wasm', max: 30_200_000, note: "ONNX Runtime's JSEP WebAssembly, handwriting only", optional: true },
+  { prefix: 'ort-wasm-simd-threaded.asyncify', ext: '.wasm', max: 28_600_000, note: 'emitted with handwriting, never fetched', optional: true },
   { prefix: 'encoder_model_quantized', ext: '.onnx', max: 24_550_000, note: 'TrOCR encoder, handwriting only', optional: true },
   { prefix: 'decoder_model_merged_quantized', ext: '.onnx', max: 43_110_000, note: 'TrOCR decoder, handwriting only', optional: true },
   /*
@@ -586,9 +602,13 @@ const BUDGETS = [
    * PaddlePaddle's two models, pinned by SHA-256 in scripts/fetch-paddle.mjs and
    * optional here, since a build made without fetching them (CI's) has none:
    * 4,826,518 B and 7,848,423 B. All at 94%, as the vendored caps sit. The
-   * WebAssembly it runs on is handwriting's, budgeted above, one file for both.
+   * WebAssembly it runs on is budgeted above.
+   *
+   * The worker retuned to 82_000 on 2026-11-12: on ONNX Runtime's CPU-only
+   * build (onnxruntime-web/wasm) it carries no WebGPU or WebNN code, 412,220 ->
+   * 77,082 B. 94.0%.
    */
-  { prefix: 'paddleWorker', ext: '.js', max: 429_000, note: 'PaddleOCR worker with ONNX Runtime, when a picture is read' },
+  { prefix: 'paddleWorker', ext: '.js', max: 82_000, note: 'PaddleOCR worker with ONNX Runtime, when a picture is read' },
   { prefix: 'det', ext: '.onnx', max: 5_135_000, note: 'PaddleOCR text detector', optional: true },
   { prefix: 'rec-en', ext: '.onnx', max: 8_350_000, note: 'PaddleOCR English recogniser', optional: true },
   /*
@@ -801,14 +821,16 @@ const isModel = (f) => f.path.startsWith(MODEL_DIR);
  * the total above they would make its cap guard nothing.
  */
 const HANDWRITING_DIR = join(DIST, 'handwriting');
-const isHandwriting = (f) => f.path.startsWith(HANDWRITING_DIR) || /^(ort-wasm-simd-threaded|transformers\.web)/.test(f.name);
+// Since 2026-11-12 only ONNX Runtime's JSEP and asyncify files: the CPU-only one is PaddleOCR's.
+const isHandwriting = (f) => f.path.startsWith(HANDWRITING_DIR) || /^(ort-wasm-simd-threaded\.(jsep|asyncify)|transformers\.web)/.test(f.name);
 /*
  * PaddleOCR (2026-11-10) likewise: the models under dist/paddle/ (when
  * npm run fetch:paddle ran) and its worker, fetched only when a picture is read.
- * 13,082,453 B together; the WebAssembly it shares is counted with handwriting.
+ * 13,082,453 B together then. Since 2026-11-12 also ONNX Runtime's CPU-only
+ * build, its glue and its WebAssembly, which is PaddleOCR's alone.
  */
 const PADDLE_DIR = join(DIST, 'paddle');
-const isPaddle = (f) => f.path.startsWith(PADDLE_DIR) || f.name.startsWith('paddleWorker');
+const isPaddle = (f) => f.path.startsWith(PADDLE_DIR) || f.name.startsWith('paddleWorker') || f.name.startsWith('ort-wasm-simd-threaded-');
 /*
  * The built pages (2026-11-08, the site audit's batch SB): one HTML file per
  * route at dist/'s root, every prerendered public route drawn in full at build
@@ -869,10 +891,20 @@ const PAGES_TOTAL_MAX = 907_000;
 const total = files.filter((f) => !isOcr(f) && !isPdfFont(f) && !isModel(f) && !isHandwriting(f) && !isPaddle(f) && !isPage(f)).reduce((a, f) => a + f.size, 0);
 const paddleTotal = files.filter(isPaddle).reduce((a, f) => a + f.size, 0);
 // 13,082,453 B with the models (2026-11-10), so 94.0%.
-const PADDLE_TOTAL_MAX = 13_920_000;
+// Raised to 28,770,000 on 2026-11-12, when ONNX Runtime's CPU-only build became
+// PaddleOCR's alone and was counted here: 27,045,206 B, the models, the worker
+// (77,082) and the runtime (14,289,219 with its glue). What a first English
+// picture downloads fell, from 34.7 MB on the shared JSEP build to 27.0. 94.0%.
+const PADDLE_TOTAL_MAX = 28_770_000;
 const handwritingTotal = files.filter(isHandwriting).reduce((a, f) => a + f.size, 0);
 // 90,597,142 B with the model (2026-11-04), so 94.0%.
-const HANDWRITING_TOTAL_MAX = 96_400_000;
+// Raised to 131,830,000 on 2026-11-12 for Transformers.js 4 and onnxruntime-web
+// 1.31, in a FORMA_HANDWRITING=1 build: 123,916,089 B. The JSEP WebAssembly
+// grew 21,596,019 -> 28,352,885, and the build now also emits the asyncify one,
+// 26,861,777 B, which the runtime names and the reader never fetches;
+// Transformers.js itself fell 836,276 -> 543,658. Opt-in, and no deploy has
+// carried it (README). 94.0%.
+const HANDWRITING_TOTAL_MAX = 131_830_000;
 const ocrTotal = files.filter(isOcr).reduce((a, f) => a + f.size, 0);
 /*
  * 15,700,000 until 2026-11-04, when the six OCR languages the owner approved

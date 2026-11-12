@@ -12,16 +12,22 @@
  * screenshot, measured 2026-11-10. Each worker loads only the model it uses.
  *
  * Everything comes from this site: the models from `/paddle/<version>/`, and
- * ONNX Runtime's glue and WebAssembly from the build's own assets, the same two
- * files handwriting uses (lib/handwriting.ts), so a browser that has read
- * handwriting already holds them and the build carries one copy.
+ * ONNX Runtime's glue and WebAssembly from the build's own assets.
+ *
+ * ONNX Runtime's CPU-only build since 2026-11-12, not the JSEP one handwriting
+ * uses. They shared one copy until then, but onnxruntime-web 1.31 (with
+ * Transformers.js 4) grew the JSEP WebAssembly from 21.6 to 28.4 MB, and
+ * PaddleOCR runs on the CPU (`executionProviders: ['wasm']`): JSEP adds only
+ * WebGPU and WebNN, which it never asks for. The plain build is 14.3 MB, so a
+ * first English picture now downloads half what it did, and a deploy without
+ * handwriting, the usual one, ships only this. A handwriting build ships both.
  */
 // The package's own declaration of the module, which its package.json exports
 // do not reach under "bundler" resolution.
 /// <reference path="../../node_modules/onnxruntime-web/types.d.ts" />
-import * as ort from 'onnxruntime-web';
-import ortMjs from '../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs?url';
-import ortWasm from '../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.wasm?url';
+import * as ort from 'onnxruntime-web/wasm';
+import ortMjs from '../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs?url';
+import ortWasm from '../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm?url';
 import type { OcrLine } from './ocr';
 import { characterDict, DETECT_LONG_SIDE, detectRegions, RECOGNIZE_MIN_WIDTH, recognizeRegions, rgbFromRgba, type OrtSessionLike } from './paddleOcr';
 import type { PixelBox } from './reportGeometry';

@@ -108,6 +108,12 @@ function loadReader() {
         env.allowRemoteModels = false;
         env.allowLocalModels = true;
         env.localModelPath = `${HANDWRITING_BASE}models/`;
+        // Off since Transformers.js 4 (2026-11-12), whose default caches ONNX
+        // Runtime's glue by fetching it and importing it from a blob: URL, which
+        // the site's script-src refuses, so the reader would not start. Off, the
+        // runtime imports the glue from the same-origin URL below, as under 3,
+        // and the browser's own cache keeps it (assets are served immutable).
+        env.useWasmCache = false;
         if (env.backends.onnx.wasm) env.backends.onnx.wasm.wasmPaths = { mjs: ortMjs, wasm: ortWasm };
         const read = (await pipeline('image-to-text', MODEL, { dtype: 'q8', device: 'wasm' })) as unknown as Reader;
         return { read, fromCanvas: (c: HTMLCanvasElement) => RawImage.fromCanvas(c) };
