@@ -16,6 +16,15 @@ vi.mock('../lib/designerBridge', async (importOriginal) => ({
 
 import OpenInDesigner from './OpenInDesigner';
 import { launchDesigner } from '../lib/designerBridge';
+import { DESIGNER_RELEASE } from '../lib/designerRelease';
+
+/*
+ * A companion that is up to date reports the download's own version. These
+ * cases said '1.0.0' until 2026-11-12, when Forma Designer 1.1.0 was packed and
+ * the dialog, rightly, began offering the update instead of closing: a stub
+ * that means "current" has to follow the release, not name one.
+ */
+const CURRENT = DESIGNER_RELEASE.version;
 
 /*
  * jsdom's user agent carries the platform the tests run on: "(win32)" here,
@@ -88,12 +97,23 @@ describe('Open in designer', () => {
   });
 
   it('hands the report over and lets App say so', async () => {
-    companion({ app: 'RepxDesigner', version: '1.0.0', designerVersion: '20.1.3.0', devexpress: { version: '20.1', build: '20.1.3' }, found: ['20.1'], oldest: '20.1' });
+    companion({ app: 'RepxDesigner', version: CURRENT, designerVersion: '20.1.3.0', devexpress: { version: '20.1', build: '20.1.3' }, found: ['20.1'], oldest: '20.1' });
     const onOpened = vi.fn();
     render(<OpenInDesigner {...props({ onOpened })} />);
     await waitFor(() => expect(onOpened).toHaveBeenCalledWith('Invoice.repx'));
     const sent = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/open'));
     expect((sent![1] as RequestInit).body).toBe('<XtraReportsLayoutSerializer />');
+  });
+
+  it('opens the report in an older copy too, and stays to offer the newer one', async () => {
+    companion({ app: 'RepxDesigner', version: '0.9.0', designerVersion: '20.1.3.0', devexpress: { version: '20.1', build: '20.1.3' }, found: ['20.1'], oldest: '20.1' });
+    const onOpened = vi.fn();
+    render(<OpenInDesigner {...props({ onOpened })} />);
+    expect(await screen.findByRole('heading', { name: 'Opened in the designer' })).toBeTruthy();
+    expect(screen.getByText(new RegExp(`^Forma Designer ${CURRENT.replace(/\./g, '\\.')} is available; this PC has 0\\.9\\.0\\.`))).toBeTruthy();
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).endsWith('/open'))).toBe(true);
+    // App's own "opened" line would close the dialog before the offer is read.
+    expect(onOpened).not.toHaveBeenCalled();
   });
 
   it('tells a browser on another platform that the designer runs on Windows, and asks nothing', async () => {
@@ -115,7 +135,7 @@ describe('Open in designer', () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const fetchMock = vi.fn(async (url: string) => {
-      if (url.endsWith('/health')) return new Response(JSON.stringify({ app: 'RepxDesigner', version: '1.0.0', devexpress: { version: '20.1', build: '20.1.3' }, found: ['20.1'], oldest: '20.1' }), { status: 200 });
+      if (url.endsWith('/health')) return new Response(JSON.stringify({ app: 'RepxDesigner', version: CURRENT, devexpress: { version: '20.1', build: '20.1.3' }, found: ['20.1'], oldest: '20.1' }), { status: 200 });
       // The report is on its way while App renders again.
       await gate;
       return new Response('{"opened":"Invoice.repx"}', { status: 202 });

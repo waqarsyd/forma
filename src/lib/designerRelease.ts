@@ -36,12 +36,12 @@ export interface DesignerRelease {
 
 // BEGIN designer release (scripts/package-designer.ts writes this block)
 export const DESIGNER_RELEASE: DesignerRelease = {
-  version: '1.0.0',
-  file: 'FormaDesigner-1.0.0-windows.zip',
-  bytes: 100285,
-  sha256: '08c8b935e76e4c55d6446756dea468321f88d21bb0ac28476ead4b93aa88c1aa',
-  date: '2026-11-09',
-  tag: 'v1.4.0',
+  version: '1.1.0',
+  file: 'FormaDesigner-1.1.0-windows.zip',
+  bytes: 122301,
+  sha256: '3564abde6fa06127e649de97cbe98c62a98b57c62408b021b5f7a6dc4b575ea6',
+  date: '2026-11-12',
+  tag: 'v1.6.0',
 };
 // END designer release
 
