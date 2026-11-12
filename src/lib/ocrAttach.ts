@@ -9,6 +9,7 @@
  */
 import type { PreviewMeta } from './attachments';
 import { READER_MAX_LOST, readDetectedPage, type BoxReaderModel } from './boxReader';
+import { pageReadingOf, type PageReading } from './readerPairs';
 import { recognizePage, type OcrPage } from './ocr';
 import { detectLayout, layoutText } from './ocrLayout';
 import { layoutToRepx, layoutToReport, ocrSummary, reportNameFor, validateOcrRepx } from './ocrRepx';
@@ -109,6 +110,13 @@ export interface ReaderBuiltReport {
    * screenshot without it, and held both to 3 px at 150 dpi.
    */
   dpi: number;
+  /**
+   * The first page as the reader read it, in numbers alone (2026-11-12, the
+   * full audit's D10, lib/readerPairs.ts): kept on the device with the
+   * request's learning event and labelled by the report once it is kept.
+   * Null for a page with no text or too many.
+   */
+  pageReading?: PageReading | null;
 }
 
 /** A page's pixels per inch: a rendered PDF page's own, else the image's width over the paper it is a picture of. */
@@ -139,6 +147,15 @@ export function buildWithReader(
   const first = layoutOf(pages[0]);
   if (!first.pages[0] || !first.total) return null;
   const reading = readDetectedPage(model, first.pages[0]);
+  // The page in numbers alone, kept with the request's learning event for the
+  // reader to learn from once the report is kept (2026-11-12, lib/readerPairs.ts).
+  // Never in the way of the build: a reading that cannot be made is not kept.
+  let pageReading: PageReading | null = null;
+  try {
+    pageReading = pageReadingOf(model, first.pages[0], reading.reading);
+  } catch {
+    pageReading = null;
+  }
   // A page a design would lose too much of is better as OCR's copy.
   if (reading.coverage.lost > READER_MAX_LOST * reading.coverage.texts) return null;
   const skeletons = [reading.skeleton];
@@ -165,6 +182,7 @@ export function buildWithReader(
     texts,
     used: design.used,
     dpi: pictureDpi(pages[0].read.ocr, paper),
+    pageReading,
   };
 }
 

@@ -506,6 +506,17 @@ describe('the policy says of learning what the code does', () => {
   // One-directional, as the hosts above: a signal the code records obliges the
   // sentence. The policy may say it before the code does (batch LRN adds it in
   // the same wave), never after.
+  // The page pair (2026-11-12, Owner decision 20, D10): what a kept event carries obliges the sentence.
+  it('says the positions of the text on a page sent are kept, never the text, once a kept event carries them', () => {
+    expect(learning).toMatch(/\n\s+boxes: string;/);
+    expect(policy).toMatch(/the positions of the text on a page you send, never the text/);
+    expect(policy).toMatch(/Those positions wait in this browser until you keep that report, and go with it/);
+    const WORDS: Record<number, string> = { 10: 'ten', 20: 'twenty', 50: 'fifty' };
+    const max = Number(/export const MAX_READINGS = (\d+);/.exec(learning)?.[1]);
+    expect(WORDS[max], `MAX_READINGS is ${max}: add its word here and in the policy`).toBeTruthy();
+    expect(policy).toContain(`with the positions of the text on the last ${WORDS[max]} pages you sent`);
+  });
+
   it('says the kept and undone reports and the time each took once events record them', () => {
     if (/'kept'|'undo'/.test(learning.slice(learning.indexOf('export type LearningKind'), learning.indexOf(';', learning.indexOf('export type LearningKind')))) || /\n\s+ms\??:\s*number/.test(learning)) {
       expect(policy).toMatch(/Forma also keeps which reports you kept or undid and how long each took, never their words/);
@@ -710,8 +721,15 @@ describe('the legal copy and its date change together', () => {
      out of it first, that the operator's download deletes it from the
      database, the local storage key that keeps the switch, and what account
      deletion leaves of their count. Substantive, and already that day's date.
+
+     Moved again the same day (Owner decision 20, the full audit's D10): the
+     positions of the text on a page sent, never the text, kept in the
+     browser until the report made from it is kept and sent with it to teach
+     Forma to tell a page's parts apart, and the last twenty pages' positions
+     named among what IndexedDB keeps. Substantive, and already that day's
+     date.
      */
-  const EXPECTED_COPY_HASH = 'edf92274e64a';
+  const EXPECTED_COPY_HASH = '1d793ce2bc19';
   const EXPECTED_UPDATED = '12 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {

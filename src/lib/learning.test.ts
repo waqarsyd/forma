@@ -5,10 +5,16 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { ReportSkeleton } from './reportSkeleton';
+import type { BoxReaderModel, ReadBox } from './boxReader';
+import type { OcrLine, OcrPage, OcrWord } from './ocr';
 import {
   DEFAULT_LEARNING_SETTINGS,
+  MAX_BOXES_CHARS,
   MAX_FULL_BYTES,
+  MAX_READINGS,
   MAX_REF_CHARS,
+  readLearningEvent,
+  trimReadings,
   featureDistance,
   projectKey,
   recordLearning,
@@ -63,6 +69,35 @@ const skeleton: ReportSkeleton = {
 function fakeStorage(): Pick<Storage, 'getItem' | 'setItem'> & { map: Map<string, string> } {
   const map = new Map<string, string>();
   return { map, getItem: (k) => map.get(k) ?? null, setItem: (k, v) => void map.set(k, v) };
+}
+
+/**
+ * The report the box reader makes of a made-up page and the page's numeric
+ * reading, as a picture request makes them (lib/ocrAttach.ts): the page
+ * boxReader.test.ts reads, read at 100 dpi, against the shipped reader.
+ */
+async function readerBuilt() {
+  const [{ readFileSync }, { linesOf }, { buildWithReader }] = await Promise.all([import('node:fs'), import('./boxReader'), import('./ocrAttach')]);
+  const model = JSON.parse(readFileSync('assets/model/boxReader.json', 'utf8')) as BoxReaderModel;
+  const t = (x: number, y: number, w: number, text: string, h = 8): ReadBox => ({ x, y, w, h, text });
+  const boxes: ReadBox[] = [
+    t(300, 60, 200, 'Monthly sales', 14),
+    t(100, 120, 60, 'Customer'),
+    t(400, 120, 40, 'Date'),
+    t(640, 120, 50, 'Amount'),
+    ...[0, 1, 2, 3].flatMap((r) => [t(100, 140 + r * 18, 80, `Name ${r}`), t(400, 140 + r * 18, 60, '01/02/2026'), t(650, 140 + r * 18, 40, '1,250.00')]),
+    t(560, 220, 50, 'Total'),
+    t(640, 220, 50, '5,000.00'),
+    t(360, 1080, 70, 'Page 1 of 1'),
+  ];
+  const lineOfWords = (bs: ReadBox[]): OcrLine => {
+    const words: OcrWord[] = bs.map((b) => ({ text: b.text, confidence: 95, box: { x0: b.x, y0: b.y, x1: b.x + b.w, y1: b.y + b.h } }));
+    const box = { x0: Math.min(...bs.map((b) => b.x)), y0: Math.min(...bs.map((b) => b.y)), x1: Math.max(...bs.map((b) => b.x + b.w)), y1: Math.max(...bs.map((b) => b.y + b.h)) };
+    return { text: bs.map((b) => b.text).join(' '), confidence: 95, box, words };
+  };
+  const ocr: OcrPage = { width: 827, height: 1169, dpi: 100, lines: linesOf(boxes).map((l) => lineOfWords(l.boxes.map((k) => boxes[k]))) };
+  const built = buildWithReader([{ meta: { uploadId: 'u1', file: 'sales.png' }, read: { ocr, flagged: 0, lines: ocr.lines.length } }], model, 'A4')!;
+  return { built };
 }
 
 describe('the settings', () => {
@@ -213,8 +248,25 @@ describe('an event', () => {
 
   it('keeps every field present, with the defaults, so the rules can pin the shape', () => {
     const e = learningEvent({ kind: 'rating', rating: 'good' }, settings);
-    expect(Object.keys(e).sort()).toEqual(['ai', 'at', 'day', 'distance', 'draft', 'dropped', 'errors', 'full', 'how', 'id', 'kind', 'ms', 'ops', 'project', 'prompt', 'rating', 'ref', 'request', 'roles', 'skeleton', 'source', 'warnings'].sort());
-    expect(e).toMatchObject({ source: 'none', request: 'none', ai: 'none', skeleton: '', ops: [], roles: [], errors: 0, warnings: 0, rating: 'good', ref: '', how: '', draft: '', ms: 0, project: '', distance: -1, dropped: '' });
+    expect(Object.keys(e).sort()).toEqual(['ai', 'at', 'boxes', 'day', 'distance', 'draft', 'dropped', 'errors', 'full', 'how', 'id', 'kind', 'ms', 'ops', 'project', 'prompt', 'rating', 'ref', 'request', 'roles', 'skeleton', 'source', 'warnings'].sort());
+    expect(e).toMatchObject({ source: 'none', request: 'none', ai: 'none', skeleton: '', ops: [], roles: [], errors: 0, warnings: 0, rating: 'good', ref: '', how: '', draft: '', ms: 0, project: '', distance: -1, dropped: '', boxes: '' });
+  });
+
+  // The page pair (2026-11-12, Owner decision 20, D10; lib/readerPairs.ts).
+  it('carries the page pair on a kept report only, and says when it would not fit', () => {
+    const s = { structure: true, full: false };
+    expect(learningEvent({ kind: 'kept', boxes: '{"v":1}' }, s).boxes).toBe('{"v":1}');
+    for (const kind of ['generation', 'edit', 'translate', 'rating', 'undo'] as const) expect(learningEvent({ kind, boxes: '{"v":1}' }, s).boxes, kind).toBe('');
+    expect(learningEvent({ kind: 'kept', boxes: 'x'.repeat(MAX_BOXES_CHARS + 1) }, s)).toMatchObject({ boxes: '', dropped: 'boxes' });
+    expect(learningEvent({ kind: 'kept', boxesDropped: true }, s)).toMatchObject({ boxes: '', dropped: 'boxes' });
+    // An event kept before the pair existed is sent with an empty one.
+    const { boxes: _none, ...old } = learningEvent({ kind: 'kept', how: 'pdf' }, s);
+    expect(forSending(old, s)).toMatchObject({ boxes: '' });
+  });
+
+  it('never sends the page reading kept with a request', () => {
+    const e = { ...learningEvent({ kind: 'generation', skeleton }, settings), uid: 'alice', sent: false, reading: { v: 1 } as never };
+    expect(forSending(e, settings)).not.toHaveProperty('reading');
   });
 
   /*
@@ -418,6 +470,47 @@ describe.runIf(fakeIdb)('the store on the device', () => {
   });
 
   // The full audit (2026-11-11, LM-09): an event that could not be sent is sent at the next flush, and only its own account's.
+  /*
+   * The page pair (2026-11-12, Owner decision 20, D10): a picture request's
+   * reading kept here with its event and never sent, then labelled by the
+   * report when it is kept, and the pair sent with the kept event; another
+   * account's reading never used; and readings kept for the newest requests only.
+   */
+  it('keeps a page\'s reading with its request, and sends it labelled once the report is kept', async () => {
+    const idb = new fakeIdb!.IDBFactory();
+    const storage = fakeStorage();
+    writeLearningSettings({ structure: true, full: false }, 'alice', false, storage);
+    const { built } = await readerBuilt();
+    const sent: LearningEvent[] = [];
+    const sink = { uid: 'alice', known: true, send: async (e: LearningEvent) => void sent.push(e), idb, storage };
+    const made = await recordLearning({ kind: 'generation', source: 'image', ai: 'forma', draft: 'reader', repx: built.repxContent, reading: built.pageReading }, sink);
+    expect((await readLearningEvent(made!.id, idb))?.reading).toEqual(built.pageReading);
+    expect(sent[0]).not.toHaveProperty('reading');
+    expect(sent[0].boxes).toBe('');
+    const kept = await recordLearning({ kind: 'kept', how: 'repx', repx: built.repxContent, madeRepx: built.repxContent, ref: made!.id, ai: 'forma' }, sink);
+    expect(kept!.boxes).not.toBe('');
+    expect(kept!.dropped).toBe('');
+    expect(sent[1].boxes).toBe(kept!.boxes);
+    for (const word of ['Monthly', 'Customer', 'Amount', '1,250']) expect(kept!.boxes).not.toContain(word);
+    // Bob, signed in at the same browser, keeps a report naming Alice's request: no pair.
+    writeLearningSettings({ structure: true, full: false }, 'bob', false, storage);
+    const bobs = await recordLearning({ kind: 'kept', how: 'repx', repx: built.repxContent, ref: made!.id }, { ...sink, uid: 'bob', send: null });
+    expect(bobs!.boxes).toBe('');
+  });
+
+  it(`keeps the page readings of the newest ${MAX_READINGS} requests, and the events of the rest`, async () => {
+    const idb = new fakeIdb!.IDBFactory();
+    const reading = { v: 1 } as never;
+    const events = Array.from({ length: MAX_READINGS + 2 }, (_, n) => ({ ...learningEvent({ kind: 'generation' }, structure, at(n)), uid: 'alice', sent: true, reading }));
+    for (const event of events) await keepLearningEvent(event, idb);
+    expect(await trimReadings(MAX_READINGS, idb)).toBe(2);
+    const kept = await listLearningEvents(idb);
+    expect(kept).toHaveLength(MAX_READINGS + 2);
+    expect(kept.filter((e) => (e as { reading?: unknown }).reading)).toHaveLength(MAX_READINGS);
+    expect((await readLearningEvent(events[0].id, idb)) as { reading?: unknown }).not.toHaveProperty('reading');
+    expect(((await readLearningEvent(events[MAX_READINGS + 1].id, idb)) as { reading?: unknown }).reading).toBeTruthy();
+  });
+
   it('sends what the account lacks at the next flush, once, and never another account\'s or one made signed out', async () => {
     const idb = new fakeIdb!.IDBFactory();
     const mine = { ...learningEvent({ kind: 'generation' }, structure, at(1)), uid: 'alice', sent: false };

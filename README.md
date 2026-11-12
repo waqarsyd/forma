@@ -556,7 +556,11 @@ src/
                        boxReader (Forma's box reader: two small networks,
                        learned on the CPU, that put each text OCR read in its
                        band and give it its role, decoded in print order and
-                       made a skeleton at the places OCR read),
+                       made a skeleton at the places OCR read), readerPairs
+                       (the box reader learning from use: a page sent kept as
+                       numbers alone, labelled by the report kept from it,
+                       checked on the owner's side and made the rows
+                       scripts/model/boxes.ts --pairs trains on),
                        skeletonRepx (the report a skeleton describes, its
                        words from what OCR read in each box, its values bound
                        to fields named after their column's caption),

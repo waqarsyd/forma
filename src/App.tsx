@@ -570,6 +570,8 @@ type TeamPlan = {
   correct?: DraftRequest | null;
   /** The page's shape as Forma read it, which the nearest kept report is found by (2026-11-11, D3). */
   shape?: import('./lib/reportSkeleton').ReportSkeleton;
+  /** The first page in numbers alone, kept on the device with the request's learning event (2026-11-12, D10). */
+  reading?: import('./lib/readerPairs').PageReading | null;
 };
 
 const NO_TEAM: TeamPlan = { brief: '', draft: null };
@@ -2765,7 +2767,7 @@ export default function App() {
     setResult(newResult);
     recordRevision('From your page', newResult);
     if (!result) setActiveTab('print');
-    const learning = formaLearned('reader', newResult.repxContent);
+    const learning = formaLearned('reader', newResult.repxContent, built.pageReading);
     setMessages(prev => [...prev, {
       learning,
       id: nextMessageId(),
@@ -3853,6 +3855,7 @@ export default function App() {
     let evidence: ReportLayout | null = null;
     let correct: DraftRequest | null = null;
     let shape: TeamPlan['shape'];
+    let reading: TeamPlan['reading'] = null;
     if (input.read.length) {
       // OCR's own picture of the source, every row it read, for the audit
       // to check the AI's REPX against (2026-11-05, lib/ocrAttach.ts).
@@ -3882,6 +3885,7 @@ export default function App() {
         const { draftBrief, readerCorrection } = await import('./lib/formaTeam');
         brief = draftBrief((shape = built.skeleton), built.layout, config.unit, 'reader');
         correct = readerCorrection(built);
+        reading = built.pageReading ?? null;
         const readerResult: DesignResult = { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: built.repxContent, usage: null };
         draft = async () => ({ result: readerResult, source: 'reader' });
       }
@@ -3911,7 +3915,7 @@ export default function App() {
       }
       draft = async () => ({ result: (await offlineDesign(described, described.description)).result, source: 'offline' });
     }
-    return { brief, draft, evidence, correct, shape };
+    return { brief, draft, evidence, correct, shape, reading };
   };
 
   const runGeneration = async (
@@ -4268,6 +4272,8 @@ export default function App() {
         repx: newResult.repxContent,
         prompt: currentPrompt,
         ms: Date.now() - turnStartedAt,
+        // The page in numbers, kept here until the report is kept (D10).
+        reading: team.reading,
       });
 
     } catch (err: any) {
@@ -4697,8 +4703,8 @@ export default function App() {
     return id;
   };
   /** A report Forma built from a picture on its own, as a learning event, by what built it (LM-12). */
-  const formaLearned = (draft: 'reader' | 'ocr', repx: string | undefined) =>
-    ({ id: recordLearning({ kind: 'generation', source: 'image', request: 'new', ai: 'forma', draft, repx }), ai: 'forma' as const });
+  const formaLearned = (draft: 'reader' | 'ocr', repx: string | undefined, reading?: import('./lib/readerPairs').PageReading | null) =>
+    ({ id: recordLearning({ kind: 'generation', source: 'image', request: 'new', ai: 'forma', draft, repx, reading }), ai: 'forma' as const });
   /** The AI's kind for a learning event, from who answered. */
   const aiKindOf =(by: 'gemini' | 'local' | 'openrouter'): 'gemini' | 'local' | 'openrouter' | 'mock' => (MOCK_MODE ? 'mock' : by);
 

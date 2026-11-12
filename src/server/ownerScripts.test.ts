@@ -40,6 +40,8 @@ import { countAll } from '../../scripts/admin/stats.mjs';
 import { collectionsOf } from '../../scripts/backup.mjs';
 import { designerAssetProblem, manifestOf } from '../../scripts/designer-asset.mjs';
 import { accountKey, shortHash, type FetchLike } from '../lib/learningPipeline';
+import { LINE_FEATURES } from '../lib/boxReader';
+import { BOX_OWN, FEATURE_SIGNATURE } from '../lib/readerPairs';
 
 const SCRATCH_ROOT = fs.existsSync(resolve('..', 'forma-model-data', 'work')) ? resolve('..', 'forma-model-data', 'work') : tmpdir();
 const scratch = fs.mkdtempSync(join(SCRATCH_ROOT, 'lo-owner-'));
@@ -190,6 +192,28 @@ describe('pull-learning.ts against a stand-in for Google', () => {
     expect(fs.readdirSync(join(own, 'skeletons')).sort()).toEqual(['late.json', 'r1.json', 'r2.json']);
     const ids = fs.readFileSync(join(own, 'events.jsonl'), 'utf8').trim().split('\n').map((l) => (JSON.parse(l) as { id: string }).id);
     expect(ids).toEqual(['r1', 'late', 'r2']);
+  });
+
+  // The page pairs (2026-11-12, Owner decision 20, D10): structure, so the weekly pull brings them.
+  it('saves a kept report\'s page pair beside the events, never in them, and lets it go when the report is undone', async () => {
+    const own = join(scratch, 'pulled-pairs');
+    const pair = JSON.stringify({ v: 1, features: FEATURE_SIGNATURE, page: [827, 1169], boxes: [[100, 140, 80, 8]], lines: [[0]], lineFeatures: [new Array(LINE_FEATURES.length).fill(0)], boxFeatures: [new Array(BOX_OWN).fill(0)], readBand: [4], readRole: [2], band: [4], role: [2] });
+    const keptDoc = doc('verified1', 'k1', '2026-11-10T10:00:00Z', { kind: 'kept', skeleton: '', boxes: pair, ref: 'g1' });
+    const g1 = google([keptDoc], users);
+    expect(await pull(['--out', own, '--key', keyFile, '--skeletons-only'], g1.fetchFn)).toBe(0);
+    const file = JSON.parse(fs.readFileSync(join(own, 'boxes', 'k1.json'), 'utf8')) as { ref: string; at: string; account: string; pair: { band: number[] } };
+    expect(file).toMatchObject({ ref: 'g1', at: '2026-11-10T10:00:00Z', account: accountKey('verified1') });
+    expect(file.pair.band).toEqual([4]);
+    const line = JSON.parse(fs.readFileSync(join(own, 'events.jsonl'), 'utf8').trim()) as Record<string, unknown>;
+    expect(line).not.toHaveProperty('boxes');
+    expect(line.hasBoxes).toBe(true);
+    const select = (g1.asked.find((a) => a.url.endsWith(':runQuery'))!.body!.structuredQuery as { select: { fields: { fieldPath: string }[] } }).select.fields.map((f) => f.fieldPath);
+    expect(select).toContain('boxes');
+    expect(select).not.toContain('full');
+    // The report undone since: its pair goes.
+    const g2 = google([keptDoc, doc('verified1', 'un1', '2026-11-10T11:00:00Z', { kind: 'undo', skeleton: '', ref: 'g1' })], users);
+    expect(await pull(['--out', own, '--key', keyFile, '--skeletons-only'], g2.fetchFn)).toBe(0);
+    expect(fs.readdirSync(join(own, 'boxes'))).toEqual([]);
   });
 
   it('counts first, and will not read most of the free day without --force', async () => {

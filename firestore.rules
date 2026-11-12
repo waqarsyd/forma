@@ -517,9 +517,15 @@ service cloud.firestore {
     // the two together. `day` is the server's day and `at` a time on it, so a
     // made-up time cannot reach the owner's pull; a rating, a kept report and
     // an undo name the event they are about in `ref`.
+    //
+    // The page pair (2026-11-12, Owner decision 20, the full audit's D10;
+    // lib/readerPairs.ts): `boxes`, on a kept report only, where each text
+    // of the page sent sat and the box reader's numbers for it, never its
+    // characters, with the band and role the kept report gave it, as JSON of
+    // at most 100,000 characters.
     function isValidLearning(data, id, uid) {
-      return data.keys().hasOnly(['id', 'userId', 'at', 'day', 'kind', 'source', 'request', 'ai', 'skeleton', 'ops', 'roles', 'errors', 'warnings', 'rating', 'ref', 'how', 'draft', 'ms', 'project', 'distance', 'dropped', 'full', 'prompt'])
-        && data.keys().hasAll(['id', 'userId', 'at', 'day', 'kind', 'source', 'request', 'ai', 'skeleton', 'ops', 'roles', 'errors', 'warnings', 'rating', 'ref', 'how', 'draft', 'ms', 'project', 'distance', 'dropped', 'full', 'prompt'])
+      return data.keys().hasOnly(['id', 'userId', 'at', 'day', 'kind', 'source', 'request', 'ai', 'skeleton', 'ops', 'roles', 'errors', 'warnings', 'rating', 'ref', 'how', 'draft', 'ms', 'project', 'distance', 'dropped', 'boxes', 'full', 'prompt'])
+        && data.keys().hasAll(['id', 'userId', 'at', 'day', 'kind', 'source', 'request', 'ai', 'skeleton', 'ops', 'roles', 'errors', 'warnings', 'rating', 'ref', 'how', 'draft', 'ms', 'project', 'distance', 'dropped', 'boxes', 'full', 'prompt'])
         && data.id == id
         && data.userId == uid
         && data.day == serverDay()
@@ -544,7 +550,9 @@ service cloud.firestore {
         && data.ms is int && data.ms >= 0
         && data.project is string && (data.project == '' || data.project.matches('[0-9a-f]{12}'))
         && data.distance is number && data.distance >= -1
-        && data.dropped in ['', 'skeleton', 'full']
+        && data.dropped in ['', 'skeleton', 'full', 'boxes']
+        && data.boxes is string && data.boxes.size() <= 100000
+        && (data.boxes == '' || data.kind == 'kept')
         && data.full is string && data.full.size() <= 700000
         && data.prompt is string && data.prompt.size() <= 4000;
     }

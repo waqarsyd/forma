@@ -21,6 +21,7 @@ import {
   pullQuery,
   resumeSince,
   scoreDescribed,
+  selectPairs,
   selectTraining,
   SKELETON_FIELDS,
   soundSkeleton,
@@ -32,6 +33,8 @@ import {
 } from './learningPipeline';
 import type { FormaModel } from './formaModel';
 import type { ReportSkeleton } from './reportSkeleton';
+import { LINE_FEATURES } from './boxReader';
+import { BOX_OWN, FEATURE_SIGNATURE } from './readerPairs';
 
 /** A sound skeleton, as the app sends one: a title, a ruled heading table, a Detail row. */
 function skeleton(over: Partial<ReportSkeleton> = {}, family = 'Arial'): ReportSkeleton {
@@ -290,6 +293,45 @@ describe('selectTraining', () => {
   });
 });
 
+/*
+ * The page pairs a kept report labelled (2026-11-12, Owner decision 20, D10;
+ * lib/readerPairs.ts): kept from a verified account's kept report, never the
+ * mock's, one rated bad or undone, one not sound, or past the cap.
+ */
+describe('selectPairs', () => {
+  /** The smallest sound pair: one text on one line, read and labelled a value in Detail. */
+  const pair = (over: Record<string, unknown> = {}) =>
+    JSON.stringify({ v: 1, features: FEATURE_SIGNATURE, page: [827, 1169], boxes: [[100, 140, 80, 8]], lines: [[0]], lineFeatures: [new Array(LINE_FEATURES.length).fill(0)], boxFeatures: [new Array(BOX_OWN).fill(0)], readBand: [4], readRole: [2], band: [4], role: [2], ...over });
+  const kept = (over: Partial<PulledEvent> = {}) => event({ kind: 'kept', skeleton: '', boxes: pair(), ref: 'g1', ...over });
+  const accounts = (uid: string) => (uid === 'gone1' ? 'gone' : uid === 'new1' ? 'unverified' : 'verified') as 'verified' | 'unverified' | 'gone';
+
+  it('keeps a kept report\'s pair, with the report it labels, when, and the account as a pseudonym', () => {
+    const e = kept({ userId: 'erin' });
+    const { kept: picks } = selectPairs([e, event()], { accounts });
+    expect(picks).toHaveLength(1);
+    expect(picks[0].file).toMatchObject({ ref: 'g1', at: e.at, account: accountKey('erin') });
+    expect(picks[0].file.pair.band).toEqual([4]);
+  });
+
+  it('drops gone and unverified accounts, the mock, a bad rating, an undo, an unsound pair and past the cap', () => {
+    const events = [
+      kept({ userId: 'gone1' }),
+      kept({ userId: 'new1' }),
+      kept({ ai: 'mock' }),
+      kept({ ref: 'rated' }),
+      event({ kind: 'rating', rating: 'bad', ref: 'rated', skeleton: '' }),
+      kept({ ref: 'undone' }),
+      event({ kind: 'undo', ref: 'undone', skeleton: '' }),
+      kept({ boxes: pair({ features: '00000000' }) }),
+      kept({ userId: 'busy' }),
+      kept({ userId: 'busy' }),
+    ];
+    const { kept: picks, dropped } = selectPairs(events, { accounts, perAccount: 1 });
+    expect(picks.map((p) => p.event.userId)).toEqual(['busy']);
+    expect(dropped).toEqual({ 'account gone': 1, 'address not verified': 1, mock: 1, 'rated bad': 1, undone: 1, 'pair not sound': 1, 'over the account cap': 1 });
+  });
+});
+
 /** Scratch for the reconcile: beside the repository on the owner's server (never C:), the system's elsewhere. */
 const SCRATCH_ROOT = fs.existsSync(resolve('..', 'forma-model-data', 'work')) ? resolve('..', 'forma-model-data', 'work') : tmpdir();
 const scratch = fs.mkdtempSync(join(SCRATCH_ROOT, 'lo-reconcile-'));
@@ -335,6 +377,18 @@ describe('reconcile', () => {
     expect(fs.readdirSync(join(scratch, 'repx'))).toEqual([]);
     expect(fs.readdirSync(join(scratch, 'prompts'))).toEqual([]);
     expect(fs.readFileSync(join(scratch, 'events.jsonl'), 'utf8')).toBe(`${JSON.stringify({ id: 'keep', userId: 'u1' })}\n`);
+  });
+
+  // The page pairs (2026-11-12, D10) go as the rest do: with their event, and with a forgotten account.
+  it('removes a page pair with its event, and a forgotten account\'s by the pseudonym its file carries', () => {
+    const dir = join(scratch, 'pairs');
+    fs.mkdirSync(join(dir, 'boxes'), { recursive: true });
+    fs.writeFileSync(join(dir, 'boxes', 'kept1.json'), JSON.stringify({ ref: 'g1', account: accountKey('u1') }));
+    fs.writeFileSync(join(dir, 'boxes', 'cleared1.json'), JSON.stringify({ ref: 'g2', account: accountKey('u1') }));
+    fs.writeFileSync(join(dir, 'boxes', 'other1.json'), JSON.stringify({ ref: 'g3', account: accountKey('u9') }));
+    const plan = applyReconcile(nodeFs, dir, new Set(['kept1', 'other1']), new Set([accountKey('u9')]));
+    expect(plan.ids.sort()).toEqual(['cleared1', 'other1']);
+    expect(fs.readdirSync(join(dir, 'boxes'))).toEqual(['kept1.json']);
   });
 });
 

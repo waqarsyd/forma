@@ -21,6 +21,21 @@
  *   page, OCR alone, as evaluate.ts scores it.
  * --out    where the model is written, `assets/model/boxReader.json` when
  *   given; without it the script only scores.
+ * --pairs  a folder of page pairs from use, given once or more (2026-11-12,
+ *   Owner decision 20, the full audit's D10): `boxes/` of a pull folder
+ *   (scripts/model/pull-learning.ts), each a page a person sent read in
+ *   numbers alone, labelled with the bands and roles of the report they kept
+ *   (src/lib/readerPairs.ts). The pairs hold the features the app computed
+ *   and no text, so they join the training as rows, not as pages: each
+ *   labelled line a row of the band network and of the order between bands,
+ *   each page a page of the second look with --context, and each labelled
+ *   text a row of the role network, its line's band decoded by the reader
+ *   being trained, as the app will have it. Only pairs read with this
+ *   reader's features count (`soundPair`), and of a report kept twice the
+ *   newest. `--pairs-weight w` weighs each pair row against a drawn one
+ *   (default 1). The held-out scores are the drawn pages' as before; the
+ *   pairs are scored apart, for the shipped reader as it read them in use
+ *   and for the reader trained here.
  *
  * Training texts are given as OCR would read them: each box a pixel off,
  * one in thirty missed, and texts on one line whose gap is narrower than
@@ -63,6 +78,7 @@ import { detectLayout } from '../../src/lib/ocrLayout';
 import { pageForImage } from '../../src/lib/reportGeometry';
 import { paperName } from '../../src/lib/reportSkeleton';
 import { readWithOcr } from './ocrPages';
+import { pairPage, pairRoleRows, pairsOfFolder, scorePairPages, type PairPage } from '../../src/lib/readerPairs';
 
 const argv = process.argv.slice(2);
 const valueOf = (flag: string) => (argv.indexOf(flag) >= 0 ? argv[argv.indexOf(flag) + 1] : undefined);
@@ -453,6 +469,17 @@ const evalPages = pages.filter((p) => p.split === 'eval' && p.texts.length);
 console.log(`labels: ${pages.length} pages from ${files.length} file(s); train ${trainPages.length}, held out ${evalPages.length}`);
 
 const allTraining = trainPages.map((p) => exampleOf(p, true));
+
+// The page pairs from use (--pairs, 2026-11-12, D10): numbers and labels, no text.
+const pairDirs = argv.flatMap((a, i) => (a === '--pairs' && argv[i + 1] ? [argv[i + 1]] : []));
+const PAIR_WEIGHT = Number(valueOf('--pairs-weight') ?? 1);
+const usePages: PairPage[] = pairDirs
+  .flatMap((d) => {
+    const dir = resolve(d);
+    return pairsOfFolder(readdirSync(dir).filter((n) => /\.json$/i.test(n)).map((n) => readFileSync(join(dir, n), 'utf8')));
+  })
+  .map(pairPage);
+if (pairDirs.length) console.log(`page pairs from use: ${usePages.length} page(s), ${usePages.reduce((s, p) => s + p.boxLabel.filter((r) => r >= 0).length, 0)} labelled texts`);
 let readPages = 0;
 if (READ) {
   // Each folder's training pages, read by OCR as the app reads a picture.
@@ -510,10 +537,23 @@ const trainLines = trainEx.map((ex, e) => {
   for (let i = 1; i < known.length; i++) counts[known[i - 1]][known[i]] += pageWeight[e];
   return { lines, feats, labels };
 });
+// Each labelled line of a page pair from use, as a row, and its order (D10).
+for (const p of usePages) {
+  p.lineFeats.forEach((f, i) => {
+    if (p.lineLabel[i] < 0) return;
+    lineX.push(f);
+    lineY.push(p.lineLabel[i]);
+    lineW.push(PAIR_WEIGHT);
+  });
+  const known = p.lineLabel.filter((l) => l >= 0);
+  if (known.length) starts[known[0]] += PAIR_WEIGHT;
+  for (let i = 1; i < known.length; i++) counts[known[i - 1]][known[i]] += PAIR_WEIGHT;
+}
 const texts = trainEx.reduce((s, e) => s + e.known.filter(Boolean).length, 0);
-console.log(`training on ${trainEx.length} pages (${readPages} of them as OCR read them), ${lineX.length} lines and ${texts} texts`);
+console.log(`training on ${trainEx.length} pages (${readPages} of them as OCR read them)${usePages.length ? ` and ${usePages.length} page pair(s) from use` : ''}, ${lineX.length} lines and ${texts} texts`);
+const weighted = MATCH || (usePages.length > 0 && PAIR_WEIGHT !== 1);
 
-const lineNet = train(lineX, lineY, READER_BANDS.length, HIDDEN, EPOCHS, 'lines', MATCH ? lineW : undefined);
+const lineNet = train(lineX, lineY, READER_BANDS.length, HIDDEN, EPOCHS, 'lines', weighted ? lineW : undefined);
 const startLog = starts.map((c) => Math.log(c / starts.reduce((a, b) => a + b, 0)));
 const transLog = counts.map((row) => row.map((c) => Math.log(c / row.reduce((a: number, b: number) => a + b, 0))));
 
@@ -524,6 +564,7 @@ const transLog = counts.map((row) => row.map((c) => Math.log(c / row.reduce((a: 
 // gives a new one.
 let contextNet: Mlp | undefined;
 let firstScores: number[][][] = trainLines.map(({ feats }) => feats.map((f) => mlpProbs(lineNet, f)));
+let pairFirst: number[][][] = usePages.map((p) => p.lineFeats.map((f) => mlpProbs(lineNet, f)));
 if (CONTEXT) {
   const half = (ex: Example) => Math.abs(hash(`${ex.id}#`)) % 2;
   const netOf = (h: number) => {
@@ -543,6 +584,8 @@ if (CONTEXT) {
   };
   const halves = [netOf(0), netOf(1)];
   firstScores = trainLines.map(({ feats }, e) => feats.map((f) => mlpProbs(halves[1 - half(trainEx[e])], f)));
+  // Neither half saw a pair, so either gives the scores of a page unseen.
+  pairFirst = usePages.map((p) => p.lineFeats.map((f) => mlpProbs(halves[0], f)));
   const ctxX: number[][] = [];
   const ctxY: number[] = [];
   const ctxW: number[] = [];
@@ -555,7 +598,15 @@ if (CONTEXT) {
       ctxW.push(pageWeight[e]);
     });
   });
-  contextNet = train(ctxX, ctxY, READER_BANDS.length, CONTEXT_HIDDEN, EPOCHS, 'context', MATCH ? ctxW : undefined);
+  usePages.forEach((p, e) => {
+    contextFeatures(p.lines, p.boxes, p.lineFeats, pairFirst[e]).forEach((x, i) => {
+      if (p.lineLabel[i] < 0) return;
+      ctxX.push(x);
+      ctxY.push(p.lineLabel[i]);
+      ctxW.push(PAIR_WEIGHT);
+    });
+  });
+  contextNet = train(ctxX, ctxY, READER_BANDS.length, CONTEXT_HIDDEN, EPOCHS, 'context', weighted ? ctxW : undefined);
 }
 /** The band scores the app will decode from: the first network's, then the second look's when there is one. */
 const scoresOf = (lines: ReturnType<typeof linesOf>, boxesOfPage: ReadBox[], feats: number[][], first: number[][]) =>
@@ -609,12 +660,24 @@ trainEx.forEach((ex, e) => {
     boxW.push(pageWeight[e]);
   });
 });
+// Each labelled text of a page pair, its line's band decoded by this reader (D10).
+const pairRowsStart = boxX.length;
+usePages.forEach((p, e) => {
+  const bands = decodeBands(scoresOf(p.lines, p.boxes, p.lineFeats, pairFirst[e]), startLog, transLog, transitionWeight).map((k) => READER_BANDS[k]);
+  for (const row of pairRoleRows(p, bands)) {
+    boxX.push(row.x);
+    boxY.push(row.y);
+    boxW.push(PAIR_WEIGHT);
+  }
+});
 // The roles are not weighted by page kind: a page's kind is about its bands.
 // Weighted, page information fell from 83.9% right on the real reports to
 // 9.7%, since most training pages that print it also have a report header,
 // a kind the real first pages rarely have (2026-11-05). `boxW` is kept for
 // `--match-roles`, which measures that again.
-const boxNet = train(boxX, boxY, READER_ROLES.length, HIDDEN, EPOCHS, 'texts', MATCH && MATCH_ROLES ? boxW : undefined);
+// The drawn rows weighted by page kind only with --match-roles; the pairs' rows by --pairs-weight.
+const roleWeights = MATCH && MATCH_ROLES ? boxW : usePages.length && PAIR_WEIGHT !== 1 ? boxW.map((w, i) => (i < pairRowsStart ? 1 : w)) : undefined;
+const boxNet = train(boxX, boxY, READER_ROLES.length, HIDDEN, EPOCHS, 'texts', roleWeights);
 
 return {
   version: 1,
@@ -864,6 +927,16 @@ if (pagesDir) {
   ]);
   for (const w of why.sort((a, b) => b.lost - a.lost).slice(0, 6)) console.log(`\n${w.text}`);
   if (WHY && totalMisses.length) console.log(`\ntotals given the wrong role (${totalMisses.length}):\n  ${totalMisses.slice(0, 40).join('\n  ')}`);
+}
+
+// The pages people sent, against the reports they kept (D10): the shipped
+// reader as it read them in use, and this one from their numbers alone.
+if (usePages.length) {
+  const s = scorePairPages(model, usePages);
+  console.log('');
+  console.log(`== page pairs from use (${usePages.length} pages, ${s.model.texts} labelled texts; trained on, so this one's numbers flatter it)`);
+  console.log(`as read in use: band right ${pct(s.shipped.band, s.shipped.texts)}, role right ${pct(s.shipped.role, s.shipped.texts)}, both ${pct(s.shipped.both, s.shipped.texts)}`);
+  console.log(`this reader, its networks only: band right ${pct(s.model.band, s.model.texts)}, role right ${pct(s.model.role, s.model.texts)}, both ${pct(s.model.both, s.model.texts)}`);
 }
 
 if (outFile) {

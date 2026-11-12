@@ -711,6 +711,19 @@ describe('learning events (2026-11-10, the full audit)', () => {
     await assertSucceeds(write(validLearning(EVENT, ALICE, { kind: 'rating', rating: 'good', skeleton: '', ref: 'm3k9x0-rated1' })));
   });
 
+  // The page pair (2026-11-12, Owner decision 20, D10; lib/readerPairs.ts).
+  it('takes a page pair on a kept report only, of at most 100,000 characters', async () => {
+    const pair = '{"v":1,"boxes":[[100,140,80,8]]}';
+    await assertFails(sendEvent(aliceMail(), validLearning('pair-on-generation', ALICE, { boxes: pair })));
+    await assertFails(sendEvent(aliceMail(), validLearning('pair-too-long', ALICE, { kind: 'kept', boxes: 'x'.repeat(100_001) })));
+    await assertFails(sendEvent(aliceMail(), validLearning('pair-not-text', ALICE, { kind: 'kept', boxes: 7 })));
+    const { boxes: _left, ...missing } = validLearning('pair-missing', ALICE);
+    await assertFails(sendEvent(aliceMail(), missing));
+    await assertSucceeds(sendEvent(aliceMail(), validLearning('pair-on-kept', ALICE, { kind: 'kept', how: 'pdf', boxes: pair })));
+    await seed(['users', ALICE, 'meta', 'usage'], { events: 1, eventDay: today(), eventAt: Timestamp.fromMillis(Date.now() - 60_000), event: 'pair-on-kept' });
+    await assertSucceeds(sendEvent(aliceMail(), validLearning('pair-dropped', ALICE, { kind: 'kept', how: 'pdf', dropped: 'boxes' }), ALICE, { events: 2 }));
+  });
+
   it('takes the server day only, so a made-up time never reaches the pull (LM-26)', async () => {
     await assertFails(sendEvent(aliceMail(), validLearning(EVENT, ALICE, { at: '9999-01-01T00:00:00.000Z', day: '9999-01-01' })));
     await assertFails(sendEvent(aliceMail(), validLearning(EVENT, ALICE, { at: '2020-01-01T00:00:00.000Z' })));

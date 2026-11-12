@@ -152,8 +152,9 @@ export default function LearningSettings({ user }: LearningSettingsProps) {
           <label className="wb-set-label" htmlFor="wb-set-learn-structure">Help Forma learn from the shape of my reports</label>
           <p>
             The structure of each report you make or change: its bands, where each control sits, its size, font and alignment, and what
-            kind of text it holds. Never the text itself, a field name, a query or a picture. With this on, the shape of your reports
-            helps Forma&apos;s maintainer improve how Forma lays out reports{user ? '' : ' once you sign in'}.
+            kind of text it holds. For a page you send, where its text sits and which part of the report each piece ended in once you
+            keep it. Never the text itself, a field name, a query or a picture. With this on, the shape of your reports helps
+            Forma&apos;s maintainer improve how Forma reads pages and lays out reports{user ? '' : ' once you sign in'}.
             {/* Signed out, nothing is sent: flushLearning sends no event made signed out (2026-11-11, LG review). */}
           </p>
         </div>

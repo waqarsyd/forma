@@ -48,6 +48,16 @@
  *   skeletons/<id>.json {category: null, skeleton, account, hash, quality},
  *                       the shape train.ts reads through --skeletons, only for
  *                       what may be learned from (below)
+ *   boxes/<id>.json     {ref, at, account, pair}: a kept report's page pair
+ *                       (2026-11-12, Owner decision 20, the full audit's D10;
+ *                       src/lib/readerPairs.ts), where each text of a page sent
+ *                       sat and the box reader's numbers for it, never its
+ *                       characters, with the band and role the kept report gave
+ *                       it; structure, so it comes with --skeletons-only too.
+ *                       Kept by `selectPairs` (a verified, existing account,
+ *                       not the mock, not rated bad or undone, sound, at most
+ *                       --per-account); `npx tsx scripts/model/boxes.ts --pairs
+ *                       <out>/boxes` trains the box reader on them
  *   repx/<id>.repx      the whole report, on the opt-in tier only, the shape
  *                       train.ts reads through --reports and the library takes
  *   prompts/<id>.txt    the person's words with it, the same tier
@@ -86,6 +96,7 @@ import {
   EVENT_FIELDS,
   pullPages,
   resumeSince,
+  selectPairs,
   selectTraining,
   SKELETON_FIELDS,
   trustedAt,
@@ -134,6 +145,22 @@ export function seenSkeletons(dir: string): string[] {
   });
 }
 
+/** The page pair files of a folder by the report they label (`ref`), so a bad rating or an undo can find them. */
+function refsOfPairs(dir: string): Map<string, string[]> {
+  const byRef = new Map<string, string[]>();
+  const folder = join(dir, 'boxes');
+  if (!existsSync(folder)) return byRef;
+  for (const name of readdirSync(folder)) {
+    try {
+      const ref = (JSON.parse(readFileSync(join(folder, name), 'utf8')) as { ref?: string }).ref;
+      if (ref) byRef.set(ref, [...(byRef.get(ref) ?? []), name]);
+    } catch {
+      /* unreadable: left to the reconcile */
+    }
+  }
+  return byRef;
+}
+
 /** Every id the accounts still hold: a projection on `id` and `userId`, page by page. */
 async function currentIds(fetchFn: FetchLike, url: string, headers: Record<string, string>): Promise<{ ids: Set<string>; names: Map<string, { name: string; userId: string }> }> {
   const ids = new Set<string>();
@@ -178,7 +205,8 @@ function summarise(out: string, dropped: Partial<Record<DropReason, number>>, pu
   }
   const skeletons = existsSync(join(out, 'skeletons')) ? readdirSync(join(out, 'skeletons')).length : 0;
   const full = existsSync(join(out, 'repx')) ? readdirSync(join(out, 'repx')).length : 0;
-  return { events: lines.length, accounts: accounts.size, skeletons, fullReports: full, thisPull: { pulled, kept, dropped }, byKind, byAi, byDay };
+  const pagePairs = existsSync(join(out, 'boxes')) ? readdirSync(join(out, 'boxes')).length : 0;
+  return { events: lines.length, accounts: accounts.size, skeletons, pagePairs, fullReports: full, thisPull: { pulled, kept, dropped }, byKind, byAi, byDay };
 }
 
 export async function main(argv = process.argv.slice(2), fetchFn: FetchLike = fetch): Promise<number> {
@@ -217,7 +245,7 @@ export async function main(argv = process.argv.slice(2), fetchFn: FetchLike = fe
   }
 
   const out = resolve(outDir);
-  for (const dir of ['skeletons', 'repx', 'prompts']) mkdirSync(join(out, dir), { recursive: true });
+  for (const dir of ['skeletons', 'repx', 'prompts', 'boxes']) mkdirSync(join(out, dir), { recursive: true });
   const cred = await connect({ keyPath: option(argv, 'key'), fetchFn });
   const docsUrl = documentsUrl(cred.project, cred.database);
   const url = `${docsUrl}:runQuery`;
@@ -267,11 +295,11 @@ export async function main(argv = process.argv.slice(2), fetchFn: FetchLike = fe
         writeFileSync(join(out, 'repx', `${e.id}.repx`), e.full);
         if (e.prompt) writeFileSync(join(out, 'prompts', `${e.id}.txt`), e.prompt);
       }
-      const { full, prompt, skeleton, name: _name, ...rest } = e;
+      const { full, prompt, skeleton, boxes, name: _name, ...rest } = e;
       // An event whose time is not trusted is not recorded, so a clock that
       // ran ahead is recorded on a later pull, inside the lookback.
       if (state !== 'gone' && !known.has(e.id) && trustedAt(e.at, startedAt)) {
-        appendFileSync(eventsPath, `${JSON.stringify({ ...rest, hasSkeleton: !!skeleton, hasFull: !!full || !!prompt })}\n`);
+        appendFileSync(eventsPath, `${JSON.stringify({ ...rest, hasSkeleton: !!skeleton, hasFull: !!full || !!prompt, hasBoxes: !!boxes })}\n`);
         known.add(e.id);
       }
       if (!knownAtStart.has(e.id) || e.kind === 'rating') events.push({ ...e, full: '', prompt: '' });
@@ -285,13 +313,22 @@ export async function main(argv = process.argv.slice(2), fetchFn: FetchLike = fe
   for (const k of kept) {
     writeFileSync(join(out, 'skeletons', `${k.event.id}.json`), JSON.stringify({ category: null, skeleton: k.skeleton, account: k.account, hash: k.hash, quality: k.quality }));
   }
-  // A report rated bad after an earlier pull kept it: its skeleton goes now.
+  // The page pairs a kept report labelled (2026-11-12, D10), for boxes.ts --pairs.
+  const pairs = selectPairs(events, { accounts: (uid) => states.get(uid) ?? 'gone', perAccount, startedAt });
+  for (const p of pairs.kept) writeFileSync(join(out, 'boxes', `${p.event.id}.json`), JSON.stringify(p.file));
+  // A report rated bad or undone after an earlier pull kept it: its skeleton and its page pairs go now.
   let unkept = 0;
+  const pairRefs = refsOfPairs(out);
   for (const e of events) {
-    if (e.kind !== 'rating' || e.rating !== 'bad' || !e.ref || !/^[a-zA-Z0-9_-]+$/.test(e.ref)) continue;
+    if (!((e.kind === 'rating' && e.rating === 'bad') || e.kind === 'undo') || !e.ref || !/^[a-zA-Z0-9_-]+$/.test(e.ref)) continue;
     const file = join(out, 'skeletons', `${e.ref}.json`);
-    if (existsSync(file)) {
+    if (e.kind === 'rating' && existsSync(file)) {
       unlinkSync(file);
+      unkept++;
+    }
+    for (const name of pairRefs.get(e.ref) ?? []) {
+      if (!existsSync(join(out, 'boxes', name))) continue;
+      unlinkSync(join(out, 'boxes', name));
       unkept++;
     }
   }
@@ -323,11 +360,12 @@ export async function main(argv = process.argv.slice(2), fetchFn: FetchLike = fe
   const summary = summarise(out, dropped, read, kept.length);
   writeFileSync(join(out, 'summary.json'), JSON.stringify(summary, null, 1));
   const accountsSeen = new Set(events.map((e) => e.userId)).size;
-  console.log(`pulled ${read} events (${events.length} new) from ${accountsSeen} accounts${from ? ` from ${from}` : ''}${resumed ? ' (resumed, with a lookback)' : ''}: ${kept.length} skeleton(s) kept to learn from`);
+  console.log(`pulled ${read} events (${events.length} new) from ${accountsSeen} accounts${from ? ` from ${from}` : ''}${resumed ? ' (resumed, with a lookback)' : ''}: ${kept.length} skeleton(s) and ${pairs.kept.length} page pair(s) kept to learn from`);
   const why = Object.entries(dropped).map(([k, n]) => `${k} ${n}`).join(', ');
-  console.log(`not learned from: ${why || 'none'}${unkept ? `; ${unkept} kept earlier and rated bad since, removed` : ''}`);
+  const pairsWhy = Object.entries(pairs.dropped).map(([k, n]) => `${k} ${n}`).join(', ');
+  console.log(`not learned from: ${why || 'none'}${pairsWhy ? `; page pairs: ${pairsWhy}` : ''}${unkept ? `; ${unkept} kept earlier and rated bad or undone since, removed` : ''}`);
   console.log(`reconciled: ${reconciled} event(s) no longer shared removed from ${1 + reconcileDirs.length} folder(s)${deleted ? `; ${deleted} event(s) of deleted accounts deleted from Firestore` : ''}`);
-  console.log(`folder: ${summary.events} events, ${summary.skeletons} skeletons, ${summary.fullReports} full reports (opt-in), from ${summary.accounts} accounts, under ${out}`);
+  console.log(`folder: ${summary.events} events, ${summary.skeletons} skeletons, ${summary.pagePairs} page pairs, ${summary.fullReports} full reports (opt-in), from ${summary.accounts} accounts, under ${out}`);
   return 0;
 }
 

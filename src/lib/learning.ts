@@ -18,7 +18,13 @@
  *   no text by construction, and this strips any string that is not one of
  *   the fixed words a skeleton may carry, so a defect upstream cannot leak a
  *   caption through it. A user's own description of a control
- *   (`AccessibleDescription`) never reaches a skeleton either.
+ *   (`AccessibleDescription`) never reaches a skeleton either. Since
+ *   2026-11-12 (Owner decision 20, the full audit's D10), a report kept
+ *   from a picture also carries the page pair (`boxes`, lib/readerPairs.ts):
+ *   where each text on the page sat and the numbers the box reader computed
+ *   of it, never a character of it, with the band and role the kept report
+ *   gave it, for the box reader to learn from. The reading waits on the
+ *   device with the request's event (`reading`, never sent as it is).
  * - **Full reports**, off until the person turns it on: the whole REPX and
  *   their words with it. Their captions, their field names, their data
  *   source by name. Nothing of theirs leaves without this switch.
@@ -37,6 +43,7 @@
  * (`flushLearning`), and nothing is kept with both switches off (`keepable`).
  */
 import type { ReportSkeleton } from './reportSkeleton';
+import type { PageReading } from './readerPairs';
 
 export interface LearningSettings {
   /** The skeleton, the request's kind, the edits and the thumbs: on by default, said in the policy. */
@@ -189,8 +196,8 @@ export type LearningHow = (typeof LEARNING_HOWS)[number];
 /** What Forma made on its own when `ai` is 'forma': its reader's draft, a build from the text read, or the offline build. */
 export const LEARNING_DRAFTS = ['', 'reader', 'ocr', 'offline'] as const;
 export type LearningDraft = (typeof LEARNING_DRAFTS)[number];
-/** What an event had to leave out to fit, said rather than dropped silently (LM-25). */
-export const LEARNING_DROPPED = ['', 'skeleton', 'full'] as const;
+/** What an event had to leave out to fit, said rather than dropped silently (LM-25); a page's pair since 2026-11-12 (D10). */
+export const LEARNING_DROPPED = ['', 'skeleton', 'full', 'boxes'] as const;
 export type LearningDropped = (typeof LEARNING_DROPPED)[number];
 
 /** The kinds that carry the skeleton (LM-10a): what is made and what is kept, the two worth learning a layout from. */
@@ -230,6 +237,14 @@ export interface LearningEvent {
   /** How far the kept report moved from the one made, scale-free (0 is unchanged); -1 when not measured. */
   distance: number;
   dropped: LearningDropped;
+  /**
+   * On a kept report made from a picture (2026-11-12, the full audit's D10,
+   * lib/readerPairs.ts): the page's numeric reading, where each text sat and
+   * its features, never its characters, with the band and role the kept
+   * report gave each, as JSON; '' on every other event. Structure, like the
+   * skeleton.
+   */
+  boxes: string;
   /** The whole REPX, only on the full tier; '' otherwise. */
   full: string;
   /** The person's words, only on the full tier; '' otherwise. */
@@ -249,6 +264,14 @@ const MAX_PROMPT_CHARS = 4_000;
 export const MAX_REF_CHARS = 64;
 /** Events kept on the device, newest first; older ones go. */
 export const MAX_LOCAL = 500;
+/**
+ * The longest page pair an event carries, as lib/readerPairs.ts's
+ * MAX_PAIR_CHARS and firestore.rules hold it (a test holds the three
+ * together); written here so this module does not load the reader.
+ */
+export const MAX_BOXES_CHARS = 100_000;
+/** How many requests' page readings this device keeps, waiting for their report to be kept; older ones are let go. */
+export const MAX_READINGS = 20;
 
 /** The keys whose string values a skeleton may carry, and the longest each may be. */
 const WORD_KEYS: Record<string, number> = { kind: 24, role: 16, align: 8, paper: 16, family: 40 };
@@ -385,6 +408,10 @@ export interface LearningEventInput {
   ms?: number;
   project?: string;
   distance?: number;
+  /** On a kept report, the page pair (lib/readerPairs.ts) as JSON. */
+  boxes?: string | null;
+  /** On a kept report, a pair that was made and would not fit. */
+  boxesDropped?: boolean;
 }
 
 const word = (value: string, max = 16) => (value && value.length <= max && PLAIN.test(value) ? value : '');
@@ -396,6 +423,8 @@ export function learningEvent(input: LearningEventInput, settings: LearningSetti
   const full = wantsFull && utf8Bytes(input.repx!) <= MAX_FULL_BYTES ? input.repx! : '';
   const ops = (input.ops ?? []).map((op) => op.slice(0, 24)).slice(0, MAX_OPS);
   const ref = input.ref && input.ref.length <= MAX_REF_CHARS && /^[A-Za-z0-9_-]+$/.test(input.ref) ? input.ref : '';
+  const wantsBoxes = input.kind === 'kept' && Boolean(input.boxes);
+  const boxes = wantsBoxes && input.boxes!.length <= MAX_BOXES_CHARS ? input.boxes! : '';
   return {
     id: input.id ?? learningId(now.getTime()),
     at: now.toISOString(),
@@ -418,7 +447,8 @@ export function learningEvent(input: LearningEventInput, settings: LearningSetti
     project: /^[0-9a-f]{12}$/.test(input.project ?? '') ? input.project! : '',
     distance: Number.isFinite(input.distance) && input.distance! >= 0 ? input.distance! : -1,
     // Said rather than dropped silently (LM-25): the skeleton first, as what is learned from.
-    dropped: wantsSkeleton && !skeleton ? 'skeleton' : wantsFull && !full ? 'full' : '',
+    dropped: wantsSkeleton && !skeleton ? 'skeleton' : wantsFull && !full ? 'full' : (wantsBoxes && !boxes) || (input.kind === 'kept' && input.boxesDropped) ? 'boxes' : '',
+    boxes,
     full,
     prompt: full && input.prompt ? input.prompt.slice(0, MAX_PROMPT_CHARS) : '',
   };
@@ -454,6 +484,8 @@ function upgradeEvent<T extends Partial<LearningEvent> & Pick<LearningEvent, 'id
     project: event.project ?? '',
     distance: event.distance ?? -1,
     dropped: event.dropped ?? (event.full && !full ? 'full' : ''),
+    // The page pair, a kept report's only (2026-11-12): an event kept before it has none.
+    boxes: kind === 'kept' && typeof event.boxes === 'string' && event.boxes.length <= MAX_BOXES_CHARS ? event.boxes : '',
     full,
     prompt: full ? (event.prompt ?? '') : '',
   };
@@ -477,15 +509,21 @@ export function keepable(settings: LearningSettings): boolean {
 export interface StoredLearningEvent extends LearningEvent {
   uid: string | null;
   sent: boolean;
+  /**
+   * On a generation from a picture (2026-11-12, D10): the page's numeric
+   * reading, kept on this device only, until the report is kept and labels
+   * it (`boxes` on the kept event). Never sent as it is.
+   */
+  reading?: PageReading | null;
 }
 
 /**
- * What goes to the account: the event alone, without the two fields only
- * this browser keeps (the rules pin every field), and without the whole
- * report and the words when that switch is now off. Null when nothing goes.
+ * What goes to the account: the event alone, without the fields only this
+ * browser keeps (the rules pin every field), and without the whole report
+ * and the words when that switch is now off. Null when nothing goes.
  */
-export function forSending(event: Partial<LearningEvent> & Pick<LearningEvent, 'id' | 'kind'> & Partial<Pick<StoredLearningEvent, 'uid' | 'sent'>>, settings: LearningSettings): LearningEvent | null {
-  const { uid: _uid, sent: _sent, ...rest } = event;
+export function forSending(event: Partial<LearningEvent> & Pick<LearningEvent, 'id' | 'kind'> & Partial<Pick<StoredLearningEvent, 'uid' | 'sent' | 'reading'>>, settings: LearningSettings): LearningEvent | null {
+  const { uid: _uid, sent: _sent, reading: _reading, ...rest } = event;
   const plain: LearningEvent = upgradeEvent(rest);
   const out: LearningEvent = settings.full ? plain : { ...plain, full: '', prompt: '' };
   return sendable(out, settings) ? out : null;
@@ -553,6 +591,46 @@ export async function listLearningEvents(idb: IDBFactory | null = typeof indexed
   try {
     const all = (await request(db.transaction(STORE, 'readonly').objectStore(STORE).getAll())) as (LearningEvent & Partial<Pick<StoredLearningEvent, 'uid' | 'sent'>>)[];
     return all.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  } finally {
+    db.close();
+  }
+}
+
+/** One event kept on the device, or null. */
+export async function readLearningEvent(id: string, idb: IDBFactory | null = typeof indexedDB === 'undefined' ? null : indexedDB): Promise<StoredLearningEvent | null> {
+  if (!idb) return null;
+  const db = await openDb(idb);
+  try {
+    return ((await request(db.transaction(STORE, 'readonly').objectStore(STORE).get(id))) as StoredLearningEvent | undefined) ?? null;
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * The page readings kept for the newest `max` requests, and none for older
+ * ones (2026-11-12, D10): a reading waits for its report to be kept, and a
+ * request long past is unlikely to be, while each reading is tens of
+ * kilobytes. The events themselves stay.
+ */
+export async function trimReadings(max = MAX_READINGS, idb: IDBFactory | null = typeof indexedDB === 'undefined' ? null : indexedDB): Promise<number> {
+  if (!idb) return 0;
+  const db = await openDb(idb);
+  try {
+    const tx = db.transaction(STORE, 'readwrite');
+    const store = tx.objectStore(STORE);
+    const all = (await request(store.getAll())) as StoredLearningEvent[];
+    const holding = all.filter((e) => e.reading).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+    const old = holding.slice(max);
+    for (const e of old) {
+      const { reading: _gone, ...rest } = e;
+      await request(store.put(rest));
+    }
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    return old.length;
   } finally {
     db.close();
   }
@@ -640,6 +718,12 @@ export interface LearningRecord extends Omit<LearningEventInput, 'skeleton' | 'f
   /** On an edit, the name of the control each operation was made on, beside `ops`. */
   controls?: readonly (string | undefined)[];
   projectId?: string | null;
+  /**
+   * On a generation from a picture, the page's numeric reading
+   * (lib/readerPairs.ts), kept on this device with the event; a kept report
+   * whose `ref` names the event labels it, and the pair goes with that.
+   */
+  reading?: PageReading | null;
 }
 
 /** Where a record goes: whose it is, whether the account's switches are known, and how to send. */
@@ -675,7 +759,8 @@ export async function recordLearning(input: LearningRecord, sink: LearningSink):
     const known = await sink.known;
     const settings = effectiveLearningSettings(readLearningSettings(sink.uid, sink.storage), sink.uid !== null, known);
     if (!keepable(settings)) return null;
-    const { sourceCounts, madeRepx, beforeRepx, controls, projectId, ...rest } = input;
+    const { sourceCounts, madeRepx, beforeRepx, controls, projectId, reading, ...rest } = input;
+    const idb = sink.idb === undefined ? (typeof indexedDB === 'undefined' ? null : indexedDB) : sink.idb;
     let skeleton: ReportSkeleton | null = null;
     let findings: { severity: string }[] = [];
     let roles: string[] = [];
@@ -716,10 +801,12 @@ export async function recordLearning(input: LearningRecord, sink: LearningSink):
     }
     const source = rest.source ?? (sourceCounts ? sourceOf(sourceCounts) : undefined);
     const project = await projectKey(sink.uid, projectId).catch(() => '');
-    const event = learningEvent({ ...rest, source, skeleton, findings, roles, project, distance }, settings);
-    const idb = sink.idb === undefined ? (typeof indexedDB === 'undefined' ? null : indexedDB) : sink.idb;
+    const pair = input.kind === 'kept' ? await keptPair(input.ref, input.repx, sink.uid, idb) : { json: null, tooLarge: false };
+    const event = learningEvent({ ...rest, source, skeleton, findings, roles, project, distance, boxes: pair.json, boxesDropped: pair.tooLarge }, settings);
+    const keepsReading = input.kind === 'generation' && reading ? { reading } : {};
     try {
-      await keepLearningEvent({ ...event, uid: sink.uid, sent: false }, idb);
+      await keepLearningEvent({ ...event, uid: sink.uid, sent: false, ...keepsReading }, idb);
+      if (keepsReading.reading) await trimReadings(MAX_READINGS, idb);
     } catch (err) {
       console.warn('A learning event could not be kept on this device.', err);
     }
@@ -736,6 +823,31 @@ export async function recordLearning(input: LearningRecord, sink: LearningSink):
   } catch (err) {
     console.warn('A learning event could not be kept.', err);
     return null;
+  }
+}
+
+/**
+ * The page pair a kept report makes (2026-11-12, D10): the reading kept with
+ * the request it came from (`ref`), by this account on this device, labelled
+ * by the report as kept, read in hundredths of an inch as the reading is.
+ * Nothing when there is no reading, or the report does not account for the
+ * page (lib/readerPairs.ts). Never throws.
+ */
+async function keptPair(ref: string | null | undefined, repx: string | null | undefined, uid: string | null, idb: IDBFactory | null): Promise<{ json: string | null; tooLarge: boolean }> {
+  const none = { json: null, tooLarge: false };
+  if (!ref || !repx) return none;
+  try {
+    const made = await readLearningEvent(ref, idb);
+    if (!made?.reading || made.uid !== uid) return none;
+    const [{ parseReportStructure }, { skeletonOf }, { DEFAULT_UNIT, unitsPerInch }, { readerPairOf }] = await Promise.all([
+      import('./reportPreview'),
+      import('./reportSkeleton'),
+      import('./reportGeometry'),
+      import('./readerPairs'),
+    ]);
+    return readerPairOf(made.reading, skeletonOf(parseReportStructure(repx, { dpi: unitsPerInch(DEFAULT_UNIT), unit: DEFAULT_UNIT })));
+  } catch {
+    return none;
   }
 }
 

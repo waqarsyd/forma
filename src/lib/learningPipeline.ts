@@ -43,6 +43,7 @@ import { skeletonFeatures, type ReportSkeleton, type SkeletonBand, type Skeleton
 import { featureDistance, unexpectedStrings, type FormaModel } from './formaModel';
 import { generateOffline } from './offlineGenerator';
 import { checkFidelity, measureReport, scoreChecks, type FidelityExpectations } from './fidelity';
+import { soundPair, type ReaderPair } from './readerPairs';
 
 /* ---- Firestore's REST answers ---- */
 
@@ -98,12 +99,14 @@ export interface PulledEvent {
   ref?: string;
   /** Whether the person undid the edit (event v2). */
   undone?: boolean;
+  /** On a kept report from a picture, the page pair (2026-11-12, D10; lib/readerPairs.ts). */
+  boxes?: string;
   /** The document's full name, for the cursor and for a delete. */
   name?: string;
 }
 
 /** Every field an event has; a pull for skeletons only asks for these less `full` and `prompt`. */
-export const EVENT_FIELDS = ['id', 'userId', 'at', 'day', 'kind', 'source', 'request', 'ai', 'skeleton', 'ops', 'errors', 'warnings', 'rating', 'full', 'prompt', 'ref', 'undone'] as const;
+export const EVENT_FIELDS = ['id', 'userId', 'at', 'day', 'kind', 'source', 'request', 'ai', 'skeleton', 'ops', 'errors', 'warnings', 'rating', 'full', 'prompt', 'ref', 'undone', 'boxes'] as const;
 export const SKELETON_FIELDS = EVENT_FIELDS.filter((f) => f !== 'full' && f !== 'prompt');
 
 /** Where a pull stopped: the last event read, by the fields the query is ordered by. */
@@ -479,6 +482,80 @@ export function selectTraining(
   return { kept, dropped };
 }
 
+/* ---- Page pairs for the box reader (2026-11-12, D10) ---- */
+
+/** Why a pulled page pair was not kept to learn from. */
+export type PairDropReason = 'account gone' | 'address not verified' | 'mock' | 'rated bad' | 'undone' | 'pair not sound' | 'over the account cap';
+
+/** A page pair kept to learn from, as `boxes/<id>.json` holds it: the report it labels (`ref`), when, whose (hashed), and the pair. */
+export interface PairPick {
+  event: PulledEvent;
+  file: { ref: string; at: string; account: string; pair: ReaderPair };
+}
+
+/**
+ * Which pulled `kept` events' page pairs may train the box reader: from a
+ * verified account that still exists, not the mock, for a report that was
+ * not rated bad or undone (both name the request's event, as the pair's
+ * `ref` does), sound (`soundPair`: this reader's features, lengths and
+ * indexes that agree), and at most `perAccount` from one account a pull.
+ * A report kept more than once leaves a pair each time; the training keeps
+ * the newest (`pairsOfFolder`). The AI that answered does not matter here:
+ * what labels the page is the report the person kept.
+ */
+export function selectPairs(
+  events: readonly PulledEvent[],
+  o: { accounts: (uid: string) => AccountState; perAccount?: number; startedAt?: number },
+): { kept: PairPick[]; dropped: Partial<Record<PairDropReason, number>> } {
+  const perAccount = o.perAccount ?? PER_ACCOUNT;
+  const ratedBad = new Set(events.filter((e) => e.kind === 'rating' && e.rating === 'bad' && e.ref).map((e) => e.ref!));
+  const undone = new Set(events.filter((e) => e.kind === 'undo' && e.ref).map((e) => e.ref!));
+  const perUid = new Map<string, number>();
+  const dropped: Partial<Record<PairDropReason, number>> = {};
+  const drop = (why: PairDropReason) => {
+    dropped[why] = (dropped[why] ?? 0) + 1;
+  };
+  const kept: PairPick[] = [];
+  for (const e of events) {
+    if (e.kind !== 'kept' || !e.boxes || !e.id || !/^[a-zA-Z0-9_-]+$/.test(e.id) || !e.userId) continue;
+    if (o.startedAt !== undefined && !trustedAt(e.at, o.startedAt)) continue;
+    const state = o.accounts(e.userId);
+    if (state === 'gone') {
+      drop('account gone');
+      continue;
+    }
+    if (state !== 'verified') {
+      drop('address not verified');
+      continue;
+    }
+    if (e.ai === 'mock') {
+      drop('mock');
+      continue;
+    }
+    if (e.ref && ratedBad.has(e.ref)) {
+      drop('rated bad');
+      continue;
+    }
+    if (e.ref && undone.has(e.ref)) {
+      drop('undone');
+      continue;
+    }
+    const pair = soundPair(e.boxes);
+    if (!pair) {
+      drop('pair not sound');
+      continue;
+    }
+    const n = perUid.get(e.userId) ?? 0;
+    if (n >= perAccount) {
+      drop('over the account cap');
+      continue;
+    }
+    perUid.set(e.userId, n + 1);
+    kept.push({ event: e, file: { ref: e.ref ?? '', at: e.at, account: accountKey(e.userId), pair } });
+  }
+  return { kept, dropped };
+}
+
 /* ---- Deletion that reaches the owner's copies ---- */
 
 /** The part of `node:fs` a reconcile uses, so this module imports none. */
@@ -490,8 +567,8 @@ export interface FsLike {
   unlinkSync(path: string): void;
 }
 
-/** The folders a pull writes an event's files into, each file named `<id>.<ext>`. */
-const PULL_DIRS = ['skeletons', 'repx', 'prompts'] as const;
+/** The folders a pull writes an event's files into, each file named `<id>.<ext>`; `boxes` since 2026-11-12 (D10). */
+const PULL_DIRS = ['skeletons', 'repx', 'prompts', 'boxes'] as const;
 export type PullDir = (typeof PULL_DIRS)[number];
 
 export interface ReconcilePlan {
@@ -564,7 +641,8 @@ export function applyReconcile(fs: FsLike, dir: string, current: ReadonlySet<str
     if (!fs.existsSync(path)) continue;
     for (const name of fs.readdirSync(path)) {
       files.push({ dir: sub, name });
-      if (sub === 'skeletons' && forget.size) {
+      // A skeleton's and a page pair's file name their account by its hash.
+      if ((sub === 'skeletons' || sub === 'boxes') && forget.size) {
         try {
           const account = (JSON.parse(fs.readFileSync(`${path}/${name}`, 'utf8')) as { account?: string }).account;
           if (account) accounts.set(name.replace(/\.[^.]+$/, ''), account);
