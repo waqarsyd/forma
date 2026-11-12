@@ -142,7 +142,7 @@ The reasoning behind this codebase is in the notes, the proposals, two tool READ
 | Revisions | [`app-shell.md`](docs/notes/app-shell.md) — *Revisions is the fifth rail panel*, then [`persistence.md`](docs/notes/persistence.md) — *Ten fixed slots, enforced by the rules* | Read persistence.md before touching deletion; a version under any id but `v0`..`v9` is refused |
 | Deleting a project, the Projects panel (`deferredDelete.ts`, `ProjectsPanel.tsx`) | [`app-shell.md`](docs/notes/app-shell.md) — *A deleted project waits six seconds, with Undo* | Deletions run one after another: two at once leave a share count behind |
 | Typing, drags and redraws (`promptBox.ts`) | [`app-shell.md`](docs/notes/app-shell.md) — *Typing draws only the box* + *The workspace draws less often* | The box's words live outside App's state; a drag writes the report once, on release |
-| The shell, sidebar, column | [`app-shell.md`](docs/notes/app-shell.md) — *The sidebar opens and closes as Gemini's and ChatGPT's do* + *The review column is resizable and collapsible*; [`styling.md`](docs/notes/styling.md) for `wb-` tokens | — |
+| The shell, sidebar, column | [`app-shell.md`](docs/notes/app-shell.md) — *The sidebar opens and closes as Gemini's and ChatGPT's do* + *The review column collapses, and its resize handle is gone*; [`styling.md`](docs/notes/styling.md) for `wb-` tokens | On a desktop the side panels float and the column's track is 0; the resize handle and `panelSize.ts` went on 2026-11-11, and `reviewWidth` is only erased on load |
 | Progress, the dots, Stop | [`app-shell.md`](docs/notes/app-shell.md) — *The workspace is as clean as a chat app* + *Progress is real once output starts* | — |
 | Settings, account | [`app-shell.md`](docs/notes/app-shell.md) — *Settings is a list of sections, as ChatGPT's* + *Account management lives in* | A change applies as it is made; what cannot be undone asks first |
 | Saving, sign-in, rules | [`persistence.md`](docs/notes/persistence.md) — *Persistence: two divergent shapes* + *The projects index* | A listed entry has no content (`stub`): never write one back as a project |
@@ -187,7 +187,7 @@ npm run lint:encoding # node scripts/check-encoding.mjs -- mojibake and literal 
 npm run lint:links   # node scripts/check-links.mjs -- relative links and cited headings that no longer resolve
 npm run check:size   # node scripts/check-bundle-size.mjs -- artifact budgets; needs a build first
 npm run smoke        # node scripts/smoke.mjs -- the deployed site, read-only; not a check of this tree
-npm run fetch:handwriting # the TrOCR handwriting model, SHA-256 pinned, into gitignored vendor/; a deploy decision (README)
+npm run fetch:handwriting # the TrOCR handwriting model, SHA-256 pinned, into gitignored vendor/; shipped only by a build that asks for it ($env:FORMA_HANDWRITING='1'; npm run build, or deploy.mjs --with-handwriting), a deploy decision (README)
 npm run fetch:paddle # PaddleOCR's models, SHA-256 pinned, into gitignored vendor/paddle/; deploy.mjs runs it
 npm test             # vitest run -- the unit suite
 npm run test:watch   # the same suite in watch mode

@@ -680,7 +680,7 @@ src/
                        report library in docs/proposals/rag.md, alongside
                        services/library.ts, components/LibraryPanel.tsx and
                        the rail's sixth panel in App.tsx),
-                       attachments, panelSize, sidebar (the workspace sidebar
+                       attachments, sidebar (the workspace sidebar
                        opening and closing as Gemini's and ChatGPT's do: the
                        phone breakpoint, Ctrl+B, the toggle's name),
                        seo (each page's title, description, preview, canonical
@@ -954,7 +954,7 @@ firebase-applet-config.json
 | `npm run check:size` | Artifact size budgets — run `build` first |
 | `npm run smoke` | Checks the deployed site over the network: every route, the entry chunk, the headers, the feed, and once it runs `main`'s build, a 404 for an unknown path and a missing chunk. Read-only; `.github/workflows/live.yml` runs it every three hours |
 | `npm run fetch:paddle` | Download PaddleOCR's text detector and English recogniser (12.7 MB, pinned by SHA-256) into `vendor/paddle/` for the next build; `scripts/deploy.mjs` runs it, and a build without it reads pictures with Tesseract alone |
-| `npm run fetch:handwriting` | Download the handwriting model (about 64 MB, pinned by SHA-256) into `vendor/handwriting/` for the next build — see *Handwriting is a deploy-time decision* |
+| `npm run fetch:handwriting` | Download the handwriting model (about 64 MB, pinned by SHA-256) into `vendor/handwriting/`; only a build that asks for it by name (`FORMA_HANDWRITING=1`) ships it — see *Handwriting is a deploy-time decision* |
 | `npm test` | Unit tests (Vitest; `node` by default, jsdom per file where needed) |
 | `npm run test:watch` | The same suite in watch mode |
 | `npm run test:coverage` | Coverage over `lib/`, `services/` and `server/`, held to the thresholds in `vitest.config.ts` — see the note there about what is deliberately excluded |
