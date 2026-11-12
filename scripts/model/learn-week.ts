@@ -5,8 +5,8 @@
  * the pull and the train were each a command the owner had to remember, and
  * the result went live with only the leak check in its way.
  *
- *   npx tsx scripts/model/learn-week.ts --data <dir> [--key <credential.json>] [--reports <dir>]
- *       [--skeletons <dir> ...] [--models <dir>] [--k 10] [--no-pull] [--dry-run]
+ *   npx tsx scripts/model/learn-week.ts --data <dir> [--key <credential.json>] [--write-key <credential.json>]
+ *       [--reports <dir>] [--skeletons <dir> ...] [--models <dir>] [--k 10] [--no-pull] [--dry-run]
  *
  * --data       the job's folder, outside the repository, the same every week:
  *              <data>/pulled (pull-learning.ts's folder, which resumes a
@@ -14,13 +14,21 @@
  *              people cleared), <data>/set (train.ts's training set and
  *              held-out skeletons, rebuilt from <data>/pulled on every run, so
  *              what was cleared leaves them too) and <data>/candidate. The
- *              pull is made without --reconcile, so the credential can be
- *              viewer-only; deleting a deleted account's events from Firestore
- *              is a run the owner makes on purpose.
- * --key        the credential pull-learning.ts reads (see
- *              scripts/admin/google.mjs); without one, and without gcloud's
- *              application default credentials, the job trains on what earlier
- *              pulls brought.
+ *              pull is made without --reconcile; deleting a deleted account's
+ *              events from Firestore is a run the owner makes on purpose.
+ * --key        the credential the pull reads with (see
+ *              scripts/admin/google.mjs): roles/datastore.viewer and
+ *              roles/firebaseauth.viewer are enough; without one, and without
+ *              gcloud's application default credentials, the job trains on
+ *              what earlier pulls brought.
+ * --write-key  the credential the pull's retention deletes with (2026-11-12,
+ *              Owner decision 15): a service account with roles/datastore.user,
+ *              which deletes from Firestore the events older than 90 days the
+ *              pull has saved, as the privacy policy says. Without it the
+ *              retention uses --key's credential, and a viewer-only one is
+ *              refused: the pull is kept, the job trains and gates as ever,
+ *              and it exits 3 at the end so the scheduler shows the retention
+ *              did not run.
  * --reports    the owner's own reports, learned beside what was pulled, as
  *              the shipped model was; without them a candidate is learned from
  *              the pulled skeletons alone, which the gate is right to refuse
@@ -89,26 +97,37 @@ export function main(argv = process.argv.slice(2)): number {
   const set = join(data, 'set');
   const candidate = join(data, 'candidate', 'formaModel.json');
 
-  // 1. The pull, resuming where last week's stopped.
+  // 1. The pull, resuming where last week's stopped, with the retention after it.
+  const writeKey = option(argv, 'write-key') as string | undefined;
+  let retention = true;
   if (argv.includes('--no-pull')) console.log('learn-week: no pull asked for; training on what earlier pulls brought.');
   else if (!key && !process.env.GOOGLE_APPLICATION_CREDENTIALS && !existsSync(adcPath())) console.log('learn-week: no credential, so no pull; training on what earlier pulls brought.');
-  else if (tsx('scripts/model/pull-learning.ts', ['--out', pulled, '--skeletons-only', ...(key ? ['--key', key] : [])]) !== 0) {
-    console.error('learn-week: the pull failed; nothing was trained.');
-    return 1;
+  else {
+    const pulledCode = tsx('scripts/model/pull-learning.ts', ['--out', pulled, '--skeletons-only', ...(key ? ['--key', key] : []), ...(writeKey ? ['--write-key', writeKey] : [])]);
+    // 3: the pull is saved, and the retention's delete was refused (a viewer-only credential).
+    if (pulledCode === 3) retention = false;
+    else if (pulledCode !== 0) {
+      console.error('learn-week: the pull failed; nothing was trained.');
+      return 1;
+    }
   }
+  const done = (code: number) => {
+    if (!retention) console.error('learn-week: the retention did not run (see the pull above): give --write-key a service account with roles/datastore.user.');
+    return code === 0 && !retention ? 3 : code;
+  };
 
   // 2. A candidate, with a tenth of the pulled skeletons held out for the gate.
   const skeletonDirs = [join(pulled, 'skeletons'), ...extra].filter((d) => count(d) > 0);
   if (!skeletonDirs.length && !reports) {
     console.error('learn-week: nothing to learn from (no pulled skeletons, no --reports, no --skeletons). The shipped model stays.');
-    return 1;
+    return done(1);
   }
   const trainArgs = ['--data', set, '--out', candidate, '--hold-out', '0.1', ...(reports ? ['--reports', reports] : []), ...skeletonDirs.flatMap((d) => ['--skeletons', d])];
   const k = option(argv, 'k') as string | undefined;
   if (k) trainArgs.push('--k', k);
   if (tsx('scripts/model/train.ts', trainArgs) !== 0) {
     console.error('learn-week: training stopped (see above); the shipped model stays.');
-    return 1;
+    return done(1);
   }
 
   // 3. The gate, in this process so its checks go into the model card.
@@ -120,7 +139,7 @@ export function main(argv = process.argv.slice(2)): number {
   for (const c of checks) console.log(`  ${c.pass ? 'pass' : 'FAIL'}  ${c.name}: ${c.detail}`);
   if (!pass) {
     console.log('learn-week: the candidate did not pass; the shipped model stays.');
-    return 1;
+    return done(1);
   }
 
   // 4. Ship it into the working tree, keeping both models by id.
@@ -135,7 +154,7 @@ export function main(argv = process.argv.slice(2)): number {
   };
   if (dryRun) {
     console.log(`\nlearn-week: dry run. It would keep ${idOf(shipped)} and ${card.id} under ${models}, copy ${card.id} to ${SHIPPED} and write ${CARD}.`);
-    return 0;
+    return done(0);
   }
   mkdirSync(models, { recursive: true });
   const keptShipped = join(models, `${idOf(shipped)}.json`);
@@ -147,7 +166,7 @@ export function main(argv = process.argv.slice(2)): number {
   console.log('Committing and deploying are yours:');
   console.log(`  commit ${SHIPPED} and ${CARD} (git add, then git commit -F with a message file), then`);
   console.log('  node scripts/deploy.mjs');
-  return 0;
+  return done(0);
 }
 
 if (isMain(import.meta.url)) process.exit(main());

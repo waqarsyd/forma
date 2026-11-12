@@ -484,6 +484,16 @@ service cloud.firestore {
         && incoming().structure is bool
         && incoming().full is bool;
 
+      // When the account last deleted what it shared (2026-11-12, Owner
+      // decision 15; lib/accountData.ts's markLearningForgotten): `at`, the
+      // server's time and nothing else, which the owner's pull reads to
+      // forget every copy made by then, however old. The owner's alone.
+      allow get, delete: if isSignedIn() && userId == request.auth.uid && metaId == 'forgotten';
+      allow create, update: if isSignedIn() && userId == request.auth.uid && metaId == 'forgotten'
+        && incoming().keys().hasOnly(['at'])
+        && incoming().keys().hasAll(['at'])
+        && incoming().at == request.time;
+
       // The write counts (SA-01): read by the owner, moved only by a write
       // they count (or its ids cleared at zero projects), and deleted only
       // at zero projects on a day with no learning event and no error report

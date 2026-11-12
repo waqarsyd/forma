@@ -482,6 +482,95 @@ export function selectTraining(
   return { kept, dropped };
 }
 
+/* ---- Retention (2026-11-12, Owner decision 15) ---- */
+
+/**
+ * How long an event stays in Firestore: the owner's pull deletes every event
+ * older than this once the folder it pulls into holds it (LM-15, Owner
+ * decision 15). The free plan's one gigabyte is every visitor's, and an
+ * event sits there only to be pulled; the privacy policy says 90 days.
+ */
+export const RETENTION_DAYS = 90;
+
+/** The first day still kept: an event whose `day` is before it has passed the retention. */
+export function retentionCutoff(now: number, days = RETENTION_DAYS): string {
+  return new Date(now - days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * One page of the events older than the cutoff, every account's, ids and days
+ * only, ordered by day and name, after `after`: the single-field
+ * collection-group index on `day` (firestore.indexes.json) serves it.
+ */
+export function expiryQuery(cutoff: string, after: { day: string; name: string } | null, pageSize = PAGE_SIZE): Record<string, unknown> {
+  const order = (field: string) => ({ field: { fieldPath: field }, direction: 'ASCENDING' });
+  return {
+    select: { fields: [{ fieldPath: 'id' }, { fieldPath: 'userId' }, { fieldPath: 'day' }] },
+    from: [{ collectionId: 'learning', allDescendants: true }],
+    where: { fieldFilter: { field: { fieldPath: 'day' }, op: 'LESS_THAN', value: { stringValue: cutoff } } },
+    orderBy: [order('day'), order('__name__')],
+    ...(after ? { startAt: { values: [{ stringValue: after.day }, { referenceValue: after.name }], before: false } } : {}),
+    limit: pageSize,
+  };
+}
+
+/** Every event older than the cutoff, a page at a time; the caller may delete each as it goes. */
+export async function* expiringPages(
+  fetchFn: FetchLike,
+  o: { url: string; headers: () => Promise<Record<string, string>>; cutoff: string; pageSize?: number },
+): AsyncGenerator<{ id: string; userId: string; day: string; name: string }[]> {
+  const pageSize = o.pageSize ?? PAGE_SIZE;
+  let after: { day: string; name: string } | null = null;
+  for (;;) {
+    const res = await fetchFn(o.url, { method: 'POST', headers: { ...(await o.headers()), 'content-type': 'application/json' }, body: JSON.stringify({ structuredQuery: expiryQuery(o.cutoff, after, pageSize) }) });
+    if (!res.ok) throw new Error(`Firestore answered ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    const rows = (await res.json()) as { document?: { name: string; fields?: Record<string, FirestoreValue> } }[];
+    const docs = rows.flatMap((r) => (r.document ? [r.document] : []));
+    if (!docs.length) return;
+    const page = docs.map((d) => {
+      const f = plainValue({ mapValue: { fields: d.fields ?? {} } }) as { id?: string; userId?: string; day?: string };
+      return { id: String(f.id ?? d.name.slice(d.name.lastIndexOf('/') + 1)), userId: String(f.userId ?? ''), day: String(f.day ?? ''), name: d.name };
+    });
+    yield page;
+    const last = page[page.length - 1];
+    after = { day: last.day, name: last.name };
+    if (docs.length < pageSize) return;
+  }
+}
+
+/**
+ * When each account last deleted what it shared (Settings → Learning's
+ * Delete writes `users/{uid}/meta/forgotten` with the server's time,
+ * lib/accountData.ts's `markLearningForgotten`), for the accounts given: the
+ * reconcile forgets every copy of theirs made by then, however old. Without
+ * it, a copy older than the retention, whose event Firestore no longer holds
+ * either way, could not tell a person's deletion from the retention's.
+ * `root` is `projects/<p>/databases/<d>/documents`; one read per account.
+ */
+export async function forgottenMarkers(
+  fetchFn: FetchLike,
+  o: { url: string; root: string; headers: () => Promise<Record<string, string>>; uids: readonly string[] },
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const uids = [...new Set(o.uids)].filter((uid) => /^[a-zA-Z0-9_-]+$/.test(uid));
+  for (let i = 0; i < uids.length; i += 100) {
+    const batch = uids.slice(i, i + 100);
+    const res = await fetchFn(`${o.url}:batchGet`, {
+      method: 'POST',
+      headers: { ...(await o.headers()), 'content-type': 'application/json' },
+      body: JSON.stringify({ documents: batch.map((uid) => `${o.root}/users/${uid}/meta/forgotten`) }),
+    });
+    if (!res.ok) throw new Error(`Reading what accounts deleted answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    for (const row of (await res.json()) as { found?: { name: string; fields?: Record<string, FirestoreValue> } }[]) {
+      if (!row.found) continue;
+      const uid = row.found.name.split('/users/')[1]?.split('/')[0];
+      const at = row.found.fields?.at?.timestampValue;
+      if (uid && at) out.set(uid, at);
+    }
+  }
+  return out;
+}
+
 /* ---- Page pairs for the box reader (2026-11-12, D10) ---- */
 
 /** Why a pulled page pair was not kept to learn from. */
@@ -588,16 +677,34 @@ export interface ReconcilePlan {
  * skeleton file carries). An event's account is read from its line; a file
  * with no line is judged by its id alone.
  */
+export interface ReconcileOptions {
+  /**
+   * The retention's cutoff day (2026-11-12, `retentionCutoff`): an event of
+   * an earlier day that Firestore no longer holds was deleted by the
+   * retention, not by its person, and its copy stays. A person's own
+   * deletion of it reaches the copy through `forgetBefore`, or by the
+   * account being gone.
+   */
+  keepBefore?: string;
+  /** Per account, the time it deleted what it shared (`forgottenMarkers`): every event of it made by then goes. */
+  forgetBefore?: ReadonlyMap<string, string>;
+}
+
 export function planReconcile(
   folder: { files: { dir: PullDir; name: string }[]; lines: string[]; accounts?: ReadonlyMap<string, string> },
   current: ReadonlySet<string> | null,
   forget: ReadonlySet<string> = new Set(),
+  o: ReconcileOptions = {},
 ): ReconcilePlan {
   const uidOf = new Map<string, string>();
+  const dayOf = new Map<string, string>();
+  const atOf = new Map<string, string>();
   for (const line of folder.lines) {
     try {
-      const e = JSON.parse(line) as { id?: string; userId?: string };
+      const e = JSON.parse(line) as { id?: string; userId?: string; day?: string; at?: string };
       if (e.id && e.userId) uidOf.set(e.id, e.userId);
+      if (e.id && typeof e.day === 'string') dayOf.set(e.id, e.day);
+      if (e.id && typeof e.at === 'string') atOf.set(e.id, e.at);
     } catch {
       /* a line that is not JSON is judged as gone below */
     }
@@ -605,9 +712,13 @@ export function planReconcile(
   const forgotten = (id: string) => {
     const uid = uidOf.get(id);
     const account = folder.accounts?.get(id);
-    return (!!uid && (forget.has(uid) || forget.has(accountKey(uid)))) || (!!account && forget.has(account));
+    const marked = uid ? o.forgetBefore?.get(uid) : undefined;
+    const at = atOf.get(id);
+    const before = !!marked && !!at && Date.parse(at) <= Date.parse(marked);
+    return (!!uid && (forget.has(uid) || forget.has(accountKey(uid)))) || (!!account && forget.has(account)) || before;
   };
-  const gone = (id: string) => (current !== null && !current.has(id)) || forgotten(id);
+  const expired = (id: string) => !!o.keepBefore && (dayOf.get(id) ?? '￿') < o.keepBefore;
+  const gone = (id: string) => (current !== null && !current.has(id) && !expired(id)) || forgotten(id);
   const ids = new Set<string>();
   const lines = folder.lines.filter((line) => {
     let id = '';
@@ -633,7 +744,7 @@ export function planReconcile(
  * Applies `planReconcile` to a pull folder on disk: removes the files and
  * rewrites `events.jsonl`. Returns the plan, for the counts it prints.
  */
-export function applyReconcile(fs: FsLike, dir: string, current: ReadonlySet<string> | null, forget: ReadonlySet<string> = new Set()): ReconcilePlan {
+export function applyReconcile(fs: FsLike, dir: string, current: ReadonlySet<string> | null, forget: ReadonlySet<string> = new Set(), o: ReconcileOptions = {}): ReconcilePlan {
   const files: { dir: PullDir; name: string }[] = [];
   const accounts = new Map<string, string>();
   for (const sub of PULL_DIRS) {
@@ -654,7 +765,7 @@ export function applyReconcile(fs: FsLike, dir: string, current: ReadonlySet<str
   }
   const eventsPath = `${dir}/events.jsonl`;
   const lines = fs.existsSync(eventsPath) ? fs.readFileSync(eventsPath, 'utf8').split('\n').filter((l) => l.trim()) : [];
-  const plan = planReconcile({ files, lines, accounts }, current, forget);
+  const plan = planReconcile({ files, lines, accounts }, current, forget, o);
   for (const f of plan.remove) fs.unlinkSync(`${dir}/${f.dir}/${f.name}`);
   if (fs.existsSync(eventsPath) || plan.lines.length) fs.writeFileSync(eventsPath, plan.lines.join('\n') + (plan.lines.length ? '\n' : ''));
   return plan;

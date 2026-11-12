@@ -4,18 +4,34 @@
  * users/{uid}/learning/{id}) into a folder OUTSIDE the repository, as the
  * sets the model scripts read.
  *
- *   npx tsx scripts/model/pull-learning.ts --out <dir> [--key <credential.json>] [--since YYYY-MM-DD]
- *       [--skeletons-only] [--per-account 20] [--reconcile <dir> ...] [--forget <uid> ...] [--force]
+ *   npx tsx scripts/model/pull-learning.ts --out <dir> [--key <credential.json>] [--write-key <credential.json>]
+ *       [--since YYYY-MM-DD] [--skeletons-only] [--per-account 20] [--reconcile <dir> ...] [--forget <uid> ...]
+ *       [--no-expire] [--force]
  *   npx tsx scripts/model/pull-learning.ts --forget <uid> --reconcile <dir> ...     (no credential, nothing read)
  *
  * The credential is the owner's, on their own PC, never this shared server
  * (the company's RDP account): `gcloud auth application-default login` and
- * no key file at all, or a service account made for this with
- * roles/datastore.viewer and roles/firebaseauth.viewer, and
- * roles/datastore.user only when --reconcile is to delete (2026-11-11,
- * SA-14). Never the Admin SDK's own account, which can change everything; a
- * key file is deleted once the run is done. scripts/admin/google.mjs reads
- * it, and says where from.
+ * no key file at all, or service accounts made for this, never the Admin
+ * SDK's own account, which can change everything; a key file is deleted
+ * once the run is done (2026-11-11, SA-14). scripts/admin/google.mjs reads
+ * it, and says where from. Which roles each step needs (2026-11-12, Owner
+ * decision 15), so the reading credential can be viewer-only:
+ *
+ *   the pull: counting, reading the events, the ids still held and what
+ *   each account deleted (`users/{uid}/meta/forgotten`)
+ *                    roles/datastore.viewer, with --key (or gcloud's sign-in)
+ *   looking accounts up (verified, existing or gone)
+ *                    roles/firebaseauth.viewer, the same credential
+ *   the retention: deleting the events older than 90 days this folder holds
+ *   --reconcile: deleting the events of deleted accounts
+ *                    roles/datastore.user, with --write-key; without it, the
+ *                    --key credential is used, and a viewer-only one is
+ *                    refused (403): the pull is kept and the script exits 3
+ *
+ * --write-key      the credential the two deleting steps use (a service
+ *                  account with roles/datastore.user), so the pull's own can
+ *                  be viewer-only.
+ * --no-expire      leave events older than 90 days in Firestore this time.
  *
  * --out            where the pull goes; kept outside the repository, as every
  *                  training set is: forma-model-data/learning on the owner's
@@ -38,9 +54,23 @@
  *
  * Without --reconcile, the events of deleted accounts are removed from these
  * folders but not from Firestore, and the weekly job (learn-week.ts) does not
- * pass it: its credential can then be viewer-only (SA-14), and the delete is
- * a run the owner makes on purpose, with --reconcile and the one role that
- * may write.
+ * pass it: the delete is a run the owner makes on purpose, with --reconcile
+ * and the one role that may write.
+ *
+ * Retention (2026-11-12, Owner decision 15, LM-15): once the pull is saved
+ * and the folders are reconciled, every event whose `day` is more than 90
+ * days ago (`RETENTION_DAYS`, lib/learningPipeline.ts) and whose line this
+ * folder holds is deleted from Firestore, so the database keeps what was
+ * shared for 90 days, as the privacy policy says. An older event the folder
+ * does not hold (a pull with --since skipped it) is left, and counted: pull
+ * from the start of the folder's days once to save it. The weekly pull is
+ * --skeletons-only, so an opt-in whole report older than 90 days goes
+ * without being downloaded; make a full pull within 90 days to keep one.
+ * The copies stay here, and two things still reach them: an account that is
+ * gone (every uid in the folders is looked up on every pull) and an account
+ * that deleted what it shared (its `meta/forgotten` time: every event of it
+ * made by then goes from every folder, however old). An event the retention
+ * deleted is not taken for one its person deleted (`keepBefore`).
  *
  * Written, under --out:
  *   events.jsonl        one line per event: its kind, source, AI and counts,
@@ -94,8 +124,12 @@ import {
   advanceResume,
   applyReconcile,
   EVENT_FIELDS,
+  expiringPages,
+  forgottenMarkers,
   pullPages,
+  RETENTION_DAYS,
   resumeSince,
+  retentionCutoff,
   selectPairs,
   selectTraining,
   SKELETON_FIELDS,
@@ -209,7 +243,8 @@ function summarise(out: string, dropped: Partial<Record<DropReason, number>>, pu
   return { events: lines.length, accounts: accounts.size, skeletons, pagePairs, fullReports: full, thisPull: { pulled, kept, dropped }, byKind, byAi, byDay };
 }
 
-export async function main(argv = process.argv.slice(2), fetchFn: FetchLike = fetch): Promise<number> {
+/** `now` is the clock the pull trusts times by and the retention counts from; a test fixes it. */
+export async function main(argv = process.argv.slice(2), fetchFn: FetchLike = fetch, now: () => number = Date.now): Promise<number> {
   const outDir = option(argv, 'out') as string | undefined;
   const since = (option(argv, 'since') as string | undefined) ?? '';
   const reconcileDirs = (options(argv, 'reconcile') as string[]).map((d) => resolve(d));
@@ -217,7 +252,7 @@ export async function main(argv = process.argv.slice(2), fetchFn: FetchLike = fe
   const perAccount = Number(option(argv, 'per-account') ?? 20);
   const skeletonsOnly = argv.includes('--skeletons-only');
   if (!outDir && !(forget.size && reconcileDirs.length)) {
-    console.error('Usage: npx tsx scripts/model/pull-learning.ts --out <dir> [--key <credential.json>] [--since YYYY-MM-DD] [--skeletons-only] [--per-account 20] [--reconcile <dir> ...] [--forget <uid> ...] [--force]');
+    console.error('Usage: npx tsx scripts/model/pull-learning.ts --out <dir> [--key <credential.json>] [--write-key <credential.json>] [--since YYYY-MM-DD] [--skeletons-only] [--per-account 20] [--reconcile <dir> ...] [--forget <uid> ...] [--no-expire] [--force]');
     return 2;
   }
   for (const dir of [outDir, ...reconcileDirs].filter((d): d is string => !!d)) {
@@ -258,7 +293,7 @@ export async function main(argv = process.argv.slice(2), fetchFn: FetchLike = fe
   // Where this pull begins (LM-17): the last trusted time a pull saw, less a
   // lookback, never a time an event wrote unchecked (ResumePoint,
   // lib/learningPipeline.ts). What it reads twice is already in events.jsonl.
-  const startedAt = Date.now();
+  const startedAt = now();
   const after = readCursor(out, since);
   const from = resumeSince(since, after, { startedAt });
   const resumed = from !== since;
@@ -334,28 +369,65 @@ export async function main(argv = process.argv.slice(2), fetchFn: FetchLike = fe
   }
   // Deletion reaches the copies: whatever is gone from the accounts goes from every folder.
   const current = await currentIds(fetchFn, url, await cred.headers());
-  if (reconcileDirs.length) {
-    // Every account that still holds events, not only this pull's: an account
-    // deleted since an earlier pull is found here.
-    const unknown = [...new Set([...current.names.values()].map((n) => n.userId))].filter((uid) => uid && !states.has(uid));
-    if (unknown.length) for (const [uid, state] of (await lookupAccounts(fetchFn, { project: cred.project, headers: await cred.headers(), uids: unknown })) as Map<string, AccountState>) states.set(uid, state);
-  }
+  // Every account the folders or Firestore hold, not only this pull's, looked
+  // up (free): an account deleted since an earlier pull is found here, even
+  // when the retention has left none of its events in Firestore.
+  const folderUids = [out, ...reconcileDirs].flatMap(uidsOfFolder);
+  const unknown = [...new Set([...folderUids, ...[...current.names.values()].map((n) => n.userId)])].filter((uid) => uid && !states.has(uid));
+  if (unknown.length) for (const [uid, state] of (await lookupAccounts(fetchFn, { project: cred.project, headers: await cred.headers(), uids: unknown })) as Map<string, AccountState>) states.set(uid, state);
   const goneUids = [...states].filter(([, s]) => s === 'gone').map(([uid]) => uid);
+  // What each living account deleted, and when (Settings > Learning's Delete):
+  // its copies made by then go too, however old (2026-11-12, Owner decision 15).
+  const root = docsUrl.slice(docsUrl.indexOf('projects/'));
+  const markers = await forgottenMarkers(fetchFn, { url: docsUrl, root, headers: () => cred.headers(), uids: [...new Set(folderUids)].filter((uid) => states.get(uid) !== 'gone') });
+  // The two deleting steps' credential: --write-key's, or the pull's own (2026-11-12).
+  const writeKey = option(argv, 'write-key') as string | undefined;
+  const writer = writeKey ? await connect({ keyPath: writeKey, fetchFn }) : cred;
   let deleted = 0;
+  let refused = false;
   if (reconcileDirs.length && goneUids.length) {
-    // Events of accounts that no longer exist are deleted where they are, the one write (roles/datastore.user).
+    // Events of accounts that no longer exist are deleted where they are (roles/datastore.user).
     const gone = new Set(goneUids);
     for (const { name, userId } of current.names.values()) {
       if (!gone.has(userId) || !name) continue;
-      const res = await fetchFn(`https://firestore.googleapis.com/v1/${name}`, { method: 'DELETE', headers: await cred.headers() });
+      const res = await fetchFn(`https://firestore.googleapis.com/v1/${name}`, { method: 'DELETE', headers: await writer.headers() });
+      if (res.status === 403) {
+        refused = true;
+        break;
+      }
       if (!res.ok) throw new Error(`Deleting an event of a deleted account answered ${res.status}.`);
       current.ids.delete(name.slice(name.lastIndexOf('/') + 1));
       deleted++;
     }
   }
   const forgetAll = new Set([...forget, ...goneUids]);
+  // An event the retention deleted is not one its person deleted: its copy stays.
+  const cutoff = retentionCutoff(startedAt);
   let reconciled = 0;
-  for (const dir of [out, ...reconcileDirs]) reconciled += applyReconcile(nodeFs, dir, current.ids, forgetAll).ids.length;
+  for (const dir of [out, ...reconcileDirs]) reconciled += applyReconcile(nodeFs, dir, current.ids, forgetAll, { keepBefore: cutoff, forgetBefore: markers }).ids.length;
+
+  // The retention (2026-11-12, Owner decision 15): what this folder now holds
+  // and is more than RETENTION_DAYS old goes from Firestore.
+  let expired = 0;
+  let notHeld = 0;
+  if (!argv.includes('--no-expire') && !refused) {
+    const saved = idsOfFolder(out);
+    pages: for await (const page of expiringPages(fetchFn, { url, headers: () => cred.headers(), cutoff })) {
+      for (const e of page) {
+        if (!saved.has(e.id)) {
+          notHeld++;
+          continue;
+        }
+        const res = await fetchFn(`https://firestore.googleapis.com/v1/${e.name}`, { method: 'DELETE', headers: await writer.headers() });
+        if (res.status === 403) {
+          refused = true;
+          break pages;
+        }
+        if (!res.ok) throw new Error(`Deleting an event older than ${RETENTION_DAYS} days answered ${res.status}.`);
+        expired++;
+      }
+    }
+  }
 
   const summary = summarise(out, dropped, read, kept.length);
   writeFileSync(join(out, 'summary.json'), JSON.stringify(summary, null, 1));
@@ -365,8 +437,46 @@ export async function main(argv = process.argv.slice(2), fetchFn: FetchLike = fe
   const pairsWhy = Object.entries(pairs.dropped).map(([k, n]) => `${k} ${n}`).join(', ');
   console.log(`not learned from: ${why || 'none'}${pairsWhy ? `; page pairs: ${pairsWhy}` : ''}${unkept ? `; ${unkept} kept earlier and rated bad or undone since, removed` : ''}`);
   console.log(`reconciled: ${reconciled} event(s) no longer shared removed from ${1 + reconcileDirs.length} folder(s)${deleted ? `; ${deleted} event(s) of deleted accounts deleted from Firestore` : ''}`);
+  if (argv.includes('--no-expire')) console.log('retention: not run this time (--no-expire).');
+  else if (!refused) console.log(`retention: ${expired} event(s) older than ${RETENTION_DAYS} days (before ${cutoff}) deleted from Firestore, each saved here first${notHeld ? `; ${notHeld} older one(s) this folder does not hold were left: pull from their day once to save them` : ''}`);
   console.log(`folder: ${summary.events} events, ${summary.skeletons} skeletons, ${summary.pagePairs} page pairs, ${summary.fullReports} full reports (opt-in), from ${summary.accounts} accounts, under ${out}`);
+  if (refused) {
+    console.error(`The pull is saved, but Firestore refused a delete: this credential may only read. Give --write-key a service account with roles/datastore.user for ${reconcileDirs.length ? 'the reconcile and ' : ''}the retention, or pass --no-expire.`);
+    return 3;
+  }
   return 0;
+}
+
+/** Every event id a pull folder holds a line for: what the retention may delete, since it is saved. */
+function idsOfFolder(dir: string): Set<string> {
+  const ids = new Set<string>();
+  const path = join(dir, 'events.jsonl');
+  if (!existsSync(path)) return ids;
+  for (const line of readFileSync(path, 'utf8').split('\n')) {
+    try {
+      const id = (JSON.parse(line) as { id?: string }).id;
+      if (id) ids.add(id);
+    } catch {
+      /* blank */
+    }
+  }
+  return ids;
+}
+
+/** Every account a pull folder holds events of. */
+function uidsOfFolder(dir: string): string[] {
+  const path = join(dir, 'events.jsonl');
+  if (!existsSync(path)) return [];
+  return readFileSync(path, 'utf8')
+    .split('\n')
+    .flatMap((line) => {
+      try {
+        const uid = (JSON.parse(line) as { userId?: string }).userId;
+        return uid ? [uid] : [];
+      } catch {
+        return [];
+      }
+    });
 }
 
 if (isMain(import.meta.url)) {

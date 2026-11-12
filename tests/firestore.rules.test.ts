@@ -19,7 +19,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc, deleteDoc, deleteField, updateDoc, collection, getDocs, query, where, writeBatch, setLogLevel, increment, serverTimestamp, Timestamp, type Firestore } from 'firebase/firestore';
 import fs from 'node:fs';
-import { MAX_ERRORS_A_DAY, MAX_FULL_EVENTS_A_DAY, deleteReportAndVersions, writeErrorReport, writeLearning, writeReport } from '../src/lib/accountData';
+import { MAX_ERRORS_A_DAY, MAX_FULL_EVENTS_A_DAY, deleteReportAndVersions, markLearningForgotten, writeErrorReport, writeLearning, writeReport } from '../src/lib/accountData';
 import { learningEvent, LEARNING_AIS, LEARNING_DRAFTS, LEARNING_DROPPED, LEARNING_HOWS, LEARNING_KINDS, LEARNING_REQUESTS, LEARNING_SOURCES } from '../src/lib/learning';
 
 // Every denial this file expects is also logged by the SDK as a
@@ -966,6 +966,19 @@ describe('the learning switches', () => {
     await assertFails(setDoc(prefs(bobDb()), { structure: true, full: true }));
     await assertFails(deleteDoc(prefs(bobDb())));
     await assertFails(getDoc(prefs(anonDb())));
+  });
+
+  // When the account last deleted what it shared (2026-11-12, Owner decision 15): the server's time and nothing else.
+  it('keep when the account deleted what it shared: the server\'s time, the owner\'s alone', async () => {
+    const mark = (db: ReturnType<typeof aliceDb>, uid = ALICE) => doc(db, 'users', uid, 'meta', 'forgotten');
+    await assertSucceeds(markLearningForgotten(aliceDb() as unknown as Firestore, ALICE));
+    await assertSucceeds(getDoc(mark(aliceDb())));
+    await assertFails(setDoc(mark(aliceDb()), { at: Timestamp.fromMillis(Date.now() - 86_400_000) }));
+    await assertFails(setDoc(mark(aliceDb()), { at: serverTimestamp(), uid: ALICE }));
+    await assertFails(getDoc(mark(bobDb(), ALICE)));
+    await assertFails(setDoc(mark(bobDb(), ALICE), { at: serverTimestamp() }));
+    await assertFails(deleteDoc(mark(bobDb(), ALICE)));
+    await assertSucceeds(deleteDoc(mark(aliceDb())));
   });
 
   it('give the share count nothing: the quota keeps its own rules', async () => {

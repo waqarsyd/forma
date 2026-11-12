@@ -933,8 +933,10 @@ scripts/               dev.mjs (npm run dev:log) and build-server.mjs; the
                        fine-tune that runs on Kaggle's free GPU,
                        evaluate.ts, which scores its answers, and the
                        learning loop that runs on the owner's PC:
-                       pull-learning.ts, gate.ts (whether a new model may
-                       ship) and learn-week.ts (the three in a row, weekly)
+                       pull-learning.ts (which deletes from Firestore what it
+                       has saved once it is 90 days old), gate.ts (whether a
+                       new model may ship) and learn-week.ts (the three in a
+                       row, weekly)
 server.ts              Express server: the development server (Vite in
                        middleware mode) and the self-hosted `npm start`; the
                        deployed site is Firebase Hosting serving dist/

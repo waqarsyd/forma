@@ -50,6 +50,9 @@ afterAll(() => fs.rmSync(scratch, { recursive: true, force: true }));
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
 const keyFile = join(scratch, 'made-up-service-account.json');
 fs.writeFileSync(keyFile, JSON.stringify({ type: 'service_account', project_id: 'made-up-project', client_email: 'learning-reader@made-up-project.iam.gserviceaccount.com', private_key: privateKey }));
+/** The one that may delete (2026-11-12, Owner decision 15): --write-key's. */
+const writeKeyFile = join(scratch, 'made-up-writer.json');
+fs.writeFileSync(writeKeyFile, JSON.stringify({ type: 'service_account', project_id: 'made-up-project', client_email: 'learning-writer@made-up-project.iam.gserviceaccount.com', private_key: privateKey }));
 
 type Reply = { ok: boolean; status: number; json(): Promise<unknown>; text(): Promise<string> };
 const reply = (body: unknown, status = 200): Reply => ({ ok: status < 400, status, json: async () => body, text: async () => JSON.stringify(body) });
@@ -71,47 +74,75 @@ const doc = (uid: string, id: string, at: string, over: Record<string, unknown> 
   return { name: `projects/made-up-project/databases/(default)/documents/users/${uid}/learning/${id}`, fields: Object.fromEntries(Object.entries(e).map(([k, v]) => [k, value(v)])) };
 };
 
-/** A Google that holds `docs`, knows `users`, and records what it was asked. */
-function google(docs: ReturnType<typeof doc>[], users: { localId: string; emailVerified: boolean }[]) {
-  const asked: { url: string; body: Record<string, unknown> | null; method: string }[] = [];
+/**
+ * A Google that holds `docs` (a copy, which a DELETE removes from), knows
+ * `users` and when each deleted what it shared (`markers`, the
+ * `meta/forgotten` times), answers each credential with a token naming it,
+ * and records what it was asked. `refuseDeletes` answers a DELETE as a
+ * viewer-only credential is answered.
+ */
+function google(docs: ReturnType<typeof doc>[], users: { localId: string; emailVerified: boolean }[], o: { markers?: Record<string, string>; refuseDeletes?: boolean } = {}) {
+  const held = [...docs];
+  const asked: { url: string; body: Record<string, unknown> | null; method: string; headers: Record<string, string> }[] = [];
   const fetchFn: FetchLike = async (url, init) => {
     const body = init.body && init.body.startsWith('{') ? (JSON.parse(init.body) as Record<string, unknown>) : null;
-    asked.push({ url, body, method: init.method });
-    if (url.includes('oauth2')) return reply({ access_token: 'made-up-token', expires_in: 3600 });
+    asked.push({ url, body, method: init.method, headers: init.headers });
+    if (url.includes('oauth2')) {
+      // The token names the service account that asked: the claims of the signed assertion.
+      const claims = /assertion=[^.]+\.([^.]+)\./.exec(init.body ?? '')?.[1] ?? '';
+      const iss = (JSON.parse(Buffer.from(claims.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8') || '{}') as { iss?: string }).iss ?? '';
+      return reply({ access_token: iss ? `token-of-${iss.split('@')[0]}` : 'made-up-token', expires_in: 3600 });
+    }
     if (url.endsWith('accounts:lookup')) {
       const wanted = (body!.localId as string[]) ?? [];
       return reply({ users: users.filter((u) => wanted.includes(u.localId)) });
     }
-    if (url.endsWith(':runAggregationQuery')) return reply([{ result: { aggregateFields: { n: { integerValue: String(docs.length) } } } }]);
+    if (url.endsWith(':batchGet')) {
+      return reply(
+        (body!.documents as string[]).map((name) => {
+          const uid = name.split('/users/')[1]?.split('/')[0] ?? '';
+          return o.markers?.[uid] ? { found: { name, fields: { at: { timestampValue: o.markers[uid] } } } } : { missing: name };
+        }),
+      );
+    }
+    if (url.endsWith(':runAggregationQuery')) return reply([{ result: { aggregateFields: { n: { integerValue: String(held.length) } } } }]);
     if (url.endsWith(':runQuery')) {
       // Filtered on `day` and ordered as asked, as Firestore would, so a
-      // resumed pull reads what its query really selects.
+      // resumed pull reads what its query really selects, and the retention
+      // what is older than its day.
       const q = body!.structuredQuery as {
-        where?: { fieldFilter: { value: { stringValue: string } } };
+        where?: { fieldFilter: { op: string; value: { stringValue: string } } };
         orderBy: { field: { fieldPath: string } }[];
-        startAt?: { values: { referenceValue?: string }[] };
+        startAt?: { values: { referenceValue?: string; stringValue?: string }[] };
         limit: number;
       };
       const field = (d: ReturnType<typeof doc>, f: string) => (f === '__name__' ? d.name : String((d.fields[f] as { stringValue?: string } | undefined)?.stringValue ?? ''));
-      const from = q.where?.fieldFilter.value.stringValue ?? '';
-      const sorted = docs
-        .filter((d) => field(d, 'day') >= from)
-        .sort((a, b) => {
-          for (const o of q.orderBy) {
-            const [x, y] = [field(a, o.field.fieldPath), field(b, o.field.fieldPath)];
-            if (x !== y) return x < y ? -1 : 1;
-          }
-          return 0;
-        });
-      const start = q.startAt ? sorted.findIndex((d) => d.name === q.startAt!.values.at(-1)!.referenceValue) + 1 : 0;
-      const page = sorted.slice(start, start + q.limit);
+      const bound = q.where?.fieldFilter.value.stringValue ?? '';
+      const before = q.where?.fieldFilter.op === 'LESS_THAN';
+      const keyOf = (d: ReturnType<typeof doc>) => q.orderBy.map((ord) => field(d, ord.field.fieldPath));
+      const compare = (x: string[], y: string[]) => {
+        for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
+        return 0;
+      };
+      const sorted = held.filter((d) => (before ? field(d, 'day') < bound : field(d, 'day') >= bound)).sort((a, b) => compare(keyOf(a), keyOf(b)));
+      // After the cursor by the order's own values, so a page deleted meanwhile does not move it.
+      const cursor = q.startAt?.values.map((v) => v.referenceValue ?? v.stringValue ?? '');
+      const page = (cursor ? sorted.filter((d) => compare(keyOf(d), cursor) > 0) : sorted).slice(0, q.limit);
       return reply(page.length ? page.map((document) => ({ document })) : [{ readTime: 'now' }]);
     }
-    if (init.method === 'DELETE') return reply({});
+    if (init.method === 'DELETE') {
+      if (o.refuseDeletes) return reply({ error: 'PERMISSION_DENIED' }, 403);
+      const at = held.findIndex((d) => url.endsWith(d.name));
+      if (at >= 0) held.splice(at, 1);
+      return reply({});
+    }
     return reply({ error: 'not stood in for' }, 404);
   };
-  return { fetchFn, asked };
+  return { fetchFn, asked, held };
 }
+
+/** The clock the pulls here run by: two days after the made-up events, so no test turns on the day it runs. */
+const NOW = () => Date.parse('2026-11-12T12:00:00Z');
 
 describe('pull-learning.ts against a stand-in for Google', () => {
   const out = join(scratch, 'pulled');
@@ -130,7 +161,7 @@ describe('pull-learning.ts against a stand-in for Google', () => {
     fs.mkdirSync(join(out, 'skeletons'), { recursive: true });
     fs.writeFileSync(join(out, 'skeletons', 'cleared.json'), JSON.stringify({ account: accountKey('verified1') }));
     const g = google(docs, users);
-    expect(await pull(['--out', out, '--key', keyFile], g.fetchFn)).toBe(0);
+    expect(await pull(['--out', out, '--key', keyFile], g.fetchFn, NOW)).toBe(0);
     expect(fs.readdirSync(join(out, 'skeletons'))).toEqual(['a1.json']);
     const kept = JSON.parse(fs.readFileSync(join(out, 'skeletons', 'a1.json'), 'utf8')) as { account: string; hash: string; quality: unknown };
     expect(kept.account).toBe(accountKey('verified1'));
@@ -156,7 +187,7 @@ describe('pull-learning.ts against a stand-in for Google', () => {
   it('resumes where it stopped, and removes what a person has since cleared', async () => {
     const later = [...docs.slice(1), doc('verified1', 'a3', '2026-11-10T21:00:00Z', { skeleton: skeletonJson(1100) })];
     const g = google(later, users);
-    expect(await pull(['--out', out, '--key', keyFile], g.fetchFn)).toBe(0);
+    expect(await pull(['--out', out, '--key', keyFile], g.fetchFn, NOW)).toBe(0);
     // Resumed a lookback before the last trusted time, by day, not strictly after it.
     const first = g.asked.find((a) => a.url.endsWith(':runQuery'))!.body!.structuredQuery as { startAt?: unknown; where?: unknown };
     expect(first.startAt).toBeUndefined();
@@ -176,7 +207,7 @@ describe('pull-learning.ts against a stand-in for Google', () => {
     const real = doc('verified1', 'r1', '2026-11-10T10:00:00Z');
     const poison = [doc('verified1', 'z9', '9999-12-31T23:59:59Z'), doc('verified1', 'tilde', '~', { day: '~' })];
     const g1 = google([real, ...poison], users);
-    expect(await pull(['--out', own, '--key', keyFile], g1.fetchFn)).toBe(0);
+    expect(await pull(['--out', own, '--key', keyFile], g1.fetchFn, NOW)).toBe(0);
     expect(JSON.parse(fs.readFileSync(join(own, 'cursor.json'), 'utf8'))).toEqual({ since: '', at: '2026-11-10T10:00:00Z' });
     expect((JSON.parse(fs.readFileSync(join(own, 'summary.json'), 'utf8')) as { thisPull: { dropped: Record<string, number> } }).thisPull.dropped).toEqual({ 'unreadable time': 2 });
     expect(fs.readdirSync(join(own, 'skeletons'))).toEqual(['r1.json']);
@@ -188,7 +219,7 @@ describe('pull-learning.ts against a stand-in for Google', () => {
     // the pull began is not trusted.
     const fresh = doc('verified1', 'r2', '2026-11-10T20:00:00Z', { skeleton: skeletonJson(1100) });
     const g2 = google([late, real, fresh, ...poison], users);
-    expect(await pull(['--out', own, '--key', keyFile], g2.fetchFn)).toBe(0);
+    expect(await pull(['--out', own, '--key', keyFile], g2.fetchFn, NOW)).toBe(0);
     expect(fs.readdirSync(join(own, 'skeletons')).sort()).toEqual(['late.json', 'r1.json', 'r2.json']);
     const ids = fs.readFileSync(join(own, 'events.jsonl'), 'utf8').trim().split('\n').map((l) => (JSON.parse(l) as { id: string }).id);
     expect(ids).toEqual(['r1', 'late', 'r2']);
@@ -200,7 +231,7 @@ describe('pull-learning.ts against a stand-in for Google', () => {
     const pair = JSON.stringify({ v: 1, features: FEATURE_SIGNATURE, page: [827, 1169], boxes: [[100, 140, 80, 8]], lines: [[0]], lineFeatures: [new Array(LINE_FEATURES.length).fill(0)], boxFeatures: [new Array(BOX_OWN).fill(0)], readBand: [4], readRole: [2], band: [4], role: [2] });
     const keptDoc = doc('verified1', 'k1', '2026-11-10T10:00:00Z', { kind: 'kept', skeleton: '', boxes: pair, ref: 'g1' });
     const g1 = google([keptDoc], users);
-    expect(await pull(['--out', own, '--key', keyFile, '--skeletons-only'], g1.fetchFn)).toBe(0);
+    expect(await pull(['--out', own, '--key', keyFile, '--skeletons-only'], g1.fetchFn, NOW)).toBe(0);
     const file = JSON.parse(fs.readFileSync(join(own, 'boxes', 'k1.json'), 'utf8')) as { ref: string; at: string; account: string; pair: { band: number[] } };
     expect(file).toMatchObject({ ref: 'g1', at: '2026-11-10T10:00:00Z', account: accountKey('verified1') });
     expect(file.pair.band).toEqual([4]);
@@ -212,7 +243,7 @@ describe('pull-learning.ts against a stand-in for Google', () => {
     expect(select).not.toContain('full');
     // The report undone since: its pair goes.
     const g2 = google([keptDoc, doc('verified1', 'un1', '2026-11-10T11:00:00Z', { kind: 'undo', skeleton: '', ref: 'g1' })], users);
-    expect(await pull(['--out', own, '--key', keyFile, '--skeletons-only'], g2.fetchFn)).toBe(0);
+    expect(await pull(['--out', own, '--key', keyFile, '--skeletons-only'], g2.fetchFn, NOW)).toBe(0);
     expect(fs.readdirSync(join(own, 'boxes'))).toEqual([]);
   });
 
@@ -220,11 +251,76 @@ describe('pull-learning.ts against a stand-in for Google', () => {
     // 17,501 events: the id listing and the pull would read 35,002.
     const fetchFn: FetchLike = async (url) =>
       url.includes('oauth2') ? reply({ access_token: 't', expires_in: 3600 }) : url.endsWith(':runAggregationQuery') ? reply([{ result: { aggregateFields: { n: { integerValue: '17501' } } } }]) : reply({}, 500);
-    expect(await pull(['--out', join(scratch, 'pulled-big'), '--key', keyFile], fetchFn)).toBe(1);
+    expect(await pull(['--out', join(scratch, 'pulled-big'), '--key', keyFile], fetchFn, NOW)).toBe(1);
   });
 
   it('refuses a folder inside the repository', async () => {
     expect(await pull(['--out', 'pulled-here', '--key', keyFile], google([], []).fetchFn)).toBe(2);
+  });
+});
+
+/*
+ * The retention (2026-11-12, Owner decision 15): an event older than 90 days
+ * deleted from Firestore once the folder holds it, with the credential that
+ * may write; the copy kept, though Firestore no longer holds it; and every
+ * copy of a person who deleted what they shared, or whose account is gone,
+ * still forgotten however old.
+ */
+describe('pull-learning.ts keeps 90 days in Firestore', () => {
+  const users = [
+    { localId: 'verified1', emailVerified: true },
+    { localId: 'verified2', emailVerified: true },
+  ];
+  const old1 = doc('verified1', 'old1', '2026-07-01T10:00:00Z');
+  const old2 = doc('verified2', 'old2', '2026-07-02T10:00:00Z', { skeleton: skeletonJson(1100) });
+  const fresh1 = doc('verified1', 'fresh1', '2026-11-10T10:00:00Z', { skeleton: skeletonJson(1000) });
+
+  it('deletes from Firestore what it holds and is older than 90 days, with --write-key, and keeps the copy', async () => {
+    const out = join(scratch, 'retention');
+    const g = google([old1, old2, fresh1], users);
+    expect(await pull(['--out', out, '--key', keyFile, '--write-key', writeKeyFile], g.fetchFn, NOW)).toBe(0);
+    expect(g.held.map((d) => d.name.split('/').pop())).toEqual(['fresh1']);
+    const deletes = g.asked.filter((a) => a.method === 'DELETE');
+    expect(deletes).toHaveLength(2);
+    // Read with the viewer, deleted with the writer.
+    for (const d of deletes) expect(d.headers.authorization).toBe('Bearer token-of-learning-writer');
+    expect(g.asked.find((a) => a.url.endsWith(':runQuery'))!.headers.authorization).toBe('Bearer token-of-learning-reader');
+    const retention = g.asked.filter((a) => a.url.endsWith(':runQuery')).map((a) => a.body!.structuredQuery as { where?: { fieldFilter: { op: string; value: { stringValue: string } } } }).find((q) => q.where?.fieldFilter.op === 'LESS_THAN');
+    expect(retention!.where!.fieldFilter.value.stringValue).toBe('2026-08-14');
+
+    // The next week: Firestore no longer holds them, and the copies stay.
+    const next = google(g.held, users);
+    expect(await pull(['--out', out, '--key', keyFile, '--write-key', writeKeyFile], next.fetchFn, NOW)).toBe(0);
+    expect(fs.readdirSync(join(out, 'skeletons')).sort()).toEqual(['fresh1.json', 'old1.json', 'old2.json']);
+
+    // Then verified1 deletes what they shared (Settings → Learning): every copy of theirs made by then goes, however old.
+    const after = google([], users, { markers: { verified1: '2026-11-11T09:00:00.000Z' } });
+    expect(await pull(['--out', out, '--key', keyFile, '--write-key', writeKeyFile], after.fetchFn, NOW)).toBe(0);
+    expect(fs.readdirSync(join(out, 'skeletons'))).toEqual(['old2.json']);
+
+    // And verified2's account is deleted: theirs go too, though Firestore held none of it.
+    const gone = google([], [{ localId: 'verified1', emailVerified: true }]);
+    expect(await pull(['--out', out, '--key', keyFile, '--write-key', writeKeyFile], gone.fetchFn, NOW)).toBe(0);
+    expect(fs.readdirSync(join(out, 'skeletons'))).toEqual([]);
+    expect(fs.readFileSync(join(out, 'events.jsonl'), 'utf8')).toBe('');
+  });
+
+  it('leaves an older event it does not hold, and leaves them all with --no-expire', async () => {
+    const out = join(scratch, 'retention-since');
+    const g = google([old1, fresh1], users);
+    expect(await pull(['--out', out, '--key', keyFile, '--since', '2026-11-01'], g.fetchFn, NOW)).toBe(0);
+    expect(g.held.map((d) => d.name.split('/').pop()).sort()).toEqual(['fresh1', 'old1']);
+    const kept = google([old1, fresh1], users);
+    expect(await pull(['--out', join(scratch, 'retention-none'), '--key', keyFile, '--no-expire'], kept.fetchFn, NOW)).toBe(0);
+    expect(kept.asked.some((a) => a.method === 'DELETE')).toBe(false);
+  });
+
+  it('keeps the pull and exits 3 when its credential may only read', async () => {
+    const out = join(scratch, 'retention-viewer');
+    const g = google([old1, fresh1], users, { refuseDeletes: true });
+    expect(await pull(['--out', out, '--key', keyFile], g.fetchFn, NOW)).toBe(3);
+    expect(fs.readFileSync(join(out, 'events.jsonl'), 'utf8')).toContain('"id":"old1"');
+    expect(g.held).toHaveLength(2);
   });
 });
 
@@ -304,7 +400,7 @@ describe('the admin scripts', () => {
     const g = google([], [{ localId: 'u1', emailVerified: true }, { localId: 'u2', emailVerified: false }]);
     const cred = await connect({ keyPath: keyFile, fetchFn: g.fetchFn });
     expect(cred.project).toBe('made-up-project');
-    expect(await cred.headers()).toEqual({ authorization: 'Bearer made-up-token' });
+    expect(await cred.headers()).toEqual({ authorization: 'Bearer token-of-learning-reader' });
     const uids = ['u1', 'u2', ...Array.from({ length: 120 }, (_, i) => `x${i}`)];
     const states = await lookupAccounts(g.fetchFn, { project: cred.project, headers: await cred.headers(), uids });
     expect(states.get('u1')).toBe('verified');

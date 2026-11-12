@@ -506,6 +506,25 @@ describe('the policy says of learning what the code does', () => {
   // One-directional, as the hosts above: a signal the code records obliges the
   // sentence. The policy may say it before the code does (batch LRN adds it in
   // the same wave), never after.
+  /*
+   * The retention (2026-11-12, Owner decision 15): the policy's 90 days are
+   * the pull's, which deletes what is older once it holds it; and the
+   * deletion promise still reaches copies Firestore no longer holds, because
+   * Settings' Delete leaves its time for the pull to forget them by.
+   */
+  it('gives the days the pull keeps in Firestore, and keeps the deletion promise for older copies', () => {
+    const pipeline = read('src/lib/learningPipeline.ts');
+    const pull = read('scripts/model/pull-learning.ts');
+    const days = Number(/export const RETENTION_DAYS = (\d+);/.exec(pipeline)?.[1]);
+    expect(days).toBe(90);
+    expect(pull).toMatch(/expiringPages\(/);
+    expect(pull).toMatch(/forgetBefore: markers/);
+    expect(read('src/components/LearningSettings.tsx')).toMatch(/paths\.markLearningForgotten\(db, user\.uid\)/);
+    expect(policy).toContain(`stays in Forma’s database for ${days} days at most`);
+    expect(policy).toContain(`where only you and the operator can read them, for ${days} days`);
+    expect(policy).toMatch(/The operator’s copies stay until you delete it under Settings → Learning, or the account, and go at the next download after that, however old they are/);
+  });
+
   // The page pair (2026-11-12, Owner decision 20, D10): what a kept event carries obliges the sentence.
   it('says the positions of the text on a page sent are kept, never the text, once a kept event carries them', () => {
     expect(learning).toMatch(/\n\s+boxes: string;/);
@@ -728,8 +747,14 @@ describe('the legal copy and its date change together', () => {
      Forma to tell a page's parts apart, and the last twenty pages' positions
      named among what IndexedDB keeps. Substantive, and already that day's
      date.
+
+     Moved again the same day (Owner decision 15): what Forma learned from
+     use stays in the database for 90 days, the operator's download deleting
+     what is older once it has a copy, and the operator's copies still going
+     when the person deletes theirs, however old. Substantive, and already
+     that day's date.
      */
-  const EXPECTED_COPY_HASH = '1d793ce2bc19';
+  const EXPECTED_COPY_HASH = 'cf75cfba3dd4';
   const EXPECTED_UPDATED = '12 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {

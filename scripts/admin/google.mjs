@@ -15,11 +15,19 @@
  *
  * Ask for as little as the job needs (SA-14). A service account made for
  * this, never the Admin SDK's own (which can change everything):
- *   roles/datastore.viewer       to read (the pull, stats, orphans)
+ *   roles/datastore.viewer       to read (the learning pull, stats, orphans,
+ *                                and pull-errors.ts --keep)
  *   roles/firebaseauth.viewer    to look accounts up (the pull, orphans, stats)
- *   roles/datastore.user         only for pull-learning.ts --reconcile, the
- *                                one step that deletes
- * Delete the key file once the run is done; make a new one next time.
+ *   roles/datastore.user         only for the steps that delete (2026-11-12,
+ *                                Owner decisions 10 and 15): the learning
+ *                                pull's retention (events older than 90 days
+ *                                it has saved) and its --reconcile (a deleted
+ *                                account's events), both through its
+ *                                --write-key, and pull-errors.ts (each error
+ *                                report once saved)
+ * Two service accounts keep the reading one viewer-only: --key for the pull,
+ * --write-key for its deletes. Delete each key file once the run is done;
+ * make a new one next time.
  *
  * The project is the key's own, or firebase-applet-config.json's; the
  * database is firebase.json's `firestore.databaseId`, then the applet

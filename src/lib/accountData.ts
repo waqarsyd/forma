@@ -386,6 +386,26 @@ export async function writeLearningPrefs(db: Firestore, uid: string, prefs: { st
   await setDoc(learningPrefsDocRef(db, uid), { structure: prefs.structure === true, full: prefs.full === true });
 }
 
+/**
+ * When the account last deleted what it shared (2026-11-12, Owner decision
+ * 15), at `users/{uid}/meta/forgotten` as `{ at }`, the server's time, which
+ * the rules require. The owner's pull deletes events older than 90 days from
+ * Firestore once it has them, so for those the copies on the owner's PC can
+ * no longer be told apart from what a person deleted by what Firestore lacks;
+ * this mark tells them, and the pull forgets every copy of this account made
+ * by then (lib/learningPipeline.ts, `forgottenMarkers`). Written by Settings
+ * → Learning's Delete after the events are gone; deleted with the account.
+ */
+const FORGOTTEN_DOC_ID = 'forgotten';
+
+export function forgottenDocRef(db: Firestore, uid: string): DocumentReference {
+  return doc(db, USERS_COLLECTION, uid, META_COLLECTION, FORGOTTEN_DOC_ID);
+}
+
+export async function markLearningForgotten(db: Firestore, uid: string): Promise<void> {
+  await setDoc(forgottenDocRef(db, uid), { at: serverTimestamp() });
+}
+
 /** Thrown when an account already has `MAX_SHARES` shares. */
 export class ShareLimitError extends Error {
   constructor() {
@@ -661,6 +681,11 @@ export async function deleteAccountData(db: Firestore, uid: string): Promise<voi
   // The learning switches (2026-11-11); tolerated like the count: two booleans, nothing of the person's work.
   await deleteDoc(learningPrefsDocRef(db, uid)).catch((error) => {
     console.warn('Could not remove the learning switches while deleting the account:', error);
+  });
+  // The time it last deleted what it shared (2026-11-12); tolerated: once the
+  // account is gone, the owner's pull forgets all of it by the account alone.
+  await deleteDoc(forgottenDocRef(db, uid)).catch((error) => {
+    console.warn('Could not remove the learning deletion mark while deleting the account:', error);
   });
 
   await deleteDoc(vaultDocRef(db, uid)).catch((error) => {

@@ -13,7 +13,12 @@ import {
   accountKey,
   advanceResume,
   applyReconcile,
+  expiringPages,
+  expiryQuery,
+  forgottenMarkers,
   gateModels,
+  RETENTION_DAYS,
+  retentionCutoff,
   LOOKBACK_DAYS,
   meanNearest,
   planReconcile,
@@ -293,6 +298,51 @@ describe('selectTraining', () => {
   });
 });
 
+/* The retention (2026-11-12, Owner decision 15): 90 days in Firestore, and what each account deleted. */
+describe('the retention', () => {
+  it('keeps 90 days, counted from the pull, by day', () => {
+    expect(RETENTION_DAYS).toBe(90);
+    expect(retentionCutoff(Date.parse('2026-11-12T12:00:00Z'))).toBe('2026-08-14');
+    expect(retentionCutoff(Date.parse('2026-11-12T00:00:00Z'), 1)).toBe('2026-11-11');
+  });
+
+  it('asks for the older events by day, ids and days only, and pages by cursor', async () => {
+    const q = expiryQuery('2026-08-14', null);
+    expect(q.where).toEqual({ fieldFilter: { field: { fieldPath: 'day' }, op: 'LESS_THAN', value: { stringValue: '2026-08-14' } } });
+    expect((q.select as { fields: { fieldPath: string }[] }).fields.map((f) => f.fieldPath)).toEqual(['id', 'userId', 'day']);
+    expect(q).not.toHaveProperty('offset');
+    expect(expiryQuery('2026-08-14', { day: '2026-07-01', name: 'n1' }).startAt).toEqual({ values: [{ stringValue: '2026-07-01' }, { referenceValue: 'n1' }], before: false });
+    const names = ['a', 'b', 'c'].map((id) => `projects/p/databases/(default)/documents/users/u/learning/${id}`);
+    const asked: unknown[] = [];
+    const fetchFn: FetchLike = async (_url, init) => {
+      const query = (JSON.parse(init.body!) as { structuredQuery: { startAt?: unknown } }).structuredQuery;
+      asked.push(query.startAt ?? null);
+      const page = query.startAt ? names.slice(2) : names.slice(0, 2);
+      const body = page.map((name) => ({ document: { name, fields: { id: { stringValue: name.slice(-1) }, userId: { stringValue: 'u' }, day: { stringValue: '2026-07-01' } } } }));
+      return { ok: true, status: 200, json: async () => body, text: async () => '' };
+    };
+    const seen: string[] = [];
+    for await (const page of expiringPages(fetchFn, { url: 'x:runQuery', headers: async () => ({}), cutoff: '2026-08-14', pageSize: 2 })) seen.push(...page.map((e) => e.id));
+    expect(seen).toEqual(['a', 'b', 'c']);
+    expect(asked[1]).toEqual({ values: [{ stringValue: '2026-07-01' }, { referenceValue: names[1] }], before: false });
+  });
+
+  it('reads when each account deleted what it shared, a hundred accounts a request, and nothing for one that never did', async () => {
+    const calls: string[][] = [];
+    const fetchFn: FetchLike = async (_url, init) => {
+      const docs = (JSON.parse(init.body!) as { documents: string[] }).documents;
+      calls.push(docs);
+      const body = docs.map((name) => (name.includes('/users/u7/') ? { found: { name, fields: { at: { timestampValue: '2026-11-11T09:00:00.123456Z' } } } } : { missing: name }));
+      return { ok: true, status: 200, json: async () => body, text: async () => '' };
+    };
+    const uids = Array.from({ length: 150 }, (_, i) => `u${i}`);
+    const marks = await forgottenMarkers(fetchFn, { url: 'https://x/documents', root: 'projects/p/databases/(default)/documents', headers: async () => ({}), uids: [...uids, 'bad id!'] });
+    expect([...marks]).toEqual([['u7', '2026-11-11T09:00:00.123456Z']]);
+    expect(calls.map((c) => c.length)).toEqual([100, 50]);
+    expect(calls[0][0]).toBe('projects/p/databases/(default)/documents/users/u0/meta/forgotten');
+  });
+});
+
 /*
  * The page pairs a kept report labelled (2026-11-12, Owner decision 20, D10;
  * lib/readerPairs.ts): kept from a verified account's kept report, never the
@@ -377,6 +427,28 @@ describe('reconcile', () => {
     expect(fs.readdirSync(join(scratch, 'repx'))).toEqual([]);
     expect(fs.readdirSync(join(scratch, 'prompts'))).toEqual([]);
     expect(fs.readFileSync(join(scratch, 'events.jsonl'), 'utf8')).toBe(`${JSON.stringify({ id: 'keep', userId: 'u1' })}\n`);
+  });
+
+  /*
+   * The retention (2026-11-12, Owner decision 15): an event Firestore no
+   * longer holds because it is older than the retention keeps its copy; a
+   * person's own deletion still reaches it, by the time they deleted.
+   */
+  it('keeps a copy the retention took out of Firestore, and forgets one its person deleted, however old', () => {
+    const lines = [
+      JSON.stringify({ id: 'old', userId: 'u1', day: '2026-07-01', at: '2026-07-01T10:00:00Z' }),
+      JSON.stringify({ id: 'new', userId: 'u1', day: '2026-11-10', at: '2026-11-10T10:00:00Z' }),
+      JSON.stringify({ id: 'later', userId: 'u1', day: '2026-11-12', at: '2026-11-12T10:00:00Z' }),
+      JSON.stringify({ id: 'other', userId: 'u2', day: '2026-07-01', at: '2026-07-01T10:00:00Z' }),
+    ];
+    const files = ['old', 'new', 'later', 'other'].map((id) => ({ dir: 'skeletons' as const, name: `${id}.json` }));
+    // Firestore holds only `later`: `new` was cleared, `old` and `other` passed the retention.
+    const kept = planReconcile({ files, lines }, new Set(['later']), new Set(), { keepBefore: '2026-08-14' });
+    expect(kept.ids).toEqual(['new']);
+    // u1 deleted what they shared at 11:00 on the 11th: everything of theirs made by then goes, `later` stays.
+    const marked = planReconcile({ files, lines }, new Set(['later']), new Set(), { keepBefore: '2026-08-14', forgetBefore: new Map([['u1', '2026-11-11T11:00:00.000Z']]) });
+    expect(marked.ids.sort()).toEqual(['new', 'old']);
+    expect(marked.remove.map((f) => f.name).sort()).toEqual(['new.json', 'old.json']);
   });
 
   // The page pairs (2026-11-12, D10) go as the rest do: with their event, and with a forgotten account.

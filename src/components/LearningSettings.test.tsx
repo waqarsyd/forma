@@ -14,6 +14,7 @@ const paths = {
   readLearningPrefs: vi.fn(),
   writeLearningPrefs: vi.fn(),
   deleteLearning: vi.fn(),
+  markLearningForgotten: vi.fn(),
 };
 vi.mock('../lib/firebaseClient', () => ({ loadFirebase: () => Promise.resolve({ paths, db: {} }) }));
 
@@ -25,6 +26,7 @@ beforeEach(() => {
   paths.readLearningPrefs.mockReset().mockResolvedValue(null);
   paths.writeLearningPrefs.mockReset().mockResolvedValue(undefined);
   paths.deleteLearning.mockReset().mockResolvedValue(undefined);
+  paths.markLearningForgotten.mockReset().mockResolvedValue(undefined);
 });
 afterEach(() => {
   cleanup();
@@ -82,6 +84,28 @@ describe('LearningSettings', () => {
     fireEvent.click(structureSwitch());
     await waitFor(() => expect(screen.getByText(/Your account could not be updated just now/)).toBeTruthy());
     expect(readDeviceLearning('alice')).toEqual({ settings: { structure: false, full: true }, pending: true });
+  });
+
+  /*
+   * Owner decision 15 (2026-11-12): the events go from the account, and then
+   * the account keeps when that was, so the copies already downloaded go too,
+   * even those Firestore no longer holds after 90 days. Said for 90 days.
+   */
+  it('deletes what the account shared, then marks when, and says how long it is kept', async () => {
+    render(<LearningSettings user={{ uid: 'alice' }} />);
+    await waitFor(() => expect(screen.getByText(/7 events shared/)).toBeTruthy());
+    expect(document.body.textContent).toMatch(/where only you and Forma’s maintainer can read it, for 90 days/);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete what was kept' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(screen.getByText('Deleted from this device and from your account.')).toBeTruthy());
+    expect(paths.deleteLearning).toHaveBeenCalledWith({}, 'alice');
+    expect(paths.markLearningForgotten).toHaveBeenCalledWith({}, 'alice');
+    expect(paths.markLearningForgotten.mock.invocationCallOrder[0]).toBeGreaterThan(paths.deleteLearning.mock.invocationCallOrder[0]);
+    // When the mark cannot be written, it is said, and Delete can be pressed again.
+    paths.markLearningForgotten.mockRejectedValue(new Error('offline'));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete what was kept' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(screen.getByText('Some of it could not be deleted. Try again in a moment.')).toBeTruthy());
   });
 
   // The PRIV review (2026-11-11): the account's copy, read on opening, arriving after a change was

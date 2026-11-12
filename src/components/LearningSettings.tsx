@@ -125,6 +125,9 @@ export default function LearningSettings({ user }: LearningSettingsProps) {
       if (user) {
         const { paths, db } = await loadFirebase();
         await paths.deleteLearning(db, user.uid);
+        // The time of it, for the copies already downloaded that Firestore no
+        // longer holds after 90 days (2026-11-12, Owner decision 15).
+        await paths.markLearningForgotten(db, user.uid);
         setShared(0);
       }
       setKept(learningSummary([]));
@@ -194,7 +197,7 @@ export default function LearningSettings({ user }: LearningSettingsProps) {
             {sharedLine}
             {/* What deletion reaches, as the privacy policy says it (2026-11-11, the full audit's LM-03 and SE-10). */}
             {user
-              ? ' What was shared is in your account, where only you and Forma’s maintainer can read it. Deleting it here, or deleting your account, removes it from Forma’s database; copies already downloaded for training are deleted at the next download.'
+              ? ' What was shared is in your account, where only you and Forma’s maintainer can read it, for 90 days. Deleting it here, or deleting your account, removes it from Forma’s database; copies already downloaded for training are deleted at the next download.'
               : ' Sign in to share it; signed out, it stays on this device.'}
             {/* What account deletion leaves (2026-11-11, the full audit's BW2, from LRN's write counts):
                 the rules keep a day's count so deleting it cannot restart the day, and accountData.ts

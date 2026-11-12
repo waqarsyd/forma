@@ -52,6 +52,7 @@ import {
   writeLearning,
   writeReport,
   deleteLearning,
+  markLearningForgotten,
   LEARNING_PAGE,
 } from '../src/lib/accountData';
 import { learningEvent as buildLearningEvent } from '../src/lib/learning';
@@ -456,9 +457,20 @@ describe('the account document layout', () => {
     expect(await count(ALICE)).toBe(0);
     expect(await count(BOB)).toBe(1);
     await writeLearning(verified(ALICE), ALICE, event('ev-4'));
+    // Settings' Delete leaves when it was (2026-11-12, Owner decision 15); the account's deletion takes it.
+    await markLearningForgotten(asUser(ALICE), ALICE);
+    const marked = async () => {
+      let there = false;
+      await testEnv.withSecurityRulesDisabled(async (ctx) => {
+        there = (await getDoc(doc(ctx.firestore(), 'users', ALICE, 'meta', 'forgotten'))).exists();
+      });
+      return there;
+    };
+    expect(await marked()).toBe(true);
     await deleteAccountData(asUser(ALICE), ALICE);
     expect(await count(ALICE)).toBe(0);
     expect(await count(BOB)).toBe(1);
+    expect(await marked()).toBe(false);
   });
 
   /**
