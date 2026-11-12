@@ -75,6 +75,18 @@ export const REPO_URL = 'https://github.com/waqarsyd/forma';
 
 export const RELEASES: Release[] = [
   {
+    id: '2026-11-13-two-small-fixes',
+    date: '2026-11-13',
+    version: '1.6.3',
+    title: 'Two small fixes',
+    summary:
+      'Picking the same starting point twice no longer puts its description in the box twice, and Enter saves a change in your account settings, as the button beside it does.',
+    changes: [
+      { kind: 'fixed', area: 'workspace', text: 'Picking a starting point again, for example after adding your key, no longer puts its description in the message box a second time.' },
+      { kind: 'fixed', area: 'workspace', text: 'In your account settings, Enter now saves a new display name, password or email address, as the button beside it does. Deleting the account still takes a click.' },
+    ],
+  },
+  {
     id: '2026-11-12-sign-in-own-address',
     date: '2026-11-12',
     version: '1.6.2',
