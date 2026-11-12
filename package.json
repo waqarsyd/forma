@@ -45,7 +45,7 @@
     "dotenv": "^18.0.10",
     "express": "^5.3.0",
     "firebase": "^13.3.0",
-    "motion": "^12.43.0",
+    "motion": "^14.13.0",
     "onnxruntime-web": "1.22.0-dev.20250409-89f8206ba4",
     "pdfjs-dist": "^6.5.438",
     "react": "^19.3.1",

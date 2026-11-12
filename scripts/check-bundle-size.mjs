@@ -197,7 +197,13 @@ const BUDGETS = [
   // Retuned to 322_500 the same day for Vite 8 (the paragraph above BUDGETS):
   // 302,992 B, 93.9%. Since Vite 8 this is the entry file alone; what it
   // imports statically has its own budget, the eager total.
-  { prefix: 'index-', ext: '.js', max: 322_500, note: 'eager entry chunk (the public site)' },
+  //
+  // Raised to 334_500 the same day for motion 12.43 -> 14.13 (the majors the
+  // owner asked finished beyond decision 18): 302,992 -> 314,336 B, +11,344,
+  // motion's DOM animation features growing in the entry. No fix this app
+  // needed came with it; taken to stay current, with the entry still 74 kB
+  // under 1.6.0's. 94.0%.
+  { prefix: 'index-', ext: '.js', max: 334_500, note: 'eager entry chunk (the public site)' },
   /*
    * The Gemini SDK and tesseract.js, named chunks since 2026-11-11 (TC-10;
    * chunkFileNames in vite.config.ts), each loaded only when a request or a
@@ -894,8 +900,12 @@ const FONT_TOTAL_MAX = 4_640_000;
  * a dynamic import and loads later. 324,734 B in the first Vite 8 build (the
  * entry 302,992 and eleven chunks), against 328,835 B for the single-file entry
  * of the last Vite 6 build. 345_500 is 94.0%.
+ *
+ * Raised to 357_500 the same day for motion 14: 324,767 -> 336,137 B,
+ * +11,370, nearly all of it in the entry (itemised on the `index-` cap).
+ * 94.0%.
  */
-const EAGER_TOTAL_MAX = 345_500;
+const EAGER_TOTAL_MAX = 357_500;
 const STATIC_IMPORT = /(?:\bfrom|\bimport)\s*["']\.\/([^"'()]+?\.m?js)["']/g;
 const assetsDir = join(DIST, 'assets');
 const indexHtml = join(DIST, 'index.html');
