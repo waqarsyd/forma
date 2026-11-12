@@ -312,10 +312,9 @@ export default function Composer({
    * Sending puts the caret back in the field, and this is not a nicety.
    *
    * `.wb-box` shows its focus on `:focus-within` (a lifted shadow, and in the
-   * panel's foot the blue-to-violet edge, which the owner is still to decide
-   * keeps or loses on a click: decision 1 of the 2026-11-11 audit), so clicking
-   * the send button lights the composer because the *button* holds focus. The
-   * moment `canSend`
+   * panel's foot, for the keyboard only since 2026-11-12, the blue-to-violet
+   * edge), so clicking the send button lights the composer because the
+   * *button* holds focus. The moment `canSend`
    * started including `isChatting`, that button began disabling itself while
    * the request ran — and a disabled element loses focus, which no browser
    * gives back when it re-enables. The ring went out and the keyboard user was

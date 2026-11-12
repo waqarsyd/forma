@@ -819,8 +819,8 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
 /* Focus lifts the shadow, with no orange (2026-11-05, at the owner's request),
    as ChatGPT's box does; it was the accent. The edge does not change here: in
    the panel's foot, where the composer is drawn, the blue-to-violet edge further
-   down is the focus (whether it stays on a click is the owner's decision 1 of the
-   2026-11-11 audit). Focus stays plainly visible, which is what the comment
+   down joins it for the keyboard only (the owner's decision 1 of the 2026-11-11
+   audit, 2026-11-12). Focus stays plainly visible, which is what the comment
    below depends on. */
 .wb-box:focus-within { box-shadow: var(--shadow-md); }
 .wb-box .wb-line { flex: 1; min-width: 0; font-size: 13px; line-height: 1.4; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -830,7 +830,7 @@ mark.wb-hit { background: var(--accent-wash); color: var(--ink); border-radius: 
    Text is --ink; the placeholder keeps the faint colour, deliberately. */
 .wb-box .wb-line::placeholder { color: var(--ink-faint); }
 /* No generic focus ring here: `.wb-box:focus-within` above already lifts the
-   box's shadow (and in the panel's foot lights its edge), so the shared `.wb-root
+   box's shadow (and in the panel's foot, for the keyboard, lights its edge), so the shared `.wb-root
    :focus-visible` outline was a *second* indicator for the same focus — a
    hard-edged 2px rectangle floating inside a rounded box. It was orange until
    2026-11-05. Focus is still plainly visible, which is the part that matters;
@@ -1906,8 +1906,11 @@ html[data-modality='keyboard'] .wb-panel-search:focus-within { border-color: var
 /* Its chips (an attachment, the Preview's selection) grey, as Stitch's, not the accent. */
 .wb-panel-foot .wb-attach { border-color: var(--rule); background: color-mix(in srgb, var(--panel) 92%, transparent); }
 .wb-panel-foot .wb-attach svg { color: var(--ink-2); }
-/* Focus as Stitch's bar shows it: the edge turns a soft blue to violet. */
-.wb-panel-foot .wb-box:not(.wb-is-locked):focus-within {
+/* Focus as Stitch's bar shows it: the edge turns a soft blue to violet, for the
+   keyboard only (2026-11-12, the owner's decision 1 of the 2026-11-11 audit). It
+   lit on every click into the box and on its +, /, model and mic buttons, a
+   boundary drawn by a click; a click now lifts the shadow alone (`.wb-box:focus-within`). */
+html:not([data-modality='pointer']) .wb-panel-foot .wb-box:not(.wb-is-locked):focus-within {
   border-color: transparent;
   background:
     linear-gradient(var(--panel), var(--panel)) padding-box,

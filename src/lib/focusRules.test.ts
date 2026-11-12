@@ -24,7 +24,7 @@
  *
  * Deliberately a parser of a few dozen lines, not a CSS library: the stylesheets are
  * hand-written and plain, and a dependency to read them would be the larger risk.
- * The two allowed exceptions are named below with their reasons.
+ * The one allowed exception is named below with its reason.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -99,18 +99,17 @@ const SHADOW_TOKENS = /^(?:var\(--shadow-[a-z]+\)|var\(--inset-hi\))(?:\s*,\s*(?
 const ORANGE = /var\(--accent|var\(--brand|var\(--warn\b|#fe6b00|#ff7d21|#b45309|#d9a95f|rgba\(\s*254\s*,\s*107\s*,\s*0|rgba\(\s*255\s*,\s*125\s*,\s*33/i;
 
 /**
- * The two focus rules allowed to draw while ungated, each until a decision changes it.
- * - The composer's blue-to-violet edge in the panel's foot: Stitch's, which the owner
- *   asked for (b011a51). Whether it stays on a click is the owner's decision 1 of the
- *   2026-11-11 audit; until then it is neither orange nor grey and stays.
+ * The one focus rule allowed to draw while ungated, until a decision changes it.
  * - The public site's ring helper: put on buttons, links and the changelog's select,
  *   none of which Chrome matches `:focus-visible` on a click (measured in the audit),
  *   and turned off inside the workspace by `.wb-root .u-focus-ring:focus-visible`.
- * A code block's Copy (components/markdown.css) was a third until its ring was gated
- * on the keyboard there, later the same day.
+ * A code block's Copy (components/markdown.css) was a second until its ring was gated
+ * on the keyboard there, later the same day. The composer's blue-to-violet edge in the
+ * panel's foot (Stitch's, which the owner asked for in b011a51) was listed until the
+ * owner decided on 2026-11-12 (decision 1 of the 2026-11-11 audit) that a click does
+ * not draw it: it is gated on the keyboard now, and the check below holds it there.
  */
 const ALLOWED_FOCUS = new Set([
-  '.wb-panel-foot .wb-box:not(.wb-is-locked):focus-within',
   '.u-focus-ring:focus-visible',
 ]);
 
@@ -196,6 +195,18 @@ describe('the checks themselves', () => {
 describe('the owner\'s focus rule in the stylesheets', () => {
   it('draws no border, outline, ring or gradient edge on a focus the keyboard did not bring', () => {
     expect(focusViolations([...workspaceRules, ...indexRules])).toEqual([]);
+  });
+
+  // 2026-11-12, the owner's decision 1 of the 2026-11-11 audit: the composer's
+  // Stitch edge stays, for the keyboard only. The check above keeps a click from
+  // drawing it; this one keeps the keyboard's edge from being dropped with it.
+  it('lights the composer\'s blue-to-violet edge for the keyboard only', () => {
+    const edge = workspaceRules.filter((r) => r.selectors.some((s) => s.endsWith('.wb-panel-foot .wb-box:not(.wb-is-locked):focus-within')));
+    expect(edge.length).toBeGreaterThan(0);
+    for (const r of edge) {
+      for (const s of r.selectors) expect(s.startsWith("html:not([data-modality='pointer'])"), s).toBe(true);
+      expect(r.decls.some(([p, v]) => p === 'background' && /border-box/.test(v))).toBe(true);
+    }
   });
 
   it('draws no orange or amber border or outline anywhere in the workspace', () => {
