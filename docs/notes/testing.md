@@ -567,7 +567,8 @@ name is treated as a module to import, so the failure is a `Failed to load custo
 Reporter from basic` / `Failed to load url basic (resolved id: basic)` stack trace with
 Vite frames in it — which reads like a broken config rather than a bad flag value.
 `vitest.config.ts` already sets `reporters: 'default'`; pass `--reporter=dot` for the
-terse output `basic` used to give. Verified on vitest 4.1.10.
+terse output `basic` used to give. Verified on vitest 4.1.10, and again on 5.1.0
+(2026-11-12), which fails the same way.
 
 ## Three configs, and the rules suite uses its own
 
