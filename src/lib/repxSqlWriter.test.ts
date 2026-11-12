@@ -168,6 +168,23 @@ describe('writing into a report', () => {
     expect(again.reason).toMatch(/^Replaced the data source/);
   });
 
+  // 2026-11-12 (CodeQL js/incomplete-sanitization): a name was put in a pattern with only its dots
+  // escaped and compared with the file unescaped, so "(R&D)" never matched what was written and each
+  // write added the band again, "Lines[" threw, and the band's Name carried a bare "&".
+  it('writes a relation or a calculated field named with XML and pattern characters once', () => {
+    const named: DataSourceSpec = {
+      ...spec,
+      details: [{ query: { kind: 'table', object: 'dbo.OrderLines', columns: [], joins: [] }, keys: [{ master: 'OrderID', detail: 'OrderID' }], name: 'Lines (R&D)' }],
+      calculatedFields: [{ name: 'Tax & Duty', expression: '[Freight] * 0.2', type: 'Decimal' }],
+    };
+    const once = writeSqlDataSource(report, named);
+    expect(once.xml).toContain('ControlType="DetailReportBand" Name="DetailReportLines (R&amp;D)" Level="0" DataMember="Orders.Lines (R&amp;D)"');
+    const twice = writeSqlDataSource(once.xml, named);
+    expect(twice.xml.match(/ControlType="DetailReportBand"/g)).toHaveLength(1);
+    expect(twice.xml.match(/Name="Tax &amp; Duty"/g)).toHaveLength(1);
+    expect(() => writeSqlDataSource(report, { ...named, details: [{ ...named.details![0], name: 'Lines[' }] })).not.toThrow();
+  });
+
   it('refuses a connection string, a query with nothing to print, and text that is not a report', () => {
     // In plain words, with no configuration file's element named (2026-11-11, the full audit's SDW follow-up).
     expect(writeSqlDataSource(report, { ...spec, connectionName: 'Data Source=srv;Password=x' }).reason).toBe('the connection needs the name your application knows the database by, not a server, a login or a password');

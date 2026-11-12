@@ -75,6 +75,13 @@ const STRING_ARRAY = 'System.String[], mscorlib, Version=4.0.0.0, Culture=neutra
 
 const text = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const attrOf = (value: string) => escapeXmlAttribute(value);
+/**
+ * A value as this writer puts it in an attribute, as a pattern that finds it
+ * there (2026-11-12, CodeQL js/incomplete-sanitization): a relation's name had
+ * only its dots escaped and was looked for unescaped, so "Lines (R&D)" was never
+ * found and each write added its band again, and "Lines[" threw.
+ */
+const attrPattern = (value: string) => attrOf(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** A table's name as a SelectQuery writes it: `Orders` for dbo, `sales.Targets` otherwise. */
 function tableRef(object: { schema: string; name: string }): string {
@@ -381,7 +388,7 @@ export function writeSqlDataSource(repx: string, spec: DataSourceSpec, version =
 
   // Calculated fields on the source (the emit-calc measurement).
   for (const cf of spec.calculatedFields ?? []) {
-    if (!cf.name.trim() || new RegExp(`<CalculatedFields>[\\s\\S]*?\\sName="${cf.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`).test(xml)) continue;
+    if (!cf.name.trim() || new RegExp(`<CalculatedFields>[\\s\\S]*?\\sName="${attrPattern(cf.name)}"`).test(xml)) continue;
     const entry = `<Item1 Ref="${maxRef(xml) + 1}" Name="${attrOf(cf.name)}" FieldType="${cf.type}" Expression="${attrOf(cf.expression)}" DataMember="${attrOf(cf.dataMember ?? queryName(spec.query))}" />`;
     const block = /<CalculatedFields>([\s\S]*?)<\/CalculatedFields>/.exec(xml);
     if (block) xml = xml.replace('</CalculatedFields>', () => `${entry.replace('<Item1', `<Item${topLevelItems(block[1]) + 1}`)}</CalculatedFields>`);
@@ -392,7 +399,7 @@ export function writeSqlDataSource(repx: string, spec: DataSourceSpec, version =
   // A detail band for each master-detail relation the report does not print yet.
   for (const d of spec.details ?? []) {
     const path = `${queryName(spec.query)}.${relationName(spec, d)}`;
-    if (new RegExp(`DataMember="${path.replace(/\./g, '\\.')}"`).test(xml)) continue;
+    if (new RegExp(`DataMember="${attrPattern(path)}"`).test(xml)) continue;
     xml = addDetailBand(xml, ref, path, queryFields(spec.schema, d.query));
   }
 
@@ -473,7 +480,7 @@ function addDetailBand(xml: string, ref: string, path: string, fields: QueryFiel
     : '';
   const bands = /<Bands>([\s\S]*)<\/Bands>/.exec(xml);
   const count = bands ? topLevelItems(bands[1]) : 0;
-  const band = `<Item${count + 1} Ref="${r++}" ControlType="DetailReportBand" Name="DetailReport${path.split('.').pop()}" Level="0" DataMember="${attrOf(path)}" DataSource="#Ref-${ref}"><Bands><Item1 Ref="${r++}" ControlType="DetailBand" Name="DetailLines" HeightF="22"><Controls>${table}</Controls></Item1>${footer}</Bands></Item${count + 1}>`;
+  const band = `<Item${count + 1} Ref="${r++}" ControlType="DetailReportBand" Name="DetailReport${attrOf(path.split('.').pop() ?? '')}" Level="0" DataMember="${attrOf(path)}" DataSource="#Ref-${ref}"><Bands><Item1 Ref="${r++}" ControlType="DetailBand" Name="DetailLines" HeightF="22"><Controls>${table}</Controls></Item1>${footer}</Bands></Item${count + 1}>`;
   const close = xml.lastIndexOf('</Bands>', xml.indexOf('<ComponentStorage>') >= 0 ? xml.indexOf('<ComponentStorage>') : xml.length);
   return close < 0 ? xml : xml.slice(0, close) + band + xml.slice(close);
 }

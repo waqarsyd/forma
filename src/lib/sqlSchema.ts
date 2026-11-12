@@ -326,6 +326,16 @@ function columnList(text: string): string[] {
 }
 
 /**
+ * A procedure's `WITH RECOMPILE, ENCRYPTION, EXECUTE AS ...` options, at the
+ * end of its parameter list. The name after EXECUTE AS is a quoted string or a
+ * run with no space, comma or quote (2026-11-12, CodeQL js/redos): it was
+ * `\S+`, which could take the commas of the options after it, so each option
+ * split two ways and the work doubled with each one; 22 options took 1.8 s.
+ */
+const WITH_OPTION = String.raw`(?:RECOMPILE|ENCRYPTION|EXECUTE\s+AS\s+(?:'(?:[^']|'')*'|[^\s,']+))`;
+const WITH_OPTIONS = new RegExp(String.raw`\bWITH\s+${WITH_OPTION}(?:\s*,\s*${WITH_OPTION})*\s*$`, 'i');
+
+/**
  * A procedure's declared parameters: everything between its name and the
  * first top-level `AS`, the way SSMS scripts it and the way the layout script
  * keeps it (`header`). Defaults are kept as written, `NULL` included.
@@ -345,7 +355,9 @@ export function parseProcedureHeader(header: string): SqlParameter[] {
     list = clean.slice(at, matchParen(clean, open));
   } else {
     // Otherwise it ends at the first top-level AS that starts the body. `@p AS int`
-    // is T-SQL's optional AS before a parameter's type, and does not count.
+    // is T-SQL's optional AS before a parameter's type, and does not count; nor
+    // does the AS of `WITH EXECUTE AS OWNER` (2026-11-12), which ended the list
+    // there and left "with execute" in the last parameter's type.
     let depth = 0;
     let end = clean.length;
     for (let i = at; i < clean.length; i++) {
@@ -355,14 +367,14 @@ export function parseProcedureHeader(header: string): SqlParameter[] {
       else if (ch === ')') depth--;
       else if (depth === 0 && /\s/.test(clean[i - 1] ?? ' ') && /^AS(\s|$)/i.test(clean.slice(i, i + 3))) {
         const previous = /(\S+)\s*$/.exec(clean.slice(at, i))?.[1] ?? '';
-        if (previous.startsWith('@')) continue;
+        if (previous.startsWith('@') || /^EXECUTE$/i.test(previous)) continue;
         end = i;
         break;
       }
     }
     list = clean.slice(at, end);
   }
-  list = list.trim().replace(/\bWITH\s+(RECOMPILE|ENCRYPTION|EXECUTE\s+AS\s+\S+)(\s*,\s*(RECOMPILE|ENCRYPTION|EXECUTE\s+AS\s+\S+))*\s*$/i, '');
+  list = list.trim().replace(WITH_OPTIONS, '');
   return splitTopLevel(list)
     .filter((p) => p.startsWith('@'))
     .map((p) => {

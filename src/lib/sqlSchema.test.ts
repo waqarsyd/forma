@@ -206,6 +206,24 @@ describe('SSMS Generate Scripts text', () => {
     ]);
     expect(parseProcedureHeader('usp_NoParams AS SELECT @@ROWCOUNT')).toEqual([]);
   });
+
+  // 2026-11-12: the AS of EXECUTE AS was taken for the body's, so the last type read "varchar(10) with execute".
+  it('reads a header with WITH EXECUTE AS, a name or a quoted user', () => {
+    expect(parseProcedureHeader('usp_X @A int, @B varchar(10) WITH EXECUTE AS OWNER AS SELECT @A')).toEqual([
+      { name: '@A', type: 'int', output: false },
+      { name: '@B', type: 'varchar', length: 10, output: false },
+    ]);
+    expect(parseProcedureHeader("usp_X @A int WITH RECOMPILE, EXECUTE AS 'it''s, me' AS SELECT @A")).toEqual([{ name: '@A', type: 'int', output: false }]);
+  });
+
+  // CodeQL js/redos (2026-11-12): `\S+` after EXECUTE AS could take the next options' commas, so each
+  // option split two ways; 22 options took 1.8 s and every two more four times as long.
+  it('reads a header with a long run of WITH options at once', () => {
+    const header = `p (@a int WITH EXECUTE AS a${',RECOMPILE,EXECUTE AS a'.repeat(24)} x)`;
+    const started = performance.now();
+    expect(parseProcedureHeader(header).map((p) => p.name)).toEqual(['@a']);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
 });
 
 describe('types', () => {
