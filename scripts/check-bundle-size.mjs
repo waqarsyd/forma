@@ -436,8 +436,14 @@ const BUDGETS = [
   // 45,588 B; 48_500 is 94.0%. The lazy panels' rules still go to
   // components/overlays.css, which is emitted beside their own chunks.
   { prefix: 'workspace-', ext: '.css', max: 48_500, note: 'the workspace stylesheet, loaded with the workspace and /s/{id}' },
-  { prefix: 'pdf.worker-', ext: '.mjs', max: 2_250_000, note: 'pdfjs worker, lazy' },
-  { prefix: 'pdf-', ext: '.js', max: 470_000, note: 'pdfjs entry, lazy' },
+  // Raised on 2026-11-12 with pdfjs-dist 5.5.207 -> 6.5.438 (owner decision 18:
+  // GHSA-hq66-cqwq-w95j leaves no safe 5.x past 5.5.207), the firing these
+  // vendored caps exist for: the worker 2,174,484 -> 2,248,830 B (+74,346, 99.9%
+  // of the old 2_250_000) and the entry 447,505 -> 501,336 B (+53,831, over the
+  // old 470_000). Both load only when a PDF is attached. 2_330_000 is 96.5% and
+  // 528_000 is 94.9%, the headroom each had before.
+  { prefix: 'pdf.worker-', ext: '.mjs', max: 2_330_000, note: 'pdfjs worker, lazy' },
+  { prefix: 'pdf-', ext: '.js', max: 528_000, note: 'pdfjs entry, lazy' },
   { prefix: 'Markdown-', ext: '.js', max: 175_000, note: 'react-markdown + remark-gfm, lazy' },
   /*
    * The Firebase SDK, lazy as of 2026-09-01 and grouped into one chunk by the
@@ -659,8 +665,16 @@ const BUDGETS = [
  * +2,803, batchCheckpoint +2,680, the Settings dialog +2,469, jobPlan
  * +2,328, the thread +1,939, fallbackChain +1,714, BatchPanel +1,551,
  * localModels +1,402, the rest under 1,100 each. 6,630,000 is 94.0%.
+ *
+ * Raised to 6,760,000 on 2026-11-12, at 6,669,407 B (100.6%, tripped): the
+ * whole +128,177 B since 1.6.0's build is pdfjs-dist 5.5.207 -> 6.5.438
+ * (owner decision 18), its worker +74,346 and its entry +53,831, both lazy and
+ * itemised on their caps above; every other artifact was byte-identical in
+ * size. 6,760,000 is 98.7%, where 1.6.0's build stood (6,541,230 of
+ * 6,630,000): a raise naming the growth, not a retune, so the band is not
+ * reset here.
  */
-const TOTAL_MAX = 6_630_000;
+const TOTAL_MAX = 6_760_000;
 
 if (!existsSync(DIST)) {
   console.error(`No ${DIST}/ directory. Run \`npm run build\` first.`);

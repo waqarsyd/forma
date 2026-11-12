@@ -114,7 +114,7 @@ describe('the PDF writer', () => {
       expect(dest[3]).toBe(792 - 72);
       const ops = await first.getOperatorList();
       expect(ops.fnArray).toContain(pdfjs.OPS.paintImageXObject);
-      await doc.destroy();
+      await doc.loadingTask.destroy();
     }
   });
 
@@ -140,7 +140,7 @@ describe('the PDF writer', () => {
     const text = (await (await doc.getPage(1)).getTextContent()).items.map((i) => ('str' in i ? i.str : '')).join('|');
     expect(text).toContain('Zażółć gęślą jaźń');
     expect(text).toContain('Καλημέρα κόσμε');
-    await doc.destroy();
+    await doc.loadingTask.destroy();
   });
 
   // The review of PX-14 (2026-11-11): embedding faces without PDF/A made an
@@ -167,7 +167,7 @@ describe('the PDF writer', () => {
     const doc = await pdfjs.getDocument({ data: bytes.slice(), password: 'test-open', disableFontFace: true, useSystemFonts: false, verbosity: 0 }).promise;
     const text = (await (await doc.getPage(1)).getTextContent()).items.map((i) => ('str' in i ? i.str : '')).join('');
     expect(text).toContain('Zażółć gęślą jaźń');
-    await doc.destroy();
+    await doc.loadingTask.destroy();
   }, 60_000);
 
   it('refuses a script the faces do not hold, in words the person reads, and not a symbol', () => {

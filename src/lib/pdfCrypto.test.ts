@@ -60,8 +60,11 @@ describe('an encrypted PDF of Forma\'s own, opened by pdf.js', () => {
     ] }],
     outline: { title: 'Root', page: 0, y: 0, children: [{ title: 'Grüße', page: 0, y: 100, children: [] }] },
   });
+  // pdf.js 6 evaluates no code at all, so `isEvalSupported: false` went with it (2026-11-12).
   const open = async (data: Uint8Array, password?: string) =>
-    pdfjs.getDocument({ data: data.slice(), password, verbosity: 0, isEvalSupported: false }).promise;
+    pdfjs.getDocument({ data: data.slice(), password, verbosity: 0 }).promise;
+  /** pdf.js 6 answers a Set, or null when the file restricts nothing. */
+  const permissionsOf = async (reader: Awaited<ReturnType<typeof open>>) => [...((await reader.getPermissions()) ?? [])];
 
   it.each([
     ['AES128', '1.6', '/V 4 /Length 128', '/AESV2'],
@@ -88,19 +91,20 @@ describe('an encrypted PDF of Forma\'s own, opened by pdf.js', () => {
       const outline = await reader.getOutline();
       expect(outline[0].title).toBe('Root');
       expect(outline[0].items[0].title).toBe('Grüße');
-      await reader.destroy();
+      await reader.loadingTask.destroy();
     }
   }, 60_000);
 
   it('allows everything with only an open password, and denies printing and copying with a permissions password', async () => {
     const openOnly = await open(await writePdf(doc({ openPassword: 'test-open', permissionsPassword: '', level: 'AES128' })), 'test-open');
     // /P -4: every permission there is.
-    expect(await openOnly.getPermissions()).toEqual(expect.arrayContaining(Object.values(pdfjs.PermissionFlag)));
+    expect(await permissionsOf(openOnly)).toEqual(expect.arrayContaining(Object.values(pdfjs.PermissionFlag)));
     const restricted = await open(await writePdf(doc({ openPassword: '', permissionsPassword: 'test-perm', level: 'AES128' })));
-    const allowed = await restricted.getPermissions();
+    const allowed = await permissionsOf(restricted);
+    expect(allowed.length).toBeGreaterThan(0);
     expect(allowed).not.toContain(pdfjs.PermissionFlag.PRINT);
     expect(allowed).not.toContain(pdfjs.PermissionFlag.COPY);
-    await openOnly.destroy();
-    await restricted.destroy();
+    await openOnly.loadingTask.destroy();
+    await restricted.loadingTask.destroy();
   }, 60_000);
 });

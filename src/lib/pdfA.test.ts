@@ -171,7 +171,7 @@ describe('writePdf, PDF/A', () => {
     const text = (await (await doc.getPage(1)).getTextContent()).items.map((i) => ('str' in i ? i.str : '')).join('');
     expect(text).toContain('Archive Łódź Ω');
     expect(text).toContain('Times');
-    await doc.destroy();
+    await doc.loadingTask.destroy();
   });
 
   it('refuses PDF/A with a password, as DevExpress refuses it (s62a, s62b)', async () => {
