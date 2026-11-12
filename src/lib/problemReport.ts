@@ -35,7 +35,9 @@ export interface ProblemReport {
   browser?: string;
 }
 
-const KEYS = /AIza[0-9A-Za-z_-]{35}|sk-or-v1-[0-9a-f]+/g;
+// Both of AI Studio's Gemini key formats (2026-11-12): AIza… and the newer AQ.…
+// (about 53 characters), which this missed until then.
+const KEYS = /AIza[0-9A-Za-z_-]{35}|\bAQ\.[A-Za-z0-9._-]{20,}|sk-or-v1-[0-9a-f]+/g;
 
 /** Text with any Gemini or OpenRouter key in it said as "(a key)". */
 export function withoutKeys(text: string): string {

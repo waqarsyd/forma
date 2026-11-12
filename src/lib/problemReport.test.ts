@@ -80,4 +80,14 @@ describe('versionLabel and problemReportUrl', () => {
     expect(publicPath('/s/abc/def')).toBe('/s/(a shared report)/def');
     expect(withoutKeys('a $& b')).toBe('a $& b');
   });
+
+  // AI Studio's newer key format (2026-11-12), which a problem report let through until then.
+  it('never names a Gemini key in the newer AQ. format either', () => {
+    const newKey = `AQ.${'Ab8RN6x-'.repeat(6)}q_7z`;
+    const url = problemReportUrl({ area: 'the workspace', message: `API key not valid: ${newKey}`, stack: `Error: key=${newKey}`, version: 'v' });
+    const all = [...new URL(url).searchParams.values()].join('\n');
+    expect(all).not.toContain(newKey);
+    expect(all).toContain('(a key)');
+    expect(withoutKeys('See FAQ.html')).toBe('See FAQ.html');
+  });
 });

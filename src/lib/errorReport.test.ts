@@ -38,6 +38,12 @@ describe('scrubMessage', () => {
   it('takes out keys, addresses, links beyond their site, paths, file names, quoted text, long numbers and ids', () => {
     const key = `AIza${'a1B2c3D4e5'.repeat(3)}abcde`;
     expect(scrubMessage(`Request failed with ${key}`)).toBe('Request failed with (a key)');
+    // AI Studio's newer format (2026-11-12), built in parts so no key-shaped literal sits here.
+    const newKey = `AQ.${'Ab8RN6x-'.repeat(6)}q_7z`;
+    expect(newKey).toHaveLength(55);
+    expect(scrubMessage(`API key not valid: ${newKey}`)).toBe('API key not valid: (a key)');
+    expect(scrubMessage(`Loading https://example.com/?key=${newKey} failed`)).not.toContain(newKey);
+    expect(scrubMessage('Could not open FAQ.html')).not.toContain('(a key)');
     expect(scrubMessage('Could not share with jane.doe@example.com')).toBe('Could not share with (an address)');
     expect(scrubMessage('GET https://firestore.googleapis.com/v1/projects/p/databases/x?key=secret failed')).toBe('GET https://firestore.googleapis.com/… failed');
     expect(scrubMessage('Loading https://openforma.web.app failed')).toBe('Loading https://openforma.web.app failed');

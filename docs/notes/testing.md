@@ -159,7 +159,7 @@ for each test file the full audit's waves created.
 | `lib/dataSource` | 29 |  |
 | `lib/datetime` | 12 |  |
 | `lib/keyHandoff` | 3 | the keys reaching a new tab (2026-11-08, site audit item 105): a tab with no key asks and one with a key answers, neither does when turned off, and the setting is on until turned off |
-| `lib/problemReport` | 4 | which build runs and a problem report (items 103 and 64): the version in front since item 43, the short commit and the day, the commit's link, and an issue prefilled with the area, the error, the build and the page without its query |
+| `lib/problemReport` | 5 | since 2026-11-12 a Gemini key in AI Studio's newer `AQ.` format kept out of a problem report, as the classic one is (errorReport's scrub holds both formats too); which build runs and a problem report (items 103 and 64): the version in front since item 43, the short commit and the day, the commit's link, and an issue prefilled with the area, the error, the build and the page without its query |
 | `lib/errorReport` | 14 | the opt-in error reports (2026-11-12, Owner decision 10): a message scrubbed of keys, addresses, links past their site, paths, file names, quoted text, long numbers and ids, on one line and cut to 200 characters without splitting a character; each boundary's area, the code or name, the release and commit; noise left out (aborts, stale chunks, extensions, cross-origin scripts, lost connections, rejections that are not errors); the five fields; the areas, the message length and the spacing read from `firestore.rules`; each error sent once a page, a few a page, spaced, a failed send dropped; the switch off by default and one account's alone |
 | `lib/readerPairs` | 13 | the box reader learning from use (2026-11-12, Owner decision 20, the full audit's D10), against the shipped reader: a text's features laid out as its own, its line's band and its line's; a page read in numbers with no character of it; the bands its role network is given decoded as `readBoxes` decodes them; nothing kept of a page with no text or too many; each text labelled with the band and role of the kept report, the records each time they print; no pair of a page the report is not; the pair taken back as it was; the reader's own report labelling the page end to end through `buildWithReader`; the rows exactly `boxFeatures`; an unsound pair refused and an added field dropped; the newest pair of a report kept twice; the scores in use and as trained; and the cap held with `learning.ts` and the rules |
 | `lib/errorSink` | 3 | where a caught error goes (2026-11-12): nowhere without a sink, a sink that throws not a second error, and the page's `error` and `unhandledrejection` listened to only while a sink is set |
@@ -338,13 +338,13 @@ for each test file the full audit's waves created.
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 4,292 in 258 files**, recounted from a fresh run on 2026-11-12 (a JSON report
+**Total: 4,293 in 258 files**, recounted from a fresh run on 2026-11-12 (a JSON report
 compared row by row) after that day's merges: the CodeQL triage's seven cases, the owner's
 decisions 1, 3 and 9 (the composer's edge, the Data features' two questions, the note on
 the other addresses), 10, 15 and 20 (error reports, 90 days, the box reader's page
 pairs), Forma Designer 1.1.0's case, the two of `hooksAboveEarlyReturn`, the deploy's
-two live-check cases in `ownerScripts`, the home page's preload in `prerender` and `ownBuffer` in
-`pdfWriter`, on the 4,204
+two live-check cases in `ownerScripts`, the home page's preload in `prerender`, `ownBuffer` in
+`pdfWriter` and the `AQ.` key in `problemReport`, on the 4,204
 the run after the full audit's last merges counted, with every row above set from that run's
 per-file counts. That total is the arithmetic sum of
 the column above it, which is the point of writing both down. A mismatch between them is the cheapest

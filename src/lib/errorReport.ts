@@ -69,8 +69,11 @@ export function areaKey(area: string): ErrorArea {
  * said as what it was. In order: a key before anything could split it, a
  * link before its address could be read as an email or a path, then quoted
  * text, which is where an error repeats its input ("…" is not valid JSON).
+ * A Gemini key in either of AI Studio's formats (2026-11-12): the classic
+ * AIza… and the newer AQ.…, about 53 characters, which this knew nothing of,
+ * so a new-format key in a message went out in the report unscrubbed.
  */
-const KEYS = /AIza[0-9A-Za-z_-]{35}|sk-or-v1-[0-9a-f]+|\b(?:sk|pk|rk)-[A-Za-z0-9_-]{16,}/g;
+const KEYS = /AIza[0-9A-Za-z_-]{35}|\bAQ\.[A-Za-z0-9._-]{20,}|sk-or-v1-[0-9a-f]+|\b(?:sk|pk|rk)-[A-Za-z0-9_-]{16,}/g;
 const LINKS = /\b(?:https?|wss?|ftp|file|blob:https?|chrome-extension|moz-extension):\/\/[^\s'"<>()]+/gi;
 const EMAILS = /[^\s@<>()"'`,;:]+@[^\s@<>()"'`,;:]+\.[A-Za-z]{2,}/g;
 const QUOTED = /"[^"\n]*"|“[^”\n]*”|‘[^’\n]*’|«[^»\n]*»|`[^`\n]*`/g;
