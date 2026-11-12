@@ -154,6 +154,14 @@ describe('parseXml', () => {
     // A raw control character is taken out, as no XML may hold one.
     expect(parseXml('<a>x\u0001y</a>')?.text).toBe('xy');
   });
+
+  // 2026-11-12 (CodeQL js/incomplete-multi-character-sanitization): comments were stripped before
+  // anything was read, so a "<!--" inside a CDATA section or a processing instruction took
+  // everything up to the next comment's end with it.
+  it('skips a comment where it starts, not inside a CDATA section or a processing instruction', () => {
+    const root = parseXml('<?xml version="1.0"?><!DOCTYPE a><a><b><![CDATA[x <!-- y ]]></b><?pi <!-- ?><c>kept</c><!-- note --><d>too</d></a>');
+    expect(root?.children.map((c) => [c.name, c.text])).toEqual([['b', 'x <!-- y '], ['c', 'kept'], ['d', 'too']]);
+  });
 });
 
 describe('lengthToPoints', () => {

@@ -83,10 +83,16 @@ const decode = (s: string) =>
     }),
   );
 
-/** Elements, attributes and text; comments, declarations and processing instructions are skipped. */
+/**
+ * Elements, attributes and text; comments, declarations and processing
+ * instructions are skipped where the reading meets them (2026-11-12, CodeQL
+ * js/incomplete-multi-character-sanitization). They were stripped from the
+ * whole file first, so a "<!--" inside a CDATA section or a processing
+ * instruction took everything up to the next comment's end with it.
+ */
 export function parseXml(xml: string): XmlEl | null {
-  const src = xml.replace(/^﻿/, '').replace(/<!--[\s\S]*?-->/g, '').replace(/<\?[\s\S]*?\?>/g, '').replace(/<!DOCTYPE[^>]*>/gi, '');
-  const token = /<!\[CDATA\[([\s\S]*?)\]\]>|<(\/?)([\w:.-]+)((?:\s+[\w:.-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>|([^<]+)/g;
+  const src = xml.replace(/^﻿/, '');
+  const token = /<!\[CDATA\[([\s\S]*?)\]\]>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<![A-Za-z][^>]*>|<(\/?)([\w:.-]+)((?:\s+[\w:.-]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>|([^<]+)/g;
   const attr = /([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
   const stack: XmlEl[] = [];
   let root: XmlEl | null = null;
@@ -101,6 +107,8 @@ export function parseXml(xml: string): XmlEl | null {
       if (top) top.text += decode(text);
       continue;
     }
+    // A comment, a processing instruction or a declaration: nothing to keep.
+    if (name === undefined) continue;
     if (closing) {
       stack.pop();
       continue;
