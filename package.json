@@ -32,7 +32,7 @@
     "start": "node dist/server.cjs"
   },
   "dependencies": {
-    "@google/genai": "^1.29.0",
+    "@google/genai": "^3.2.0",
     "@huggingface/transformers": "^3.7.6",
     "@tesseract.js-data/ara": "^1.0.0",
     "@tesseract.js-data/deu": "^1.0.0",

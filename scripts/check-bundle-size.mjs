@@ -212,7 +212,12 @@ const BUDGETS = [
    * tesseract-core-*.wasm.js builds in dist/ocr/ (about 3.9 MB each) also
    * start with: three breaches of a 17 kB cap on every build.
    */
-  { prefix: 'gemini-sdk-', ext: '.js', max: 273_000, note: '@google/genai, lazy, loaded with the first request' },
+  // Raised to 424_000 on 2026-11-12 for @google/genai 1.45 -> 3.2.0 (owner
+  // decision 18, taken on its before/after benchmark): 256,349 -> 398,411 B
+  // (+142,062; gzip 51.73 -> 74.79 kB), all of it the SDK's own single web
+  // bundle (dist/web/index.mjs, 389,778 B), so nothing to leave out. Loaded
+  // with a person's first request, never by the public pages. 94.0%.
+  { prefix: 'gemini-sdk-', ext: '.js', max: 424_000, note: '@google/genai, lazy, loaded with the first request' },
   { prefix: 'ocr-engine-', ext: '.js', max: 18_500, note: 'tesseract.js, lazy, loaded with the first picture' },
   /*
    * The six largest route and pane chunks, unbudgeted until 2026-11-11 (TC-10):
@@ -739,8 +744,12 @@ const BUDGETS = [
  * 7,060,000 the same day for firebase 13: 6,395,588 -> 6,639,195 B, +243,607,
  * the Firestore chunk +237,304 and auth +3,388 (itemised on their caps) and
  * the rest chunk names and wrappers. 7,060,000 is 94.0%.
+ *
+ * Raised to 7,215,000 the same day for @google/genai 3: 6,639,195 ->
+ * 6,781,308 B, +142,113, the SDK's chunk +142,062 (itemised on its cap).
+ * 94.0%.
  */
-const TOTAL_MAX = 7_060_000;
+const TOTAL_MAX = 7_215_000;
 
 if (!existsSync(DIST)) {
   console.error(`No ${DIST}/ directory. Run \`npm run build\` first.`);
