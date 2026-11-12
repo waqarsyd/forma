@@ -127,7 +127,7 @@ Each of these is a shipped code path, not a plan.
 | UI | React 19, Tailwind v4 (no config file — CSS-first), Motion for animation |
 | Build | Vite 6, esbuild for the server bundle |
 | Language | TypeScript, `strict` enabled |
-| Server | Express 4 — the **same** `server.ts` in development and production |
+| Server | Express 5 — the **same** `server.ts` in development and production |
 | AI | `@google/genai`, called from the browser |
 | Auth & storage | Firebase Auth + Firestore, both optional |
 | Documents | `pdfjs-dist` for PDF intake, `react-markdown` + `remark-gfm` for the spec |

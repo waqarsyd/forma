@@ -190,7 +190,12 @@ async function startServer() {
     // The live site is Firebase Hosting and never runs this; a self-hosted
     // `npm start` sits behind the proxy src/server/bindHost.ts expects, which
     // is where a limit belongs, and a limiter here would be a dependency.
-    app.get('*', (req, res) => {
+    //
+    // `/{*splat}`, not `*` (2026-11-12, Express 5, owner decision 18): Express
+    // 5's path-to-regexp 8 refuses a wildcard without a name and throws when
+    // the route is registered, so `npm start` would die before listening. The
+    // braces make the wildcard optional, so `/` itself still matches.
+    app.get('/{*splat}', (req, res) => {
       res.setHeader('Cache-Control', REVALIDATE);
       if (isAppPath(req.path)) {
         // Each route's own page, with its head (2026-11-08, src/lib/seo.ts),
