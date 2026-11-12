@@ -2,7 +2,7 @@
 /**
  * Does the deployed site work? (2026-11-07, site audit item 102.)
  *
- *   node scripts/smoke.mjs [--expect <commit>] [base URL ...]
+ *   node scripts/smoke.mjs [--expect <commit>] [--pending-release <tag>] [base URL ...]
  *   npm run smoke
  *
  * With no URL it checks both hosted sites, https://openforma.web.app and
@@ -16,7 +16,9 @@
  * - the entry chunk the page names does not load, or is not immutable;
  * - the changelog's feed is missing;
  * - the Forma Designer download the live build links is not on its GitHub
- *   release (2026-11-10);
+ *   release (2026-11-10), unless that release is `--pending-release`, the one
+ *   the deploy running this makes after it (2026-11-12; designer-asset.mjs,
+ *   `downloadVerdict`);
  * - an unknown path or a missing chunk is not a 404 (site audit items 1 and
  *   52), on every build that carries its version in the page;
  * - the offline worker (/sw.js) is not JavaScript that revalidates, or
@@ -45,12 +47,18 @@
  * here (CLAUDE.md, the PowerShell encoding trap).
  */
 import { readFileSync, appendFileSync } from 'node:fs';
+import { downloadVerdict } from './designer-asset.mjs';
 
 const args = process.argv.slice(2);
 const expectAt = args.indexOf('--expect');
 const expected = expectAt >= 0 ? args.splice(expectAt, 2)[1] : '';
 const shareAt = args.indexOf('--share');
 const shareArg = shareAt >= 0 ? args.splice(shareAt, 2)[1] : '';
+// The release the deploy running this makes after it (2026-11-12): its own
+// Forma Designer zip is not there yet, so a 404 for it is pending, not a
+// failure, and deploy.mjs runs this again without the flag after the upload.
+const pendingAt = args.indexOf('--pending-release');
+const pendingRelease = pendingAt >= 0 ? args.splice(pendingAt, 2)[1] : '';
 const bases = (args.length ? args : ['https://openforma.web.app', 'https://forma-201ba.web.app']).map((b) => b.replace(/\/+$/, ''));
 
 /** The routes a router.ts declares. */
@@ -92,7 +100,7 @@ async function designerDownloadOf(commit) {
     if (!res.ok) return null;
     const source = await res.text();
     const field = (name) => (new RegExp(`\\n  ${name}: '([^']*)'`).exec(source) || [])[1];
-    return field('tag') && field('file') ? `https://github.com/waqarsyd/forma/releases/download/${field('tag')}/${field('file')}` : null;
+    return field('tag') && field('file') ? { tag: field('tag'), url: `https://github.com/waqarsyd/forma/releases/download/${field('tag')}/${field('file')}` } : null;
   } catch {
     return null;
   }
@@ -141,8 +149,10 @@ async function check(base) {
   // GitHub answers a HEAD for a release's file with 302 to its store, and 404 when it is not there.
   const download = await designerDownloadOf(version);
   if (download) {
-    const zip = await fetch(download, { method: 'HEAD', redirect: 'manual', headers: { 'User-Agent': 'forma-smoke/1 (+https://github.com/waqarsyd/forma)' } });
-    if (zip.status !== 302 && zip.status !== 200) fail(base, `the Forma Designer download the live build links answered ${zip.status}: ${download}`);
+    const zip = await fetch(download.url, { method: 'HEAD', redirect: 'manual', headers: { 'User-Agent': 'forma-smoke/1 (+https://github.com/waqarsyd/forma)' } });
+    const verdict = downloadVerdict(zip.status, download.tag, pendingRelease);
+    if (verdict === 'pending') notes.push(`${base}: the Forma Designer download goes onto ${download.tag} with the release this deploy makes next, and is checked after it`);
+    else if (verdict === 'fail') fail(base, `the Forma Designer download the live build links answered ${zip.status}: ${download.url}`);
   }
 
   // What every build has promised since the version was first written into

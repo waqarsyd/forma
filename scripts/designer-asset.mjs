@@ -39,3 +39,32 @@ export function designerAssetProblem(assets, manifest) {
   }
   return null;
 }
+
+/**
+ * What scripts/smoke.mjs makes of the download's answer (2026-11-12): 'ok'
+ * when GitHub has the file (200, or 302 to its store), 'pending' when it
+ * answers 404 for the release the deploy running the check makes after it
+ * (`--pending-release`), and 'fail' otherwise.
+ *
+ * The 1.6.0 deploy found the order wrong: its release carried its own zip,
+ * deploy.mjs makes the release and uploads the zip only once the live check
+ * passes, and the check failed four times on that same zip's 404, so the
+ * release was never made. Only the deploy's own release is pending: a zip
+ * missing from any other release still fails, which is what the check was
+ * added for (1.4.0's manifest named v1.3.0, a release never made).
+ */
+export function downloadVerdict(status, downloadTag, pendingRelease) {
+  if (status === 200 || status === 302) return 'ok';
+  if (status === 404 && pendingRelease && downloadTag === pendingRelease) return 'pending';
+  return 'fail';
+}
+
+/**
+ * The live checks deploy.mjs runs (2026-11-12): `before` once the site is
+ * deployed, `after` once the release carries its zip, or null when the
+ * release brings none and `before` has already checked the download.
+ */
+export function smokeCommands(commit, tag, carriesZip) {
+  const plain = `node scripts/smoke.mjs --expect ${commit}`;
+  return carriesZip ? { before: `${plain} --pending-release ${tag}`, after: plain } : { before: plain, after: null };
+}

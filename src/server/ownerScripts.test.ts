@@ -15,7 +15,8 @@
  * - gate.ts passes the shipped model against itself and fails a damaged one
  *   (LM-21);
  * - deploy.mjs's designer check compares the digest and the size, not the
- *   name (SD-21);
+ *   name (SD-21), and its live check takes only its own release's zip as
+ *   pending, checking it again after the upload (2026-11-12);
  * - orphans.mjs and stats.mjs print what Google answers, and stats only
  *   counts (SA-20a, SA-28a); backup.mjs backs up every collection the rules
  *   name (SA-14);
@@ -38,7 +39,7 @@ import { connect, countOf, lookupAccounts } from '../../scripts/admin/google.mjs
 import { findOrphans, orphansOf } from '../../scripts/admin/orphans.mjs';
 import { countAll } from '../../scripts/admin/stats.mjs';
 import { collectionsOf } from '../../scripts/backup.mjs';
-import { designerAssetProblem, manifestOf } from '../../scripts/designer-asset.mjs';
+import { designerAssetProblem, downloadVerdict, manifestOf, smokeCommands } from '../../scripts/designer-asset.mjs';
 import { accountKey, shortHash, type FetchLike } from '../lib/learningPipeline';
 import { LINE_FEATURES } from '../lib/boxReader';
 import { BOX_OWN, FEATURE_SIGNATURE } from '../lib/readerPairs';
@@ -392,6 +393,26 @@ describe('the Forma Designer download on its release (deploy.mjs)', () => {
     expect(designerAssetProblem([{ ...asset, size: 99 }], manifest)).toMatch(/99 bytes/);
     expect(designerAssetProblem([{ ...asset, name: 'other.zip' }], manifest)).toMatch(/carries no/);
     expect(designerAssetProblem(null, manifest)).toMatch(/does not exist/);
+  });
+
+  // 2026-11-12: the 1.6.0 deploy's live check failed four times on its own
+  // release's zip, which the release step after the check would have uploaded.
+  it('takes only the deploy\'s own release as pending, and any other missing zip as a failure', () => {
+    expect(downloadVerdict(302, 'v1.6.0', '')).toBe('ok');
+    expect(downloadVerdict(200, 'v1.6.0', 'v1.6.0')).toBe('ok');
+    expect(downloadVerdict(404, 'v1.6.0', 'v1.6.0')).toBe('pending');
+    // 1.4.0's case: the manifest named a release never made, and no deploy makes it now.
+    expect(downloadVerdict(404, 'v1.3.0', 'v1.4.0')).toBe('fail');
+    expect(downloadVerdict(404, 'v1.6.0', '')).toBe('fail');
+    expect(downloadVerdict(500, 'v1.6.0', 'v1.6.0')).toBe('fail');
+  });
+
+  it('checks the live site again after the upload when the release carries the zip, and once otherwise', () => {
+    expect(smokeCommands('abc', 'v1.6.0', true)).toEqual({
+      before: 'node scripts/smoke.mjs --expect abc --pending-release v1.6.0',
+      after: 'node scripts/smoke.mjs --expect abc',
+    });
+    expect(smokeCommands('abc', 'v1.6.1', false)).toEqual({ before: 'node scripts/smoke.mjs --expect abc', after: null });
   });
 });
 

@@ -50,7 +50,9 @@
  * src/lib/designerRelease.ts names this release's tag, the zip it describes
  * (packed by scripts/package-designer.ts, on a PC with DevExpress) must be in
  * tools/RepxDesigner/bin/package with that SHA-256, or this stops before
- * building; after the release is made, `gh release upload` attaches it. When
+ * building; after the release is made, `gh release upload` attaches it, and
+ * the live check, which took that zip as pending, runs again in full
+ * (2026-11-12: the 1.6.0 deploy stopped on its own zip's 404). When
  * it names an earlier release, that release must carry the zip (2026-11-10),
  * or this stops too: the download page links it whatever release this is.
  * Since 2026-11-11 (SD-21) "carry" means the same bytes: GitHub's digest of
@@ -65,7 +67,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { designerAssetProblem, manifestOf } from './designer-asset.mjs';
+import { designerAssetProblem, manifestOf, smokeCommands } from './designer-asset.mjs';
 
 /** What a deploy of main sends: the site, the rules and the indexes, together. */
 const DEPLOY_ONLY = 'hosting,firestore:rules,firestore:indexes';
@@ -240,18 +242,28 @@ run(`npx firebase deploy --only ${DEPLOY_ONLY}`);
 // (404), and stopped before the tag and the release, though a run a minute
 // later passed. So a failed check is tried again, four times in all, before
 // anything stops.
-const smoke = `node scripts/smoke.mjs --expect ${commit}`;
-for (let attempt = 1; ; attempt++) {
-  console.log(`\n> ${smoke}${attempt > 1 ? ` (attempt ${attempt} of 4)` : ''}`);
-  const r = spawnSync(smoke, { stdio: 'inherit', shell: true });
-  if (r.status === 0) break;
-  if (attempt === 4) {
-    console.error(`\nStopped: "${smoke}" failed four times (exit ${r.status}). Nothing was deployed after it.`);
-    process.exit(r.status || 1);
+//
+// A release that carries its own Forma Designer zip cannot have it on GitHub
+// yet: the zip goes up with the release in step 5. On 2026-11-12 the 1.6.0
+// deploy failed the check four times on exactly that 404 and stopped before
+// the release, leaving the live /download linking nothing until the release was
+// made by hand. So this check is told the release is pending, and the full
+// check runs again once the zip is up (smokeCommands, designer-asset.mjs).
+function smokeUntilPassed(command, what) {
+  for (let attempt = 1; ; attempt++) {
+    console.log(`\n> ${command}${attempt > 1 ? ` (attempt ${attempt} of 4)` : ''}`);
+    const r = spawnSync(command, { stdio: 'inherit', shell: true });
+    if (r.status === 0) return;
+    if (attempt === 4) {
+      console.error(`\nStopped: "${command}" failed four times (exit ${r.status}). ${what}`);
+      process.exit(r.status || 1);
+    }
+    console.log('The live check failed; trying again in 20 seconds, as a release can take a moment to reach every edge.');
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20_000);
   }
-  console.log('The live check failed; trying again in 20 seconds, as a release can take a moment to reach every edge.');
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20_000);
 }
+const smoke = smokeCommands(commit, tag, Boolean(designerZip));
+smokeUntilPassed(smoke.before, 'Nothing was deployed after it.');
 console.log(`\nDeployed ${commit.slice(0, 12)} to every site, with the rules and the indexes, and the live checks passed.`);
 
 // 5. The release (item 43): the tag on this commit, then its GitHub release.
@@ -265,9 +277,12 @@ if (notes) {
   if (ghReady) {
     run(create, { released: true });
     if (upload) run(upload, { released: true });
+    // The download the first check left pending, now that the zip is up.
+    if (smoke.after) smokeUntilPassed(smoke.after, `The site is deployed and ${tag} released, but the live download still fails: see above.`);
     console.log(`\nReleased ${tag}: https://github.com/waqarsyd/forma/releases/tag/${tag}`);
   } else {
     console.log(`\nTagged ${tag}. Sign in to the GitHub CLI (gh auth login) and make its release with:\n  ${create}`);
     if (upload) console.log(`then attach the Forma Designer download with:\n  ${upload}`);
+    if (smoke.after) console.log(`then check the live download with:\n  ${smoke.after}`);
   }
 }
