@@ -48,7 +48,14 @@ function composite(format: string): { prefix: string; spec: string; suffix: stri
   return { prefix: literal(m[1]), spec: m[2] ?? '', suffix: literal(m[3]) };
 }
 
-const quoted = (s: string) => (s ? `"${s.replace(/"/g, '\\"')}"` : '');
+/**
+ * A literal in a format code: its text in quotes, and a quote or a backslash
+ * outside them, escaped, which is the one form a format code reads as that
+ * character (2026-11-12, CodeQL js/incomplete-sanitization). A quote was
+ * written `\"` inside the quotes, where nothing escapes, so it ended them and
+ * `{0:0.0}"` left one open: a format Excel cannot read.
+ */
+const quoted = (s: string) => s.replace(/[^"\\]+|["\\]/g, (part) => (part === '"' || part === '\\' ? `\\${part}` : `"${part}"`));
 const decimals = (digits: string, fallback: number) => {
   const d = digits === '' ? fallback : Number(digits);
   return d > 0 ? `.${'0'.repeat(d)}` : '';

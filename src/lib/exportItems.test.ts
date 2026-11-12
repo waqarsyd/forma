@@ -114,4 +114,12 @@ describe('the RTF, DOCX and HTML exports, against DevExpress\'s of s54a', () => 
     expect(rtfText('é中')).toBe('\\u233?\\u20013?');
     expect(rtfText('😀')).toBe('\\u-10179?\\u-8704?');
   });
+
+  // 2026-11-12 (CodeQL js/incomplete-sanitization): a link's quote was escaped for the field after
+  // the RTF escape, so RTF read \" as a control symbol and the field lost the quote and its end.
+  it('escapes a link for its field code first, then as RTF text', () => {
+    const linked = parseReportStructure(S54A.replace('Text="Sales report"', 'Text="Sales report" NavigateUrl="https://example.com/a&quot;b\\c"'));
+    const rtf = reportToRtf(paginate(linked, ROWS.length, { rows: ROWS }), linked);
+    expect(rtf).toContain(String.raw`{\field{\*\fldinst HYPERLINK "https://example.com/a\\"b\\\\c"}{\fldrslt Sales report}}`);
+  });
 });

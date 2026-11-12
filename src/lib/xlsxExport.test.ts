@@ -131,6 +131,15 @@ describe('excelFormat', () => {
     expect(excelFormat(null, 'text')).toBe('@');
     expect(excelFormat('{0:0.00;(0.00)}', 'number')).toBe('0.00;(0.00)');
   });
+
+  // 2026-11-12 (CodeQL js/incomplete-sanitization): a quote in a literal was written \" inside the
+  // quotes, where a format code has no escape, so `{0:0.0}"` left a quote open in the workbook.
+  it('writes a quote or a backslash in a literal outside the quotes, escaped', () => {
+    expect(excelFormat('{0:0.0}"', 'number')).toBe('0.0\\"');
+    expect(excelFormat('Size "{0}"', 'text')).toBe('"Size "\\"@\\"');
+    expect(excelFormat('C:\\{0}', 'text')).toBe('"C:"\\\\@');
+    expect(excelFormat("{0:dd 'o\"clock'}", 'date')).toBe('dd\\ "o"\\""clock"');
+  });
 });
 
 /*

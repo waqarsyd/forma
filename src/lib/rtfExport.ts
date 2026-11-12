@@ -67,8 +67,11 @@ export function reportToRtf(report: PaginatedReport, structure: ReportStructure,
     const run =
       `\\cf${colour(rgbHex(f.color))}\\f${font(f.name)}\\fs${Math.trunc(f.size * 2)}` +
       (f.bold ? '\\b' : '') + (f.italic ? '\\i' : '') + (f.underline ? '\\ul' : '');
+    // The link escaped for the field code (a quote and a backslash take a backslash),
+    // then as RTF text (2026-11-12, CodeQL js/incomplete-sanitization): the other way
+    // round, RTF read the quote's backslash as a control symbol and the field lost both.
     const body = item.url
-      ? `{\\field{\\*\\fldinst HYPERLINK "${rtfText(item.url).replace(/"/g, '\\"')}"}{\\fldrslt ${rtfText(text)}}}`
+      ? `{\\field{\\*\\fldinst HYPERLINK "${rtfText(item.url.replace(/["\\]/g, '\\$&'))}"}{\\fldrslt ${rtfText(text)}}}`
       : rtfText(text);
     return `{${frame(item.left, item.top, item.right, item.bottom)}${align}${fill}${run} ${body}\\par}`;
   };

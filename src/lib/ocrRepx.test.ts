@@ -113,6 +113,13 @@ describe('layoutToReport and ocrSummary', () => {
     expect(dropped).toContain('| 1 | Smudge |');
   });
 
+  // 2026-11-12 (CodeQL js/incomplete-sanitization): a pipe was escaped and a backslash was not, so
+  // "a\|b" was written "a\\|b", which a table reads as "a\" and a cell it drops.
+  it('escapes a backslash in an unsure text as well as a pipe', () => {
+    const odd = { ...layout, pages: [{ ...layout.pages[0], labels: [t('a\\|b', 400, 60, true)], tables: [] }] };
+    expect(ocrSummary(odd)).toContain('| 1 | a\\\\\\|b |');
+  });
+
   // The full audit (2026-11-11, PL-07): the Spec names no part of Forma and no confidence.
   it('writes the spec in plain words', () => {
     for (const md of [ocrSummary(layout, { title: 'Scan' }), ocrSummary(layout, { dropFlagged: true })]) {

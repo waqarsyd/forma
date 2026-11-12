@@ -243,7 +243,9 @@ export function ocrSummary(layout: DetectedLayout, options: Pick<OcrRepxOptions,
   const pages = ocrControls(layout, options);
   const labels = pages.flat().filter((c) => c.kind === 'label').length;
   const tables = pages.flat().filter((c) => c.kind === 'table').length;
-  const cell = (s: string) => s.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+  // A backslash escaped as well as a pipe (2026-11-12, CodeQL js/incomplete-sanitization):
+  // "a\|b" was written "a\\|b", which a table reads as the cell "a\" and drops the rest.
+  const cell = (s: string) => s.replace(/[\\|]/g, '\\$&').replace(/\r?\n/g, ' ');
   const plural = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
   // In the user's terms (2026-11-11, the full audit, PL-07): it said "read by
   // OCR in the browser, with no model involved" and gave each unsure word's
