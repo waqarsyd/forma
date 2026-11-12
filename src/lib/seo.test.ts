@@ -8,7 +8,8 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { ROUTES } from './router';
 import { ROUTE_TITLES } from './routes';
-import { applyHead, headFor, INDEXED_ROUTES, llmsTxt, pageFile, robotsTxt, ROUTE_DESCRIPTIONS, securityTxt, SITE_ORIGIN, sitemapXml, softwareJsonLd, withHead } from './seo';
+import { applyHead, headFor, INDEXED_ROUTES, isOtherHost, llmsTxt, pageFile, robotsTxt, ROUTE_DESCRIPTIONS, securityTxt, SITE_ORIGIN, SITE_ORIGINS, sitemapXml, softwareJsonLd, withHead } from './seo';
+import { DESIGNER_SITE_ORIGINS } from './designerBridge';
 
 const shell = readFileSync('index.html', 'utf8');
 
@@ -141,5 +142,30 @@ describe('the files crawlers ask for', () => {
     const text = llmsTxt();
     expect(text.startsWith('# Forma\n\n> ')).toBe(true);
     for (const route of INDEXED_ROUTES.filter((r) => r !== '/')) expect(text).toContain(`(${SITE_ORIGIN}${route})`);
+  });
+});
+
+/*
+ * Where the note on Forma's main address shows (2026-11-12, the owner's
+ * decision 9 of the 2026-11-11 audit; components/OtherHostNotice.tsx): every
+ * host that serves the build under another address, and nowhere else.
+ */
+describe('isOtherHost', () => {
+  it('is true on the second site and on either site\'s firebaseapp.com twin, and false on the known address', () => {
+    for (const host of ['forma-201ba.web.app', 'forma-201ba.firebaseapp.com', 'openforma.firebaseapp.com']) expect(isOtherHost(host), host).toBe(true);
+    expect(isOtherHost(new URL(SITE_ORIGIN).hostname)).toBe(false);
+  });
+
+  it('is false anywhere else: this PC, a preview channel, another site', () => {
+    for (const host of ['localhost', '127.0.0.1', 'forma-201ba--preview-abc123.web.app', 'openforma.web.app.example.com', 'example.com', '']) {
+      expect(isOtherHost(host), host).toBe(false);
+    }
+  });
+
+  it('knows the sites firebase.json deploys, the same two Forma Designer answers', () => {
+    const hosting = JSON.parse(readFileSync('firebase.json', 'utf8')) as { hosting: { site: string }[] };
+    expect(hosting.hosting.map(({ site }) => `https://${site}.web.app`).sort()).toEqual([...SITE_ORIGINS].sort());
+    expect([...DESIGNER_SITE_ORIGINS].sort()).toEqual([...SITE_ORIGINS].sort());
+    expect(SITE_ORIGINS[0]).toBe(SITE_ORIGIN);
   });
 });

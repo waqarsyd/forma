@@ -222,11 +222,30 @@ export function robotsTxt(): string {
 }
 
 /**
- * The two sites that serve the same build (firebase.json's `hosting` array),
- * each of which answers /.well-known/security.txt with this file, so each is
- * a canonical address of it.
+ * The two sites that serve the same build (firebase.json's `hosting` array,
+ * held to it by seo.test.ts), the first the address the site is known by.
+ * Each answers /.well-known/security.txt with this file, so each is a
+ * canonical address of it.
  */
-const SECURITY_TXT_ORIGINS = [SITE_ORIGIN, 'https://forma-201ba.web.app'];
+export const SITE_ORIGINS = [SITE_ORIGIN, 'https://forma-201ba.web.app'] as const;
+
+/**
+ * Whether a page is on another of the four hosts that serve the build
+ * (2026-11-12, the owner's decision 9 of the 2026-11-11 audit): the second
+ * site, or either site's firebaseapp.com twin, which Firebase Hosting serves
+ * beside web.app. Each is an origin of its own, so what the browser keeps
+ * there, the projects of someone signed out among it, is not on the known
+ * address, and the page says so (components/OtherHostNotice.tsx). Asked of
+ * the address after the first draw, never at build: both sites serve the
+ * same prerendered files.
+ */
+export function isOtherHost(hostname: string): boolean {
+  const known = new URL(SITE_ORIGIN).hostname;
+  return hostname !== known && SITE_ORIGINS.some((origin) => {
+    const host = new URL(origin).hostname;
+    return hostname === host || hostname === host.replace(/\.web\.app$/, '.firebaseapp.com');
+  });
+}
 
 /**
  * /.well-known/security.txt (RFC 9116), valid for a year from `now`; each
@@ -244,7 +263,7 @@ export function securityTxt(now: Date): string {
     `Expires: ${expires}`,
     'Preferred-Languages: en',
     `Policy: ${REPOSITORY}/blob/main/SECURITY.md`,
-    ...SECURITY_TXT_ORIGINS.map((origin) => `Canonical: ${origin}/.well-known/security.txt`),
+    ...SITE_ORIGINS.map((origin) => `Canonical: ${origin}/.well-known/security.txt`),
     '',
   ].join('\n');
 }

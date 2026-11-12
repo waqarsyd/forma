@@ -343,9 +343,11 @@ src/
                        overlays.css holding those menus' styles.
                        Around both the site and the workspace: ErrorBoundary
                        (one per area, so a fault in one leaves the rest
-                       working), OfflineBanner (the network lost and back)
-                       and UpdateBanner (a newer Forma has taken over the
-                       tab). docsCorpus draws the Docs page's articles as
+                       working), OfflineBanner (the network lost and back),
+                       UpdateBanner (a newer Forma has taken over the
+                       tab) and OtherHostNotice (on another of the addresses
+                       that serve Forma, which is its own and why it
+                       matters). docsCorpus draws the Docs page's articles as
                        text for the chat.
                        The files that are not components are the shared
                        hooks (useFocusTrap; useLayer, which puts a menu or

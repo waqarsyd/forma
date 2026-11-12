@@ -10,6 +10,7 @@ import {watchInputModality} from './lib/inputModality';
 import ErrorBoundary from './components/ErrorBoundary';
 import {currentPath, onRouteChange} from './lib/router';
 import {preloadPublicRoute} from './components/publicPages';
+import {isOtherHost} from './lib/seo';
 
 /*
  * The workspace loads when it is opened, not before (2026-11-08, the site
@@ -43,6 +44,26 @@ function Root() {
   ) : (
     <PublicSite />
   );
+}
+
+/*
+ * On another of the hosts that serve the build, a note that Forma's own is
+ * openforma.web.app and why it matters (2026-11-12, the owner's decision 9 of
+ * the 2026-11-11 audit; components/OtherHostNotice.tsx). Decided after the
+ * first draw, from the address, since both sites serve the same prerendered
+ * files; its module loads only there, so the entry carries one test. Drawn
+ * outside the error boundary, as the pills beside it are, so a module that
+ * fails to arrive draws nothing rather than take the page down with it.
+ */
+const OtherHostNotice = lazy(() => import('./components/OtherHostNotice').catch(() => ({default: () => null})));
+function OnOtherHost() {
+  const [there, setThere] = useState(false);
+  useEffect(() => setThere(isOtherHost(window.location.hostname)), []);
+  return there ? (
+    <Suspense fallback={null}>
+      <OtherHostNotice />
+    </Suspense>
+  ) : null;
 }
 
 // Every content-security violation, in one line (2026-11-08, site audit item
@@ -100,6 +121,7 @@ const draw = () =>
           </ErrorBoundary>
           <OfflineBanner />
           <UpdateBanner />
+          <OnOtherHost />
         </MotionConfig>
       </LazyMotion>
     </StrictMode>,

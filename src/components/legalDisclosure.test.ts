@@ -274,6 +274,8 @@ const STORED: Record<string, RegExp> = {
   'forma:dailyLimits': /the daily limits Google reported/,
   'geminiModel:day': /the models your key can reach, with a short fingerprint of the key rather than the key/,
   announcementsSeenId: /the last announcement you saw/,
+  // components/OtherHostNotice.tsx (2026-11-12, owner decision 9): a device preference, kept through a sign-out.
+  'forma:otherHostNoticeClosed': /on another of Forma’s addresses, that you dismissed the note pointing to its main one/,
   // Session storage.
   'geminiApiKey:session': /Session storage, which the browser erases when the tab closes, keeps your keys/,
   'openRouterKey:session': /Session storage, which the browser erases when the tab closes, keeps your keys/,
@@ -658,9 +660,14 @@ describe('the legal copy and its date change together', () => {
      the page reaches your computer" became "nothing asks Forma Designer
      anything", naming the SQL Server reading on a self-run Forma. The hash
      moved, and the date is already that day's.
+
+     Moved again on 2026-11-12 (the owner's decision 9 of the 2026-11-11
+     audit): local storage keeps, on another of Forma's addresses, that the
+     note pointing to its main one was dismissed
+     (components/OtherHostNotice.tsx). A new thing stored, so the date moved.
      */
-  const EXPECTED_COPY_HASH = 'b724946186a3';
-  const EXPECTED_UPDATED = '11 November 2026';
+  const EXPECTED_COPY_HASH = '9983bcdf76d2';
+  const EXPECTED_UPDATED = '12 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {
     const actual = createHash('sha256').update(legalCopy()).digest('hex').slice(0, 12);
