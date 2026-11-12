@@ -169,7 +169,12 @@ const BUDGETS = [
   // entry. 412_000 would sit at 72.5%; 318_000 is 93.9%. React 19.3 and motion
   // 12.43, which this cut made room for, come in the next commit with their own
   // readout.
-  { prefix: 'index-', ext: '.js', max: 318_000, note: 'eager entry chunk (the public site)' },
+  //
+  // Raised to 350_000 the same day, for exactly that: 298,570 -> 328,835 B,
+  // +30,265. A source-mapped build puts react-dom at 209,766 B of it (+28,875
+  // on 19.2.4's 180,891), motion-dom +717, react +323, scheduler +54. Still
+  // 59,602 B under 1.6.0's entry. 350_000 is 94.0%.
+  { prefix: 'index-', ext: '.js', max: 350_000, note: 'eager entry chunk (the public site)' },
   /*
    * The Gemini SDK and tesseract.js, named chunks since 2026-11-11 (TC-10;
    * chunkFileNames in vite.config.ts), each loaded only when a request or a
@@ -681,8 +686,14 @@ const BUDGETS = [
  * size. 6,760,000 is 98.7%, where 1.6.0's build stood (6,541,230 of
  * 6,630,000): a raise naming the growth, not a retune, so the band is not
  * reset here.
+ *
+ * Raised to 6,800,000 the same day, at 6,709,090 B (99.2%), for the next two
+ * steps of decision 18: the home page leaving the entry, +9,134 B (the same
+ * code in more chunks, each with its own wrapper, and each page's head naming
+ * more of them), then React 19.3.1 and motion 12.43, +30,549 B, react-dom
+ * +28,875 of it (itemised on the `index-` cap). 6,800,000 is 98.7% again.
  */
-const TOTAL_MAX = 6_760_000;
+const TOTAL_MAX = 6_800_000;
 
 if (!existsSync(DIST)) {
   console.error(`No ${DIST}/ directory. Run \`npm run build\` first.`);
