@@ -223,7 +223,11 @@ const BUDGETS = [
   // (+142,062; gzip 51.73 -> 74.79 kB), all of it the SDK's own single web
   // bundle (dist/web/index.mjs, 389,778 B), so nothing to leave out. Loaded
   // with a person's first request, never by the public pages. 94.0%.
-  { prefix: 'gemini-sdk-', ext: '.js', max: 424_000, note: '@google/genai, lazy, loaded with the first request' },
+  // Raised to 459_500 on 2026-11-21 for @google/genai 3.2.0 -> 3.6.1 (the
+  // owner's "update all ... on latest version"): 398,411 -> 431,840 B
+  // (+33,429; gzip 74.79 -> 81.55 kB), at 101.8% of 424_000, again the SDK's
+  // own single bundle and already lazy, so no move could pay for it. 94.0%.
+  { prefix: 'gemini-sdk-', ext: '.js', max: 459_500, note: '@google/genai, lazy, loaded with the first request' },
   { prefix: 'ocr-engine-', ext: '.js', max: 18_500, note: 'tesseract.js, lazy, loaded with the first picture' },
   /*
    * The six largest route and pane chunks, unbudgeted until 2026-11-11 (TC-10):
