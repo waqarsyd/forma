@@ -162,7 +162,7 @@ async function main(): Promise<number> {
     console.log('\nDry run: nothing was sent. A run with a key sends the requests counted above, on the small model the chat uses.');
     return 0;
   }
-  const out = resolve(valueOf('--out') ?? `../forma-model-data/work/chat-judge-${new Date().toISOString().slice(0, 10)}.json`);
+  const out = resolve(valueOf('--out') ?? `../forma-model-data-kept-not-in-git/forma-model-data/work/chat-judge-${new Date().toISOString().slice(0, 10)}.json`);
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify({ at: new Date().toISOString(), judgeModel, rows: rows.map((r) => ({ id: r.q.id, kind: r.q.kind, turn: r.turn, checks: r.checks, judgement: r.judgement, requests: r.requests, docs: r.docs })) }, null, 2));
   console.log(`Written to ${out} (no key).`);

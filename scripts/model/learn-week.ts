@@ -50,7 +50,7 @@
  * repository folder). The program is cmd, not npx: npx is npx.cmd on
  * Windows, which Task Scheduler cannot start by that name.
  *   Program:   cmd.exe
- *   Arguments: /c npx tsx scripts/model/learn-week.ts --data E:\...\forma-model-data\learning-week --reports <the owner's reports>
+ *   Arguments: /c npx tsx scripts/model/learn-week.ts --data ..\forma-model-data-kept-not-in-git\forma-model-data\learning-week --reports <the owner's reports>
  *
  * No AI and no quota. Pure ASCII, as every script here.
  */

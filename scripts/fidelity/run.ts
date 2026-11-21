@@ -10,7 +10,8 @@
  *   --only <name>     run one case; may be repeated
  *   --runs <n>        generate each case n times, to see variance (default 1)
  *   --out <dir>       where results go (default
- *                     ../forma-model-data/fidelity-results/<timestamp>, beside
+ *                     ../forma-model-data-kept-not-in-git/forma-model-data/
+ *                     fidelity-results/<timestamp>, beside
  *                     the repository rather than in it: RESULTS_DIR, below)
  *   --replay <dir>    re-score the saved outputs in that results directory
  *                     against the CURRENT case files, calling nothing.
@@ -213,7 +214,7 @@ const MAX_IMAGE_EDGE = 2048;
  * data folder beside the repository is where the rest of it already is. Read
  * from the repository's root, as every path in this script is.
  */
-const RESULTS_DIR = join('..', 'forma-model-data', 'fidelity-results');
+const RESULTS_DIR = join('..', 'forma-model-data-kept-not-in-git', 'forma-model-data', 'fidelity-results');
 
 interface CaseFile {
   source: string;

@@ -81,7 +81,7 @@ const outDir = resolve(arg('out'));
 const owner = arg('owner', 'your-kaggle-username');
 const evalPercent = Number(arg('eval', '10'));
 // Inside means the repository or a folder under it. A name test is not enough:
-// a sibling such as ../forma-model-data begins with the repository's own path.
+// a sibling such as ../forma-model-data-kept-not-in-git begins with the repository's own path.
 const within = relative(resolve('.'), outDir);
 if (!within.startsWith('..') && !isAbsolute(within)) {
   console.error('--out is inside the repository. Keep the dataset outside it.');

@@ -33,7 +33,7 @@
  * --no-expire      leave events older than 90 days in Firestore this time.
  *
  * --out            where the pull goes; kept outside the repository, as every
- *                  training set is: forma-model-data/learning on the owner's
+ *                  training set is: forma-model-data/learning (inside forma-model-data-kept-not-in-git) on the owner's
  *                  PC, the same folder every week.
  * --since          only events from that day on (the `day` field).
  * --skeletons-only asks Firestore for every field but the whole report and
@@ -158,7 +158,7 @@ const nodeFs: FsLike = {
   unlinkSync,
 };
 
-/** Whether a folder is the repository or inside it: a sibling such as ../forma-model-data begins with its path. */
+/** Whether a folder is the repository or inside it: a sibling such as ../forma-model-data-kept-not-in-git begins with its path. */
 export function insideRepository(dir: string, repo = resolve('.')): boolean {
   const within = relative(repo, resolve(dir));
   return !within.startsWith('..') && !isAbsolute(within);

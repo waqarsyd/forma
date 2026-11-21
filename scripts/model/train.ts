@@ -80,7 +80,7 @@ if (!(holdOut >= 0 && holdOut < 1)) {
 }
 const repo = resolve('.');
 // Inside means the repository or a folder under it. A name test is not enough:
-// a sibling such as ../forma-model-data begins with the repository's own path.
+// a sibling such as ../forma-model-data-kept-not-in-git begins with the repository's own path.
 const within = relative(repo, dataDir);
 if (!within.startsWith('..') && !isAbsolute(within)) {
   console.error('--data is inside the repository. Keep the training set outside it.');

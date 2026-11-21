@@ -90,7 +90,7 @@ async function main(): Promise<number> {
     );
   }
 
-  const out = resolve(arg('--out') ?? '../forma-model-data/work/chat-edits.json');
+  const out = resolve(arg('--out') ?? '../forma-model-data-kept-not-in-git/forma-model-data/work/chat-edits.json');
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify({ at: new Date().toISOString(), report: reportPath.split(/[\\/]/).pop(), rows }, null, 2));
   console.log(`\nWritten to ${out} (tokens, actions and counts only; no key).`);

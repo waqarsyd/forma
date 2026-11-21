@@ -382,8 +382,9 @@ describe('selectPairs', () => {
   });
 });
 
-/** Scratch for the reconcile: beside the repository on the owner's server (never C:), the system's elsewhere. */
-const SCRATCH_ROOT = fs.existsSync(resolve('..', 'forma-model-data', 'work')) ? resolve('..', 'forma-model-data', 'work') : tmpdir();
+/** Scratch for the reconcile: the owner's folder beside the repository where it exists, the system's elsewhere. */
+const OWNER_WORK = resolve('..', 'forma-model-data-kept-not-in-git', 'forma-model-data', 'work');
+const SCRATCH_ROOT = fs.existsSync(OWNER_WORK) ? OWNER_WORK : tmpdir();
 const scratch = fs.mkdtempSync(join(SCRATCH_ROOT, 'lo-reconcile-'));
 afterAll(() => fs.rmSync(scratch, { recursive: true, force: true }));
 

@@ -44,7 +44,8 @@ import { accountKey, shortHash, type FetchLike } from '../lib/learningPipeline';
 import { LINE_FEATURES } from '../lib/boxReader';
 import { BOX_OWN, FEATURE_SIGNATURE } from '../lib/readerPairs';
 
-const SCRATCH_ROOT = fs.existsSync(resolve('..', 'forma-model-data', 'work')) ? resolve('..', 'forma-model-data', 'work') : tmpdir();
+const OWNER_WORK = resolve('..', 'forma-model-data-kept-not-in-git', 'forma-model-data', 'work');
+const SCRATCH_ROOT = fs.existsSync(OWNER_WORK) ? OWNER_WORK : tmpdir();
 const scratch = fs.mkdtempSync(join(SCRATCH_ROOT, 'lo-owner-'));
 afterAll(() => fs.rmSync(scratch, { recursive: true, force: true }));
 
