@@ -477,7 +477,7 @@ export const SELF_HOST: InfoDoc = {
       heading: 'On your computer',
       body: (
         <>
-          <p className={P}>Node 22.22.2 or later on 22, 24.15.0 or later on 24, or 26 and later (not 23 or 25), then:</p>
+          <p className={P}>Node 24.15.0 or later on 24, or 26 and later (not 25), then:</p>
           <pre className={CODE}>{`git clone ${REPO}.git
 cd forma
 npm ci

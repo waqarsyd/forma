@@ -81,16 +81,20 @@ jobs:
     name: ${{ matrix.node == '24' && 'lint, types, encoding, tests, build' || format('lint, types, encoding, tests, build (Node {0})', matrix.node) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    # The floor in package.json's engines, ^22.22.2 || ^24.15.0 || >=26, is
-    # where vitest's range (^20 || ^22 || >=24) meets jsdom's (2026-11-11,
-    # TC-05). It was tested on 24 alone until then, so a floor that said 20 was
-    # a promise nothing ran. Both lines run now: 22.22.2 exactly, because the
-    # floor is the version most likely to break, and the newest 24, the line
-    # the project is developed on. One failing does not cancel the other.
+    # The floor in package.json's engines, ^24.15.0 || >=26, is measured from
+    # the engines entries in package-lock.json (2026-11-21): firebase 13's own
+    # packages (@firebase/app and thirteen more) ask for >=24.12.0, which no
+    # Node 22 meets, and jsdom 31 then asks for 24.15.0 within the 24 line.
+    # Until that day the floor said 22.22.2, where vitest met jsdom, and this
+    # job ran 22.22.2 with firebase warning on every install. It was tested on
+    # 24 alone before 2026-11-11 (TC-05), so a floor that said 20 was a promise
+    # nothing ran. Both lines run: 24.15.0 exactly, because the floor is the
+    # version most likely to break, and the newest 24, the line the project is
+    # developed on. One failing does not cancel the other.
     strategy:
       fail-fast: false
       matrix:
-        node: ['22.22.2', '24']
+        node: ['24.15.0', '24']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -105,8 +109,10 @@ jobs:
       # package.json and package-lock.json disagree, which is a check in itself
       # and one nothing else performs.
       #
-      # Node 22.22.2 brings npm 10, which does not know package.json's
-      # allowScripts, so on that leg the three denied install scripts run.
+      # Node 24.15.0 brings npm 11.12.1, older than npm 11.19, where
+      # package.json's allowScripts began (checked 2026-11-21: 11.12.1 answers
+      # `install-scripts` with "Unknown command"; Node 22.22.2's npm 10 did not
+      # know it either), so on that leg the three denied install scripts run.
       # Two are harmless (tesseract.js prints a funding note, sharp checks for
       # its prebuilt binary), but onnxruntime-node's postinstall downloads the Linux
       # CUDA binaries from GitHub on an x64 runner: slower, a feed outside npm

@@ -4,7 +4,7 @@
  * asks for: browser work otherwise goes through the owner's own Chrome (see
  * SKILL.md, 2026-11-11).
  *
- * Deliberately dependency-free. Node 22+ (the project's floor) has a global
+ * Deliberately dependency-free. Node 22+ (the project's floor is 24.15) has a global
  * WebSocket and fetch, so this needs no puppeteer and no playwright -- neither
  * is installed here, and adding one to run the app would be a dependency the
  * product does not have.

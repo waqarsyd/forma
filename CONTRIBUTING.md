@@ -27,10 +27,10 @@ npm ci                 # not `npm install` — see below
 npm run dev            # tsx server.ts -> http://localhost:3000
 ```
 
-**Node `^22.22.2 || ^24.15.0 || >=26`.** Not 20 (end of life on 2026-04-30), not 23 or 25,
-and not an early 22 or 24: `jsdom` declares exactly that range and `vitest` declares
-`^20 || ^22 || >=24`, so the floor is where the two meet. Developed on 24.21.0 / npm 11.19.0
-(`node -v; npm -v` is the current answer).
+**Node `^24.15.0 || >=26`.** Not 22 (since 2026-11-21: Firebase 13's own packages ask for
+24.12 or later), not 20 (end of life on 2026-04-30), not 25, and not an early 24: `jsdom`
+declares `^22.22.2 || ^24.15.0 || >=26`, so with Firebase's floor the range is where the two
+meet. `node -v; npm -v` prints what you have.
 
 **Use `npm ci`, not `npm install`.** `ci` installs exactly what the lockfile says and
 fails if `package.json` and the lockfile disagree, which is a check nothing else performs.

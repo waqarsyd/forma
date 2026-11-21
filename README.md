@@ -3,7 +3,7 @@
 Turn a screenshot, a PDF, or an existing report into a real DevExpress `.repx` file.
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/node-22.22.2%2B%20%7C%2024.15%2B%20%7C%2026%2B-brightgreen.svg)](#prerequisites)
+[![Node](https://img.shields.io/badge/node-24.15%2B%20%7C%2026%2B-brightgreen.svg)](#prerequisites)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6.svg)](tsconfig.json)
 [![React](https://img.shields.io/badge/React-19-61dafb.svg)](package.json)
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](package.json)
@@ -141,7 +141,7 @@ There is no ESLint config, no state-management library, no date library, no HTTP
 
 ### Prerequisites
 
-- **Node 22.22.2 or later on 22, 24.15.0 or later on 24, or 26+** (`^22.22.2 || ^24.15.0 || >=26`; developed on Node 24.21.0 / npm 11.19.0, and `node -v; npm -v` is the current answer). Node 20 is out: it reached end of life on 2026-04-30, and jsdom, which the tests run on, needs those patch releases. The odd-numbered lines **23 and 25 are outside the range too**, even though they are newer: Vitest skips 23 and jsdom skips 25.
+- **Node 24.15.0 or later on 24, or 26+** (`^24.15.0 || >=26`; `node -v; npm -v` prints what you have). Node 22 is out since 2026-11-21: Firebase 13's own packages ask for Node 24.12 or later, and jsdom, which the tests run on, then needs 24.15.0 on that line. Node 20 reached end of life on 2026-04-30. The odd-numbered **25 is outside the range too**, even though it is newer: jsdom and Vitest both skip it.
 - **A Gemini API key** from [Google AI Studio](https://aistudio.google.com/apikey) — supplied in the app at runtime, never in a file.
 - **A JRE** — only for `npm run test:rules`, which starts the Firestore emulator (a JVM process). A runtime is enough; no JDK. That suite also needs Node 24.12 or later (`@firebase/rules-unit-testing` 6).
 - **A Firebase project** — only if you want sign-in and cloud sync. Everything else works without one.
@@ -891,8 +891,8 @@ docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident
                        committed screenshot belongs; nothing here is read by the
                        build. Has its own README with the capture rules
 .github/               workflows (checks.yml, which runs the seven checks plus
-                       `npm ci` and check-dist.mjs, the first job on Node 22
-                       and 24 and the rules job on 24;
+                       `npm ci` and check-dist.mjs, the first job on Node
+                       24.15.0 and the newest 24 and the rules job on 24;
                        codeql.yml; live.yml, which checks the live site every
                        three hours), three issue templates, a PR template,
                        dependabot.yml, CODEOWNERS, SUPPORT.md and the main
