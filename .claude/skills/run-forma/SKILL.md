@@ -1,6 +1,6 @@
 ---
 name: run-forma
-description: Launch Forma and drive it end to end — a mock dev server on 3001, a private Chrome through Playwright MCP (never the Claude in Chrome extension, forbidden here since 2026-11-12; a CDP driver only when the owner asks for one), attach a file, generate a report, send a chat turn, screenshot, and read back what the REPX audit actually says. Use for running the app, confirming a change works in the real UI, or capturing screenshots. Covers the Windows-specific launch and teardown that make this work here.
+description: Launch Forma and drive it end to end — a mock dev server on 3001, a Chrome of its own through Playwright MCP (the Claude in Chrome extension when the owner asks for it; a CDP driver only when the owner asks for one), attach a file, generate a report, send a chat turn, screenshot, and read back what the REPX audit actually says. Use for running the app, confirming a change works in the real UI, or capturing screenshots. Covers the Windows-specific launch and teardown that make this work here.
 ---
 
 # Running Forma
@@ -56,31 +56,25 @@ dialog, where it goes to `sessionStorage` and never to disk.
 
 ### 2. Open it in Chrome through Playwright MCP
 
-**The Claude in Chrome extension is forbidden on this server since 2026-11-12**
-(company policy: it signs into claude.ai in the browser as well, and the shared
-account then shows extra logins). Never call `mcp__claude-in-chrome__*`, and never
-ask the owner to connect it.
+**The Claude in Chrome extension is allowed** (the owner, 2026-11-21). It was
+forbidden from 2026-11-12 by a company policy for the shared server Forma was
+built on, and that policy does not apply to this machine, which is a personal one.
+This skill still drives **Playwright MCP** by default, because it opens a Chrome of
+its own instead of working in the owner's tabs; use the extension when the owner
+asks for it or a check needs their real browser, and load its skill first.
 
-Browser work goes through **Playwright MCP**, registered for the owner's Windows
-user only (`claude mcp get playwright` says user scope, in
-`C:\Users\waqar\.claude.json`). It runs `@playwright/mcp` 0.0.85 from
-`%LOCALAPPDATA%\playwright-mcp` with `--browser chrome --isolated --output-dir
-%LOCALAPPDATA%\playwright-mcp\output`. Why it is set up that way, each point
-measured on 2026-11-12 with the browser open:
+Playwright MCP is registered at user scope. `claude mcp get playwright` prints the
+command it runs; read that rather than a path written here. On 2026-11-21 it ran
+`@playwright/mcp` 0.0.86 from `G:\DevFiles\playwright` with `--browser chrome
+--output-dir G:\DevFiles\playwright\output`, with no `--isolated`, by the owner's
+choice: on a personal machine its Chrome profile may persist between runs.
 
-- **Private to the owner.** Claude Code starts it as its own child over stdio, and
+- **No port to reach.** Claude Code starts it as its own child over stdio, and
   it drives Chrome through `--remote-debugging-pipe`, so neither Chrome nor the
-  server listens on any TCP port (`Get-NetTCPConnection` showed none). No other
-  user's process on this shared server can reach it. That is what went wrong with
-  the extension, whose bridge let another user's session open tabs in the owner's
-  Chrome. The window opens in the owner's own RDP session, owned by the owner.
-- **Nothing left on disk.** `--isolated` keeps the profile in a temporary folder
-  under the owner's own `%TEMP%`, deleted when the browser closes (checked). Nothing
-  signs in, and nothing should ever be signed into in it, claude.ai least of all.
-- **Installed in the profile, not in DevFiles.** Every level of
-  `E:\DevelopmentINDIA\...\DevFiles` grants Authenticated Users Modify, so even a
-  locked folder there could be swapped by renaming a parent, and the swapped code
-  would run as the owner. `C:\Users\waqar` is closed to other users.
+  server listens on any TCP port (`Get-NetTCPConnection` showed none, 2026-11-12).
+- **The profile keeps what a run leaves**, so sign in to nothing in it unless the
+  owner asks: signing in to Forma writes to a real account unless the emulators
+  are used (step 1).
 
 Open `http://localhost:3001/workspace` with `browser_navigate` and drive it:
 `browser_snapshot` to read the page and get element refs, `browser_click`,
@@ -92,13 +86,13 @@ the workspace roots is refused), `browser_evaluate` to read state,
 above **only when no `filename` is given**: a relative `filename` resolves
 against the workspace root, so `ws-1.png` lands in the repository (measured
 2026-11-12). Omit it, or pass an absolute path under
-`%LOCALAPPDATA%\playwright-mcp\output`. Finish with `browser_close`.
+the `--output-dir` folder `claude mcp get playwright` prints. Finish with `browser_close`.
 
 The tools appear only in a session started after the server was registered. If
 `mcp__playwright__*` is missing, say so and ask the owner to restart Claude Code,
 rather than starting a browser of your own. To update it, check `npm view
 @playwright/mcp@<version>` and its two dependencies for install scripts first, then
-`npm install --prefix "$env:LOCALAPPDATA\playwright-mcp" @playwright/mcp@<version>
+`npm install --prefix <the folder its command runs from> @playwright/mcp@<version>
 --ignore-scripts`, still pinned.
 
 ### 3. The CDP driver, only when the owner asks for it
@@ -106,8 +100,8 @@ rather than starting a browser of your own. To update it, check `npm view
 Everything from here to the end of step 3 is for a run the owner has asked to be
 made with the driver (an unattended check, say). It launches a headless Edge
 from the shell, which is exactly what the rule in step 2 otherwise rules out.
-**On this shared server it is also the less private way:** it opens
-`--remote-debugging-port=9222`, and any user's process on the machine can connect
+**It is also the less private way:** it opens
+`--remote-debugging-port=9222`, and any process on the machine can connect
 to that port and drive the browser (Chrome's own warning). Prefer step 2; when the
 driver is asked for, keep the run short and tear it down at once.
 
@@ -213,7 +207,7 @@ Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" |
 ```
 
 **Filter by the profile path in the command line. Never kill `msedge` by name** —
-this is a shared RDP server with other live users on it.
+that closes the owner's own Edge windows too.
 
 `-ErrorAction SilentlyContinue` is load-bearing, not decoration. Edge is a process
 tree; killing the browser takes its renderers and GPU process with it, so most of

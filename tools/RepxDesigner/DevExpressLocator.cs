@@ -57,7 +57,9 @@ namespace RepxDesigner
     /// their full name in whatever assembly comes back. The mechanism is measured
     /// here with 20.1 standing in for a version the program was not built
     /// against (--check --alias 99.9); a real newer version is the owner's to
-    /// check, because the trial must never be installed on this server.
+    /// check. The trial was never to be installed on the company shared server
+    /// this was written on; the personal machine Forma has moved to has no such
+    /// rule (2026-11-21).
     /// </summary>
     internal static class DevExpressLocator
     {

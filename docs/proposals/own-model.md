@@ -26,7 +26,7 @@ The owner answered three questions on 2026-11-02:
 | Question | Answer |
 |---|---|
 | The reports are client material: client names in their folders, their queries, their logos. How is the training set handled? | **Local and sanitized.** The reports and the training set stay on the owner's machine, outside the repository. What ships with the public app is learned from structure only. |
-| This machine has no GPU (128 GB of memory, 48 cores). Where is the model trained? | **Here, on the processors, first.** A model that needs no GPU and runs in the browser, with a neural model to follow. |
+| The company shared server Forma was built on until November 2026 had no GPU (128 GB of memory, 48 cores). Where is the model trained? | **There, on the processors, first.** A model that needs no GPU and runs in the browser, with a neural model to follow. |
 | Which AI options does the provider setup offer? | **All four:** Forma Offline (the model of its own, no key), Gemini with the user's free key, local AI (Ollama, LM Studio), and OpenRouter's free models. |
 
 The memory feature follows Hermes Agent's documented shape, local first: it
@@ -841,7 +841,7 @@ The owner's choice after the boxes run: "go with the CPU classifier
 option". OCR already places the text, so the reader does not look at the
 picture at all. It reads the boxes OCR found and the characters in them,
 and says which band each text is in and what role it plays. It is two
-small networks, learned on this server's CPU and shipped as
+small networks, learned on the shared server's CPU and shipped as
 `assets/model/boxReader.json`: 7,552 weights, 68,705 bytes.
 
 **Since 2026-11-05 its draft is what the AI corrects.** The owner asked for
@@ -972,7 +972,8 @@ Its weak spots, in order: totals, group footers, the margins, and names in
 records, which a hand-made listing showed it can call captions. It is
 measured on drawn pages only: a scan of a real report has never been
 scored, and doing so would need real reports' pictures, which are client
-material and stay on this machine.
+material and stayed on the company's shared server (Forma's copies there
+were deleted on 2026-11-13).
 
 ### Totals and group footers (2026-11-04)
 
@@ -1292,7 +1293,8 @@ OCR alone (see *The boxes run lists the boxes and reads little*). Since
 The owner asked on 2026-11-10 for everything in the SUNFACET share to train
 Forma's AI, "don't leave anything" (`forma-audit/ai-accuracy-2026-11-10.md`,
 batch AA). The owner's decision that day: **the company's material stays on
-this machine.** Structure trains what ships, as it has since 2026-11-02, and
+the company's shared server Forma was then built on** (Forma's copies there
+were deleted on 2026-11-13). Structure trains what ships, as it has since 2026-11-02, and
 real content is used only for local training and scoring; nothing real goes
 to Gemini, OpenRouter or Kaggle.
 

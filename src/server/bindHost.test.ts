@@ -3,9 +3,11 @@
  *
  * It bound `0.0.0.0` unconditionally until the 2026-08-27 audit (SEC-002).
  * On a single-developer laptop that is a convenience — it is how you open the
- * dev server from your phone. This project is developed on a shared Windows
- * Server host with other live users, where it means anyone else on the box or
- * the network segment can reach the dev server while it runs, and in
+ * dev server from your phone. This project was developed until November 2026
+ * on a shared Windows Server host with other live users, where it meant anyone
+ * else on the box or the network segment could reach the dev server while it
+ * ran. It is developed on a personal machine now, and loopback stays the
+ * default: the network segment can still reach a 0.0.0.0 bind, and in
  * development that server has Vite middleware mounted, which serves the module
  * graph and transforms arbitrary project files.
  *

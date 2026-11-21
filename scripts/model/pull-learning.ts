@@ -9,8 +9,7 @@
  *       [--no-expire] [--force]
  *   npx tsx scripts/model/pull-learning.ts --forget <uid> --reconcile <dir> ...     (no credential, nothing read)
  *
- * The credential is the owner's, on their own PC, never this shared server
- * (the company's RDP account): `gcloud auth application-default login` and
+ * The credential is the owner's, on their own PC: `gcloud auth application-default login` and
  * no key file at all, or service accounts made for this, never the Admin
  * SDK's own account, which can change everything; a key file is deleted
  * once the run is done (2026-11-11, SA-14). scripts/admin/google.mjs reads

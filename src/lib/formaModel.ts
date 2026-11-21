@@ -4,7 +4,7 @@
  * neural network and no service, so it runs offline in the browser for free.
  *
  * The owner asked for an AI of Forma's own, trained on the reports their
- * company has built, with training on this machine's processors first. It
+ * company has built, with training on local processors first. It
  * learns two things:
  * - **House style:** the fonts and sizes each role is set in, the margins of
  *   each paper, how tall each kind of band usually is, how tall a record's row

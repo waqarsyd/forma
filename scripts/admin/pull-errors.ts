@@ -7,8 +7,8 @@
  *
  *   npx tsx scripts/admin/pull-errors.ts --out <dir> [--key <credential.json>] [--keep] [--force]
  *
- * The credential is the owner's, on their own PC, never the company's shared
- * server, read by scripts/admin/google.mjs as pull-learning.ts reads it:
+ * The credential is the owner's, on their own PC, read by
+ * scripts/admin/google.mjs as pull-learning.ts reads it:
  * `gcloud auth application-default login`, or a service account's key made
  * for this. Which roles each run needs:
  *   a pull, which deletes what it saved   roles/datastore.user

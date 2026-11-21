@@ -448,8 +448,8 @@ namespace RepxDesigner
         /// to start this program.
         ///
         /// **HKCU, never HKLM.** Per-user needs no elevation, which matters: this
-        /// is a personal tool and the machine it was written on is a shared server
-        /// where nobody has admin. It also means uninstalling is one key delete and
+        /// is a personal tool, the machine it was written on was a shared server
+        /// where nobody had admin, and the people who download it may have none. It also means uninstalling is one key delete and
         /// affects nobody else's profile.
         ///
         /// The command is `"exe" --serve "%1"`. Passing `%1` is not decoration --
@@ -1251,7 +1251,7 @@ namespace RepxDesigner
     /// full audit, SE-05).
     ///
     /// 127.0.0.1 is one address for everybody signed in to a PC, and on a Remote
-    /// Desktop server (this project's own home is one) that is many people. The
+    /// Desktop server (this project's home was one until November 2026) that is many people. The
     /// Origin and x-forma-client headers stop a web page, not a program: any user's
     /// curl can send both, and /sql/ then reads the databases with this user's
     /// Windows sign-in or saved login. So each connection is traced to the process
@@ -1259,7 +1259,7 @@ namespace RepxDesigner
     /// one netstat -o reads), and refused unless that process runs as the same user.
     /// Free, with no prompt and no administrator.
     ///
-    /// Measured 2026-11-11 on this server: the browser processes that hold this user's
+    /// Measured 2026-11-11 on that shared server: the browser processes that hold this user's
     /// connections (chrome, msedge, node) all read as this user's SID; another user's
     /// chrome, msedge and node could not even be opened (error 5, access denied), and
     /// anything that cannot be read is refused.

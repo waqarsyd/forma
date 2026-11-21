@@ -496,7 +496,7 @@ in this repository that came from a cold run.
 
 **Until 2026-08-28 a cold cache did worse than crawl: it made the suite fail outright.**
 jsdom's entry loads synchronously, and cold it was measured at **113 seconds** in one
-process on this machine against 1.4s warm — while vitest gives a worker **60 seconds** to
+process on the machine it was then developed on against 1.4s warm — while vitest gives a worker **60 seconds** to
 report in (`START_TIMEOUT`, hardcoded in vitest's dist with no config option feeding it).
 Every worker died before starting, and all 25 files of the day reported
 `[vitest-pool-runner]: Timeout waiting for worker to respond`, which reads as a broken

@@ -7,8 +7,8 @@
 // for the owner: every document under every collection, one JSON line each,
 // written to a folder outside this repository.
 //
-// It needs what only the owner has, on the owner's own PC (never the
-// company's shared server), so nothing here runs it. Ask for as little as
+// It needs what only the owner has, on the owner's own PC, so nothing
+// here runs it. Ask for as little as
 // it needs (2026-11-11, the full audit, SA-14):
 //   1. A credential that can only READ. Best, no key file at all:
 //        gcloud auth application-default login

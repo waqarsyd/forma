@@ -17,7 +17,7 @@
 #           shard until it prints its summary line, and that report is skipped.
 #
 # Needs the Crystal Reports runtime 13 (CrystalDecisions.*, 13.0.2000.0) in the
-# GAC, which this server has, and 64-bit PowerShell.
+# GAC, which this machine has (checked 2026-11-21), and 64-bit PowerShell.
 #
 # STRUCTURE ONLY, as everything that leaves for training: each section's kind
 # and height, each object's kind, place, size, font, alignment and borders, and

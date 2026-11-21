@@ -2,9 +2,8 @@
  * How the owner's scripts reach Firestore and Firebase Authentication over
  * their REST APIs, with no dependency (2026-11-11, the full audit's batch LO,
  * SA-14). Used by scripts/model/pull-learning.ts, scripts/admin/orphans.mjs
- * and scripts/admin/stats.mjs; run on the owner's own PC only, never on the
- * company's shared server, because every credential below can read every
- * account.
+ * and scripts/admin/stats.mjs; run on the owner's own PC only, because every
+ * credential below can read every account.
  *
  * The credential, in this order:
  *   --key <file>                    a service account's JSON key

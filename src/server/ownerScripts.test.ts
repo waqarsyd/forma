@@ -1,8 +1,8 @@
 /**
  * The owner's scripts, run against a stand-in for Google (2026-11-11, the
  * full audit's batch LO). They run on the owner's own PC with a credential
- * that never touches the shared server this suite runs on, so none of them
- * is ever pointed at the real project here: each is imported for its
+ * this suite never has, so none of them is ever pointed at the real project
+ * here: each is imported for its
  * functions (every one runs only when it is the script node was started
  * with) and given a `fetch` that answers as Google would.
  *

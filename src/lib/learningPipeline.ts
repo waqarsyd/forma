@@ -2,7 +2,7 @@
  * The owner's side of learning from use, the parts that can be tested
  * (2026-11-11, the full audit's batch LO: LM-04, LM-17, LM-07, LM-03, LM-10,
  * LM-21). The scripts that use it run on the owner's own PC with a
- * credential that never touches the shared server this was written on:
+ * credential that never enters the repository:
  * `scripts/model/pull-learning.ts` (the pull), `scripts/model/train.ts` (the
  * candidate), `scripts/model/gate.ts` (whether it may ship) and
  * `scripts/model/learn-week.ts` (the three in a row, once a week).
