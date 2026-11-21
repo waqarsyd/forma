@@ -119,12 +119,35 @@ if (!ghJson(['api', `repos/${REPO}/automated-security-fixes`])?.enabled) {
 }
 
 // 2. The ruleset.
+//
+// Compared before it is written (2026-11-21): until then an existing ruleset
+// was put back on every run, so a second run always listed one change and the
+// "changes only what differs" above was not true of this step. The fields a
+// PUT replaces are compared, the file's against the live ruleset's. A key the
+// file leaves out matches when GitHub holds its default there (false, null, an
+// empty list or object): GitHub spells out do_not_enforce_on_create: false on
+// the status-check rule, which the file omits, and that was the whole of the
+// difference on the day. Anything else on GitHub's side, a rule added in the
+// web settings or a check removed, is a difference, and the file wins.
 console.log('\n2. Ruleset');
 const ruleset = readFileSync('.github/rulesets/main.json', 'utf8');
-const rulesetName = JSON.parse(ruleset).name;
+const wanted = JSON.parse(ruleset);
+const rulesetName = wanted.name;
+const RULESET_FIELDS = ['name', 'target', 'enforcement', 'conditions', 'rules', 'bypass_actors'];
+const isDefault = (v) => v === false || v === null || v === '' || (Array.isArray(v) && v.length === 0) || (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0);
+function matches(want, have) {
+  if (Array.isArray(want)) return Array.isArray(have) && have.length === want.length && want.every((w, i) => matches(w, have[i]));
+  if (want && typeof want === 'object') {
+    if (!have || typeof have !== 'object' || Array.isArray(have)) return false;
+    return Object.keys(want).every((k) => matches(want[k], have[k])) && Object.keys(have).every((k) => k in want || isDefault(have[k]));
+  }
+  return want === have;
+}
 const existing = (ghJson(['api', `repos/${REPO}/rulesets`]) || []).find((r) => r.name === rulesetName);
 if (existing) {
-  change(`update the ruleset "${rulesetName}" from .github/rulesets/main.json`, ['api', '-X', 'PUT', `repos/${REPO}/rulesets/${existing.id}`, '--input', '-'], ruleset);
+  const live = ghJson(['api', `repos/${REPO}/rulesets/${existing.id}`]);
+  const same = live && RULESET_FIELDS.every((f) => matches(wanted[f], live[f]));
+  if (!same) change(`update the ruleset "${rulesetName}" from .github/rulesets/main.json`, ['api', '-X', 'PUT', `repos/${REPO}/rulesets/${existing.id}`, '--input', '-'], ruleset);
 } else {
   change(`create the ruleset "${rulesetName}" from .github/rulesets/main.json`, ['api', '-X', 'POST', `repos/${REPO}/rulesets`, '--input', '-'], ruleset);
 }
