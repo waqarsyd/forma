@@ -75,6 +75,19 @@ export const REPO_URL = 'https://github.com/waqarsyd/forma';
 
 export const RELEASES: Release[] = [
   {
+    id: '2026-11-21-up-to-date',
+    date: '2026-11-21',
+    version: '1.6.4',
+    title: 'Up-to-date foundations',
+    summary:
+      'Forma now runs on the newest releases of the libraries it is built on, Google’s AI library and Firebase among them, and running it on your own computer needs Node 24.15 or later.',
+    changes: [
+      { kind: 'changed', area: 'generation', text: 'Forma reaches Google’s AI through the newest version of Google’s own library, and signs you in and keeps your projects through the newest Firebase.' },
+      { kind: 'changed', area: 'site', text: 'Running Forma on your own computer needs Node 24.15 or later, or 26 and later, because the Firebase library it uses now needs Node 24.' },
+      { kind: 'security', area: 'site', text: 'The tools Forma is built and published with are updated past seven security advisories. None of them was in the site your browser loads.' },
+    ],
+  },
+  {
     id: '2026-11-13-two-small-fixes',
     date: '2026-11-13',
     version: '1.6.3',
