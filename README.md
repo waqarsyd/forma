@@ -6,7 +6,7 @@ Turn a screenshot, a PDF, or an existing report into a real DevExpress `.repx` f
 [![Node](https://img.shields.io/badge/node-24.15%2B%20%7C%2026%2B-brightgreen.svg)](#prerequisites)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6.svg)](tsconfig.json)
 [![React](https://img.shields.io/badge/React-19-61dafb.svg)](package.json)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](package.json)
+[![Version](https://img.shields.io/github/package-json/v/waqarsyd/forma?label=version)](package.json)
 
 [![checks](https://img.shields.io/github/actions/workflow/status/waqarsyd/forma/checks.yml?branch=main&label=checks)](https://github.com/waqarsyd/forma/actions)
 [![live site](https://img.shields.io/github/actions/workflow/status/waqarsyd/forma/live.yml?branch=main&label=live%20site)](https://github.com/waqarsyd/forma/actions/workflows/live.yml)
@@ -116,7 +116,7 @@ Each of these is a shipped code path, not a plan.
 - **A shared style sheet, derived rather than asked for.** An appearance used by three or more controls is hoisted onto a `<StyleSheet>` after generation, so restyling a migrated report is one edit instead of forty that have to agree. Grouping is on exact equality, which is what makes it provably equivalent. DevExpress prints a style's value over a control's own for every property the style sets, so the lift deletes the hoisted attributes from every member and leaves nothing for the style to override ([`src/lib/repxStyles.ts`](src/lib/repxStyles.ts)).
 - **A single place for unit conversion.** Four coordinate systems meet in this pipeline and every conversion between them lives in one module, because a mismatch renders a plausible layout in the wrong place and never throws ([`src/lib/reportGeometry.ts`](src/lib/reportGeometry.ts)).
 - **Forma Designer, an optional Windows companion** that opens a generated `.repx` in the real DevExpress designer over a loopback listener, downloadable from [/download](https://openforma.web.app/download) and installed per user. Open in designer opens a dialog that asks the companion only when clicked and says what is missing: Forma Designer, DevExpress Reporting (whose free trial it links), the browser's permission, or Windows. Export `.repx` needs none of it ([`tools/RepxDesigner/`](tools/RepxDesigner/), [`src/lib/designerBridge.ts`](src/lib/designerBridge.ts), [`src/components/OpenInDesigner.tsx`](src/components/OpenInDesigner.tsx)).
-- **Mock mode** — `VITE_FORMA_MOCK=true` returns a canned invoice after a 3s delay, for exercising loaders and progress bars without spending a request.
+- **Mock mode** — `VITE_FORMA_MOCK=true` returns a canned invoice after a 3s delay, for exercising the workspace without spending a request.
 
 ---
 
@@ -128,9 +128,11 @@ Each of these is a shipped code path, not a plan.
 | Build | Vite 8 (Rolldown), esbuild for the server bundle |
 | Language | TypeScript, `strict` enabled |
 | Server | Express 5 — the **same** `server.ts` in development and production |
-| AI | `@google/genai`, called from the browser |
+| AI | `@google/genai`, called from the browser; or Ollama, LM Studio and OpenRouter through their OpenAI-compatible API ([`compatClient.ts`](src/services/compatClient.ts)) |
+| OCR | PaddleOCR (PP-OCRv5) on ONNX Runtime Web for English, Tesseract.js for the other languages, both in the browser |
 | Auth & storage | Firebase Auth + Firestore, both optional |
 | Documents | `pdfjs-dist` for PDF intake, `react-markdown` + `remark-gfm` for the spec |
+| Hosting | Firebase Hosting, served statically ([Deployment](#deployment)) |
 | Tests | Vitest, `@firebase/rules-unit-testing` against the Firestore emulator |
 
 There is no ESLint config, no state-management library, no date library, no HTTP client (native `fetch`), and no icon package — the icons are inline SVG.
@@ -143,7 +145,7 @@ There is no ESLint config, no state-management library, no date library, no HTTP
 
 - **Node 24.15.0 or later on 24, or 26+** (`^24.15.0 || >=26`; `node -v; npm -v` prints what you have). Node 22 is out since 2026-11-21: Firebase 13's own packages ask for Node 24.12 or later, and jsdom, which the tests run on, then needs 24.15.0 on that line. Node 20 reached end of life on 2026-04-30. The odd-numbered **25 is outside the range too**, even though it is newer: jsdom and Vitest both skip it.
 - **A Gemini API key** from [Google AI Studio](https://aistudio.google.com/apikey) — supplied in the app at runtime, never in a file.
-- **A JRE** — only for `npm run test:rules`, which starts the Firestore emulator (a JVM process). A runtime is enough; no JDK. That suite also needs Node 24.12 or later (`@firebase/rules-unit-testing` 6).
+- **A JRE** — only for `npm run test:rules`, which starts the Firestore emulator (a JVM process). A runtime is enough; no JDK.
 - **A Firebase project** — only if you want sign-in and cloud sync. Everything else works without one.
 
 <sup>`package.json`'s `engines` field is the declaration; several other files restate it, and the table *Facts stated in more than one file* in [`CLAUDE.md`](CLAUDE.md) lists every copy, so raising the floor is a change to each of them.</sup>
@@ -161,11 +163,12 @@ Contributors should use `npm ci` instead — it installs exactly what the lockfi
 
 ### Environment variables
 
-**All four are optional, and none is a secret.** Copy [`.env.example`](.env.example) to `.env` only if you need one of them; `server.ts` loads it via `dotenv/config`.
+**All five are optional, and none is a secret.** Copy [`.env.example`](.env.example) to `.env` only if you need one of them; `server.ts` loads it via `dotenv/config`.
 
 | Name | Required | Default | Description |
 |---|---|---|---|
 | `VITE_FORMA_MOCK` | No | unset | Set to `"true"` to skip Gemini entirely and return a canned mock invoice after a 3s delay. Local development only. The value `"misordered"` returns the same fixture with its two header bands swapped, so the REPX audit's band-order warning can be seen firing in the running app; `"true"` stays deliberately clean. |
+| `VITE_FIREBASE_EMULATORS` | No | unset | Set to `"true"` to sign in and save against the local Auth and Firestore emulators instead of the real project (start them first: `npx firebase emulators:start --only auth,firestore`). Development only; accounts made there vanish when the emulators stop. |
 | `PORT` | No | `3000` | The port the server listens on. Useful for a second instance beside a running dev server; a value that is not a port falls back to 3000. |
 | `HOST` | No | loopback in dev, all interfaces in production | Which interface the server binds. Set to `0.0.0.0` only to reach the dev server from another device — that publishes Vite's module graph to anything that can reach the machine. |
 | `HTTPS` | No | unset | Set to `"true"` **only where TLS actually terminates**, so the server sends HSTS. Never set it locally: a browser that receives HSTS on `http://localhost` refuses plain-HTTP localhost for a year afterwards, breaking every other project on the machine. |
@@ -252,708 +255,32 @@ Beyond the environment variables above, two things are configurable.
 
 **`firebase-applet-config.json`** — your Firebase web config. `firestoreDatabaseId` must match `databaseId` in [`firebase.json`](firebase.json).
 
-**Report settings**, set per report in the app's config modal and persisted through an explicit allowlist in [`src/lib/reportConfigStore.ts`](src/lib/reportConfigStore.ts):
+**Report settings are worked out, not asked for** (since 2026-11-04). Forma reads them from what each request brings ([`src/lib/autoConfig.ts`](src/lib/autoConfig.ts)): the paper and orientation, the header and footer, right to left, the stored procedure, the OCR language and handwriting. Only two are remembered between requests, through an explicit allowlist in [`src/lib/reportConfigStore.ts`](src/lib/reportConfigStore.ts), and both are learned rather than chosen:
 
-| Option | Description |
+| Setting | How it is set |
 |---|---|
-| Report unit | The measurement system the generated `.repx` uses. Every conversion between coordinate systems goes through [`reportGeometry.ts`](src/lib/reportGeometry.ts). |
-| Paper size and orientation | Page geometry for the generated report. |
-| `thinkingBudget` | A lever on how long the model reasons before emitting output. Unset by default. |
+| DevExpress version | Read from a report you bring, else the one you last brought, else 23.2. |
+| Report unit | Read the same way. Every conversion between coordinate systems goes through [`reportGeometry.ts`](src/lib/reportGeometry.ts). |
 
-**Right to left** and the **stored procedure** the data comes from are set under *Direction and data source* (since 2026-11-04). Right to left applies with or without a key: the report is mirrored however it was made. A data schema is pasted in the **Data** tab rather than here. See [`docs/PRD.md`](docs/PRD.md) §2.4.
+A data schema is pasted in the **Data** tab, or browsed from a SQL Server database through Forma Designer. See [`docs/PRD.md`](docs/PRD.md) §2.4.
 
 ---
 
 ## Project structure
 
-<details>
-<summary>Directory tree with per-entry notes</summary>
+The top level, in brief. The full tree, with a note on every file that needs one, is [`docs/project-structure.md`](docs/project-structure.md).
 
-```
-src/
-  App.tsx              the workspace and the chat, loaded on /workspace
-  PublicSite.tsx       every public page and the sign-in dialog, without
-                       the workspace (the entry since 2026-11-08)
-  main.tsx             entry point: PublicSite, or App on /workspace, the
-                       offline banner and the offline worker's registration
-  index.css            tokens, marketing pages, shared chrome (Tailwind v4, no config file)
-  workspace.css        the workspace shell only — every `wb-` class lives here
-                       but the lazy menus', in components/overlays.css
-  vite-env.d.ts        Vite's ambient types; the one file here not in
-                       PascalCase.tsx / camelCase.ts form, because Vite names it
-  components/          LandingPage, FeaturesPage, DocsPage, ContactPage,
-                       ChangelogPage (/changelog, every release),
-                       LoginPage, LegalPage (/terms, /privacy and /accessibility),
-                       InfoPage and InfoRoutePage (/security, /pricing, /examples,
-                       /compare, /about, /self-host and /faq, their words in
-                       infoPages.tsx, the FAQ in faqs.tsx, which Docs shows too),
-                       publicPages.tsx (which page a public route draws, shared
-                       by PublicSite and App),
-                       SiteHeader, SiteFooter, MobileNav, Logo,
-                       AccountDialog, UserAvatar, NotFoundPage,
-                       OcrDialog (the review the image viewer opens: the text
-                       OCR read, its detected layout drawn over the source,
-                       and Build .repx with no model),
-                       SettingsDialog (Settings as ChatGPT's: General, AI,
-                       Gemini key, Memory and Learning, a change taking effect
-                       as it is made), in the frame SectionedDialog draws for
-                       it and for AccountDialog, whose sections are
-                       ProviderSettings (which AI answers:
-                       Automatic, which is Gemini, a local AI or OpenRouter's
-                       free models; Forma Offline went into Automatic on
-                       2026-11-05),
-                       MemorySettings (what Forma remembers, to switch off,
-                       change or forget), LearningSettings (what Forma may
-                       learn from use, its two switches and the button that
-                       deletes what was kept), ErrorReportSettings (General's
-                       "Send error reports", off until turned on) and
-                       UsageSettings (the day's requests),
-                       ConversationPanel (the thread down the left: every
-                       request with its ask pinned, the box at its foot,
-                       search and download), ChatThread
-                       (the transcript inside it, lifted out of App.tsx
-                       once chatSession.ts held its rules — Forma's working
-                       dots pass through as children, because that is generation
-                       state and not conversation), Composer (staged
-                       attachments, the notice lines and the box you type in;
-                       one composer does both jobs, and which one is App.tsx's
-                       decision, not this component's), BoxMenus (the box's
-                       "/" Tools menu), PlanCard (the plan a heavy job is
-                       told, which starts at once), and Markdown — which
-                       is its own module so react-markdown can be lazy-loaded.
-                       The workspace's panes and menus are here too, each
-                       loaded on demand: ReportPreview, ReportMockup,
-                       RepxViewer, DataBinding with DatabasePanel (the Data
-                       tab's SQL Server database), ConsentQuestion (what the
-                       Data tab and Live rows ask before the layout goes to
-                       the AI or a stored procedure runs), the selection toolbar
-                       (SelectionToolbar), the command menu (CommandMenu),
-                       the shortcuts list (ShortcutsDialog), the right-click
-                       menu (ControlMenu), the zoom field (ZoomField), the
-                       corner's help (HelpMenu), the Export
-                       panel (ExportPanel), the project menu at the top left
-                       (ProjectMenu), the pin beside it (PinProject), the
-                       empty workspace's home
-                       (HomeStart), the Share dialog (ShareDialog) and the
-                       page a shared link opens (SharedReportPage), the
-                       Preview's rail (PreviewRail: Select, Mark an area and
-                       Compare with the original), the side panels
-                       (ProjectsPanel, with a delete's Undo; BatchPanel,
-                       RevisionsPanel, LibraryPanel),
-                       Open in designer's dialog (OpenInDesigner), with
-                       overlays.css holding those menus' styles.
-                       Around both the site and the workspace: ErrorBoundary
-                       (one per area, so a fault in one leaves the rest
-                       working), OfflineBanner (the network lost and back),
-                       UpdateBanner (a newer Forma has taken over the
-                       tab) and OtherHostNotice (on another of the addresses
-                       that serve Forma, which is its own and why it
-                       matters). docsCorpus draws the Docs page's articles as
-                       text for the chat.
-                       The files that are not components are the shared
-                       hooks (useFocusTrap; useLayer, which puts a menu or
-                       dialog on the Escape stack; useMenuKeys, a menu's
-                       arrow keys and focus return; useFitScale, the zoom
-                       that fits a page to its pane; useTheme, the theme the
-                       site and the workspace share; useLinkNavigation, an
-                       in-app link as a client-side navigation), overlays.css,
-                       dialogs.css (the three dialogs' shared look), ocr.css,
-                       markdown.css and the tests:
-                       legalDisclosure, which reads ContactPage and
-                       index.html off disk, and the component render tests,
-                       the only ones outside lib/, services/ and server/.
-                       AccountDialog's mocks Firebase and covers the
-                       surface — which control is enabled when, and what it
-                       says when it fails; what a deletion actually removes is
-                       proved separately in tests/accountDeletion.test.ts,
-                       against the emulator
-    landing/           figures used by the marketing pages: HeroScanner,
-                       SheetRuler, StepFigures, VaultFigure,
-                       AnnouncementDock, sections, icons
-  lib/                 the pure helpers, nearly all under test. reportTypes
-                       holds the report shape — it lives here rather than in
-                       services/ so nothing in this layer has to import upward.
-                       repx, sourceRect, reportGeometry (every unit conversion
-                       in the pipeline, and the only place one may be written),
-                       repxMargins (moves a margin the model drew as whitespace
-                       into the report's own Margins and margin bands),
-                       reportBands (the band skeleton the prompt asks for — a
-                       real ReportHeader / PageHeader / one-row Detail /
-                       ReportFooter / PageFooter; the old single page-sized
-                       DetailBand and its VITE_FORMA_FLAT flag were removed on
-                       2026-09-05, once the fallback could no longer produce a
-                       comparable report),
-                       promptSections (which optional blocks the mega-prompt
-                       carries for a given request — a section is dropped only
-                       when an uploaded .repx proves the feature is absent, so
-                       an image or a bare instruction still gets all of them),
-                       repxTruncation (did the model stop writing the XML
-                       part-way, asked at the parse rather than at Export),
-                       repxBindings (column headings to DevExpress field names
-                       for expression bindings — derived in code so the guess
-                       is testable, not left to the prompt),
-                       repxStyles (hoists an appearance shared by three or
-                       more controls onto a <StyleSheet>, so a migrated
-                       report can be restyled in one place -- a control's
-                       Borders is a style's Sides, which is the kind of
-                       thing only a measurement finds),
-                       repxSummaries (a total with no running scope prints
-                       blank in DevExpress; scopes the ones whose band
-                       decides it, and finds the rest for the audit),
-                       repxGroups (nested groups nest by Level, not by file
-                       order; numbers the ones written without it from the
-                       top, so they do not print inside out),
-                       repxCrossTabs (a cross-tab written as its fields alone
-                       throws when DevExpress prints it; writes the layout
-                       DevExpress generates from those fields),
-                       repxDpi (DevExpress reads every band and control at
-                       its own Dpi, 100 when absent; writes the report's on
-                       each, so millimetre reports print at their size),
-                       repxPaper (DevExpress prints on PaperKind's paper,
-                       Letter when absent; names the paper the written size
-                       is, so A4 and landscape reports print on it),
-                       repxAudit (asks what is still wrong with the finished
-                       report after every repair has run — errors mean content
-                       will be lost, warnings mean it opens and is a worse
-                       report than it should be),
-                       repairChain (every repair a generated report goes
-                       through, in one function and in its load-bearing
-                       order, for the AI's answer and Forma's own drafts
-                       alike), repxBlobs (pictures, rich text and embedded
-                       data set aside while a report goes to the AI and put
-                       back after, byte for byte),
-                       repxCalculatedFields (a group on a field nothing has,
-                       made into the calculated field its header prints),
-                       pageRows, printCheck, totalsCheck and formatFromText
-                       (the report printed with the records the page shows
-                       before it is answered: extra pages, clipped text,
-                       blank cells and collapsed groups found; a total checked
-                       against the figure the page prints; a value's format
-                       kept only when it prints the page's text back exactly),
-                       repxAccessibility (the contrast, text-size and
-                       alternative-text checks DevExpress's own designer runs on
-                       every edit, measured from its analyzer's output and
-                       appended to the audit as one warning per check),
-                       reportPreview (reads the exported REPX back and lays it
-                       out across real pages — Detail once per record,
-                       PageHeader on every sheet — which is what the Preview
-                       pane and the PDF export are drawn from),
-                       pictureBox (an XRPictureBox's image and where it
-                       prints, by Sizing, ImageAlignment and its own DPI, as
-                       DevExpress 20.1 printed each mode),
-                       netFormat (.NET composite, date and number formatting,
-                       so a page number or a value previews as DevExpress
-                       prints it),
-                       netDecimal (.NET's decimal, so 8 x 0.5 previews as 4.0
-                       and a sum of prices is exact, as DevExpress prints them),
-                       criteria (DevExpress's expression language, evaluated
-                       with .NET's types over the Preview's test data),
-                       reportData (test rows typed by column, calculated
-                       fields, parameter defaults, their print order and
-                       groups, and which records each printed band's totals
-                       and fields read),
-                       csvExport (the report as CSV, laid out on one
-                       continuous page the way DevExpress exports it --
-                       byte for byte, on thirteen measured reports),
-                       xlsxExport (the report as an Excel workbook: the
-                       layout as a grid of merged cells, numbers and dates
-                       kept as values, format strings converted -- cell for
-                       cell the same as DevExpress's own workbooks),
-                       pdfWriter (Forma's own PDF, written beside the
-                       browser's print path so that it can carry the
-                       report's bookmarks as an outline -- the outline the
-                       same as DevExpress's, entry for entry),
-                       pdfCrypto (that PDF encrypted under the report's own
-                       passwords, AES-128, RC4 or AES-256 as DevExpress
-                       encrypts its export, opened by pdf.js to check),
-                       pdfA, pdfFonts and trueType (that PDF as PDF/A when
-                       the report asks: the Liberation faces subset and
-                       embedded as DevExpress embeds its fonts, an sRGB
-                       output intent, XMP; refused with a password, as
-                       DevExpress refuses it; passed by veraPDF),
-                       exportItems with docxExport, rtfExport and htmlExport
-                       (Word and RTF page by page as positioned frames, HTML
-                       as one continuous table, each frame and cell where
-                       DevExpress's own export put it), pdfFromDom and
-                       exportFromDom (what those exports read off the pages
-                       the Preview has drawn, loaded only when one is asked
-                       for),
-                       paddleOcr, paddle and paddleWorker (PaddleOCR's
-                       PP-OCRv5 reading an English page in browser workers:
-                       one finds the text, up to four read it),
-                       ocr, ocrLayout and ocrRepx (an image or a scan read
-                       in the browser, by PaddleOCR or Tesseract.js: every word with its
-                       box and confidence, aligned rows as an XRTable and the
-                       rest as XRLabels, low-confidence text flagged),
-                       ocrAttach (a picture read once it is attached, its
-                       text going with the message as a PDF's text layer
-                       does),
-                       ocrScript (the language of a picture worked out from its
-                       reading: Arabic, Hindi, Urdu, French, German or Spanish
-                       beside English, and when to try handwriting),
-                       autoConfig (the DevExpress version, unit, paper, right to
-                       left and stored procedure, worked out from what a request
-                       brings instead of chosen in Settings),
-                       textMeasure (how many lines a text breaks into and how
-                       tall that prints, so the Preview grows controls and
-                       breaks pages where DevExpress does),
-                       revisions (the report's history, and a
-                       structural diff by control name — added, removed,
-                       moved, resized, retyped — because the model rewrites
-                       whitespace freely and a line diff of two REPX files is
-                       almost entirely noise),
-                       revisionStore (that history on its way to Firestore and
-                       back — one document per version in a subcollection,
-                       because ten snapshots inline would break the report's
-                       size budget several times over; signed out it stays in
-                       memory, because localStorage is one shared quota across
-                       every project),
-                       mockupRows (which detail tables repeat a heading row an
-                       earlier band already drew, so the Mockup draws it once —
-                       a rendering rule rather than a data fix, because the
-                       row's presence is what the record count is derived from),
-                       workspaceView (which pane the bench shows, held in two
-                       pieces of state — extracted from App.tsx so the pair
-                       can be round-trip tested, because a plate present in
-                       the derivation and not the setter highlights its
-                       button and never opens its pane),
-                       chatSession (the review column's transcript as data:
-                       whether a turn is conversation or work, the history
-                       the model is actually sent, and the two rewrites a
-                       retry performs — generic over the report and metadata
-                       types so nothing here imports upward),
-                       attachmentBudget (how many files are staged and how
-                       many more fit — counted as FILES, which is what an
-                       eight-page PDF spending sixteen of twelve slots was
-                       about),
-                       batchQueue (the state of a folder of source documents
-                       being turned into a report each — pending, running,
-                       done, failed — and the audit verdict per row, because
-                       the point of running forty files is knowing which of
-                       the forty are worth opening),
-                       folderDrop (a dropped or chosen folder as its files,
-                       read to the end past the browser's batches of 100),
-                       zip (a store-only ZIP writer, ~150 lines against a
-                       ~30 kB dependency, so a batch comes back as one archive
-                       instead of forty download prompts),
-                       fidelity (the arithmetic of the fidelity benchmark:
-                       reads bands, controls, surviving phrases, font sizes,
-                       margins and the audit out of a generation and compares
-                       them with a case's expectations; the runner that spends
-                       quota is scripts/fidelity/run.ts),
-                       reportSkeleton and formaModel (Forma's own model: a
-                       report reduced to its structure with every word taken
-                       out, the house style and kinds of report learned from
-                       a set of skeletons, and the check that a model holds
-                       no word outside its vocabulary),
-                       skeletonText (a skeleton as the compact text the vision
-                       model learns to write, read back tolerantly from its
-                       answer, scored against the right one, and the check
-                       that no word but a public font's leaves the machine),
-                       boxText (the boxes design: the vision model given the
-                       text read on a page as numbered boxes, and asked only
-                       for its bands and each box's band and role),
-                       boxReader (Forma's box reader: two small networks,
-                       learned on the CPU, that put each text OCR read in its
-                       band and give it its role, decoded in print order and
-                       made a skeleton at the places OCR read), readerPairs
-                       (the box reader learning from use: a page sent kept as
-                       numbers alone, labelled by the report kept from it,
-                       checked on the owner's side and made the rows
-                       scripts/model/boxes.ts --pairs trains on),
-                       skeletonRepx (the report a skeleton describes, its
-                       words from what OCR read in each box, its values bound
-                       to fields named after their column's caption),
-                       offlineGenerator (a report designed by that model with
-                       no AI service: the words read for kind, columns,
-                       grouping and totals, the pattern chosen, the house
-                       style applied, a .repx the audit passes),
-                       aiProvider (which AI answers -- Automatic, which is Gemini,
-                       a local AI or OpenRouter -- and when one is ready, which is
-                       what opens the workspace; the
-                       OpenRouter key kept like the Gemini key; Forma's vision
-                       model and a page reader as helpers beside any of them),
-                       fallbackChain (on a limit, the next AI the user set up
-                       answers and the reply says so; never away from a local
-                       AI), localModels (the Ollama pair suggested for the
-                       computer's memory, and the page reader's text and the
-                       question it is asked), reportFacts (the open report's
-                       fields, totals, groups and bands counted from the file:
-                       a plain question answered with no AI, the facts told to
-                       the AI, a field the data lacks refused), docsKnowledge
-                       (the Docs articles a question about Forma is given),
-                       jobPlan (the plan a heavy message gets first),
-                       batchCheckpoint (a batch kept in the browser to carry
-                       on after a limit or a reload), repxTranslate (a report's
-                       typed texts collected for translation and put back, the
-                       layout untouched), previewRows (the rows the Preview
-                       prints sent with a question about the data, after the
-                       consent asked in the thread), learning (what Forma may
-                       learn from each use: structure by default, whole
-                       reports on an opt-in switch, kept on the device and
-                       under the account), learningPipeline (the owner's
-                       side of it, the parts that can be tested: the pull,
-                       the gate a new model passes before it ships, the
-                       weekly run), inputModality (pointer or keyboard
-                       on the root, so a click shows no focus ring), chatJudge (the twenty
-                       chat requests the benchmark scores, the checks code makes
-                       and the judge's rubric),
-                       formaTeam (one request with every part in its role:
-                       Forma's draft of the page and the house style told to
-                       the AI as hints, and Forma's own draft standing in when
-                       the AI fails; the reply is the result and does not say
-                       which parts took part),
-                       memory (what the user asked Forma to remember and the
-                       style of the reports they keep, never their words,
-                       applied to the next report),
-                       expressions (the DevExpress expression reference the
-                       model is shown for Prompt-to-Expression, and the check
-                       a generated expression is held to -- balance, not SQL,
-                       and no field the data lacks),
-                       promptToReport (the pure half of Prompt-to-Report:
-                       the brief a description run
-                       opens the prompt with, the follow-up answers and the
-                       repair decision; the wizard is the chat box, whose
-                       questions are a form in the thread, and the
-                       clarification call is in geminiService),
-                       repxLayout (controls past the page or their band and
-                       bands taller than the page, the other half of the
-                       analyzer's layout group, appended to the audit),
-                       repxOverlaps (overlapping sibling controls found for
-                       the audit and moved apart after a description run --
-                       DevExpress's FixLayoutErrors -- through repxEdit so
-                       every other byte survives),
-                       runawayOutput (is the stream's tail a short fragment
-                       repeated to fill 512 characters -- a model stuck on a
-                       number, which the benchmark found running four minutes
-                       to the output ceiling before anything noticed; the
-                       stream reader cuts it off and the request is retried),
-                       repxParameters (the parameters a report asks for before
-                       it prints, and the lift that makes a typed one work —
-                       DevExpress silently ignores an inline Type and loads a
-                       String, so the real form is a #Ref pointer into an
-                       ObjectStorage block, written here rather than asked of
-                       the model),
-                       repxEdit (move, resize and retype one control by
-                       splicing its opening tag — the direct manipulation the
-                       Preview pane offers, written into the REPX itself so
-                       every other byte the model wrote survives; its XML
-                       escaping is xmlEscape, a module of its own so the
-                       Preview engine stays out of the entry chunk),
-                       plainKind (a part of a report and a band named in the
-                       words a person uses, for every edit that says what it
-                       did),
-                       dataSource (reads the fields out of whatever the user
-                       pastes — a JSON row, a CSV export, a CREATE TABLE or a
-                       list of names — and suggests which column each belongs
-                       to, so binding uses the data's own field names instead
-                       of names guessed from the column headings),
-                       userInstructions (an empty composer means "no request",
-                       not an invented one — the two cases are different
-                       prompts rather than one with a placeholder in it),
-                       repxItems (ItemN is a position inside its own collection
-                       and restarts at Item1 in each — a document-wide sequence
-                       makes DevExpress read every collection as empty and drop
-                       the tables silently),
-                       repxRefs (makes the model's Ref values unique — a repeat
-                       makes DevExpress alias two elements onto one and drop
-                       the second's content, with no error anywhere),
-                       repxRtl (the Settings checkbox's right to left, written
-                       on the report root however the report was made),
-                       repxGroupField (the field a group breaks on, chosen
-                       above the Preview's paper, its heading following),
-                       repxBindingPlan (finds the header and detail rows, proves
-                       they describe the same columns, and binds the detail row
-                       to one field each — declining rather than guess when the
-                       two rows do not correspond),
-                       repxChunks (splits a report into the bands and controls
-                       an example is made of, replacing every value with a
-                       placeholder on the way — a model shown an example copies
-                       it, and a kept Ref makes the loader discard content),
-                       embedStore (what the report library holds, what still
-                       needs embedding, and what is safe to search — identity is
-                       the content, so re-importing a file costs no quota and an
-                       edited fragment never keeps the old text's vector),
-                       vectorSearch (cosine similarity and top-k over a few
-                       hundred vectors, by brute force: at this size an index
-                       costs more bundle and CSP than the scan it replaces),
-                       libraryDb (the library in IndexedDB — chosen over
-                       localStorage because this app has already exhausted that
-                       quota once, and because IndexedDB stores a Float32Array
-                       natively at 4 bytes a dimension instead of ~13 characters
-                       as JSON),
-                       houseStyle (what a retrieval turns into: the queries a
-                       draft asks, and the fenced block of examples appended to a
-                       refine — formatting to copy, values never, and nothing
-                       inside treated as an instruction. These five back the
-                       report library in docs/proposals/rag.md, alongside
-                       services/library.ts, components/LibraryPanel.tsx and
-                       the rail's sixth panel in App.tsx),
-                       attachments, sidebar (the workspace sidebar
-                       opening and closing as Gemini's and ChatGPT's do: the
-                       phone breakpoint, Ctrl+B, the toggle's name),
-                       seo (each page's title, description, preview, canonical
-                       address and robots, and the sitemap, robots.txt,
-                       security.txt and llms.txt), assetPaths (where the
-                       OCR engine, the PDF/A fonts
-                       and the models are served, in folders named for
-                       their contents), staleChunks (a tab open across a
-                       deploy reloads once for the new build), releases
-                       (the release notes behind /changelog,
-                       its Atom feed and What's new), announcements,
-                       replyChanges (the chat's changes kept in the tab, so
-                       a reply's Undo and Redo outlive a reload), chatTurn
-                       (what the chat box keeps as a memory, sends straight
-                       to a design, or reads as an answer), composerStore
-                       (an unsent draft per project, and the queue, kept in
-                       the tab over a reload), boxTools (what the box's "/"
-                       Tools menu offers, each a sentence to finish and
-                       send), repxIntake (what a dropped or picked file
-                       brings in, loaded only when one arrives), buildInfo (which build runs,
-                       for Settings and a problem report), problemReport (a
-                       GitHub issue prefilled when an area fails),
-                       errorSink (where an error caught on the page goes:
-                       nowhere unless error reports are on; a few lines the
-                       error boundaries import) and errorReport (the opt-in
-                       error reports: the message scrubbed and cut to 200
-                       characters, noise left out, each sent once a page,
-                       and the switch kept per account in this browser),
-                       projectExport (every saved project in one .zip),
-                       downloadEverything (Settings' Download everything,
-                       loaded on its click) and deviceToAccount (this
-                       browser's projects added to the account), cloudPayload
-                       (what a signed-in save writes), promptBox (the box's
-                       words, held outside App so typing redraws only the
-                       box), panelReturn (where focus goes when Escape closes
-                       a side panel), withdraw (what a withdrawn message
-                       takes back), exportJob (exports that queue, several
-                       saved as one .zip) with csvSafety (Safe for
-                       spreadsheets, apart from the CSV writer),
-                       testDataRun (the Test data request, which Stop
-                       reaches), visionDraft (a picture's report built from
-                       the vision readings), learningLoop (the reports a
-                       person keeps, their library and the example a first
-                       report is shown) with corrections (what a person
-                       changes the same way twice, learned as a memory),
-                       sourceAgreement (whether the report prints where the
-                       page printed, and fitGeometry, which moves it there),
-                       storagePersist (asking the browser to keep local
-                       projects), keyHandoff (the keys reaching a new
-                       tab), passwordPolicy (the
-                       shortest password a form accepts), authDomain
-                       (sign-in on the site's own host, on since
-                       2026-11-12) and appCheck (App
-                       Check with reCAPTCHA Enterprise, on since 2026-11-08,
-                       enforced after a week), signOut (what a sign-out
-                       removes from the tab), serviceWorker (the offline
-                       worker /sw.js is written from at build),
-                       licenceNotice (the
-                       third-party notices /licenses.txt is written
-                       from at build), docsSearch (the Docs page's
-                       search over each article's words, and its feedback
-                       as a prefilled GitHub issue), datetime,
-                       modelCatalog, reportConfigStore, designerBridge,
-                       geminiClient (loads the generation service on demand, so
-                       its 19.6 kB prompt is not on every page load) and
-                       modelCache (the session's resolved model — eager, because
-                       a synchronous effect clears it),
-                       analysisResponse (the REPX out of the AI's answer, and
-                       whether a failed one was cut off or malformed),
-                       repxViews (the Mockup, the Spec and the title read off
-                       the REPX, which the AI no longer writes),
-                       draftText (Forma's draft of a picture as the AI
-                       corrects it, one short line per control, and the
-                       corrected draft read back for Forma to build),
-                       readCoverage (did the report keep the captions and
-                       titles the page shows; asked once more, capped, when
-                       too many are missing),
-                       agentEdit (the open report as the chat's model sees
-                       it, the edits it asks for made in place, and what
-                       changed, read off the file), shortcuts (ChatGPT's
-                       keyboard shortcuts for the chat, and Stitch's for
-                       the workspace), workingTips (the tip above the box
-                       while Forma works), startingPoints (the empty
-                       workspace's starting points and recent projects),
-                       shares (a shared report's copy, link and invitees,
-                       as firestore.rules pins them), requestCount
-                       (requests sent to each model today, and the
-                       limits Google stated, for the chat box's model
-                       picker and Settings' Usage today), modelTiers (that
-                       picker's Auto, Fast and Balanced, each naming
-                       its model), dataFiles (CSV, JSON,
-                       Excel, Word and the rest attached in the chat,
-                       read in the browser as the report's data),
-                       sqlSchema + sqlSchemaScript + sqlSchemaStore (a SQL
-                       Server database's layout, read from Forma's script or
-                       an SSMS file with no connection, and kept on the
-                       device), repxSqlDataSource (the SQL data source inside
-                       a .repx), sqlQuery (what a report reads from it: a
-                       table with its joins, a procedure, or checked custom
-                       SQL), repxSqlWriter (that query written into the
-                       report as DevExpress's SqlDataSource, by connection
-                       name, as measured and run by DevExpress),
-                       databaseAi (a shared database shown to the AI, the
-                       query it names held to the layout), fieldMatch (a
-                       column matched to a field by heading and value),
-                       sqlPreview (the Preview over the database's sample
-                       rows, typed as DevExpress prints each SQL type),
-                       sqlDrift (a report's own data source read back, kept
-                       through a redesign and checked against a newer layout),
-                       sqlCompanion (Forma Designer on your PC reading your SQL
-                       Server for the Data tab and the Preview, by connection name),
-                       designerRelease (the Forma Designer download's version,
-                       size, SHA-256 and release, written by its packing script),
-                       layers (the stack of open menus and dialogs, so one
-                       Escape closes only the topmost and keys meant for
-                       one stay there), clipboard (every Copy, with a
-                       fallback for plain HTTP), initials (the avatar's
-                       letters),
-                       geminiErrors (what the user is told when a
-                       request fails), savedReport + accountData (the two
-                       storage shapes and the document layout),
-                       tokenUsage (what a generation cost, formatted for the
-                       REPX pane -- the numbers were logged to the console
-                       from the day streaming landed, which turned out not to
-                       count as having them),
-                       contactSubmit, generationProgress (the progress's whole
-                       state machine, read by a screen reader since the progress
-                       card became working dots) and attachmentParts, themeTransition
-                       (the circular wipe the theme toggle opens from, and its
-                       fallbacks), and the routing pair router (real
-                       history/location, so not pure) + routes.
-                       Plus motion tokens, and pdf + genai + firebaseClient —
-                       three loaders that exist so their dependencies stay out of
-                       the eager bundle, and are the only files here that are not
-                       pure. firestoreOps sits beside the last of them holding
-                       the OperationType enum, deliberately free of any
-                       firebase/* import so referencing it cannot drag the SDK
-                       back into the entry chunk
-  services/            geminiService (+ tests, and modelResolution.test.ts,
-                       chatRetry.test.ts, generationRetry.test.ts,
-                       promptToReport.test.ts, promptToExpression.test.ts
-                       and testData.test.ts beside it), firebase, keyVault
-                       (+ tests; the vault's storage rules are covered by
-                       tests/ as well), and the report library's two:
-                       embeddings (the embedding call, on the user's own key)
-                       and library (import, remove and retrieve), each + tests;
-                       compatClient (local AI and OpenRouter in the shape of
-                       Gemini's SDK) and formaVision (Forma's vision model
-                       asked through the local endpoint), each + tests;
-                       pageReader (a page reader such as glm-ocr, asked for
-                       a picture's text through the same endpoint)
-  server/              securityHeaders, bindHost, staticCache and appRoutes
-                       (+ tests) — what server.ts sends, where it listens,
-                       how long dist/ is cached for, and which paths are
-                       the app's rather than a 404. Under src/ but never bundled
-                       into the client; server.ts is the only importer outside
-                       the tests (hostingConfig.test.ts holds firebase.json's
-                       headers to them)
-  fonts/               the three self-hosted typefaces as variable woff2, their
-                       SIL OFL licences, and a README — referenced from
-                       index.css so Vite fingerprints them; see the typefaces
-                       block there for why they are not in public/
-tests/                 Firestore rules tests (emulator)
-tools/RepxDesigner/    optional Windows companion that opens a generated .repx
-                       in the real DevExpress designer — C# and MSBuild, with
-                       its own README; nothing in the web app depends on it;
-                       downloaded as Forma Designer (scripts/package-designer.ts)
-tools/RepxProbe/       console tool that asks DevExpress what a .repx really
-                       contains — `emit` prints what the serializer writes,
-                       `inspect` reports what the loader sees and fails when a
-                       file silently lost content; its own README too
-public/                static assets served at / — the logo pair (PNG + WebP,
-                       light and dark), favicon.png and favicon.ico, icons/
-                       (the installed app's icons, maskable among them),
-                       manifest.webmanifest, security.txt, and the
-                       pre-rendered og-card.png
-assets/source/         og-card.html, the page public/og-card.png is rendered
-                       from (not deployed). The full-resolution logo masters
-                       lived here until 2026-08-29; they are gitignored now —
-                       2.8 MB backing 256px files already in public/
-assets/model/          formaModel.json, Forma's own model, learned by
-                       scripts/model/train.ts from the structure of the
-                       owner's reports (never their words), and
-                       boxReader.json, the box reader's two small networks;
-                       both served at /model/
-assets/pdf-fonts/      the twelve Liberation 2.1.5 faces a PDF/A file embeds
-                       and their SIL OFL licence, unmodified; served at
-                       /pdf-fonts/ and copied into dist/ at build (README
-                       there: provenance and checksums)
-docs/                  PRD.md, design/DESIGN.md, notes/ (architecture + incident
-                       history), proposals/ (designs still being proven, and
-                       the measured DevExpress parity table), skills/devexpress-repx
-                       (what Forma measured about the REPX format, written for
-                       a person or a coding assistant editing a .repx by hand;
-                       scripts/repx.ts is its command line) and audit/README.md (a one-line index of the
-                       2026-08-27 findings, whose IDs are cited throughout the
-                       code — a dated record; read notes/ for what is current)
-  media/               images the documentation links to, and the only place a
-                       committed screenshot belongs; nothing here is read by the
-                       build. Has its own README with the capture rules
-.github/               workflows (checks.yml, which runs the seven checks plus
-                       `npm ci` and check-dist.mjs, the first job on Node
-                       24.15.0 and the newest 24 and the rules job on 24;
-                       codeql.yml; live.yml, which checks the live site every
-                       three hours), three issue templates, a PR template,
-                       dependabot.yml, CODEOWNERS, SUPPORT.md and the main
-                       branch's ruleset (rulesets/main.json)
-.githooks/             opt-in pre-commit guard; enable with
-                       `git config core.hooksPath .githooks`
-.claude/               settings.json — the committed permission allowlist, so
-                       the documented checks run without prompting — and
-                       skills/run-forma (how a session launches and drives
-                       the app, with its dependency-free driver drive.mjs)
-scripts/               dev.mjs (npm run dev:log) and build-server.mjs; the
-                       encoding, doc-pointer and bundle-size checks that three
-                       of the seven checks call, and check-dist.mjs (the built
-                       pages held to the policy that serves them, run by CI
-                       only); the owner's deploy.mjs (release-notes.ts writes
-                       each release's notes, designer-asset.mjs checks the
-                       Forma Designer zip on its release), smoke.mjs,
-                       backup.mjs and github-setup.mjs (the repository's
-                       settings, labels, milestones and roadmap); admin/
-                       (the owner's, on the owner's own PC: google.mjs, how
-                       those scripts reach Firebase with no dependency;
-                       orphans.mjs, data an account left behind; stats.mjs,
-                       usage as counts only; pull-errors.ts, the error reports
-                       people chose to send, saved and then deleted from
-                       Firestore); make-icons.mjs,
-                       fetch-handwriting.mjs and fetch-paddle.mjs (the
-                       picture reader's models, SHA-256 pinned);
-                       package-designer.ts and companion-scripts.ts (Forma
-                       Designer's zip, and the layout script it runs);
-                       repx.ts (Forma's audit, repair chain and a draft PDF
-                       of a .repx from the command line: `npx tsx
-                       scripts/repx.ts audit|repair|pdf <file>`, the audit
-                       exiting 1 on an error);
-                       fidelity/, the benchmark's runner and cases; and
-                       model/, which learns Forma's own model and packs and
-                       draws the vision model's training set (render.py needs
-                       Python 3 and Pillow), with kaggle/train_vision.py, the
-                       fine-tune that runs on Kaggle's free GPU,
-                       evaluate.ts, which scores its answers, and the
-                       learning loop that runs on the owner's PC:
-                       pull-learning.ts (which deletes from Firestore what it
-                       has saved once it is 90 days old), gate.ts (whether a
-                       new model may ship) and learn-week.ts (the three in a
-                       row, weekly)
-server.ts              Express server: the development server (Vite in
-                       middleware mode) and the self-hosted `npm start`; the
-                       deployed site is Firebase Hosting serving dist/
-                       statically, so it never runs this file
-firestore.rules        the actual security boundary
-firestore.indexes.json the composite indexes the owner's learning pull needs,
-                       deployed with the rules
-firebase.json          the rules and indexes paths, databaseId, the two
-                       hosting sites (their headers restated from
-                       src/server/), and the emulator port
-firebase-applet-config.json
-                       your Firebase web config — see the Firebase section
-                       above, including the databaseId that must match
-                       firebase.json's
-```
-
-</details>
+| Path | What it holds |
+|---|---|
+| `src/` | The app: `main.tsx` (the entry), `PublicSite.tsx` (every public page), `App.tsx` (the workspace), `components/`, `lib/` (the pure helpers, nearly all under test), `services/` (the AI calls and the key vault) and `server/` (what `server.ts` imports) |
+| `server.ts` | Express: Vite in middleware mode in development, and `dist/` served statically by `npm start` |
+| `scripts/` | The checks, the build, the deploy and release scripts, the fidelity benchmark and Forma's own model tooling |
+| `tools/` | Forma Designer (`RepxDesigner/`), the optional Windows companion, and `RepxProbe/`, which asks DevExpress what a `.repx` contains |
+| `tests/` | The Firestore rules suite, run against the emulator |
+| `docs/` | The product spec (`PRD.md`), the architecture notes (`notes/`), proposals, the design source, deploying and screenshots |
+| `assets/` | Forma's own model, the PDF fonts, and the sources generated images are drawn from |
+| `public/` | Vite's static root, copied into `dist/` as it is: icons, logos and the web manifest |
+| `.github/` | CI, CodeQL, the live-site check, Dependabot, the issue forms and the `main` ruleset |
 
 ---
 
@@ -973,11 +300,11 @@ firebase-applet-config.json
 | `npm run check:size` | Artifact size budgets — run `build` first |
 | `npm run smoke` | Checks the deployed site over the network: every route, the entry chunk, the headers, the feed, and once it runs `main`'s build, a 404 for an unknown path and a missing chunk. Read-only; `.github/workflows/live.yml` runs it every three hours |
 | `npm run fetch:paddle` | Download PaddleOCR's text detector and English recogniser (12.7 MB, pinned by SHA-256) into `vendor/paddle/` for the next build; `scripts/deploy.mjs` runs it, and a build without it reads pictures with Tesseract alone |
-| `npm run fetch:handwriting` | Download the handwriting model (about 64 MB, pinned by SHA-256) into `vendor/handwriting/`; only a build that asks for it by name (`FORMA_HANDWRITING=1`) ships it — see *Handwriting is a deploy-time decision* |
+| `npm run fetch:handwriting` | Download the handwriting model (about 64 MB, pinned by SHA-256) into `vendor/handwriting/`; only a build that asks for it by name (`FORMA_HANDWRITING=1`) ships it — see *Handwriting is a deploy-time decision* in [`docs/deploying.md`](docs/deploying.md) |
 | `npm test` | Unit tests (Vitest; `node` by default, jsdom per file where needed) |
 | `npm run test:watch` | The same suite in watch mode |
 | `npm run test:coverage` | Coverage over `lib/`, `services/` and `server/`, held to the thresholds in `vitest.config.ts` — see the note there about what is deliberately excluded |
-| `npm run test:rules` | Firestore security-rule tests — **needs Java** and Node 24.12+ |
+| `npm run test:rules` | Firestore security-rule tests — **needs Java** |
 | `npm run bench:fidelity` | The fidelity benchmark: generates every case under `scripts/fidelity/cases` through the real pipeline with your own key (`FORMA_BENCH_KEY`) and scores the result. A benchmark, not a check — it spends quota, so it is not in CI |
 | `npm run model:train` | Learns Forma's own model (`assets/model/formaModel.json`) from a folder of `.repx` reports, from their structure only, and refuses to write it if any word of theirs would reach it. Takes `--reports` and `--data` (a folder outside the repository); see `docs/proposals/own-model.md` |
 | `npm run model:dataset` | Packs those skeletons as a private Kaggle dataset for the vision model: every rare font made Arial, every target checked for stray words, nothing written if one is left. Takes `--data` (more than one set allowed) and `--out` (outside the repository). Then `python scripts/model/render.py <out>` draws each skeleton as page images with placeholder text. Crystal Reports `.rpt` files become a set through `scripts/model/crystal.ps1` and `crystal.ts`, which need the Crystal runtime 13 |
@@ -1000,28 +327,11 @@ Run one file with `npx vitest run src/lib/repx.test.ts`, or one case with `-t "<
 
 The unit suite deliberately targets functions whose invariants **fail plausibly rather than loudly** — a transposed crop box puts a logo somewhere believable but wrong; a mis-scanned stream shows a stray character in a chat bubble. Those are the failures that survive manual testing.
 
-The rules suite covers account isolation, document shape, and the encrypted key vault. It needs a JVM because the Firestore emulator is a Java process; a **runtime is enough — no JDK required.** This project was developed against a Temurin **JRE 21**, installed per-user with `JAVA_HOME` and `PATH` set at user scope, so nothing had to go in system-wide and no admin rights were needed.
+The rules suite covers account isolation, document shape, and the encrypted key vault. It needs a JVM because the Firestore emulator is a Java process; a **runtime is enough — no JDK required.** Any Java 21 runtime on `PATH` will do, and `JAVA_HOME` is not needed (a Temurin JRE 21 is what it is developed against).
 
 Coverage of React components is a handful of render tests — the first, `DataBinding` and `BatchPanel`, added after a state bug shipped that a render test would have caught; the note linked below lists the rest — and `App.tsx`'s own stateful logic is covered only where pieces of it have been extracted into `src/lib`. **This is a floor, not a net.** [`docs/notes/testing.md`](docs/notes/testing.md) says exactly what is and is not covered.
 
-<details>
-<summary>If a run is slow, or every file fails at once</summary>
-
-**Budget for a cold run being several times a warm one — an order of magnitude is normal, and it is not the ceiling.** Measured on one machine: 52s against 4.6s for the same command. Nothing is wrong when a run crawls — that is the OS file cache and `node_modules/.vite` filling up, and it is worth knowing before you go hunting for a hang. On a loaded shared machine the gap has been far wider than 10x, and past a point it stops being slowness and becomes the failure in the next section; read "ten times" as the ordinary case rather than a worst case.
-
-**If files fail at once with `[vitest-pool-runner]: Timeout waiting for worker to respond`, that is a cold cache, not a broken install — but re-running will not fix it.** jsdom loads synchronously, while vitest allows a worker 60s to start; when the cold load exceeds that, every worker is killed *before* it finishes warming the cache, so each retry pays the same cost and dies in the same place. Warm it once outside vitest instead, in a process nothing is timing:
-
-```bash
-node -e "import('jsdom')"   # takes as long as it takes, then npm test
-```
-
-That import has been measured at 113s cold on one machine and **507s on another** (a busy shared server), against ~1.5s warm; the suite then runs green in about 4.5s. Treat the cold figure as a property of the machine rather than a constant — what is stable is the shape, one very slow first load and then a fast one, and the 60s ceiling it has to fit under. Most files now run under the `node` environment for exactly this reason, with the few that need a DOM opting in via a first-line `// @vitest-environment jsdom`; `vitest.config.ts` explains the split. If you add a test needing `document`, `localStorage`, `crypto.subtle` or `location`, add that line — forgetting fails loudly rather than silently.
-
-This used to say "the first `npm test` of the session", which is the wrong variable. The cache survives the terminal closing, and both figures were reproduced **within one session** on 2026-08-27 — 4.1s early on, then 42s later after a build, two typechecks and an emulator run had pushed the suite's files back out of the cache. What predicts a slow run is a cold cache, not a fresh shell.
-
-**`--reporter=basic` does not exist in Vitest 4 or 5.** An unrecognised reporter name is treated as a module to import, so the run dies with `Failed to load custom Reporter from basic` and a stack trace full of Vite frames — it reads like a broken config rather than a bad flag value. Use `--reporter=dot` for the terse output `basic` used to give.
-
-</details>
+If a run is slow, or every jsdom file fails at once with a worker timeout, see [`docs/notes/testing.md`](docs/notes/testing.md) — *A cold cache can look exactly like a broken install*.
 
 ---
 
@@ -1040,54 +350,9 @@ Set `HTTPS="true"` **only where TLS actually terminates**, so HSTS is sent. Set 
 
 ### Firebase Hosting
 
-**The target is Firebase Hosting, on the free Spark plan**, chosen on 2026-09-08. The app has no server state — Firestore and Gemini are both called from the browser with the user's own key — so everything `server.ts` does in production is static-host territory, and running a Node process to serve five megabytes of files buys nothing. Two things decided it over Cloudflare Pages: the *default* domain is already in the API key's referrer allowlist and Firebase Auth's authorised domains, so sign-in works there with no reconfiguration; and it is one vendor rather than two. Measured, a cold visit transfers about 490 kB, so the free tier's 360 MB/day is roughly 730 visits a day — **but that is not the number that binds.** The first time someone attaches a picture, the browser downloads the picture reader's models, about 18.6 MB (measured on the live site on 2026-11-11); they are cached after that, but 360 MB/day is then only about **19 new picture readers a day**, and past the cap both sites stop serving until midnight Pacific time. Check usage in the Firebase console's Hosting tab once a week; if it nears the cap, the two free options are to load PaddleOCR only when Tesseract is unsure of a page (which changes reading quality, so measure it with `scripts/model/ocrCompare.ts` first), or to serve the versioned model folders from a second free static host (which adds an origin to the CSP and ends "never a CDN").
+The live sites, [openforma.web.app](https://openforma.web.app) and [forma-201ba.web.app](https://forma-201ba.web.app), are Firebase Hosting on the free Spark plan, served statically: the app keeps no server state, since Firestore and the AI are called from the browser with the user's own key. `node scripts/deploy.mjs` is the one way to deploy them: every check, the build, hosting with the Firestore rules and indexes, the live checks, then a numbered GitHub release. `--preview` puts the same build on a 7-day preview channel first.
 
-```bash
-node scripts/deploy.mjs              # main as pushed: every check, the build, hosting AND the rules, then the live checks
-node scripts/deploy.mjs --preview    # the same build on a 7-day preview channel; the live site is untouched
-node scripts/deploy.mjs --dry-run    # everything but the deploy
-```
-
-**One deploy, the same every time (2026-11-07).** `scripts/deploy.mjs` refuses unless it is deploying `main` exactly as pushed (a clean tree, equal to `origin/main`), runs every check CI runs plus the rules suite, builds, deploys hosting, `firestore.rules` and `firestore.indexes.json` together, and then runs `scripts/smoke.mjs` against both sites expecting the commit it built; once that passes it tags the commit and makes the GitHub release, and when the release carries the Forma Designer zip, the live check runs again after the upload (the first takes that one zip as pending: 1.6.0's deploy stopped on it on 2026-11-12). The site had served the build of 28 October for weeks while this file said it was `main`, and the sharing rules were never deployed with the code that needs them. It is deliberately not an npm script: the committed permission list allows `npm run *`, and a deploy must not be something an agent can start without asking. The two commands it runs are still the way by hand: `npx firebase deploy --only hosting` and `npx firebase deploy --only firestore:rules`.
-
-**Every deploy is a numbered release (2026-11-08).** `package.json`'s version is the release a deploy publishes, and the newest entry in [`src/lib/releases.ts`](src/lib/releases.ts) carries the same one, which a test holds. Once the live checks pass, `deploy.mjs` tags the commit `v<version>`, pushes the tag, and makes the GitHub release, its notes written from `releases.ts` by `scripts/release-notes.ts`: every release since the previous version. It stops before building anything if `v<version>` already names another commit (new work under an old number: raise the version in both places) or if the newest release does not carry the version; re-deploying a tagged commit makes no new release. The release needs the GitHub CLI signed in; without it the tag is still pushed and the command to make the release is printed. `v1.0.0` (28 October) was made by hand; `v1.1.0` is the next deploy.
-
-**Rolling back.** The Hosting console's *Release history* has a *Rollback* on every earlier release, for each site; from the command line, `npx firebase hosting:clone forma-201ba:<version id> forma-201ba:live` (and the same for `openforma`) puts a listed version back. The rules are not versioned by Hosting: deploy them from the commit before, `git show <commit>~1:firestore.rules > firestore.rules` and `npx firebase deploy --only firestore:rules`, then restore the file. A preview channel (`--preview`) is the way to look at a build before it is anyone's.
-
-**PaddleOCR's models are fetched at deploy.** Since 2026-11-10 an English page is read by PaddleOCR's PP-OCRv5 models in the browser, which read the owner's real pages far better than Tesseract (97% of printed characters found against 61%). They are too large to commit, so `node scripts/deploy.mjs` runs `npm run fetch:paddle` before it builds: 12.7 MB, pinned by SHA-256, into the gitignored `vendor/paddle/`. A visitor downloads them once, the first time a picture is read, with the ONNX Runtime WebAssembly they run on (about 15 MB compressed in all, against about 4.4 MB for Tesseract's English): about 4% of the free plan's 360 MB a day. A build without them, CI's or `FORMA_PADDLE=0 npm run build`, reads pictures with Tesseract alone.
-
-**Handwriting is a deploy-time decision.** The handwriting model (2026-11-04, used when a page looks handwritten) is served only by a build made after `npm run fetch:handwriting`, which downloads it into the gitignored `vendor/handwriting/`, pinned by SHA-256, **and asked for by name**: `FORMA_HANDWRITING=1 npm run build`, or `node scripts/deploy.mjs --with-handwriting`. Until 2026-11-07 any build on a machine that had once fetched it shipped it. Each visitor whose page looks handwritten downloads about 88 MB once, a quarter of the free plan's 360 MB a day, and on Spark a product that passes its quota is switched off rather than billed. Deploy without fetching it and the site serves no model, and OCR keeps its own reading of a handwritten page.
-
-**`hosting` is an array — one entry per site**, because Firebase cannot share a block between sites. The entries are identical apart from `site`, and the test below asserts that: a second site quietly missing an origin from `connect-src` would keep serving while defending less, and both URLs would look fine. Generate the duplicate rather than typing it.
-
-**Adding a site needs two console changes that nothing in this repo can make, and the page gives no hint when they are missing.** A new hosting domain is *not* automatically trusted:
-
-1. **API key → Application restrictions → HTTP referrers** — add `https://<site>.web.app/*`. The API **replaces** the list rather than appending, so keep the existing entries.
-2. **Authentication → Settings → Authorized domains** — add `<site>.web.app`.
-
-Skip either and the site renders perfectly with an empty console, because Firebase is not called until someone signs in — so a smoke test passes and the first real user finds sign-in dead. Verify by sending a request with the new origin as `Referer` and an unrelated domain as a control; a pass only means something if the control is refused.
-
-**The headers in `firebase.json` are derived, not written by hand.** A static host cannot run `server.ts`, so the whole security header set has to be restated there — including `connect-src`, which narrows where injected script could send a stolen Gemini key. That copy is pinned by [`src/server/hostingConfig.test.ts`](src/server/hostingConfig.test.ts), which builds the headers from `securityHeaders.ts` and `staticCache.ts` and fails if `firebase.json` disagrees, printing the JSON to paste back. **Change the policy in `securityHeaders.ts` and let the test tell you what `firebase.json` should say** — never the other way round.
-
-One difference from `npm start` worth knowing: Firebase terminates TLS itself, so HSTS is set unconditionally in `firebase.json` rather than gated on `HTTPS`. **Both now answer a path that is not the app with a 404** (2026-11-07): `firebase.json` rewrites only the router's routes and a shared report's `/s/*` (derived from `src/server/appRoutes.ts`, and asserted), so an unknown address and a chunk from an earlier deploy fall through to Firebase's own 404, which serves the built `dist/404.html` (`noindex`; the app draws Not found). Until then every path was the home page with a 200, a stale chunk included, which broke a tab left open across a deploy; such a tab now reloads once for the new build (`src/lib/staleChunks.ts`). OCR's engine, the PDF/A fonts and the models are served from folders named for their contents (`/ocr/<hash>/…`) and cached for good, like the hashed bundle.
-
-**"Open in designer" from the website asks first.** Since 2026-11-09 the companion on `http://127.0.0.1:7317` answers `https://openforma.web.app` and `https://forma-201ba.web.app` on `/health` and `/open` alone, and the workspace sends its first request only when Open in designer is clicked, which is when Chrome 142+, Edge 143+ and Firefox 151+ ask once whether the site may reach apps on the device. The companion's SQL Server routes still answer only a page served from `http://localhost` or `http://127.0.0.1`, a preview channel or any other host is refused, and a report a page hands over opens with report scripts denied. Until 2026-11-08 nothing from the deployed site reached `127.0.0.1`. Export `.repx` is the path that always works.
-
-### Settings only the owner can apply
-
-The site audit of 2026-11-07 left these prepared in the repository and waiting for the account that owns the project, because each is a console or repository setting, not code:
-
-1. **Protect `main`** (item 58): done. The ruleset is [`.github/rulesets/main.json`](.github/rulesets/main.json): no deletion, no force-push, and both CI jobs required, with the repository's admins able to bypass so a push of your own still lands. It is active on the repository and matched the file rule for rule on 2026-11-21 (`gh api repos/waqarsyd/forma/rulesets`); to apply it afresh, `gh api repos/waqarsyd/forma/rulesets --method POST --input .github/rulesets/main.json`.
-2. **Dependabot security updates and private vulnerability reporting** (items 92 and 81): done, both on as of 2026-11-21, with secret scanning and its push protection. `SECURITY.md` and the contact page point at the private reporting form; [`.github/dependabot.yml`](.github/dependabot.yml) asks for security updates only on npm.
-3. **A password policy** (item 61): *Firebase console → Authentication → Settings → Password policy*, minimum 8. The forms already ask for 8 (`src/lib/passwordPolicy.ts`); this makes Firebase refuse fewer.
-4. **App Check** (item 56): the three steps in [`src/lib/appCheck.ts`](src/lib/appCheck.ts). On 2026-11-08 a reCAPTCHA key was created in the Forma-Dev project (`forma-201ba`) and the web app registered in App Check with the **reCAPTCHA Enterprise** provider, which the Firebase console now steers new registrations to (and which takes the key itself, no secret). The key has been in the code since release 1.1.1, which added reCAPTCHA to the CSP and the privacy policy by itself. Take `localhost` off the key's domains before enforcing: Firebase advises against it on a production key. Left: step 3, enforcing for Cloud Firestore, once a week of App Check's metrics shows almost every request verified **and** well under reCAPTCHA's free 10,000 assessments a month. A project without billing gets errors past that allowance, which with enforcement on would lock people out of their projects. reCAPTCHA's badge is hidden (`.grecaptcha-badge` in `src/index.css`) because it sat over the workspace's corner buttons; Google allows that where its notice is shown, which the sign-in page and a shared report's footer do.
-5. **Google sign-in on Forma's own address** (item 98): done on 2026-11-12. Each site's `https://<site>.web.app/__/auth/handler` was already among the OAuth client's redirect URIs (Firebase adds an authorised domain's handler to the client it made), so both hosts are listed in [`src/lib/authDomain.ts`](src/lib/authDomain.ts), which also turns on the redirect fallback when a browser blocks the pop-up. A fork lists its own sites the same way, after checking that Google accepts each handler; its doc comment says how.
-6. **Back the database up now and then** (item 66): the free plan has no managed backup. [`scripts/backup.mjs`](scripts/backup.mjs) writes every Firestore document as one JSON line to a folder outside the repository, with a service account key and the Admin SDK installed for the run only; its header has the three steps. Each person can also download their own projects from Settings, under General.
-7. **Log the deploy and push tools out of the shared Windows profile** (item 58): no longer needed. It was for the company shared server Forma was built on; since November 2026 it is developed on a personal machine (the owner, 2026-11-21).
-
-If you would rather run the Express bundle than a static host, it needs a platform with a card on file (Cloud Run, Railway, Fly) or one that sleeps (Render's free tier, ~30–60 s cold start). The advantage is that `securityHeaders.ts` stays the only copy of the policy.
-
-**CI** is defined in [`.github/workflows/checks.yml`](.github/workflows/checks.yml): one job running typecheck, dead-code sweep, encoding sweep, the documentation's links, unit tests with coverage, build and bundle-size budget, plus a second job for the rules suite (which needs a JVM). Both jobs run on every push and pull request, and the badge at the top of this file reports the result on `main`.
+How the deploy works, rolling back, the free plan's limits, adding a site, the derived security headers and the settings only the owner can apply are in [`docs/deploying.md`](docs/deploying.md).
 
 ---
 
@@ -1101,13 +366,7 @@ The roadmap is section 6 of [`docs/PRD.md`](docs/PRD.md), which is kept current 
 - **A password-strength indicator** at sign-up. The minimum of eight characters, the verification email and the verified address sharing needs are done.
 - **The report library, moved into the notes.** It was evaluated on a real report on 2026-11-09 ([`docs/proposals/rag.md`](docs/proposals/rag.md): a restyle with the house style matched the house font where none did without it), and since 2026-11-11 the reports you keep join it on their own; graduating its reasoning from the proposal into `docs/notes/` is the step left.
 
-Done and taken off on 2026-11-08: Batch from a dropped or chosen folder, two or three at once; right to left and the stored procedure worked out rather than set; data in the Preview; a phone layout; and the progress signal, which went with the progress bar. Since then, on 2026-11-08 and 9: a SQL Server database, from its layout to the report's data source, the AI's bindings, the Preview's rows and the drift of an existing report.
-
-**A database, and who holds its credential (decided 2026-11-08).** The credential stays on the user's own PC, next to DevExpress, and nowhere else. Forma reads a layout and sample rows exported with its read-only scripts and writes the report's `SqlDataSource` by connection name, with no connection at all; Forma Designer on the user's PC can also read the database itself (Windows authentication, or a connection string it keeps encrypted for that Windows user), so live rows never put a credential in the browser, in a request to an AI, or on any server. **Explicitly out of scope:** a server holding customers' database passwords, and a browser reaching a database directly. `docs/PRD.md` §6 has the full decision.
-
-**Explicitly out of scope — moving generation server-side.** It was on the roadmap while Forma owned the key. Under bring-your-own-key it is a regression: the server would become custodian of every user's third-party credential, reintroducing exactly the exposure this design resolved.
-
-**Explicitly out of scope — replacing the direct Gemini call with MCP.** Considered and rejected; MCP performs no inference, so it substitutes for nothing here. `docs/PRD.md` §6 records the three specific costs that settled it, and the two narrower uses that would remain defensible.
+Deliberately out of scope, each with its reasons in [`docs/PRD.md`](docs/PRD.md) §6: a server or a browser holding a customer's database credential, moving generation server-side, and replacing the direct Gemini call with MCP.
 
 ---
 
@@ -1115,7 +374,7 @@ Done and taken off on 2026-11-08: Batch from a dropped or chosen folder, two or 
 
 Forma is usable but young, and some things are worth knowing before you rely on it:
 
-- **Generation is slow**, typically a minute or more. Most of that is the model reasoning before it emits any output — measured at 4,770 thinking tokens against 3,184 output tokens on a representative run. `ReportConfig.thinkingBudget` exists as a lever but is unset by default.
+- **Generation is slow**, typically a minute or more. Most of that is the model reasoning before it emits any output — measured at 4,770 thinking tokens against 3,184 output tokens on a representative run.
 - **Gauges and barcodes in the mockup are decorative placeholders**; charts follow the supplied values but are stylised rather than a real charting library. The exported `.repx` still carries the correct DevExpress control types.
 - **Models are detected at runtime, never hardcoded.** Google retires models "for new users", so a pinned id works for existing projects and 404s for every new key. Forma probes a preference list on first use and caches the winner for the session.
 - **Reports with large images may not sync to the cloud.** A single detailed 2048px upload can exceed Firestore's 1 MiB document limit on its own; Forma saves the spec and REPX without the images in that case, and says so.
@@ -1126,38 +385,7 @@ Forma is usable but young, and some things are worth knowing before you rely on 
 
 ## Contributing
 
-Start with **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — setup, the seven checks, and the rules for adding and removing things. Questions go to [Discussions](https://github.com/waqarsyd/forma/discussions); [`.github/SUPPORT.md`](.github/SUPPORT.md) says where everything else goes.
-
-The flow is the usual one:
-
-```bash
-# 1. Fork, then clone your fork
-git clone <your-fork-url>
-cd forma
-npm ci
-
-# 2. Enable the pre-commit guard (once per clone; git will not run hooks
-#    from a tracked directory on its own)
-git config core.hooksPath .githooks
-
-# 3. Branch
-git checkout -b fix/short-description
-
-# 4. Make the change, then run every check
-npm run lint
-npx tsc --noEmit --noUnusedLocals --noUnusedParameters
-npm run lint:encoding
-npm run lint:links
-npm test
-npm run test:rules
-npm run build && npm run check:size
-
-# 5. Commit and push, then open a PR
-git commit -m "Short imperative summary"
-git push origin fix/short-description
-```
-
-Seven is what you can run locally. [`.github/workflows/checks.yml`](.github/workflows/checks.yml) runs an eighth, `npm ci`, which fails when `package.json` and the lockfile disagree — nothing local checks that.
+Start with **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — setup, the flow from fork to pull request (`npm ci`, the pre-commit guard, the seven checks), and the rules for adding and removing things. Questions go to [Discussions](https://github.com/waqarsyd/forma/discussions); [`.github/SUPPORT.md`](.github/SUPPORT.md) says where everything else goes.
 
 Four documents carry the reasoning that the code cannot:
 

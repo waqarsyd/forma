@@ -30,7 +30,7 @@
  * plan; Firebase prints its URL, which expires in 7 days) and leaves the live
  * site and the rules alone: the way to look at a build before it is public.
  *
- * Rolling back is in README, *Firebase Hosting*: the Hosting console's
+ * Rolling back is in docs/deploying.md, *Firebase Hosting*: the Hosting console's
  * release history, or `firebase hosting:clone`, and the rules from the
  * commit before.
  *
