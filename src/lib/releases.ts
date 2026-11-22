@@ -75,6 +75,16 @@ export const REPO_URL = 'https://github.com/waqarsyd/forma';
 
 export const RELEASES: Release[] = [
   {
+    id: '2026-11-22-easier-to-find',
+    date: '2026-11-22',
+    version: '1.6.5',
+    title: 'Easier to find',
+    summary: 'The site now tells search engines who makes Forma, so a search for Forma or its author is more likely to find it.',
+    changes: [
+      { kind: 'improved', area: 'site', text: 'The home page tells search engines who makes Forma, with links to the author’s portfolio, GitHub and LinkedIn.' },
+    ],
+  },
+  {
     id: '2026-11-21-up-to-date',
     date: '2026-11-21',
     version: '1.6.4',
