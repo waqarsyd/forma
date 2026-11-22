@@ -92,7 +92,7 @@ describe('withHead', () => {
 
   it("carries the home page's structured data, which cannot close its own element", () => {
     const ld = softwareJsonLd();
-    expect(JSON.parse(ld.replace(/^\s*<script type="application\/ld\+json">|<\/script>$/g, ''))).toMatchObject({ '@type': 'SoftwareApplication', offers: { price: '0' } });
+    expect(JSON.parse(ld.replace(/^\s*<script type="application\/ld\+json">|<\/script>$/g, ''))).toMatchObject({ '@type': 'SoftwareApplication', offers: { price: '0' }, author: { '@type': 'Person', name: 'Waqar Sayyed' } });
     expect(ld.slice(0, -'</script>'.length)).not.toContain('</');
     expect(withHead(shell, headFor('/'), { extraHead: ld })).toContain('application/ld+json');
   });

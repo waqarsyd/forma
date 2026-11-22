@@ -27,6 +27,17 @@ const SITE_NAME = 'Forma';
 /** The 1200x630 card every page previews with, by absolute URL as Open Graph asks. */
 const OG_IMAGE = `${SITE_ORIGIN}/og-card.png`;
 const REPOSITORY = 'https://github.com/waqarsyd/forma';
+/**
+ * Who makes Forma, for the JSON-LD (2026-11-22): the name the about and legal
+ * pages give, and the portfolio and profiles the contact page links, so a
+ * search engine ties the project to its author.
+ */
+const AUTHOR = {
+  '@type': 'Person',
+  name: 'Waqar Sayyed',
+  url: 'https://waqarsyd.github.io/portfolio/',
+  sameAs: ['https://github.com/waqarsyd', 'https://www.linkedin.com/in/waqarsayyed/'],
+};
 /** The project's public contact address (SECURITY.md); never the git address. */
 const CONTACT_EMAIL = 'waqarsayyed.official@gmail.com';
 
@@ -200,6 +211,7 @@ export function softwareJsonLd(): string {
     license: 'https://www.apache.org/licenses/LICENSE-2.0',
     isAccessibleForFree: true,
     codeRepository: REPOSITORY,
+    author: AUTHOR,
   };
   // `<` written as an escape, so the JSON cannot close its own script element.
   return `  <script type="application/ld+json">${JSON.stringify(data).replace(/</g, '\\u003c')}</script>`;
