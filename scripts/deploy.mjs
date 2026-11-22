@@ -19,10 +19,13 @@
  * The live site served the build of 28 October for weeks while README said it
  * was main, and the sharing rules were never deployed with the code that
  * needs them. So this refuses unless it is deploying main exactly as pushed
- * (a clean tree, on main, equal to origin/main), runs every check CI runs,
- * builds without the handwriting model unless asked (--with-handwriting, item
- * 2) and with PaddleOCR's models (npm run fetch:paddle, 2026-11-10), deploys
- * hosting, firestore.rules and firestore.indexes.json together, then runs
+ * (a clean tree, on main, equal to origin/main), runs the seven checks
+ * CLAUDE.md lists (the rules suite among them), builds without the
+ * handwriting model unless asked (--with-handwriting, item 2) and with
+ * PaddleOCR's models (npm run fetch:paddle, 2026-11-10), holds the built
+ * pages to the policy firebase.json sends (scripts/check-dist.mjs, since
+ * 2026-11-22), deploys hosting, firestore.rules and firestore.indexes.json
+ * together, then runs
  * scripts/smoke.mjs against the live sites expecting this commit, which the
  * page now carries in <meta name="forma-version">.
  *
@@ -206,7 +209,13 @@ console.log(
 );
 if (notes && !ghReady) console.log('The GitHub CLI is not signed in: the tag will be pushed, and the command to make the release printed.');
 
-// 2. Every check CI runs, and the rules suite, which needs Java.
+// 2. The seven checks, the rules suite (which needs Java) among them, and the
+// built pages after the build. Of what CI runs beyond the seven, this leaves
+// out `npm ci` (it builds from the node_modules already installed), the
+// `node --check` of the hook and the run-forma driver (neither is deployed)
+// and check-dist's --server (the self-hosted server, which no Firebase deploy
+// ships). It said "every check CI runs" from 2026-11-07, true until CI grew
+// those steps on 2026-11-11.
 run('npm run lint');
 run('npx tsc --noEmit --noUnusedLocals --noUnusedParameters');
 run('npm run lint:encoding');
@@ -220,6 +229,11 @@ run('npm run test:rules');
 run('npm run fetch:paddle');
 run('npm run build', { env: withHandwriting ? { FORMA_HANDWRITING: '1' } : {} });
 run('npm run check:size');
+// The pages this deploy sends, against the policy firebase.json gives them
+// (2026-11-22). CI checks its own build of the same commit, but this one is
+// built here, and a page whose inline script the policy does not allow is
+// blocked in production without an error.
+run('node scripts/check-dist.mjs');
 
 if (dryRun) {
   if (designerZip) console.log(`\nThe release would carry the Forma Designer download: ${designerZip}`);

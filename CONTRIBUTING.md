@@ -59,12 +59,14 @@ files, OS droppings, names that look like a manual copy (`copy`, `-final`, `_bac
 
 ## The checks
 
-All seven, in the order CI runs them. (CI runs two more things this table does not:
+All seven, in the order CI runs them. (CI runs three more things this table does not:
 `npm ci`, which fails when `package.json` and `package-lock.json` disagree and which
-nothing you can run locally performs, and `scripts/check-dist.mjs`, which holds the built
-pages to the policy that will serve them. That second one can be run by hand after
-`npm run build` and `npm start` (`node scripts/check-dist.mjs --server
-http://127.0.0.1:3000/`), but it is not in this table, which is why
+nothing you can run locally performs; `node --check` on the pre-commit hook and the
+run-forma driver, which no `tsc` file list reads; and `scripts/check-dist.mjs`, which
+holds the built pages to the policy that will serve them. That last one can be run by
+hand after `npm run build` and `npm start` (`node scripts/check-dist.mjs --server
+http://127.0.0.1:3000/`), and the owner's deploy runs it on the pages it sends, but it is
+not in this table, which is why
 `.github/workflows/checks.yml` runs more than this table lists — the *Definition of done*
 below says seven for the same reason.)
 

@@ -173,8 +173,9 @@ jobs:
       - name: Bundle size budget
         run: npm run check:size
 
-      # CI only, like `npm ci` above, so the local list of seven stays seven
-      # (2026-11-11, TC-14). securityHeaders.test.ts hashes the source
+      # Not one of the local seven, like `npm ci` above (2026-11-11, TC-14);
+      # scripts/deploy.mjs runs the first half, the pages, on the build it
+      # sends (2026-11-22). securityHeaders.test.ts hashes the source
       # index.html; this hashes the inline script of every page the build drew
       # against the policy firebase.json sends, then starts the self-hosted
       # server (`npm start`), which nothing ran before, and checks the policy

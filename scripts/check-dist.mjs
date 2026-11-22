@@ -33,11 +33,12 @@
  * make every page fail here, loudly, until this reads those too; it can never
  * make a blocked page pass.
  *
- * It runs in CI only, after `npm run build`, like `npm ci`, so the local list
- * of seven checks stays seven. To run it by hand: `npm run build`, then
- * `node scripts/check-dist.mjs`. `--dist <dir>` reads another folder, which is
- * how a deliberately edited copy of a page is shown to fail without touching
- * the real build. Exits 1 naming each page and hash that is not allowed, and
+ * It runs in CI after `npm run build`, and in scripts/deploy.mjs on the build
+ * it is about to send (without --server, since 2026-11-22), but it is not one
+ * of the local checks, so their list stays seven. To run it by hand:
+ * `npm run build`, then `node scripts/check-dist.mjs`. `--dist <dir>` reads
+ * another folder, which is how a deliberately edited copy of a page is shown
+ * to fail without touching the real build. Exits 1 naming each page and hash that is not allowed, and
  * also when it finds no page at all, so a build that never ran cannot pass.
  *
  * Pure ASCII, as every script here is (see check-encoding.mjs).

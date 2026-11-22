@@ -641,8 +641,9 @@ docs/                  PRD.md, project-structure.md (this tree),
                        committed screenshot belongs; nothing here is read by the
                        build. Has its own README with the capture rules
 .github/               workflows (checks.yml, which runs the seven checks plus
-                       `npm ci` and check-dist.mjs, the first job on Node
-                       24.15.0 and the newest 24 and the rules job on 24;
+                       `npm ci`, `node --check` on two scripts and
+                       check-dist.mjs, the first job on Node 24.15.0 and the
+                       newest 24 and the rules job on 24;
                        codeql.yml; live.yml, which checks the live site every
                        three hours), three issue templates, a PR template,
                        dependabot.yml, CODEOWNERS, SUPPORT.md and the main
@@ -657,7 +658,7 @@ scripts/               dev.mjs (npm run dev:log) and build-server.mjs; the
                        encoding, doc-pointer and bundle-size checks that three
                        of the seven checks call, and check-dist.mjs (the built
                        pages held to the policy that serves them, run by CI
-                       only); the owner's deploy.mjs (release-notes.ts writes
+                       and by deploy.mjs); the owner's deploy.mjs (release-notes.ts writes
                        each release's notes, designer-asset.mjs checks the
                        Forma Designer zip on its release), smoke.mjs,
                        backup.mjs and github-setup.mjs (the repository's

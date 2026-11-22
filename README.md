@@ -323,7 +323,7 @@ npm test           # pure helpers: REPX validation, crop geometry, stream parsin
 npm run test:rules # security rules, against the Firestore emulator
 ```
 
-Run one file with `npx vitest run src/lib/repx.test.ts`, or one case with `-t "<name>"`. Now that the suite has grown, one file is much faster than the whole of it (measured warm on 2026-11-11: about 2.6 seconds against about 22), so narrow for speed as well as for focused output.
+Run one file with `npx vitest run src/lib/repx.test.ts`, or one case with `-t "<name>"`. Narrowing buys focused output first; how much time it saves depends on the cache, and [`docs/notes/testing.md`](docs/notes/testing.md) — *Running one file, and what that does not buy you* says why no timing is written down.
 
 The unit suite deliberately targets functions whose invariants **fail plausibly rather than loudly** — a transposed crop box puts a logo somewhere believable but wrong; a mis-scanned stream shows a stray character in a chat bubble. Those are the failures that survive manual testing.
 
