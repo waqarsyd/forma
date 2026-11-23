@@ -19,6 +19,7 @@
     "lint:encoding": "node scripts/check-encoding.mjs",
     "lint:links": "node scripts/check-links.mjs",
     "check:size": "node scripts/check-bundle-size.mjs",
+    "check:hierarchy": "node scripts/check-hierarchy.mjs",
     "smoke": "node scripts/smoke.mjs",
     "fetch:handwriting": "node scripts/fetch-handwriting.mjs",
     "fetch:paddle": "node scripts/fetch-paddle.mjs",

@@ -55,6 +55,16 @@ files, OS droppings, names that look like a manual copy (`copy`, `-final`, `_bac
 `_deprecated`), and what looks like a real API key assignment. Bypass a single commit with
 `git commit --no-verify`.
 
+It also holds every commit to the **project hierarchy**,
+[`docs/project-hierarchy.md`](docs/project-hierarchy.md): every place a change has to
+reach besides the code. A file added under `src/lib` waits for its line in
+`docs/project-structure.md`, a test file for its row in `testing.md`, a version bump for
+its release entry. Code a person uses, added, changed or removed, lists the pages that
+describe it (Features, Docs, the FAQ, the privacy policy, the release notes, the spec);
+go through each line, update what the change made untrue, then record the review with
+`npm run check:hierarchy -- --reviewed` and commit again. `npm run check:hierarchy`
+shows the list at any time.
+
 ---
 
 ## The checks

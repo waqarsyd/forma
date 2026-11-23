@@ -628,6 +628,8 @@ assets/pdf-fonts/      the twelve Liberation 2.1.5 faces a PDF/A file embeds
                        /pdf-fonts/ and copied into dist/ at build (README
                        there: provenance and checksums)
 docs/                  PRD.md, project-structure.md (this tree),
+                       project-hierarchy.md (every place a change has to
+                       reach, written from scripts/check-hierarchy.mjs),
                        deploying.md (hosting, deploys, releases, rolling back
                        and the owner's settings), design/DESIGN.md, notes/ (architecture + incident
                        history), proposals/ (designs still being proven, and
@@ -649,7 +651,8 @@ docs/                  PRD.md, project-structure.md (this tree),
                        dependabot.yml, CODEOWNERS, SUPPORT.md and the main
                        branch's ruleset (rulesets/main.json)
 .githooks/             opt-in pre-commit guard; enable with
-                       `git config core.hooksPath .githooks`
+                       `git config core.hooksPath .githooks`; it also runs
+                       the project hierarchy check on every commit
 .claude/               settings.json — the committed permission allowlist, so
                        the documented checks run without prompting — and
                        skills/run-forma (how a session launches and drives
@@ -658,7 +661,9 @@ scripts/               dev.mjs (npm run dev:log) and build-server.mjs; the
                        encoding, doc-pointer and bundle-size checks that three
                        of the seven checks call, and check-dist.mjs (the built
                        pages held to the policy that serves them, run by CI
-                       and by deploy.mjs); the owner's deploy.mjs (release-notes.ts writes
+                       and by deploy.mjs); check-hierarchy.mjs (the project
+                       hierarchy, and what a staged change must also reach,
+                       run by the pre-commit hook); the owner's deploy.mjs (release-notes.ts writes
                        each release's notes, designer-asset.mjs checks the
                        Forma Designer zip on its release), smoke.mjs,
                        backup.mjs and github-setup.mjs (the repository's

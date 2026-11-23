@@ -21,8 +21,9 @@ const staged = git('diff', '--cached', '--name-only', '--diff-filter=ACM')
   .map((s) => s.trim())
   .filter(Boolean);
 
-if (staged.length === 0) process.exit(0);
-
+/* This exited here when nothing was added or modified, until 2026-11-23: a
+ * commit of deletions alone has nothing for the checks below to read, but it
+ * still has to reach the project hierarchy (section 4). */
 const problems = [];
 const flag = (label, file, detail) => problems.push({ label, file, detail });
 
@@ -124,6 +125,24 @@ if (problems.length) {
   console.error('Nothing has been committed. Fix the above, or re-run with --no-verify');
   console.error('if you are certain — and say why in the commit message if you do.\n');
   process.exit(1);
+}
+
+/* ---- 4. the project hierarchy ------------------------------------------ */
+/*
+ * Every place a change has to reach, held against what is staged (2026-11-23):
+ * a feature added or removed reaches the Features and Docs pages, the release
+ * notes, the spec and the notes as well as the code. The hierarchy and its
+ * reasoning are scripts/check-hierarchy.mjs; it prints its own report, asks
+ * for a recorded review where a line needs judgement, and blocks the commit as
+ * the checks above do. A checkout older than the script has nothing to run.
+ */
+const HIERARCHY = 'scripts/check-hierarchy.mjs';
+if (existsSync(HIERARCHY)) {
+  try {
+    execFileSync(process.execPath, [HIERARCHY, '--staged'], { stdio: 'inherit' });
+  } catch {
+    process.exit(1);
+  }
 }
 
 process.exit(0);

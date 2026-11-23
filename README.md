@@ -298,6 +298,7 @@ The top level, in brief. The full tree, with a note on every file that needs one
 | `npm run lint:encoding` | Fails if any source file contains mojibake |
 | `npm run lint:links` | Fails if a relative link or a cited section heading in the docs does not resolve |
 | `npm run check:size` | Artifact size budgets — run `build` first |
+| `npm run check:hierarchy` | Every place the current change must also reach (the Features and Docs pages, the release notes, the spec, the notes, the layout), from [`docs/project-hierarchy.md`](docs/project-hierarchy.md); the pre-commit hook runs it on every commit, and `-- --reviewed` records a review it asks for |
 | `npm run smoke` | Checks the deployed site over the network: every route, the entry chunk, the headers, the feed, and once it runs `main`'s build, a 404 for an unknown path and a missing chunk. Read-only; `.github/workflows/live.yml` runs it every three hours |
 | `npm run fetch:paddle` | Download PaddleOCR's text detector and English recogniser (12.7 MB, pinned by SHA-256) into `vendor/paddle/` for the next build; `scripts/deploy.mjs` runs it, and a build without it reads pictures with Tesseract alone |
 | `npm run fetch:handwriting` | Download the handwriting model (about 64 MB, pinned by SHA-256) into `vendor/handwriting/`; only a build that asks for it by name (`FORMA_HANDWRITING=1`) ships it — see *Handwriting is a deploy-time decision* in [`docs/deploying.md`](docs/deploying.md) |

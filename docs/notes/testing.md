@@ -323,6 +323,7 @@ for each test file the full audit's waves created.
 | `server/hostingConfig` | 10 | reads `firebase.json` off disk; since 2026-11-08 the rewrites derived from the routes and every cache rule from staticCache.ts, in order |
 | `server/securityHeaders` | 29 | since 2026-11-11 (batch PPUB) the development policy reaching the Auth and Firestore emulators, the production policy unchanged; since 2026-11-05 the microphone the page's own and no frame's |
 | `server/staticCache` | 11 | since 2026-11-08 a picture an hour, as firebase.json has it, and the versioned OCR, font and model folders cached for good |
+| `server/checkHierarchy` | 12 | the project hierarchy, `scripts/check-hierarchy.mjs` (2026-11-23): an MCP connection added in `src/lib` waiting for the layout and listing every page that describes the product, a removed component asking the same, a test file added waiting for this note and one changed only asking, the Node floor waiting for every copy, a version for its release entry and the lockfile, a dependency for the lockfile, an npm script added for CLAUDE.md and README.md, a new root file for the encoding sweep and a new top-level directory for the layout, a page edited alone not counted as a feature, a removed file's remaining mentions, git's name-status read; and on the real tree, every surface existing and `docs/project-hierarchy.md` being what the script writes |
 | `services/firebase` | 9 | the account's emails and deletion against a mocked Firebase (2026-11-11, batches SC and SAAS): a reset sent back to sign-in and a verification or address change to the workspace (SA-09), the email still sent when Firebase will not send people to this host and not resent on any other failure; a verification made elsewhere reaching the token (SA-08); and account deletion starting App Check before the database, deleting the user after the data and then what this browser kept for it (SA-25) |
 | `services/keyNotInUrl` | 2 | the Gemini key never written into a URL anywhere in `src/services`, and sent to the embedding catalogue as `x-goog-api-key` (2026-11-11, batch SC) |
 | `services/chatRetry` | 20 | since 2026-11-10 (batch AG) the Docs articles fenced with the conversation, the docs rule told and a longer answer allowed; since 2026-11-08 (batch K) a turn on an open report end to end: its edits and a redesign's brief as written, the reply typed out without its object, and a cut-off or unreadable answer changing nothing; since 2026-11-07 (batch F) the request a turn sends: instructions in the system part, the report and conversation fenced as data, a picture after them; since 2026-11-07 a retired model looked for again once, where the test pinned giving up at the first 404 |
@@ -339,7 +340,9 @@ for each test file the full audit's waves created.
 | `services/promptToReport` | 8 | description-mode framing, the overlap repair and the clarification call, and Forma's team brief placed ahead of the remembered preferences and the user's words, against a stubbed stream |
 | `services/testData` | 4 | AI-generated sample rows, keyed by bound field, against a stubbed reply |
 
-**Total: 4,301 in 259 files** since the end-to-end retest of 2026-11-12 added
+**Total: 4,313 in 260 files** since the project hierarchy's twelve (`server/checkHierarchy`,
+2026-11-23, counted from a full run's JSON report, which matched the 4,301 below plus them)
+joined the 4,301 in 259 files the end-to-end retest of 2026-11-12 left when it added
 `promptBox`'s four and `AccountDialog`'s four Enter cases to the 4,293 in 258 files
 recounted from a fresh run on 2026-11-12 (a JSON report
 compared row by row) after that day's merges: the CodeQL triage's seven cases, the owner's
