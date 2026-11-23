@@ -94,7 +94,8 @@ src/
                        markdown.css and the tests:
                        legalDisclosure, which reads ContactPage and
                        index.html off disk, and the component render tests,
-                       the only ones outside lib/, services/ and server/.
+                       the only ones outside lib/, services/, server/ and
+                       mcp/.
                        AccountDialog's mocks Firebase and covers the
                        surface — which control is enabled when, and what it
                        says when it fails; what a deletion actually removes is
@@ -596,6 +597,38 @@ src/
                        into the client; server.ts is the only importer outside
                        the tests (hostingConfig.test.ts holds firebase.json's
                        headers to them)
+  mcp/                 Forma's MCP server (2026-11-24), Node only like
+                       server/, run on stdio from a clone through tsx, never
+                       bundled and never in dist/: run.mjs (the launcher a
+                       host runs with plain node: registers tsx's loader in
+                       one process, then loads the entry), stdio.ts (the
+                       entry: the stdout guard first, then serveStdio serving
+                       both protocol eras; it and run.mjs are outside
+                       coverage, running only in a spawned process),
+                       stdoutGuard (only the protocol reaches stdout; console,
+                       stray writes and stdout's end go to stderr, keys taken
+                       out),
+                       formaServer (the factory: name, version from
+                       package.json, instructions, the tool list),
+                       toolShape (defineTool, the one wrapper every tool goes
+                       through: every hint set, object schemas, plain isError
+                       results, text read from a file framed as data), paths
+                       (which path a tool may read or write: full paths only,
+                       the corrected path handed back, roots held as spelled
+                       and as they really are, checked before and after links
+                       are followed, no link to another computer ever
+                       followed, writes that never replace a file unless
+                       asked), roots (the folders, from FORMA_MCP_ROOTS, the
+                       client's roots asked for per connection era, or
+                       CLAUDE_PROJECT_DIR, else each host's recipe),
+                       statusTool (forma_status, the first tool) and testFs
+                       (a file system in memory, for the tests only, and
+                       outside coverage). Tests
+                       beside them: stdoutGuard, toolShape, paths, roots and
+                       formaServer each have one (formaServer's drives
+                       forma_status in both eras); stdio.test.ts spawns the
+                       exact command a host runs; boundaries.test.ts holds
+                       src/mcp and src/server apart from the browser code
   fonts/               the three self-hosted typefaces as variable woff2, their
                        SIL OFL licences, and a README — referenced from
                        index.css so Vite fingerprints them; see the typefaces

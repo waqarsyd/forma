@@ -80,8 +80,23 @@ export default defineConfig({
        * like this is for. It is also the wrong two files to stop measuring —
        * one sets the CSP and the other decides whether Express listens on
        * loopback or on every interface.
+       *
+       * `src/mcp/**` joined it on 2026-11-24 (the MCP work's wave 3, owner
+       * decision OD8), for the reason src/server did: Forma's MCP server
+       * holds security code (which folders a tool may touch, which path forms
+       * it refuses, what reaches stdout), and leaving it out would have put
+       * that code under no floor, so losing its tests would have left CI
+       * green. Its logic lives in modules the tests import, and only the
+       * entry is excluded below, `src/mcp/stdio.ts` and the launcher a host
+       * runs, `src/mcp/run.mjs`: they run only in the process
+       * `stdio.test.ts` spawns, which v8 coverage does not follow, so they
+       * would read 0% while being exercised on every run. So is
+       * `src/mcp/testFs.ts`, the tests' in-memory file system: it is test
+       * code, which the tests exercise in full, so counting it would raise
+       * the number without measuring the server (finding T7 of the wave-3
+       * review; `boundaries.test.ts` fails if anything but a test imports it).
        */
-      include: ['src/lib/**', 'src/services/**', 'src/server/**'],
+      include: ['src/lib/**', 'src/services/**', 'src/server/**', 'src/mcp/**'],
       exclude: [
         '**/*.test.ts',
         // Loaders whose whole job is a dynamic import; there is nothing to
@@ -89,6 +104,11 @@ export default defineConfig({
         'src/lib/genai.ts',
         // Design tokens, not logic.
         'src/lib/motion.ts',
+        // The MCP server's entry and launcher, exercised only in a spawned process (above).
+        'src/mcp/stdio.ts',
+        'src/mcp/run.mjs',
+        // The MCP tests' in-memory file system: test code, not the server's (above).
+        'src/mcp/testFs.ts',
       ],
       reporter: ['text-summary', 'text'],
       /*

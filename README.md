@@ -272,7 +272,7 @@ The top level, in brief. The full tree, with a note on every file that needs one
 
 | Path | What it holds |
 |---|---|
-| `src/` | The app: `main.tsx` (the entry), `PublicSite.tsx` (every public page), `App.tsx` (the workspace), `components/`, `lib/` (the pure helpers, nearly all under test), `services/` (the AI calls and the key vault) and `server/` (what `server.ts` imports) |
+| `src/` | The app: `main.tsx` (the entry), `PublicSite.tsx` (every public page), `App.tsx` (the workspace), `components/`, `lib/` (the pure helpers, nearly all under test), `services/` (the AI calls and the key vault), `server/` (what `server.ts` imports) and `mcp/` (Forma's MCP server, run on stdio from a clone) |
 | `server.ts` | Express: Vite in middleware mode in development, and `dist/` served statically by `npm start` |
 | `scripts/` | The checks, the build, the deploy and release scripts, the fidelity benchmark and Forma's own model tooling |
 | `tools/` | Forma Designer (`RepxDesigner/`), the optional Windows companion, and `RepxProbe/`, which asks DevExpress what a `.repx` contains |
@@ -304,11 +304,12 @@ The top level, in brief. The full tree, with a note on every file that needs one
 | `npm run fetch:handwriting` | Download the handwriting model (about 64 MB, pinned by SHA-256) into `vendor/handwriting/`; only a build that asks for it by name (`FORMA_HANDWRITING=1`) ships it — see *Handwriting is a deploy-time decision* in [`docs/deploying.md`](docs/deploying.md) |
 | `npm test` | Unit tests (Vitest; `node` by default, jsdom per file where needed) |
 | `npm run test:watch` | The same suite in watch mode |
-| `npm run test:coverage` | Coverage over `lib/`, `services/` and `server/`, held to the thresholds in `vitest.config.ts` — see the note there about what is deliberately excluded |
+| `npm run test:coverage` | Coverage over `lib/`, `services/`, `server/` and `mcp/`, held to the thresholds in `vitest.config.ts` — see the note there about what is deliberately excluded |
 | `npm run test:rules` | Firestore security-rule tests — **needs Java** |
 | `npm run bench:fidelity` | The fidelity benchmark: generates every case under `scripts/fidelity/cases` through the real pipeline with your own key (`FORMA_BENCH_KEY`) and scores the result. A benchmark, not a check — it spends quota, so it is not in CI |
 | `npm run model:train` | Learns Forma's own model (`assets/model/formaModel.json`) from a folder of `.repx` reports, from their structure only, and refuses to write it if any word of theirs would reach it. Takes `--reports` and `--data` (a folder outside the repository); see `docs/proposals/own-model.md` |
 | `npm run model:dataset` | Packs those skeletons as a private Kaggle dataset for the vision model: every rare font made Arial, every target checked for stray words, nothing written if one is left. Takes `--data` (more than one set allowed) and `--out` (outside the repository). Then `python scripts/model/render.py <out>` draws each skeleton as page images with placeholder text. Crystal Reports `.rpt` files become a set through `scripts/model/crystal.ps1` and `crystal.ts`, which need the Crystal runtime 13 |
+| `npm run mcp` | Forma's MCP server on stdio (`src/mcp`), for development from the clone. Not the command a host runs: npm prints its banner to stdout, which the protocol forbids, and a host starts the server in your project, where npm would run that project's own scripts. A host runs `node <clone>/src/mcp/run.mjs`, after a full `npm ci` in the clone |
 | `npm run clean` | Remove `dist/` |
 
 Not an npm script, and not a check: `npx tsx scripts/repx.ts audit|repair|pdf <file.repx>` runs Forma's REPX audit, its repair chain or a draft PDF on one file from the command line (2026-11-11), for a person or a coding assistant working on a report outside the web app; `audit` exits 1 on an error, so it can gate a build. What each finding and repair means is [`docs/skills/devexpress-repx/SKILL.md`](docs/skills/devexpress-repx/SKILL.md).

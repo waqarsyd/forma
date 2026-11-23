@@ -218,6 +218,10 @@ enforcement mechanisms was not earning its keep.
   `CLAUDE.md` carried the same wrong pair, corrected itself, and this copy was missed.)
 - `src/lib` is browser code. `src/server` is not. `server.ts` is the only importer of the
   latter.
+- `src/mcp`, Forma's MCP server, is Node only too: no browser code imports it, its entry is
+  `src/mcp/stdio.ts` (a host runs `node <clone>/src/mcp/run.mjs`, which loads it), and an
+  MCP tool goes there. `src/mcp/boundaries.test.ts` fails when either folder's rule is
+  broken.
 - `PascalCase.tsx` for components, `camelCase.ts` for everything else.
 - Tests colocated as `*.test.ts`; `tests/` at the root is **only** for emulator tests, and
   that separation is what stops `npm test` starting a JVM.
