@@ -35,7 +35,7 @@ import { answerFromFacts, dataFieldsOf, factsBlock, inventedFields, reportFacts 
 import { docsFor } from '../../src/lib/docsKnowledge';
 import { CHAT_QUERIES, codeChecks, judgePrompt, readJudgement, scorecard, type ChatQuery, type Judgement, type TurnRecord } from '../../src/lib/chatJudge';
 import { lightModel } from '../../src/lib/modelCache';
-import { loadGenAI } from '../../src/lib/genai';
+import { geminiClientOptions, loadGenAI } from '../../src/lib/genai';
 import { readSchemaScript } from '../../src/lib/sqlSchema';
 import { writeSqlDataSource } from '../../src/lib/repxSqlWriter';
 
@@ -114,7 +114,7 @@ async function main(): Promise<number> {
   const config: ReportConfig = { version: '20.1', unit: 'HundredthsOfAnInch', pageSize: 'Letter', customApiKey: key };
   const load = await docsLoader();
   const judgeModel = dryRun ? '' : lightModel(await resolveModel(key));
-  const ai = dryRun ? null : new (await loadGenAI()).GoogleGenAI({ apiKey: key });
+  const ai = dryRun ? null : new (await loadGenAI()).GoogleGenAI(geminiClientOptions(key));
   const rows: { q: ChatQuery; checks: ReturnType<typeof codeChecks>; judgement: Judgement | null; requests: number; turn: TurnRecord; docs: string[] }[] = [];
 
   for (const q of CHAT_QUERIES.filter((x) => !only || x.id === only)) {

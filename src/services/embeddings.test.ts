@@ -20,7 +20,8 @@ import type { RepxChunk } from '../lib/repxChunks';
 
 const embedContent = vi.fn();
 
-vi.mock('../lib/genai', () => ({
+vi.mock('../lib/genai', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/genai')>()),
   loadGenAI: async () => ({
     GoogleGenAI: class {
       models = { embedContent };

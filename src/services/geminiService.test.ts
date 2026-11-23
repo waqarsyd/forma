@@ -12,7 +12,8 @@ const sdk = vi.hoisted(() => ({
   answers: [] as ((request: any) => AsyncIterable<{ text?: string }>)[],
   fallback: null as null | ((request: any) => AsyncIterable<{ text?: string }>),
 }));
-vi.mock('../lib/genai', () => ({
+vi.mock('../lib/genai', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/genai')>()),
   loadGenAI: async () => ({
     GoogleGenAI: class {
       models = {

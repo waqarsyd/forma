@@ -1,4 +1,4 @@
-import { loadGenAI } from "../lib/genai";
+import { geminiClientOptions, loadGenAI } from "../lib/genai";
 import { conversationContext } from "../lib/chatSession";
 import { usableFromCatalog, mergeCandidates } from "../lib/modelCatalog";
 import { classifyGeminiError, dailyLimitOf, isOffline, isOverloadedError, isQuotaExhausted, isTruncatedStreamMessage, msUntilPacificMidnight, quotaKind, quotaWaitMs, type FailureContext } from "../lib/geminiErrors";
@@ -170,7 +170,7 @@ async function clientFor(config: ReportConfig | undefined, apiKey: string): Prom
     return compatClient(endpoint) as unknown as Pick<GenAIClient, 'models'>;
   }
   const { GoogleGenAI } = await loadGenAI();
-  return countingRequests(new GoogleGenAI({ apiKey }));
+  return countingRequests(new GoogleGenAI(geminiClientOptions(apiKey)));
 }
 
 /**

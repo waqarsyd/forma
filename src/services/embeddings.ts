@@ -50,7 +50,7 @@
  * back — it is 300 chunks that never need embedding again. Only a total failure,
  * where nothing was obtained and the reason will not change on retry, throws.
  */
-import { loadGenAI } from '../lib/genai';
+import { geminiClientOptions, loadGenAI } from '../lib/genai';
 import { classifyGeminiError } from '../lib/geminiErrors';
 import { embeddingFromCatalog, type CatalogEntry } from '../lib/modelCatalog';
 import type { LibraryEntry } from '../lib/embedStore';
@@ -135,7 +135,7 @@ export async function embedTexts(
 
   const model = options.model ?? (await resolveEmbeddingModel(options.apiKey, options.signal));
   const { GoogleGenAI } = await loadGenAI();
-  const ai = new GoogleGenAI({ apiKey: options.apiKey });
+  const ai = new GoogleGenAI(geminiClientOptions(options.apiKey));
 
   let response: { embeddings?: { values?: number[] }[] };
   try {
@@ -208,7 +208,7 @@ export async function embedEntries(
 
   const model = options.model ?? (await resolveEmbeddingModel(options.apiKey, options.signal));
   const { GoogleGenAI } = await loadGenAI();
-  const ai = new GoogleGenAI({ apiKey: options.apiKey });
+  const ai = new GoogleGenAI(geminiClientOptions(options.apiKey));
 
   let firstError: unknown = null;
   let done = 0;

@@ -18,6 +18,27 @@
  */
 type GenAI = typeof import('@google/genai');
 
+/** Google's Gemini API, the one address a Gemini request may go to. */
+export const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/';
+
+/**
+ * What every Gemini client is built with (2026-11-23, the MCP design audit's
+ * SEC-1). The SDK's Node build reads GOOGLE_GEMINI_BASE_URL,
+ * GOOGLE_VERTEX_BASE_URL, GOOGLE_GENAI_USE_VERTEXAI,
+ * GOOGLE_GENAI_USE_ENTERPRISE and GOOGLE_GENAI_API_VERSION from the
+ * environment even when a key is passed, so a variable set wherever Forma runs
+ * in Node (the MCP server, a script) would send the key and the whole report
+ * to another address or to Vertex AI. In the browser the CSP's connect-src
+ * stops that; in Node nothing does. Explicit options win over every one of
+ * those variables. They are the SDK's own defaults for the Gemini API (3.6.1:
+ * the v1 API, not v1beta, which only the plain-fetch model probes use), so
+ * they change nothing in the browser; a review of the first draft caught a
+ * pinned v1beta that would have moved every browser request.
+ */
+export function geminiClientOptions(apiKey: string) {
+  return { apiKey, vertexai: false, apiVersion: 'v1', httpOptions: { baseUrl: GEMINI_BASE_URL } };
+}
+
 let pending: Promise<GenAI> | null = null;
 
 /**
