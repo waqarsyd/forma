@@ -153,7 +153,13 @@ src/
                        repairChain (every repair a generated report goes
                        through, in one function and in its load-bearing
                        order, for the AI's answer and Forma's own drafts
-                       alike), repxBlobs (pictures, rich text and embedded
+                       alike; since 2026-11-24 also Visual Studio's
+                       working-file mark, neutralised in a .repx),
+                       vsReport (a .NET solution's report files told apart
+                       by name: .repx and .vsrepx read, a C# or VB report
+                       refused with how to save a .repx, and the names a
+                       report class's Designer file looks up),
+                       repxBlobs (pictures, rich text and embedded
                        data set aside while a report goes to the AI and put
                        back after, byte for byte),
                        repxCalculatedFields (a group on a field nothing has,
@@ -197,6 +203,10 @@ src/
                        browser's print path so that it can carry the
                        report's bookmarks as an outline -- the outline the
                        same as DevExpress's, entry for entry),
+                       draftPdf (a report drawn as a draft PDF with no
+                       browser, laid out by the Preview's engine with no
+                       data, in the standard fonts: what scripts/repx.ts
+                       pdf and the MCP server's repx_pdf write),
                        pdfCrypto (that PDF encrypted under the report's own
                        passwords, AES-128, RC4 or AES-256 as DevExpress
                        encrypts its export, opened by pdf.js to check),
@@ -503,7 +513,10 @@ src/
                        too many are missing),
                        agentEdit (the open report as the chat's model sees
                        it, the edits it asks for made in place, and what
-                       changed, read off the file), shortcuts (ChatGPT's
+                       changed, read off the file), editLanguage (those
+                       edits by op and the words that tell a model each,
+                       shared by the chat's prompt and the MCP server's
+                       repx_edit), shortcuts (ChatGPT's
                        keyboard shortcuts for the chat, and Stitch's for
                        the workspace), workingTips (the tip above the box
                        while Forma works), startingPoints (the empty
@@ -609,7 +622,12 @@ src/
                        stray writes and stdout's end go to stderr, keys taken
                        out),
                        formaServer (the factory: name, version from
-                       package.json, instructions, the tool list),
+                       package.json, instructions, the tools registered
+                       from toolList, the REPX skill attached),
+                       toolList (the tools in their order, each read-only
+                       or not and needing an AI or not: a pure list, no
+                       SDK, which publicClaims.test.ts holds the Docs page
+                       and README to),
                        toolShape (defineTool, the one wrapper every tool goes
                        through: every hint set, object schemas, plain isError
                        results, text read from a file framed as data), paths
@@ -621,14 +639,39 @@ src/
                        asked), roots (the folders, from FORMA_MCP_ROOTS, the
                        client's roots asked for per connection era, or
                        CLAUDE_PROJECT_DIR, else each host's recipe),
-                       statusTool (forma_status, the first tool) and testFs
-                       (a file system in memory, for the tests only, and
-                       outside coverage). Tests
-                       beside them: stdoutGuard, toolShape, paths, roots and
-                       formaServer each have one (formaServer's drives
-                       forma_status in both eras); stdio.test.ts spawns the
-                       exact command a host runs; boundaries.test.ts holds
-                       src/mcp and src/server apart from the browser code
+                       statusTool (forma_status, the first tool),
+                       reportTools (repx_audit, repx_outline, repx_repair,
+                       repx_edit and repx_pdf, the tools that need no AI:
+                       the web app's audit, outline, edits, repair chain
+                       and draft PDF on a .repx or .vsrepx; the three that
+                       write each writing a file, and all five returning a
+                       summary), reportFile (the one way they read a report,
+                       a C# or VB report refused, a file that is not
+                       well-formed XML refused and its stored login taken
+                       out first, wherever it is stored, and write one,
+                       never replacing a file unless asked and an edit never
+                       into a .vsrepx whose Designer file loses a name),
+                       pipeline (the tools' work, run in a worker thread:
+                       the report opened, then the web app's module),
+                       worker.mjs (that thread's entry: registers tsx, runs
+                       pipeline; outside coverage, as run.mjs is),
+                       workerPool (starts it with a memory bound and a
+                       deadline, ends it on either or on a cancellation, and
+                       keeps one idle), skillResource (the REPX skill served
+                       as a resource, with a preface telling a model to send
+                       full paths), testFs and testClient (a file system and
+                       a client in memory, and a pipeline in the test's own
+                       thread, for the tests only, and outside coverage).
+                       Tests beside them: stdoutGuard, toolShape, paths,
+                       roots, formaServer and reportTools each have one
+                       (formaServer's drives forma_status in both eras and
+                       holds the list to toolList; reportTools' drives the
+                       five report tools on files in a scratch folder, in
+                       the test's thread and in the worker, and the
+                       worker's bounds);
+                       stdio.test.ts spawns the exact command a host runs;
+                       boundaries.test.ts holds src/mcp and src/server
+                       apart from the browser code
   fonts/               the three self-hosted typefaces as variable woff2, their
                        SIL OFL licences, and a README — referenced from
                        index.css so Vite fingerprints them; see the typefaces
@@ -669,7 +712,8 @@ docs/                  PRD.md, project-structure.md (this tree),
                        the measured DevExpress parity table), skills/devexpress-repx
                        (what Forma measured about the REPX format, written for
                        a person or a coding assistant editing a .repx by hand;
-                       scripts/repx.ts is its command line) and audit/README.md (a one-line index of the
+                       scripts/repx.ts is its command line, and the MCP
+                       server serves it as a resource) and audit/README.md (a one-line index of the
                        2026-08-27 findings, whose IDs are cited throughout the
                        code — a dated record; read notes/ for what is current)
   media/               images the documentation links to, and the only place a
@@ -714,7 +758,8 @@ scripts/               dev.mjs (npm run dev:log) and build-server.mjs; the
                        repx.ts (Forma's audit, repair chain and a draft PDF
                        of a .repx from the command line: `npx tsx
                        scripts/repx.ts audit|repair|pdf <file>`, the audit
-                       exiting 1 on an error);
+                       exiting 1 on an error; the draft PDF is
+                       src/lib/draftPdf.ts, which the MCP server shares);
                        fidelity/, the benchmark's runner and cases; and
                        model/, which learns Forma's own model and packs and
                        draws the vision model's training set (render.py needs

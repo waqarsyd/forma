@@ -8,6 +8,7 @@ import {
   inUnit,
   isTiff,
   LOGIN_REMOVED_NOTICE,
+  loginLeftNotice,
   pdfPageText,
   pdfPagesNotice,
   pdfPagesToRead,
@@ -173,6 +174,29 @@ describe('an uploaded .repx (SE-01)', () => {
     const byName = repxAttachment('orders.repx', report('<Connection Name="Sales" FromAppConfig="true" />'));
     expect(byName.notices).not.toContain(LOGIN_REMOVED_NOTICE);
     expect(decodeBase64(/Base64="([^"]*)"/.exec(byName.text)![1])).toContain('<Connection Name="Sales" FromAppConfig="true" />');
+  });
+
+  // The MCP server's wave-4 review (REV4-1): DevExpress 20.1.3 writes a source outside the root's
+  // ComponentStorage in two shapes, measured and written here by hand; both went to the AI with their login.
+  it('never carries a login DevExpress kept in ObjectStorage or in a subreport, and says it was removed', () => {
+    const item = (ref: string, name: string) => `<Item1 Ref="${ref}" ObjectType="DevExpress.DataAccess.Sql.SqlDataSource,DevExpress.DataAccess.v20.1" Name="${name}" Base64="${encodeBase64(source(login).replace('sqlDataSource1', name))}" />`;
+    const bare = report('<Connection Name="Sales" FromAppConfig="true" />');
+    const inCode = bare.replace(/<ComponentStorage>[\s\S]*?<\/ComponentStorage>/, `<ObjectStorage>${item('0', 'dsCode')}</ObjectStorage>`);
+    const withSub = report(login).replace(
+      '<Item1 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="20" />',
+      `<Item1 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="20"><Controls><Item1 Ref="5" ControlType="XRSubreport" Name="sub1"><ReportSource Ref="6" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1" Name="Inner" DataSource="#Ref-7"><Bands><Item1 Ref="8" ControlType="DetailBand" Name="iDetail" HeightF="20" /></Bands><ComponentStorage>${item('7', 'dsInner')}</ComponentStorage></ReportSource></Item1></Controls></Item1>`,
+    );
+    for (const xml of [inCode, withSub]) {
+      const read = repxAttachment('orders.repx', xml);
+      const all = [read.text, ...[...read.text.matchAll(/Base64="([^"]*)"/g)].map((m) => decodeBase64(m[1]))].join('\n');
+      expect(all).not.toMatch(/Secret123|userid|db01/);
+      expect(read.notices).toContain(LOGIN_REMOVED_NOTICE);
+    }
+  });
+
+  it('sends nothing of a report whose login it cannot take out with certainty, and says why', () => {
+    const open = repxAttachment('orders.repx', report('<Connection Name="Sales"><Parameters><Parameter Name="password" Value="Secret123" /></Parameters>'));
+    expect(open).toEqual({ text: '', notices: [loginLeftNotice('orders.repx')] });
   });
 });
 

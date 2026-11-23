@@ -80,9 +80,10 @@ export const SURFACES = {
   notes: { layer: 'spec', path: 'docs/notes/', what: 'the note that owns the area; the routing table in CLAUDE.md says which' },
   appShell: { layer: 'spec', path: 'docs/notes/app-shell.md', what: 'the workspace, routing and the public pages' },
   persistence: { layer: 'spec', path: 'docs/notes/persistence.md', what: 'Firestore, the device, the rules, sign-in and deletion' },
+  mcpNote: { layer: 'spec', path: 'docs/notes/mcp.md', what: "Forma's MCP server: the command a host runs, the stdout rule, the folders and paths a tool may use, what a tool returns, and where it differs from the browser" },
   structure: { layer: 'spec', path: 'docs/project-structure.md', what: 'the file layout; names every file under src/lib, src/services, src/components, src/server and src/mcp' },
   claude: { layer: 'spec', path: 'CLAUDE.md', what: 'the code map, the routing table, the commands, and the facts stated in more than one file' },
-  skill: { layer: 'spec', path: 'docs/skills/devexpress-repx/SKILL.md', what: 'what Forma measured about the REPX format, for a person or an assistant editing a .repx; scripts/repx.ts stands on it, and the MCP server will' },
+  skill: { layer: 'spec', path: 'docs/skills/devexpress-repx/SKILL.md', what: 'what Forma measured about the REPX format, for a person or an assistant editing a .repx; scripts/repx.ts stands on it, and the MCP server serves it' },
   designerReadme: { layer: 'spec', path: 'tools/RepxDesigner/README.md', what: 'Forma Designer: its routes, its guards, its download and install' },
   probeReadme: { layer: 'spec', path: 'tools/RepxProbe/README.md', what: 'RepxProbe: what it asks DevExpress, and how' },
 
@@ -209,8 +210,8 @@ export const RULES = [
   {
     id: 'mcp', kind: 'review',
     title: "Forma's MCP server or its command line changes (src/mcp, scripts/repx.ts)",
-    why: 'They are how other programs use Forma: the tools they offer, what each needs and where data goes are stated on the Docs page, in README.md, on the security and self-host pages, in the privacy policy, in SECURITY.md, in the REPX skill and in the note that owns it; .env.example lists the variables such a program reads.',
-    surfaces: ['readme', 'docs', 'info', 'legal', 'security', 'skill', 'prd', 'releases', 'notes', 'claude', 'envExample'],
+    why: 'They are how other programs use Forma: the tools they offer, what each needs and where data goes are stated on the Docs page, in its FAQ, in README.md, on the security and self-host pages, in the privacy policy, in SECURITY.md, in CONTRIBUTING.md, in the REPX skill and in docs/notes/mcp.md, which owns it; publicClaims.test.ts holds the tool list (src/mcp/toolList.ts) to the Docs page, the FAQ, /self-host and README.md; .env.example says the server reads none of it.',
+    surfaces: ['readme', 'docs', 'faq', 'info', 'legal', 'security', 'contributing', 'skill', 'prd', 'releases', 'mcpNote', 'claude', 'claims', 'envExample'],
     when: ({ changes }) => changes.filter((c) => pathsOf(c).some((p) => (p.startsWith('src/mcp/') && !isTest(p)) || p === 'scripts/repx.ts')).map(labelOf),
   },
   {

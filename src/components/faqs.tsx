@@ -65,6 +65,19 @@ export const FAQS: Array<{ q: string; a: ReactNode }> = [
     ),
   },
   {
+    // 2026-11-24 (the MCP work's wave 5, DOC-10): Forma's MCP server, src/mcp. Generation through it is not built.
+    q: 'Can I use Forma from Claude Code or another AI assistant?',
+    a: (
+      <p>
+        Yes, from a copy of Forma&apos;s source code on your own computer. Its MCP server lets Claude Code, Visual
+        Studio&apos;s Copilot, VS Code or Claude Desktop audit, outline, repair and edit the .repx files in your
+        projects and draw one as a draft PDF, and none of those tools calls an AI or needs a key. Making a report
+        from a picture or a description through it is not built yet. The{' '}
+        <a href="/docs#mcp" className="font-semibold text-secondary hover:underline">Docs</a> say how to set it up.
+      </p>
+    ),
+  },
+  {
     q: 'How do I open a report in the DevExpress designer?',
     a: (
       <p>

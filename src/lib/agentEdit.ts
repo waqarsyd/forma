@@ -54,27 +54,15 @@ import { readRepxDataSources } from './repxSqlDataSource';
 import { languageAsked, languageName, namesLanguage, syncLocalization } from './repxTranslate';
 import { NOT_FOLLOWED } from './chatTurn';
 import { plainBand, plainKind } from './plainKind';
+import { EDIT_OPS, type EditOp } from './editLanguage';
 
 /**
- * What the model can ask for. Anything else is a redesign. The last seven
- * came on 2026-11-07 (agent audit item 22, the owner's four groups): each
- * was a full redesign, some 20,000 tokens, for what is one splice here.
- * A table's row or column is styled by `font`, `color`, `align`, `border`
- * and `format` naming the row or the cell alone.
+ * What the model can ask for, `EDIT_OPS`: anything else is a redesign. The
+ * list lives in editLanguage.ts beside the words that tell a model each op
+ * (2026-11-24), so the MCP server's edit tool reads both without loading
+ * this module at start-up; it is exported from here as it always was.
  */
-export const EDIT_OPS = [
-  'text', 'move', 'resize', 'font', 'color', 'align', 'delete', 'add', 'paper', 'margins', 'visible',
-  'duplicate', 'bandHeight', 'border', 'line', 'format', 'bind', 'pageNumber',
-  // A sentence about what a control is for (2026-11-10, the third gap of
-  // docs/proposals/ai-designers.md): written to AccessibleDescription, which
-  // the accessibility checks want on a picture too, and shown in the outline.
-  'describe',
-  // The database's two (2026-11-09, the SQL Server programme, item 24): what
-  // the report reads, written by Forma from the shared layout through the
-  // `data` hook of `applyEdits`, and a group band on a field.
-  'data', 'group',
-] as const;
-export type EditOp = (typeof EDIT_OPS)[number];
+export { EDIT_OPS, type EditOp };
 
 /** One edit, as the model writes it: the op and the fields that op reads. */
 export interface AgentEdit {

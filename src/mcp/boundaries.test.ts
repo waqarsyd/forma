@@ -9,8 +9,10 @@
  *   nothing but server.ts imports src/server, and only src/mcp and
  *   src/server import a Node built-in, so none can reach the browser
  *   bundle, where Vite would replace it with a stub that fails only at run
- *   time. Only test files import testFs.ts, the tests' file system.
- * - src/mcp reaches no browser-only module through any import it makes,
+ *   time. Only test files import testFs.ts and testClient.ts, the tests'
+ *   file system and client.
+ * - src/mcp reaches no browser-only module through any import it makes
+ *   (a type-only import aside, which is erased and loads nothing),
  *   static or lazy, however deep the walk goes: not the OCR and PDF worker
  *   modules (handwriting.ts, paddle.ts, paddleWorker.ts, pdf.ts), not a
  *   `?url` or `?worker` import, not `new Worker(new URL(...))`, not the
@@ -19,8 +21,12 @@
  * - Nothing src/mcp reaches writes to stdout behind the guard's back: no
  *   write to descriptor 1, no child that inherits stdout (stdio inherited,
  *   descriptor 1 or process.stdout handed over, or a fork, which inherits by
- *   default), no use of stdout's descriptor or its end. The guard cannot
- *   catch those (stdoutGuard.ts says why).
+ *   default), no use of stdout's descriptor or its end, and no worker thread
+ *   whose stdout is not its own (piped into this process's otherwise). The
+ *   guard cannot catch those (stdoutGuard.ts says why). The one worker thread
+ *   is a Node one (2026-11-24, the wave-4 review's REV4-3): workerPool.ts
+ *   starts worker.mjs, which loads only tsx's loader and pipeline.ts, and the
+ *   walk below reads both as files of src/mcp.
  * - The entry's order (stdio.ts): the stdout guard is its only static
  *   import and is installed before its first lazy import; the guard imports
  *   only Node built-ins and problemReport, which imports nothing; the
@@ -87,6 +93,20 @@ function staticSpecifiersOf(source: string): string[] {
   return STATIC_SPECIFIERS.flatMap((re) => [...source.matchAll(re)].map((m) => m[1]));
 }
 
+/**
+ * Every specifier a module loads when it runs: all of `specifiersOf` but a
+ * whole `import type ... from` or `export type ... from`, which TypeScript
+ * and tsx erase, so the module it names is never loaded through it
+ * (2026-11-24, the MCP work's wave 4: the chat's outline and edits, in
+ * agentEdit.ts, name a type of geminiService.ts through repxTranslate.ts, and
+ * geminiService's own type imports name the OCR modules, none of which the
+ * server ever loads). `import { a, type B }` still loads its module and is
+ * still followed.
+ */
+function runtimeSpecifiersOf(source: string): string[] {
+  return specifiersOf(source.replace(/\b(?:import|export)\s+type\s+(?:[\w*{}\s,$]+?|\*(?:\s+as\s+\w+)?|\{[^}]*\})\s+from\s*['"][^'"]+['"]/g, ''));
+}
+
 /** Every lazy import whose specifier no walk can follow: not a string literal, or a template with a placeholder. */
 function computedImportsOf(source: string): number {
   const opened = [...source.matchAll(new RegExp(String.raw`\bimport\s*\(\s*${COMMENTS}(\S)`, 'g'))].filter((m) => !`'"\``.includes(m[1])).length;
@@ -116,6 +136,8 @@ const STDOUT_BYPASSES: [RegExp, string][] = [
   [/\bstdio\s*:\s*\[[^\]]*(?:['"]inherit['"]|\bprocess\s*\.\s*stdout\b)/, 'starts a child that inherits stdout'],
   [/\bstdio\s*:\s*\[\s*[^,\]]+,\s*1\s*[,\]]/, 'hands descriptor 1 to a child'],
   [/\bfork\s*\(/, 'forks a child, which inherits stdout by default'],
+  // A worker thread's stdout is piped into this process's unless it is its own (2026-11-24, REV4-3: workerPool.ts).
+  [/\bnew\s+Worker\s*\((?![^)]*\bstdout\s*:\s*true)/, "starts a worker thread whose stdout is piped into this process's"],
 ];
 const stdoutBypassesOf = (source: string) => STDOUT_BYPASSES.filter(([re]) => re.test(source)).map(([, why]) => why);
 
@@ -137,6 +159,9 @@ describe('the import boundaries', () => {
     expect(staticSpecifiersOf(sample).sort()).toEqual(['./a', './b', './c', './d', './e', './f']);
     expect(computedImportsOf(sample)).toBe(0);
     expect(computedImportsOf('await import(spec); await import(/* @vite-ignore */ FAKE); await import(`./${name}`); await import(`./plain`);')).toBe(3);
+    // A type-only import is erased and loads nothing; one with a value beside its types loads its module.
+    const typed = "import type { A } from './erased';\nimport type {\n  B,\n} from './erased2';\nexport type { C } from './erased3';\nimport { d, type E } from './loaded';\nimport { type F } from './loaded2';";
+    expect(runtimeSpecifiersOf(typed).sort()).toEqual(['./loaded', './loaded2']);
   });
 
   it('finds the source of a .js specifier, as TypeScript does, so a re-export through one is seen', () => {
@@ -155,14 +180,14 @@ describe('the import boundaries', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('only test files import testFs.ts, the in-memory file system', () => {
+  it('only test files import testFs.ts and testClient.ts, the in-memory file system and client', () => {
     const offenders = [...SRC, ...SCRIPTS]
       .filter((f) => !isTest(f))
       .flatMap((file) =>
         specifiersOf(text(file))
           .filter((spec) => {
             const target = resolveRelative(file, spec);
-            return target !== null && rel(target) === 'src/mcp/testFs.ts';
+            return target !== null && ['src/mcp/testFs.ts', 'src/mcp/testClient.ts'].includes(rel(target));
           })
           .map((spec) => `${rel(file)} -> ${spec}`),
       );
@@ -202,7 +227,7 @@ describe('the import boundaries', () => {
       if (/new\s+Worker\s*\(\s*new\s+URL\s*\(/.test(source)) problems.push(`${rel(file)} starts a browser worker`);
       if (computedImportsOf(source)) problems.push(`${rel(file)} imports a specifier built at run time, which no walk can follow`);
       for (const why of stdoutBypassesOf(source)) problems.push(`${rel(file)} ${why}`);
-      for (const spec of specifiersOf(source)) {
+      for (const spec of runtimeSpecifiersOf(source)) {
         if (/\?(url|worker|raw|inline)\b/.test(spec)) problems.push(`${rel(file)} -> ${spec}`);
         const target = resolveRelative(file, spec);
         if (!target) continue;
@@ -228,9 +253,12 @@ describe('the import boundaries', () => {
       'spawn(cmd, { stdio: [0, process.stdout, 2] })',
       "spawn(cmd, { stdio: ['pipe', 1, 'pipe'] })",
       "fork('./child.js')",
+      'new Worker(file, { resourceLimits: limits })',
+      'new Worker(file)',
     ];
     for (const shape of shapes) expect(stdoutBypassesOf(shape), shape).not.toEqual([]);
     expect(stdoutBypassesOf("spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] }); writeSync(fd, 'x'); target.stdout.end = f;")).toEqual([]);
+    expect(stdoutBypassesOf('new Worker(file, { resourceLimits: { maxOldGenerationSizeMb: 512 }, stdout: true, stderr: true })')).toEqual([]);
   });
 
   it('never imports the v1 SDK, anywhere in src', () => {
@@ -259,6 +287,15 @@ describe("the entry's order", () => {
     const launcher = text(join(CLONE, 'src', 'mcp', 'run.mjs'));
     expect(staticSpecifiersOf(launcher)).toEqual(['tsx/esm/api']);
     expect(specifiersOf(launcher)).toEqual(['tsx/esm/api', './stdio.ts']);
+  });
+
+  it("the report tools' worker thread loads only Node's worker module, tsx's loader and the pipeline, and only workerPool.ts starts it", () => {
+    // The wave-4 review's REV4-3: a Node worker thread, not a browser worker, with its stdout its own (the bypass list above).
+    const worker = text(join(CLONE, 'src', 'mcp', 'worker.mjs'));
+    expect(specifiersOf(worker)).toEqual(['node:worker_threads', 'tsx/esm/api', './pipeline.ts']);
+    const starters = SRC.filter((f) => inMcp(f) && !isTest(f) && /\bnew\s+Worker\s*\(/.test(code(text(f)))).map(rel);
+    expect(starters).toEqual(['src/mcp/workerPool.ts']);
+    expect(text(join(CLONE, 'src', 'mcp', 'workerPool.ts'))).toContain("new URL('./worker.mjs', import.meta.url)");
   });
 });
 

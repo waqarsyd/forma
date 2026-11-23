@@ -91,10 +91,15 @@ export default defineConfig({
        * runs, `src/mcp/run.mjs`: they run only in the process
        * `stdio.test.ts` spawns, which v8 coverage does not follow, so they
        * would read 0% while being exercised on every run. So is
-       * `src/mcp/testFs.ts`, the tests' in-memory file system: it is test
-       * code, which the tests exercise in full, so counting it would raise
-       * the number without measuring the server (finding T7 of the wave-3
-       * review; `boundaries.test.ts` fails if anything but a test imports it).
+       * `src/mcp/worker.mjs` (2026-11-24, the wave-4 review's REV4-3), the
+       * worker thread the report tools' work runs in, which v8 coverage does
+       * not follow either; the work it runs, `pipeline.ts`, is measured where
+       * the tests run it in their own thread. So are
+       * `src/mcp/testFs.ts` and `src/mcp/testClient.ts` (2026-11-24), the
+       * tests' in-memory file system and client: they are test code, which
+       * the tests exercise in full, so counting them would raise the number
+       * without measuring the server (finding T7 of the wave-3 review;
+       * `boundaries.test.ts` fails if anything but a test imports them).
        */
       include: ['src/lib/**', 'src/services/**', 'src/server/**', 'src/mcp/**'],
       exclude: [
@@ -104,11 +109,13 @@ export default defineConfig({
         'src/lib/genai.ts',
         // Design tokens, not logic.
         'src/lib/motion.ts',
-        // The MCP server's entry and launcher, exercised only in a spawned process (above).
+        // The MCP server's entry, its launcher and its worker thread's, exercised only in a spawned process or thread (above).
         'src/mcp/stdio.ts',
         'src/mcp/run.mjs',
-        // The MCP tests' in-memory file system: test code, not the server's (above).
+        'src/mcp/worker.mjs',
+        // The MCP tests' in-memory file system and client: test code, not the server's (above).
         'src/mcp/testFs.ts',
+        'src/mcp/testClient.ts',
       ],
       reporter: ['text-summary', 'text'],
       /*

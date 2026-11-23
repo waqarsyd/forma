@@ -23,11 +23,12 @@
  * given a minute for a cold tsx compile.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, realpathSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
+import { TOOL_LIST } from './toolList';
 
 const CLONE = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 /** What a host is told to run, after `node`. */
@@ -133,7 +134,7 @@ describe('the stdio server, started as a host starts it', () => {
     const init = await s.request(1, 'initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'smoke', version: '1' } });
     expect(init.result.serverInfo.name).toBe('forma');
     s.notify('notifications/initialized');
-    expect((await s.request(2, 'tools/list')).result.tools.map((t: { name: string }) => t.name)).toEqual(['forma_status']);
+    expect((await s.request(2, 'tools/list')).result.tools.map((t: { name: string }) => t.name)).toEqual(TOOL_LIST.map((t) => t.name));
     const status = await s.request(3, 'tools/call', { name: 'forma_status', arguments: {} });
     expect(status.result.structuredContent).toMatchObject({ protocol: { era: 'legacy', version: '2025-11-25' }, folders: { source: 'FORMA_MCP_ROOTS', paths: [realpathSync.native(s.cwd)] } });
     expect(await leaves(s)).toBe(0);
@@ -159,6 +160,31 @@ describe('the stdio server, started as a host starts it', () => {
     expect(s.err()).toContain(`FORMA-NOISE pid ${s.child.pid}\n`);
     expectKeysTakenOut(s);
     expect(readdirSync(s.cwd)).toEqual([]);
+  });
+
+  it("runs the report tools' work in its worker thread: only JSON-RPC on stdout, and a stored login on neither stream nor in any file written", { timeout: 90_000 }, async () => {
+    // The wave-4 review's REV4-3 and REV4-4: the worker registers tsx itself, its own output reaches stderr only, and the login is gone first.
+    const s = start('');
+    const login = '<Connection Name="Sales"><Parameters><Parameter Name="server" Value="db01" /><Parameter Name="userid" Value="sa" /><Parameter Name="password" Value="Secret123" /></Parameters></Connection>';
+    const stored = Buffer.from(`<SqlDataSource Name="dsCode">${login}<Query Type="SelectQuery" Name="Orders"><Tables><Table Name="Orders" /></Tables><Columns><AllColumns /></Columns></Query></SqlDataSource>`).toString('base64');
+    // As DevExpress 20.1 writes a source assigned in code: in ObjectStorage, not ComponentStorage (REV4-1).
+    const report = `<?xml version="1.0" encoding="utf-8"?>\n<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1" Name="R" PageWidth="850" PageHeight="1100" Version="20.1" DataMember="Orders" DataSource="#Ref-0"><Bands><Item1 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="20"><Controls><Item1 Ref="3" ControlType="XRLabel" Name="title" Text="Orders" SizeF="200,20" /></Controls></Item1></Bands><ObjectStorage><Item1 Ref="0" ObjectType="DevExpress.DataAccess.Sql.SqlDataSource,DevExpress.DataAccess.v20.1" Name="dsCode" Base64="${stored}" /></ObjectStorage></XtraReportsLayoutSerializer>\n`;
+    const path = join(realpathSync.native(s.cwd), 'r.repx');
+    writeFileSync(path, report);
+    await s.request(1, 'initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'smoke', version: '1' } });
+    s.notify('notifications/initialized');
+    const answers = [
+      await s.request(2, 'tools/call', { name: 'repx_audit', arguments: { path } }),
+      await s.request(3, 'tools/call', { name: 'repx_repair', arguments: { path } }),
+      await s.request(4, 'tools/call', { name: 'repx_edit', arguments: { path, edits: [{ op: 'text', control: 'title', text: 'Sales' }] } }),
+    ];
+    for (const answer of answers) expect(answer.result.structuredContent?.loginRemoved, JSON.stringify(answer).slice(0, 300)).toBe(true);
+    expect(await leaves(s)).toBe(0);
+    expect(expectOnlyJsonRpc(s.out())).toBe(4);
+    const decoded = (text: string) => [text, ...[...text.matchAll(/Base64="([^"]*)"/g)].map((m) => Buffer.from(m[1], 'base64').toString('utf8'))].join('\n');
+    expect(s.out() + s.err()).not.toMatch(/Secret123|userid|db01/);
+    expect(readdirSync(s.cwd).sort()).toEqual(['r.edited.repx', 'r.repaired.repx', 'r.repx']);
+    for (const f of ['r.edited.repx', 'r.repaired.repx']) expect(decoded(readFileSync(join(s.cwd, f), 'utf8')), f).not.toMatch(/Secret123|userid|db01/);
   });
 
   it('exits non-zero after an uncaught exception, saying why on stderr and nothing on stdout', { timeout: 60_000 }, async () => {

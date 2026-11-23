@@ -61,13 +61,19 @@ if (noise) makeTestNoise(noise);
 const { serveStdio, StdioServerTransport } = await import('@modelcontextprotocol/server/stdio');
 const { createFormaServer, formaVersion, nodeSystem } = await import('./formaServer');
 const { readEnvRoots } = await import('./roots');
+const { loadRepxSkill } = await import('./skillResource');
+const { workerPipeline } = await import('./workerPool');
 
 const system = nodeSystem();
 const envRoots = readEnvRoots({ FORMA_MCP_ROOTS: process.env.FORMA_MCP_ROOTS, CLAUDE_PROJECT_DIR: process.env.CLAUDE_PROJECT_DIR }, system);
 for (const problem of [...(envRoots.forma?.problems ?? []), ...(envRoots.claude?.problems ?? [])]) guard.log(problem);
 const version = formaVersion();
+// The REPX skill, read from the clone once; every connection attaches the same catalog.
+const skills = await loadRepxSkill((line) => guard.log(line));
+// The report tools' work, in worker threads with a memory bound and a deadline; one pipeline for every connection.
+const pipeline = workerPipeline({ log: (line) => guard.log(line) });
 
-serveStdio(() => createFormaServer({ envRoots, system, version, log: (line) => guard.log(line) }), {
+serveStdio(() => createFormaServer({ envRoots, system, version, skills, pipeline, log: (line) => guard.log(line) }), {
   transport: new StdioServerTransport(process.stdin, guard.protocolOut),
   onerror: (error) => guard.log('a protocol error:', error),
 });

@@ -1273,6 +1273,106 @@ report.ExportToPdf("report.pdf");`}
               </p>
             </Article>
 
+            {/* Since 2026-11-24 (the MCP work's wave 5; findings DOC-10, SEC-11
+                and GAP3-4 of the 2026-11-23 design audit): Forma's MCP server,
+                src/mcp. The tool names are held to src/mcp/toolList.ts, and
+                "calls no AI" to its needsAi, by publicClaims.test.ts; no page
+                may import src/mcp, so they are written out here. The chat
+                answers from this article, so it says only what the server
+                does today: generation through it is not built. */}
+            <Article id="mcp" kicker="Output" title="Forma from your AI assistant" hidden={!matches('mcp')}>
+              <p className={PROSE}>
+                Forma has an MCP server: a program you run on your own computer so an AI assistant, such as Claude
+                Code, Visual Studio&apos;s Copilot, VS Code or Claude Desktop, can audit, outline, repair and edit the
+                .repx files in your own projects, and draw one as a draft PDF. Your assistant starts it and talks to it
+                directly; it opens no network port, and this site does not run it.{' '}
+                <strong className="font-semibold text-on-surface">None of its tools calls an AI or needs a key.</strong>{' '}
+                Making a report from a picture or a description through it is not built yet.
+              </p>
+
+              <h3 className={H3}>Setting it up</h3>
+              <p className={`mt-2 ${PROSE}`}>
+                It comes with Forma&apos;s source code, not with this site. You need the Node that{' '}
+                <a href="/self-host" className={LINK}>running your own Forma</a> asks for, and a copy of the code at
+                this site&apos;s release, the version the{' '}
+                <a href="/changelog" className={LINK}>changelog</a> names first. Install it in full: the server runs
+                through tsx, which an install without the development packages leaves out.
+              </p>
+              <div className="mt-4 overflow-hidden rounded-[10px] border border-outline-variant">
+                <div className="flex items-center justify-between gap-3 border-b border-outline-variant bg-surface-container-low px-3.5 py-2.5">
+                  <span className={KICKER}>terminal</span>
+                  <span className={`${KICKER} text-secondary`}>once</span>
+                </div>
+                <pre className="m-0 overflow-x-auto bg-[color:var(--code-bg)] p-4 font-code-sm text-[11.5px] leading-[1.75] text-[color:var(--code-ink)]">
+{`git clone --branch v<version> https://github.com/waqarsyd/forma.git
+cd forma
+npm ci`}
+                </pre>
+              </div>
+              <p className={`mt-4 ${PROSE}`}>
+                Every assistant runs the same command, with the full path of that copy:{' '}
+                <code className="doc-code">{'node <clone>/src/mcp/run.mjs'}</code>. In Claude Code, add it with{' '}
+                <code className="doc-code">{'claude mcp add --transport stdio forma -- node <clone>/src/mcp/run.mjs'}</code>;
+                it works in the folder Claude Code started in, unless that is your home folder or a whole drive,
+                which it refuses: then set <code className="doc-code">FORMA_MCP_ROOTS</code> in that line too. This
+                recipe follows Claude Code&apos;s own documentation and has not yet been run in Claude Code itself. For
+                Visual Studio, VS Code and Claude Desktop, the entry
+                goes in a settings file of your own, never one your project commits, with{' '}
+                <code className="doc-code">FORMA_MCP_ROOTS</code> set to the folder your reports are in; the{' '}
+                <a href="https://github.com/waqarsyd/forma#forma-from-an-ai-assistant" className={LINK} target="_blank" rel="noopener noreferrer">README</a>{' '}
+                has each. Visual Studio starts a new server&apos;s tools turned off: turn them on in Copilot&apos;s
+                Agent mode.
+              </p>
+
+              <h3 className={H3}>The tools</h3>
+              <dl className="mt-4 border-t border-outline-variant">
+                <Def t="forma_status">
+                  Forma&apos;s version and the folders its tools may use, or how to set one. Ask for it first when a
+                  path is refused.
+                </Def>
+                <Def t="repx_audit">
+                  Checks a .repx or .vsrepx as Forma checks every report it makes, and lists what is still wrong: what
+                  DevExpress would load or print differently from what the file says. It reads only.
+                </Def>
+                <Def t="repx_outline">
+                  The report as Forma&apos;s chat sees it: the paper, every band, every control by name with its place
+                  and size, the fields it prints, its parameters, and each SQL data source by its connection&apos;s
+                  name. It reads only.
+                </Def>
+                <Def t="repx_repair">
+                  Every repair Forma makes on the reports it generates, in the same order, written to a new file beside
+                  the report, then checked again.
+                </Def>
+                <Def t="repx_edit">
+                  The edits Forma&apos;s chat makes, by control name: text, place, size, font, colour, borders,
+                  bindings, page numbers, paper, margins and the rest, written to a new file unless you ask it to
+                  replace one.
+                </Def>
+                <Def t="repx_pdf">
+                  A draft PDF: the report laid out by the Preview&apos;s engine with no data, for checking where things
+                  fall. Export from the Preview for the real one.
+                </Def>
+              </dl>
+
+              <h3 className={H3}>What it does with your files</h3>
+              <p className={`mt-2 ${PROSE}`}>
+                A tool reads and writes only inside the folders it is given, by full path, such as{' '}
+                <code className="doc-code">{'G:\\Reports\\invoice.repx'}</code>: a relative name, ~ or a Git Bash
+                /g/ path is refused, with the full path where it can be worked out. It never writes into a dot-folder
+                or node_modules, and never replaces a file unless you ask repx_edit to. A database login stored in a
+                report is taken out before any tool reads the report, wherever the report keeps it. A file that is
+                not well-formed XML is refused, with the line where it breaks, and a report that takes more than 30
+                seconds to work through is stopped, costing that call and nothing else. A report written as C# or VB
+                code is refused, with how to save it as a .repx; a .vsrepx is read as the .repx it is.
+              </p>
+              <Note label="What leaves your computer" tone="safe">
+                Nothing, through these tools: none calls an AI or sends anything to Forma or anyone else, and the
+                server sends no learning events or error reports. What a tool returns goes to your assistant and to the
+                AI behind it, under that assistant&apos;s own terms, and what it read from a report goes as data,
+                never as instructions.
+              </Note>
+            </Article>
+
             <Article id="config"kicker="Reference" title="Settings and what is worked out" hidden={!matches('config')}>
               <p className={PROSE}>
                 Nothing has to be set before a run. What used to be a configuration dialog is worked out from what

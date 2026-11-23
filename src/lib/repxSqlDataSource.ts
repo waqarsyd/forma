@@ -161,17 +161,42 @@ export function readSqlDataSourceXml(xml: string, ref = ''): RepxDataSource {
   };
 }
 
-/** Every SqlDataSource a report carries in its ComponentStorage. */
+/**
+ * The report's own ComponentStorage: the first one outside every subreport's
+ * `ReportSource`. DevExpress 20.1 writes an embedded subreport's own storage
+ * inside its `ReportSource`, before the root's (measured with SaveLayoutToXml
+ * on 2026-11-24, the wave-4 review of the MCP server, REV4-1), so the first
+ * storage in the file is not always the report's.
+ */
+function rootComponentStorage(repx: string): string {
+  let depth = 0;
+  for (const m of repx.matchAll(/<ReportSource\b[^>]*?(\/?)>|<\/ReportSource>|<ComponentStorage(?:\s[^>/]*)?>([\s\S]*?)<\/ComponentStorage>/g)) {
+    if (m[0].startsWith('</')) depth--;
+    else if (m[0].startsWith('<ReportSource')) depth += m[1] ? 0 : 1;
+    else if (depth <= 0) return m[2];
+  }
+  return '';
+}
+
+/**
+ * Every SqlDataSource a report carries in its own ComponentStorage, the
+ * collection the report's `DataSource="#Ref-N"` and this module's writers
+ * name. A `Ref` that is not a number is kept as '' (REV4-2 of the same
+ * review): every Ref DevExpress writes is one, and callers build patterns
+ * from it. Every data source stored anywhere, a subreport's and one kept in
+ * ObjectStorage included, is `readEveryDataSource`.
+ */
 export function readRepxDataSources(repx: string): RepxDataSource[] {
-  const storage = /<ComponentStorage>([\s\S]*?)<\/ComponentStorage>/.exec(repx)?.[1] ?? '';
+  const storage = rootComponentStorage(repx);
   const out: RepxDataSource[] = [];
   for (const item of storage.matchAll(/<Item\d+\s[^>]*>/g)) {
     const tag = item[0];
     if (!/ObjectType="DevExpress\.DataAccess\.Sql\.SqlDataSource/.test(tag)) continue;
     const b64 = attr(tag, 'Base64');
     if (!b64) continue;
+    const ref = attr(tag, 'Ref') ?? '';
     try {
-      out.push(readSqlDataSourceXml(decodeBase64(b64), attr(tag, 'Ref') ?? ''));
+      out.push(readSqlDataSourceXml(decodeBase64(b64), /^\d+$/.test(ref) ? ref : ''));
     } catch {
       // A Base64 that does not decode is not a data source this can describe.
     }
@@ -261,12 +286,6 @@ export function topLevelItems(inner: string): number {
   return count;
 }
 
-/**
- * The repair for a stored login (checklist item 20): a SqlDataSource whose
- * connection carries parameters is rewritten to the same connection by name,
- * which is what 20.1 writes with StoreConnectionNameOnly, so no password
- * leaves in a report Forma produced.
- */
 /** The parameters a data source uses: its queries' `?Name`s, and those whose lookup list it fills (2026-11-09). */
 export function sourceParameters(repx: string, ds: { ref: string; queries: { filter?: string; parameters: { value: string }[] }[] }): Set<string> {
   const names = new Set(ds.queries.flatMap((q) => [q.filter ?? '', ...q.parameters.map((p) => p.value)]).flatMap((s) => [...s.matchAll(/\?([A-Za-z_]\w*)/g)].map((m) => m[1])));
@@ -393,18 +412,192 @@ export function carryDataSource(before: string, after: string): { xml: string; a
   return { xml, applied: true, reason: `kept the data source (${names} on connection "${old[0].connectionName}") through the redesign${kept}` };
 }
 
-export function stripStoredCredentials(repx: string): { xml: string; applied: boolean; reason: string } {
-  const sources = readRepxDataSources(repx).filter((d) => d.storesCredentials || !d.fromAppConfig);
-  if (!sources.length) return { xml: repx, applied: false, reason: 'no data source stores a login' };
-  let xml = repx;
-  for (const ds of sources) {
-    const tag = new RegExp(`(<Item\\d+\\s[^>]*?Ref="${ds.ref}"[^>]*?Base64=")([^"]*)(")`).exec(xml);
-    if (!tag) continue;
-    // Functions, not replacement strings: a connection named with `$&` or `$'` is data, not a pattern (2026-11-11, PX-02b).
-    const decoded = decodeBase64(tag[2]).replace(/<Connection\s[^>]*?(?:\/>|>[\s\S]*?<\/Connection>)/, () => `<Connection Name="${attrOf(ds.connectionName || 'Database')}" FromAppConfig="true" />`);
-    xml = xml.replace(tag[0], () => `${tag[1]}${encodeBase64(decoded)}${tag[3]}`);
+/* ------------------------------------------- stored logins, wherever kept */
+
+/**
+ * Base64 decoded as forgivingly as a person could decode it: every character
+ * outside the alphabet dropped and the length made whole. A value atob
+ * refuses (and DevExpress with it) still has its bytes in the file, so it is
+ * still read.
+ */
+function forgivingDecode(b64: string): string {
+  let s = b64.replace(/[^A-Za-z0-9+/]/g, '');
+  if (s.length % 4 === 1) s = s.slice(0, -1);
+  while (s.length % 4) s += '=';
+  return decodeBase64(s);
+}
+
+/** How much of a Base64 value is decoded first, to see whether it holds an XML document: 600 characters, 450 bytes. */
+const HEAD = 600;
+
+const isSpace = (c: string | undefined) => c === ' ' || c === '\t' || c === '\r' || c === '\n';
+
+/**
+ * Every XML document a report keeps as a Base64 attribute value, with the
+ * value's place in the text (2026-11-24, the wave-4 review of Forma's MCP
+ * server, REV4-1 and REV4-2). DevExpress 20.1 keeps a SqlDataSource as one
+ * of these in more places than the root's ComponentStorage, measured with
+ * SaveLayoutToXml: in ObjectStorage, when the report was given its source in
+ * code and never had it added to ComponentStorage, and in an embedded
+ * subreport's own ComponentStorage, inside its ReportSource, which is written
+ * before the root's. So every `Base64` attribute is read, on any element, in
+ * any attribute order and either quote, scanning forward once; a value whose
+ * start decodes to `<` is decoded whole, and a picture's is not. No pattern
+ * is built from the file's text, and no item is found by its Ref.
+ */
+function storedDocuments(xml: string): { start: number; end: number; doc: string }[] {
+  const out: { start: number; end: number; doc: string }[] = [];
+  let at = 0;
+  for (;;) {
+    const name = xml.indexOf('Base64', at);
+    if (name < 0) break;
+    at = name + 6;
+    if (!isSpace(xml[name - 1])) continue;
+    let i = at;
+    while (isSpace(xml[i])) i++;
+    if (xml[i] !== '=') continue;
+    i++;
+    while (isSpace(xml[i])) i++;
+    const quote = xml[i];
+    if (quote !== '"' && quote !== "'") continue;
+    const end = xml.indexOf(quote, i + 1);
+    if (end < 0) break;
+    at = end + 1;
+    const value = xml.slice(i + 1, end);
+    if (!forgivingDecode(value.slice(0, HEAD)).replace(/^[\uFEFF\s]+/, '').startsWith('<')) continue;
+    out.push({ start: i + 1, end, doc: forgivingDecode(value) });
   }
-  return { xml, applied: true, reason: `the connection${sources.length === 1 ? '' : 's'} ${sources.map((s) => `"${s.connectionName}"`).join(', ')} now stored by name only, with no login or password` };
+  return out;
+}
+
+/** A `<Connection>` element of a decoded data source, as it is rewritten. */
+const CONNECTION = /<Connection(?=[\s/>])[^>]*?(?:\/>|>[\s\S]*?<\/Connection>)/g;
+const CLOSE = '</Connection>';
+
+/**
+ * The text of every `<Connection>` in a decoded document, from its start to
+ * its end, or to the document's end when it never closes: what is searched
+ * for a login, so one inside a connection left open is still found.
+ */
+function connectionSpans(doc: string): string[] {
+  const out: string[] = [];
+  let at = 0;
+  for (;;) {
+    const start = doc.indexOf('<Connection', at);
+    if (start < 0) break;
+    at = start + 11;
+    if (at < doc.length && !/[\s/>]/.test(doc[at])) continue;
+    let end = doc.length;
+    const open = doc.indexOf('>', at);
+    if (open >= 0 && doc[open - 1] === '/') end = open + 1;
+    else if (open >= 0) {
+      const close = doc.indexOf(CLOSE, open);
+      if (close >= 0) end = close + CLOSE.length;
+    }
+    out.push(doc.slice(start, end));
+    at = end;
+  }
+  return out;
+}
+
+/** A connection's `userid` or `password` parameter, in either quote. */
+const LOGIN_PARAMETER = /<Parameter(?=[\s/>])[^>]*?\sName\s*=\s*(?:"(?:password|userid)"|'(?:password|userid)')/i;
+/** A password given a value inside an attribute's value, bare or quoted: `password=x`, `Pwd = "a;b"`. */
+const PASSWORD_SET = /(?:^|[;\s])(?:password|pwd)\s*=\s*(?:"[^"]*[^"\s]|'[^']*[^'\s]|[^;"'\s])/i;
+const ATTRIBUTE_VALUE = /\s[\w.:-]+\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+
+/**
+ * True when a connection keeps a login: a `userid` or `password` among its
+ * parameters, or a password with a value in any of its attributes, a custom
+ * connection string's (the PIPE1 review) or any other's, read with its
+ * entities decoded, so `password=&quot;a;b&quot;` is one (REV4-1).
+ */
+function keepsLogin(connection: string): boolean {
+  if (LOGIN_PARAMETER.test(connection)) return true;
+  for (const m of connection.matchAll(ATTRIBUTE_VALUE)) if (PASSWORD_SET.test(decodeEntities(m[1] ?? m[2]))) return true;
+  return false;
+}
+
+/** One attribute of a connection's opening tag, either quote, its entities decoded. */
+function connectionAttr(open: string, name: 'Name' | 'FromAppConfig'): string | undefined {
+  const m = (name === 'Name' ? /\sName\s*=\s*(?:"([^"]*)"|'([^']*)')/ : /\sFromAppConfig\s*=\s*(?:"([^"]*)"|'([^']*)')/).exec(open);
+  return m ? decodeEntities(m[1] ?? m[2]) : undefined;
+}
+
+/**
+ * Every stored connection that keeps a login, or is stored with more than
+ * its name, rewritten to the same connection by name, which is what 20.1
+ * writes with StoreConnectionNameOnly; spliced in by position, the last
+ * value first, so the places found stay true.
+ */
+function byNameOnly(repx: string): { xml: string; hadLogin: boolean; names: string[] } {
+  let hadLogin = false;
+  const names: string[][] = [];
+  let xml = repx;
+  for (const stored of storedDocuments(repx).reverse()) {
+    if (!stored.doc.includes('<Connection')) continue;
+    if (connectionSpans(stored.doc).some(keepsLogin)) hadLogin = true;
+    const here: string[] = [];
+    // A function, not a replacement string: a connection named with `$&` or `$'` is data, not a pattern (2026-11-11, PX-02b).
+    const doc = stored.doc.replace(CONNECTION, (element) => {
+      const open = /^<Connection[^>]*/.exec(element)![0];
+      if (!keepsLogin(element) && connectionAttr(open, 'FromAppConfig')?.toLowerCase() === 'true') return element;
+      const name = connectionAttr(open, 'Name') || 'Database';
+      here.push(name);
+      return `<Connection Name="${attrOf(name)}" FromAppConfig="true" />`;
+    });
+    names.unshift(here);
+    if (doc !== stored.doc) xml = `${xml.slice(0, stored.start)}${encodeBase64(doc)}${xml.slice(stored.end)}`;
+  }
+  return { xml, hadLogin, names: names.flat() };
+}
+
+/**
+ * A report's text with every stored connection kept by name only, whether
+ * it had kept a login (a login and password stored as the connection's
+ * parameters, or a password inside a custom connection string, the PIPE1
+ * review), and whether one is still there. The one reading every caller
+ * makes before anything else sees an uploaded or opened report (2026-11-11,
+ * SE-01): the web app's intake (`repxAttachment`) and, since 2026-11-24,
+ * every tool of Forma's MCP server (finding SEC-3 of the MCP design audit),
+ * which is why it lives here and not in repxIntake.ts, a module the MCP
+ * server must not reach.
+ *
+ * Since the wave-4 review (REV4-1) it reads every data source the file keeps,
+ * wherever DevExpress put it (`storedDocuments`), and then reads the result
+ * again: `loginLeft` is a login still found there, a connection the rewrite
+ * could not reach (one left open, say), and the caller then refuses the
+ * report rather than pass it on. `hadLogin` comes from the same reading the
+ * rewrite makes, never from a second parser that could see less.
+ */
+export function withoutStoredLogin(repx: string): { xml: string; hadLogin: boolean; loginLeft: boolean } {
+  const out = byNameOnly(repx);
+  const loginLeft = storedDocuments(out.xml).some((d) => connectionSpans(d.doc).some(keepsLogin));
+  return { xml: out.xml, hadLogin: out.hadLogin || loginLeft, loginLeft };
+}
+
+/**
+ * The repair for a stored login (checklist item 20), in `REPAIR_ORDER` as
+ * `logins`: every stored connection that keeps a login or more than its name
+ * rewritten to the same connection by name, so no password leaves in a
+ * report Forma produced. Applied only when a connection was rewritten.
+ */
+export function stripStoredCredentials(repx: string): { xml: string; applied: boolean; reason: string } {
+  const out = byNameOnly(repx);
+  if (!out.names.length) return { xml: repx, applied: false, reason: 'no data source stores a login' };
+  return { xml: out.xml, applied: true, reason: `the connection${out.names.length === 1 ? '' : 's'} ${out.names.map((n) => `"${n}"`).join(', ')} now stored by name only, with no login or password` };
+}
+
+/**
+ * Every SqlDataSource a report stores anywhere, in the order written: its own
+ * ComponentStorage, an embedded subreport's, and ObjectStorage, where 20.1
+ * keeps a source assigned in code (REV4-1). Each without its Ref, which no
+ * caller of this one needs.
+ */
+export function readEveryDataSource(repx: string): RepxDataSource[] {
+  return storedDocuments(repx)
+    .filter((d) => /^[\uFEFF\s]*(?:<\?xml[^>]*\?>\s*)?<SqlDataSource\b/.test(d.doc))
+    .map((d) => readSqlDataSourceXml(d.doc));
 }
 
 /** The `<connectionStrings>` entry the application needs for a report's connection names (checklist item 21). */

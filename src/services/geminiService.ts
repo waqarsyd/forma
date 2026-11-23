@@ -58,6 +58,7 @@ import { SET_UP_AI } from "../lib/aiProvider";
 import type { AgentEdit, AgentTool } from "../lib/agentEdit";
 import { NOT_FOLLOWED } from "../lib/chatTurn";
 import { languageAsked } from "../lib/repxTranslate";
+import { EDIT_LANGUAGE, GROUP_EDIT } from "../lib/editLanguage";
 import {
   pageSizeInUnits,
   unitsPerInch,
@@ -65,7 +66,6 @@ import {
   pointsToUnits,
   resolveReportUnit,
   resolvePageSize,
-  SUPPORTED_PAGE_SIZES,
   convertReportUnit,
 } from "../lib/reportGeometry";
 
@@ -884,22 +884,7 @@ Decide what the user's last message needs, and set "action":
 
 "brief": with "rebuild" or "new", the whole request in one paragraph, from everything the user has asked for in this conversation that still applies to it, in their terms, so the designer has all of it and not only the last message. Empty otherwise.
 
-The edits, by "op", and the fields each reads:
-- text: control, text. For a table's cell also row and cell, numbered as in the outline. A control or cell printing a [Field] cannot be retyped.
-- move: control, x, y. resize: control, width, height.
-- font: control (and row, cell for a table's cell), any of family, size, bold, italic, underline.
-- color: control (row, cell), foreColor and/or backColor.
-- align: control (row, cell), align: left, center or right.
-- delete: control. visible: control, visible.
-- add: a new label: band (its name or kind), text, x, y, and optionally width, height, family, size, bold, italic. Match the report's own font unless asked otherwise.
-- paper: paper (${SUPPORTED_PAGE_SIZES.join(', ')}), landscape; landscape alone turns the paper the report has. margins: any of left, right, top, bottom.
-- duplicate: control, and optionally x, y for the copy. bandHeight: band, height. describe: control, text, a sentence saying what the control is for (125 characters at most), when the user describes a control; the outline shows it as described as.
-- border: control (row, cell), any of borders (All, None, or sides such as "Top, Bottom"), borderColor, borderWidth.
-- line: a horizontal line: band, x, y, and optionally width (the printable width when absent), borderWidth (its weight), name.
-- format: control (row, cell), format: a .NET format with {0}, such as {0:N2}, {0:C2}, {0:P0} or {0:dd/MM/yyyy}.
-- bind: control (row, cell), field: what it prints from the data. Use a field from FIELDS PRINTED or one the user names.
-- pageNumber: band (the page footer when absent), x, y, and optionally width, align, format ("Page {0} of {1}" when absent), pageInfo (NumberOfTotal, Number, Total or DateTime).
-On a table, font, color, align, border and format name a cell by row and cell, a whole row by row alone (a header row), a column by cell alone, and every cell with neither.
+${EDIT_LANGUAGE}
 
 When the outline ends with SELECTED ON THE PREVIEW, the user has selected those controls, and "this", "it", "these" and "them" in the message mean them.
 
@@ -924,7 +909,7 @@ Answer with one JSON object and nothing around it: {"reply": "...", "action": "a
  */
 const DATABASE_CHAT_RULES = `THE DATABASE: the user shared their SQL Server database's layout, in <database>, ending with what the report reads now. With it, binding to data, new fields from the database, a filter and a group are edits, not a rebuild:
 - data: query, what the report reads, as JSON: {"table":"dbo.Orders","joins":[{"table":"dbo.Customers","type":"LeftOuter","on":[{"from":"CustomerID","to":"CustomerID"}]}],"filter":"[Customers.Region] = ?Region","sort":[{"column":"dbo.Orders.OrderDate","descending":true}],"details":[{"table":"dbo.OrderLines","on":[{"from":"OrderID","to":"OrderID"}]}]}, or {"procedure":"dbo.usp_Name"}, or {"name":"Q","sql":"SELECT ..."}. Write the WHOLE query, starting from what the report reads now and changing what was asked. A join's "from" is the main table's column and "to" the joined one's; a filter's ?Name becomes a report parameter Forma adds. Then bind, or add and bind, the controls that print new fields.
-- group: field, and optionally total (a field to sum in the group's footer): a group band on that field, outside any group the report has.
+${GROUP_EDIT}
 So "bind it to dbo.usp_Sales" is a data edit {"procedure":"dbo.usp_Sales"} and binds; "add the customer's phone" is a data edit joining the customers' table, then an add and a bind of [Phone]; "filter by a region parameter" is a data edit with a filter on ?Region; "group by Region" is a group edit. Name only the tables, columns and procedures <database> lists, spelled as it spells them.`;
 
 /**

@@ -28,6 +28,7 @@ import { MAX_AI_OBJECTS } from '../lib/databaseAi';
 import { DESIGNER_REQUIREMENTS, DEVEXPRESS_TRIAL_URL, designerDownloadUrl } from '../lib/designerRelease';
 import { DESIGNER_ORIGIN } from '../lib/designerBridge';
 import { SET_UP_AI } from '../lib/aiProvider';
+import { TOOL_LIST } from '../mcp/toolList';
 
 const page = (name: string) => readFileSync(`src/components/${name}.tsx`, 'utf8');
 const landing = page('LandingPage');
@@ -497,5 +498,77 @@ describe('the public pages say what the waves built', () => {
     if (/--with-handwriting/.test(source('scripts/deploy.mjs'))) {
       expect(about).toContain('where the site is built with it, Transformers.js for handwriting');
     }
+  });
+});
+
+/*
+ * Forma's MCP server (2026-11-24, the MCP work's wave 5; findings DOC-5 and
+ * DOC-10 of the 2026-11-23 design audit). The Docs article and the README are
+ * where a person learns which tools there are and what they need, and the chat
+ * answers from the article. No page may import src/mcp (boundaries.test.ts),
+ * so the names are written out there and held here to src/mcp/toolList.ts: a
+ * tool added, renamed or made to call an AI fails here until both say so.
+ */
+describe("the Docs page and the README say what Forma's MCP server offers, as toolList.ts lists it", () => {
+  const readme = readFileSync('README.md', 'utf8');
+  /** README's own section, from its heading to the next. */
+  const section = () => {
+    const start = readme.indexOf('\n## Forma from an AI assistant\n');
+    expect(start).toBeGreaterThan(0);
+    const end = readme.indexOf('\n## ', start + 4);
+    return readme.slice(start, end < 0 ? undefined : end);
+  };
+  /** /self-host's own section on it (the page's other sections run npx for Firebase, rightly). */
+  const selfHost = () => {
+    const page = info.indexOf('export const SELF_HOST');
+    const start = info.indexOf("heading: 'From an AI assistant'", page);
+    expect(page).toBeGreaterThan(0);
+    expect(start).toBeGreaterThan(page);
+    return visible(info.slice(start, info.indexOf('heading:', start + 9)));
+  };
+
+  it('names every tool in the Docs article and in the README', () => {
+    expect(TOOL_LIST.length).toBeGreaterThan(1);
+    for (const { name } of TOOL_LIST) {
+      expect(article('mcp'), name).toContain(`<Def t="${name}">`);
+      expect(section(), name).toContain(`| \`${name}\` |`);
+    }
+  });
+
+  it('says no tool calls an AI exactly while none does, and offers no tool the server does not have', () => {
+    const asksAi = TOOL_LIST.filter((t) => t.needsAi);
+    const none = 'None of its tools calls an AI or needs a key.';
+    for (const [name, src] of [['Docs', article('mcp')], ['README', section()]] as const) {
+      if (asksAi.length) expect(src, name).not.toContain(none);
+      else expect(src, name).toContain(none);
+      // A tool's name, wherever the two write one in code, is a tool toolList.ts has.
+      const named = [...src.matchAll(/\b(?:repx|forma|generate|revise)_[a-z_]+\b/g)].map((m) => m[0]);
+      for (const tool of named) expect(TOOL_LIST.map((t) => t.name), `${name} names ${tool}`).toContain(tool);
+    }
+    // The FAQ's answer and /self-host say it in their own words, held the same way (R4 of the wave-4 review).
+    const faq = visible(faqs.slice(faqs.indexOf("q: 'Can I use Forma from Claude Code or another AI assistant?'"), faqs.indexOf('q: ', faqs.indexOf("q: 'Can I use Forma from Claude Code or another AI assistant?'") + 3)));
+    expect(faq).toContain('Claude Code');
+    for (const [name, src, words] of [['the FAQ', faq, 'none of those tools calls an AI or needs a key'], ['/self-host', selfHost(), 'calling no AI']] as const) {
+      const said = src.replace(/\s+/g, ' ');
+      if (asksAi.length) expect(said, name).not.toContain(words);
+      else expect(said, name).toContain(words);
+    }
+  });
+
+  it('gives the command a host runs, as stdio.test.ts spawns it, and never an npm or npx form for a host', () => {
+    expect(readFileSync('src/mcp/stdio.test.ts', 'utf8')).toContain("const HOST_ARGS = [join(CLONE, 'src', 'mcp', 'run.mjs')];");
+    const command = 'node <clone>/src/mcp/run.mjs';
+    for (const [name, src] of [['Docs', article('mcp')], ['README', section()], ['/self-host', selfHost()]] as const) expect(src, name).toContain(command);
+    expect(article('mcp')).not.toMatch(/\bnpx\b|npm run mcp/);
+    expect(selfHost()).not.toMatch(/\bnpx\b|npm run mcp/);
+    // Each recipe in the README starts the server with node and that file, and Claude Code's line ends with it.
+    const readmeSection = section();
+    const commands = [...readmeSection.matchAll(/"command": "([^"]+)"/g)].map((m) => m[1]);
+    expect(commands.length).toBeGreaterThanOrEqual(3);
+    for (const c of commands) expect(c).toBe('node');
+    for (const args of readmeSection.matchAll(/"args": \[([^\]]*)\]/g)) expect(args[1]).toBe('"<clone>/src/mcp/run.mjs"');
+    const adds = [...readmeSection.matchAll(/claude mcp add [^\n`]*/g)].map((m) => m[0]);
+    expect(adds.length).toBeGreaterThan(0);
+    for (const add of adds) expect(add).toMatch(/ -- node <clone>\/src\/mcp\/run\.mjs$/);
   });
 });

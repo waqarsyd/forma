@@ -1,10 +1,11 @@
 /**
  * The repair chain (2026-11-11, the full audit, ARCH-1a and SE-02b): the
  * passes the generation ran inline, in their order, and the scripts the
- * answer may not carry.
+ * answer may not carry; since 2026-11-24 the working-file mark (GAP1-2) and
+ * the serializer version a report names.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { REPAIR_ORDER, repairRepx, stripReportScripts } from './repairChain';
+import { REPAIR_ORDER, hasWorkingFileMark, repairRepx, stripReportScripts, versionOf, workingFileMark } from './repairChain';
 import { normalizeItemNames } from './repxItems';
 import { ensureUniqueRefs } from './repxRefs';
 import { repairDpi } from './repxDpi';
@@ -39,8 +40,9 @@ describe('the repair chain', () => {
   it('runs the passes in the order the generation always did', () => {
     // Whole margins beside the paper and calculated fields after the groups
     // joined on 2026-11-11 (CC-03, CC-04), where the generation ran them beside the chain.
+    // The working-file mark joined on 2026-11-24 (the MCP design audit's GAP1-2).
     expect([...REPAIR_ORDER]).toEqual([
-      'items', 'refs', 'dpi', 'paper', 'whole margins', 'margins', 'overlaps', 'parameters', 'totals', 'groups', 'calculated fields', 'cross-tabs', 'data source', 'logins', 'scripts', 'styles',
+      'items', 'refs', 'dpi', 'paper', 'whole margins', 'margins', 'overlaps', 'parameters', 'totals', 'groups', 'calculated fields', 'cross-tabs', 'data source', 'logins', 'scripts', 'working file', 'styles',
     ]);
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -109,6 +111,31 @@ describe('the repair chain', () => {
     expect(out.applied).toBe(true);
     expect(hasReportScripts(out.xml)).toBe(false);
     expect(out.xml).toBe('<XtraReportsLayoutSerializer Ref="1" Name="R"><Item1 Ref="3" Name="a"></Item1><Item2 Ref="5" Name="b"></Item2></XtraReportsLayoutSerializer>');
+  });
+
+  // The MCP design audit's GAP1-2 (2026-11-24): the shape measured in DevExpress's own sample, hand-written.
+  it("neutralises a Visual Studio working file's mark for a .repx, as DevExpress's converter does, and keeps it for a .vsrepx", () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const marked = REPORT.replace('  <Bands>', `  <Extensions>\n    <Item1 Ref="20" Key="VSReportExtInfo" Value=".vsrepx" />\n  </Extensions>\n  <Bands>`);
+    expect(hasWorkingFileMark(marked)).toBe(true);
+    const asRepx = repairRepx(marked, { version: '23.2', keepScripts: true });
+    expect(asRepx.steps.find((s) => s.name === 'working file')?.applied).toBe(true);
+    expect(asRepx.xml).toContain('<Item1 Ref="20" Key="Skip" Value="Skip" />');
+    expect(hasWorkingFileMark(asRepx.xml)).toBe(false);
+    const asVsrepx = repairRepx(marked, { version: '23.2', keepScripts: true, target: 'vsrepx' });
+    expect(asVsrepx.steps.find((s) => s.name === 'working file')).toMatchObject({ applied: false, reason: expect.stringMatching(/^kept/) });
+    expect(asVsrepx.xml).toContain('Key="VSReportExtInfo" Value=".vsrepx"');
+    // Any attribute order and either quoting; another Extensions item left alone.
+    const reordered = `<Extensions><Item1 Value='.vsrepx' Ref='20' Key='VSReportExtInfo'/><Item2 Ref="21" Key="Other" Value="x" /></Extensions>`;
+    expect(workingFileMark(reordered).xml).toBe(`<Extensions><Item1 Value="Skip" Ref='20' Key="Skip"/><Item2 Ref="21" Key="Other" Value="x" /></Extensions>`);
+    expect(workingFileMark(REPORT)).toMatchObject({ applied: false, xml: REPORT });
+  });
+
+  it('reads the serializer version a report names for the parameter repair, and 20.1 when it names none', () => {
+    expect(versionOf(REPORT)).toBe('23.2');
+    expect(versionOf('<XtraReportsLayoutSerializer Ref="1" />')).toBe('20.1');
   });
 
   // The review of R5-02 (2026-11-12): a label whose text quotes the attribute keeps its text.

@@ -55,6 +55,7 @@ Both are real captures of the app at `localhost:3000`, not mockups, but from Sep
   - [Environment variables](#environment-variables)
   - [Running locally](#running-locally)
 - [Usage](#usage)
+- [Forma from an AI assistant](#forma-from-an-ai-assistant)
 - [Using your own Firebase project](#using-your-own-firebase-project)
 - [Configuration](#configuration)
 - [Project structure](#project-structure)
@@ -223,6 +224,122 @@ npm run dev:log    # same server; output tee'd to dev-server.log (gitignored)
 
 ---
 
+## Forma from an AI assistant
+
+Forma has an MCP server ([`src/mcp`](src/mcp), since 2026-11-24): a program you run on your own computer so an AI assistant — Claude Code, Visual Studio 2022's Copilot, VS Code, Claude Desktop or any other MCP client — can audit, outline, repair and edit the `.repx` files in your own projects, and draw one as a draft PDF. Your assistant starts it and talks to it over stdin and stdout; it opens no port, and the website does not run it. **None of its tools calls an AI or needs a key.** Making a report from a picture or a description through it is not built yet. The reasoning is [`docs/notes/mcp.md`](docs/notes/mcp.md).
+
+### What it needs
+
+- **Node in the range [Prerequisites](#prerequisites) gives.**
+- **A clone with a full `npm ci`.** The server runs from the clone through tsx, which is a devDependency, so `npm ci --omit=dev` leaves one that cannot start. There is no npm package and no bundle.
+- **A folder for it to work in.** It reads and writes only inside the folders in effect, the first of these that answers: `FORMA_MCP_ROOTS` in its entry in your host (full paths, separated by `;` on Windows and `:` elsewhere); the folders your host hands it; `CLAUDE_PROJECT_DIR`, which Claude Code sets. With none, every tool refuses and `forma_status` says how to set one.
+
+```bash
+git clone https://github.com/waqarsyd/forma.git
+cd forma
+npm ci
+```
+
+### The command every host runs
+
+```bash
+node <clone>/src/mcp/run.mjs
+```
+
+`<clone>` is the full path of that clone, such as `C:/Users/you/source/forma` or `/home/you/forma`. Not `npm run mcp`, which prints npm's banner where only protocol messages may go and, started in your project, runs your project's own `mcp` script; and not `npx`, which outside the clone fetches a tsx nobody pinned. Put the entry carrying it in a file of your own, never one your project commits: an absolute path to your clone is wrong on everyone else's machine.
+
+**Claude Code**
+
+```bash
+claude mcp add --transport stdio forma -- node <clone>/src/mcp/run.mjs
+```
+
+That is local scope, for the project you run it in, kept in your `~/.claude.json`; add `--scope user` for every project, and not `--scope project`, which writes a `.mcp.json` into the project for it to commit. Claude Code sets `CLAUDE_PROJECT_DIR` for the server, and can hand it the folder it was started in and every `--add-dir` folder, so no folder needs setting, unless Claude Code was started in your home folder or at a drive's root: the server refuses those, and a folder holding your home folder, whatever hands them over. Then, or to choose the folders yourself, add `--env FORMA_MCP_ROOTS=<full path>` before `--transport`.
+
+**Visual Studio 2022** (17.14 or later), in `<solution folder>\.vs\mcp.json`, which is yours and this solution's alone and which Visual Studio's standard `.gitignore` keeps out of source control:
+
+```json
+{
+  "servers": {
+    "forma": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["<clone>/src/mcp/run.mjs"],
+      "env": { "FORMA_MCP_ROOTS": "<solution folder>" }
+    }
+  }
+}
+```
+
+Then, in Copilot Chat, switch to **Agent** and turn Forma's tools on in the tools list, where Visual Studio starts every new tool off. Not `<solution folder>\.mcp.json`, which Visual Studio documents for source control.
+
+**VS Code**, in your Copilot configuration, `~/.copilot/mcp-config.json`, not a workspace's `.mcp.json`, which is shared:
+
+```json
+{
+  "mcpServers": {
+    "forma": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["<clone>/src/mcp/run.mjs"],
+      "env": { "FORMA_MCP_ROOTS": "<your reports folder>" },
+      "tools": ["*"]
+    }
+  }
+}
+```
+
+**Claude Desktop**, in `%APPDATA%\Claude\claude_desktop_config.json` on Windows or `~/Library/Application Support/Claude/claude_desktop_config.json` on a Mac:
+
+```json
+{
+  "mcpServers": {
+    "forma": {
+      "command": "node",
+      "args": ["<clone>/src/mcp/run.mjs"],
+      "env": { "FORMA_MCP_ROOTS": "<your reports folder>" }
+    }
+  }
+}
+```
+
+In JSON, write a Windows path with `/` or with each `\` doubled. None of these three can be counted on to hand a server its folders, so set `FORMA_MCP_ROOTS` in each.
+
+### The tools
+
+| Tool | What it does | Writes |
+|---|---|---|
+| `forma_status` | Forma's version, the protocol revision, and the folders the tools may use, or how to set one | Nothing |
+| `repx_audit` | The web app's audit of a `.repx` or `.vsrepx`: what DevExpress would load or print differently from what the file says | Nothing |
+| `repx_outline` | The report as Forma's chat sees it: paper, bands, every control by name with its place and size, the fields it prints, its parameters, and each SQL data source by its connection's name | Nothing |
+| `repx_repair` | Every repair Forma makes on the reports it generates, in the same order, then the audit of the result | `<name>.repaired.repx` beside the report, or where you say |
+| `repx_edit` | The edits Forma's chat makes, by control name: text, place, size, font, colour, alignment, borders, lines, page numbers, formats, bindings, band heights, paper, margins, and a group with its total | `<name>.edited.repx` (or `.edited.vsrepx` for a `.vsrepx`) beside the report, or where you say; it replaces a file only when asked |
+| `repx_pdf` | A draft PDF, laid out by the engine of Forma's Preview with no data, in the standard PDF fonts: for checking where things fall | `<name>.pdf` beside the report, or where you say |
+
+`src/mcp/toolList.ts` is the list; a test holds this table and the Docs page to it. The server also offers what Forma measured about the REPX format, [`docs/skills/devexpress-repx/SKILL.md`](docs/skills/devexpress-repx/SKILL.md), as the resource `skill://devexpress-repx/SKILL.md`.
+
+### What it does with your files
+
+- **Full paths only**, such as `G:\Reports\invoice.repx` or `/home/you/reports/invoice.repx`, inside the folders in effect. A relative name, `~` or a Git Bash `/g/...` path is refused, with the full path where it can be worked out; nothing is resolved against a folder the server cannot see you working in. A network path (`\\server\share`) is refused before the disk is touched.
+- **Never a dot-folder or a file named as credentials, never a write into `node_modules`**, and at most 20 MB a file. A link that leads outside the folders is refused.
+- **A report that is not well-formed XML is refused**, with the line where it breaks, and so is one that needs more than 30 seconds or 512 MB to work through: a report someone else made can be built to be slow, and it costs that one call, never the server.
+- **A file is never replaced unless you ask**, and only `repx_edit` can be asked. A repeat finds the same file and says so; other content in the way gets the new file beside it as `<name> (2)`.
+- **A stored database login is removed before any tool reads a report**, and the result says so: it never reaches your assistant or a file the server writes, and the report you named is left as it is.
+- **Text read from a report comes back as data**, under `fromFile`, never as instructions: a report made by someone else controls its own words.
+- **A Visual Studio report**: a `.vsrepx` is read as the `.repx` it is. A repair or an edit written as a `.repx` has Visual Studio's working-file mark neutralised; a `.vsrepx` is written only from a `.vsrepx`; and an edit is not written into a `.vsrepx` whose Designer file looks up a control the edits removed (a repair writes, and names it). A report written as C# or VB code is refused, with how to save it as a `.repx`.
+- **Nothing leaves your computer through it.** No tool calls an AI or makes a request to Forma or anyone else, and it keeps no telemetry and sends no learning events or error reports. What a tool returns goes to your assistant, and from there to the AI behind it, under that assistant's own terms.
+- **It reads no `.env`.** Its settings are its entry in your host.
+
+### Limitations
+
+- **No generation yet.** A report from a picture, a PDF or a description, or a revision of one with your own AI, is the next phase ([Roadmap](#roadmap)).
+- **A clone, not a package.** It needs the clone, a full `npm ci` and Node in the range above, and it runs the code you cloned: pull to update.
+- **Tested in process and as a host runs it, not yet in any host.** Its tests drive it in process in both protocol generations and spawn it with the exact command above; no host has run it yet, Claude Code included, and every recipe above, Claude Code's too, follows that host's own documentation.
+- **The PDF is a draft**: no data, the standard PDF fonts and the first line of each text. The Preview's export is the real one.
+- **`repx_edit` has no data edit**, which needs a database's layout the server does not hold.
+
+---
+
 ## Using your own Firebase project
 
 Sign-in and cloud storage need a Firebase project. Skip this entirely if you only want local use.
@@ -312,7 +429,7 @@ The top level, in brief. The full tree, with a note on every file that needs one
 | `npm run mcp` | Forma's MCP server on stdio (`src/mcp`), for development from the clone. Not the command a host runs: npm prints its banner to stdout, which the protocol forbids, and a host starts the server in your project, where npm would run that project's own scripts. A host runs `node <clone>/src/mcp/run.mjs`, after a full `npm ci` in the clone |
 | `npm run clean` | Remove `dist/` |
 
-Not an npm script, and not a check: `npx tsx scripts/repx.ts audit|repair|pdf <file.repx>` runs Forma's REPX audit, its repair chain or a draft PDF on one file from the command line (2026-11-11), for a person or a coding assistant working on a report outside the web app; `audit` exits 1 on an error, so it can gate a build. What each finding and repair means is [`docs/skills/devexpress-repx/SKILL.md`](docs/skills/devexpress-repx/SKILL.md).
+Not an npm script, and not a check: `npx tsx scripts/repx.ts audit|repair|pdf <file.repx>` runs Forma's REPX audit, its repair chain or a draft PDF on one file from the command line (2026-11-11), for a person or a coding assistant working on a report outside the web app; `audit` exits 1 on an error, so it can gate a build. What each finding and repair means is [`docs/skills/devexpress-repx/SKILL.md`](docs/skills/devexpress-repx/SKILL.md). An AI assistant gets the same three, with an outline and edits, as tools of Forma's MCP server ([Forma from an AI assistant](#forma-from-an-ai-assistant)).
 
 <sup>Two other files list these: [`CONTRIBUTING.md`](CONTRIBUTING.md)'s table of checks and [`CLAUDE.md`](CLAUDE.md)'s *Commands* block. Adding or renaming a script is a change to all three — this table is the one users read, so it lists every script rather than only the checks.</sup>
 
@@ -368,7 +485,9 @@ The roadmap is section 6 of [`docs/PRD.md`](docs/PRD.md), which is kept current 
 - **A password-strength indicator** at sign-up. The minimum of eight characters, the verification email and the verified address sharing needs are done.
 - **The report library, moved into the notes.** It was evaluated on a real report on 2026-11-09 ([`docs/proposals/rag.md`](docs/proposals/rag.md): a restyle with the house style matched the house font where none did without it), and since 2026-11-11 the reports you keep join it on their own; graduating its reasoning from the proposal into `docs/notes/` is the step left.
 
-Deliberately out of scope, each with its reasons in [`docs/PRD.md`](docs/PRD.md) §6: a server or a browser holding a customer's database credential, moving generation server-side, and replacing the direct Gemini call with MCP.
+- **Making reports from your AI assistant.** Forma's MCP server is in ([Forma from an AI assistant](#forma-from-an-ai-assistant)) with tools that need no AI; making and revising a report through it with your own AI is next, on the same generation path as the workspace, then the command line's `generate`.
+
+Deliberately out of scope, each with its reasons in [`docs/PRD.md`](docs/PRD.md) §6: a server or a browser holding a customer's database credential, moving generation server-side (the MCP server is not that: it is your own program on your own computer, with no port), and replacing the direct Gemini call with MCP.
 
 ---
 
@@ -393,7 +512,7 @@ Four documents carry the reasoning that the code cannot:
 
 - **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — the seven checks and the rules for adding and removing things; the one to read before you open a PR.
 - **[`CLAUDE.md`](CLAUDE.md)** — the entry point: hard constraints, commands, and an index that routes you to the note covering whatever you are about to change.
-- **[`docs/notes/`](docs/notes/)** — five notes carrying the architecture and its incident history: [`gemini.md`](docs/notes/gemini.md), [`app-shell.md`](docs/notes/app-shell.md), [`persistence.md`](docs/notes/persistence.md), [`styling.md`](docs/notes/styling.md), [`testing.md`](docs/notes/testing.md). Most of it explains *why* something is the way it is, usually because the obvious alternative broke. Read the one covering what you're touching before you change it.
+- **[`docs/notes/`](docs/notes/)** — six notes carrying the architecture and its incident history: [`gemini.md`](docs/notes/gemini.md), [`app-shell.md`](docs/notes/app-shell.md), [`persistence.md`](docs/notes/persistence.md), [`styling.md`](docs/notes/styling.md), [`testing.md`](docs/notes/testing.md), [`mcp.md`](docs/notes/mcp.md). Most of it explains *why* something is the way it is, usually because the obvious alternative broke. Read the one covering what you're touching before you change it.
 - **[`docs/PRD.md`](docs/PRD.md)** — the product specification, kept current against the code.
 
 A few rules worth knowing up front:

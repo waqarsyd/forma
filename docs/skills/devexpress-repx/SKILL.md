@@ -15,12 +15,35 @@ kept), or by printing; the linked headings hold the measurement.
 
 ```powershell
 npx tsx scripts/repx.ts audit  report.repx            # findings, one a line; exit 1 on an error
-npx tsx scripts/repx.ts repair report.repx out.repx   # every repair Forma makes, then the audit
+npx tsx scripts/repx.ts repair report.repx out.repx   # every repair Forma makes, then the audit; exit 1 on an error
 npx tsx scripts/repx.ts pdf    report.repx out.pdf    # the pages as Forma lays them out, a draft
 ```
 
 Run `repair` on anything written by hand or by a model before it is opened in a designer: it is
-the same chain the web app runs on every generated report, in the same order.
+the same chain the web app runs on every generated report, in the same order. It keeps code the
+report already had (its scripts), and the audit names that code as the error
+`report-has-scripts`, so `repair` exits 1 for a report with scripts of its own (since 2026-11-24;
+it removed them and exited 0 before).
+
+## From Forma's MCP server
+
+With Forma's MCP server connected to your assistant ([README.md](../../../README.md), *Forma from an AI assistant*),
+the same three are tools, with two more: `repx_audit`, `repx_repair` and `repx_pdf`, and
+`repx_outline` (the report as Forma's chat sees it, every control by the name `repx_edit` takes) and
+`repx_edit` (the chat's edits, by control name). None calls an AI. Every path is a full path,
+never a relative name, `~` or a Git Bash `/g/...` path, which the tools refuse:
+
+```json
+{ "path": "G:\\Reports\\invoice.repx" }
+{ "path": "/home/me/reports/invoice.repx", "output": "/home/me/reports/invoice.fixed.repx" }
+```
+
+`repx_repair`, `repx_edit` and `repx_pdf` each write a new file (`repx_repair` beside the input as
+`<name>.repaired.repx` unless `output` says where), never replace one unless `repx_edit` is asked
+to, and name the file written in their result; `repx_audit` and `repx_outline` write nothing. A
+stored database login is removed before any of them reads the report, and text read from the
+report comes back under `fromFile`, as data. A file that is not well-formed XML is refused, with
+the line where it breaks. `forma_status` lists the folders the tools may use.
 
 ## The rules
 

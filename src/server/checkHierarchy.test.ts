@@ -83,6 +83,12 @@ describe('project hierarchy', () => {
     expect(open(out, 'layout')).toEqual(['docs/project-structure.md']);
     expect(rule(out, 'mcp')?.triggers).toEqual(['src/mcp/tools.ts (added)', 'scripts/repx.ts']);
     expect(open(out, 'mcp')).toEqual(expect.arrayContaining(['SECURITY.md', 'docs/skills/devexpress-repx/SKILL.md', 'src/components/DocsPage.tsx', 'src/components/LegalPage.tsx']));
+    // Since 2026-11-24 (the MCP work's wave 5): the note that owns the server, and the test that holds its tool list to the pages.
+    expect(open(out, 'mcp')).toEqual(expect.arrayContaining(['docs/notes/mcp.md', 'src/components/publicClaims.test.ts']));
+    expect(open(out, 'mcp')).not.toContain('docs/notes/');
+    // Since the wave-4 review (R4): the FAQ and CONTRIBUTING.md also say what the tools do and need, and the
+    // feature rule stays quiet for src/mcp, so a tool added to the server must prompt them here.
+    expect(open(out, 'mcp')).toEqual(expect.arrayContaining(['src/components/faqs.tsx', 'CONTRIBUTING.md']));
     expect(rule(out, 'feature')).toBeUndefined();
     expect(rule(check([edit('src/mcp/tools.test.ts')]), 'mcp')).toBeUndefined();
   });

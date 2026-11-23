@@ -16,14 +16,18 @@
  *   client's validator never rejects a field added later. Path fields are
  *   plain strings judged in the handler (paths.ts), because the SDK's
  *   "Input validation error" names no fix.
- * - **Errors are isError results in plain words, never a throw.** A thrown
- *   error's raw message would reach the model as it is; here it is cut to
- *   its first line, keys taken out (`redact`), and the whole kept under
- *   2,000 characters (Claude Code keeps only the ends of a longer error). A
+ * - **Errors are isError results in plain words, never a throw.** A
  *   `ToolRefusal` is a refusal whose words are written for the model and sent
- *   as they are; an `AskClient` carries an input_required result (a
- *   2026-07-28 client is asked for its roots that way), and becomes a
- *   refusal on a 2025-era connection, which cannot be asked so.
+ *   as they are, keys taken out (`redact`) and the whole kept under 2,000
+ *   characters (Claude Code keeps only the ends of a longer error); an
+ *   `AskClient` carries an input_required result (a 2026-07-28 client is
+ *   asked for its roots that way), and becomes a refusal on a 2025-era
+ *   connection, which cannot be asked so. Any other error's message never
+ *   reaches the result, only the log on stderr (the wave-4 review's REV4-2):
+ *   a library's message can quote the file it was reading, as a regular
+ *   expression built from a report's text once quoted the report, and the
+ *   file's text goes back only under `fromFile`. The result says an
+ *   internal error stopped the tool and where its cause is written.
  * - **The result is data, and the same data twice.** `structuredContent` for
  *   the hosts that read it, and the same JSON in the text block under a
  *   one-line summary, because a host on an older revision may pass only the
@@ -198,8 +202,7 @@ export function errorResult(error: unknown, title: string, signal: AbortSignal, 
   if (error instanceof ToolRefusal) text = error.message;
   else if (signal.aborted) text = 'Stopped: the request was cancelled before it finished.';
   else {
-    const first = (error instanceof Error ? error.message : String(error)).split('\n')[0].slice(0, 300);
-    text = `${title} could not finish: ${first || 'an unexpected error'}.`;
+    text = `${title} could not finish because of an internal error; the server's log on stderr says why.`;
     deps.log(deps.redact(`${title} failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`));
   }
   text = deps.redact(text);

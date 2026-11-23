@@ -77,8 +77,18 @@ import { APP_CHECK_SITE_KEY } from '../lib/appCheck';
  * needed your own Gemini key to open the workspace, whichever AI designed. It
  * now needs the AI you choose set up, a Gemini key, OpenRouter with a key and
  * a model, or a local AI with a model.
+ *
+ * 2026-11-24 (the MCP design audit's SEC-11): the policy gained "Forma from
+ * an AI assistant", on Forma's MCP server (src/mcp), a program a person runs
+ * on their own computer from a clone, which this site does not run: in this
+ * version its tools send nothing to any AI, to Forma or to anyone else, and no
+ * learning events or error reports; what a tool returns goes to the person's
+ * assistant and the AI behind it, under that assistant's terms; a stored
+ * database login is taken out before a tool reads a report.
+ * legalDisclosure.test.ts holds "send nothing" to src/mcp/toolList.ts and
+ * reads every file under src/mcp for a host this policy does not name.
  */
-const UPDATED = '23 November 2026';
+const UPDATED = '24 November 2026';
 
 type Section = { heading: string; paragraphs: string[] };
 
@@ -218,6 +228,13 @@ const PRIVACY: Section[] = [
       'Dictation uses your browser’s own speech recognition. Forma receives only the text; the audio goes wherever your browser sends it, which in Chrome is Google and in Edge is Microsoft.',
       'The typefaces used to come from Google Fonts, which meant Google saw the IP address and browser of anyone who opened Forma at all. Since 30 August 2026 they are served by Forma’s own host, as are OCR, Forma’s own models and the fonts a PDF embeds. OCR and those models run in your browser, so a picture’s words are read without leaving your machine.',
       'Files you upload are prepared in your browser — resized, rendered, parsed — before anything is sent.',
+    ],
+  },
+  {
+    heading: 'Forma from an AI assistant',
+    paragraphs: [
+      'Forma’s source code includes an MCP server: a program you can run on your own computer, from a copy of the code, so that an AI assistant such as Claude Code can check, outline, repair and edit your report files. This website does not run it and it is no part of the site; you start it through your assistant, and it works only with files in the folders you or your assistant give it.',
+      'In this version its tools send nothing to any AI, to Forma or to anyone else, and it sends no learning events and no error reports. What a tool returns goes to your assistant, and from there to the AI behind it, under that assistant’s own terms, which decide what happens to it next. A database login stored in a report is taken out before any tool reads the report, so it is never part of what goes back.',
     ],
   },
   {

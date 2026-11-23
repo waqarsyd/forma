@@ -18,7 +18,7 @@ import { inkPoints, pageShaped, pageTurn } from './deskew';
 import { withPdfDocument } from './pdf';
 import { checkRepx } from './repx';
 import { pointsToUnits } from './reportGeometry';
-import { decodeBase64, readRepxDataSources, stripStoredCredentials } from './repxSqlDataSource';
+import { withoutStoredLogin } from './repxSqlDataSource';
 import type { DatabaseText } from './sqlSchema';
 
 /**
@@ -332,41 +332,39 @@ export function evidenceSummary(summary: string, count: number): string {
 export const LOGIN_REMOVED_NOTICE =
   'This report kept a database login. Forma removed it before reading the report; your copy on disk is unchanged.';
 
+/** The notice when a report keeps a login Forma could not take out with certainty, so it is not read (REV4-1). */
+export const loginLeftNotice = (name: string) =>
+  `"${name}" keeps a database login in a data source Forma could not read cleanly, so it was not read or sent. Save the report with its connection stored by name only, and attach it again.`;
+
 /**
  * An uploaded `.repx` as it is read (2026-11-11, the full audit's SE-01): its
  * text with every data source's connection stored by name only, as Forma
  * writes it. A report saved with its login and password in its SqlDataSource
  * went to the AI with them, base64 and all, inside the request; only what
  * came back was cleaned. Batch reads through here too.
+ *
+ * Since 2026-11-24 (the MCP server's wave-4 review, REV4-1) every data source
+ * the file stores is read, wherever DevExpress put it: a subreport's own and
+ * one kept in ObjectStorage were sent with their logins until then. A report
+ * whose login could not be taken out with certainty (a connection left open
+ * in its data source) is not sent at all: its text is empty, which the
+ * callers skip, and the notice says why.
  */
 export function repxAttachment(name: string, xml: string): { text: string; notices: string[] } {
   const notices: string[] = [];
-  const sources = readRepxDataSources(xml);
   // A login kept as the connection's parameters, or (the PIPE1 review) a
   // password inside a custom connection string, which was taken out as well
-  // and said nothing.
-  const hadLogin = sources.some((d) => d.storesCredentials || (!d.fromAppConfig && connectionHasPassword(xml, d.ref)));
-  const clean = stripStoredCredentials(xml);
-  if (hadLogin) notices.push(LOGIN_REMOVED_NOTICE);
+  // and said nothing. The reading is shared with the MCP server's tools
+  // (repxSqlDataSource.ts, `withoutStoredLogin`).
+  const clean = withoutStoredLogin(xml);
+  if (clean.loginLeft) return { text: '', notices: [loginLeftNotice(name)] };
+  if (clean.hadLogin) notices.push(LOGIN_REMOVED_NOTICE);
   const verdict = checkRepx(clean.xml);
   if (!verdict.ok) notices.push(`"${name}": ${verdict.message}`);
   return {
     text: `Existing DevExpress report (${name}). Use this as the base structure and preserve it unless asked to change it:\n\n${clean.xml}`,
     notices,
   };
-}
-
-/** A password or pwd with a value in the custom connection string of the data source stored at `ref`. */
-function connectionHasPassword(xml: string, ref: string): boolean {
-  if (!ref) return false;
-  const stored = new RegExp(`<Item\\d+\\s[^>]*?Ref="${ref}"[^>]*?Base64="([^"]*)"`).exec(xml);
-  if (!stored) return false;
-  try {
-    const connection = /<Connection\s[^>]*?(?:\/>|>[\s\S]*?<\/Connection>)/.exec(decodeBase64(stored[1]))?.[0] ?? '';
-    return /\b(?:password|pwd)\s*=\s*[^;"&\s]/i.test(connection);
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -531,7 +529,7 @@ export async function ingestFile(file: File, uploadId: string, reportUnit?: stri
     }
     const read = repxAttachment(name, xml);
     out.notices.push(...read.notices);
-    out.texts.push({ id: `${Date.now()}-${name}`, uploadId, file: name, text: read.text });
+    if (read.text) out.texts.push({ id: `${Date.now()}-${name}`, uploadId, file: name, text: read.text });
     return out;
   }
 
@@ -562,7 +560,7 @@ export async function ingestFile(file: File, uploadId: string, reportUnit?: stri
     if (report) {
       const read = repxAttachment(name, report.xml);
       out.notices.push(...report.notices, ...read.notices);
-      out.texts.push({ id: `${Date.now()}-${name}`, uploadId, file: name, text: read.text });
+      if (read.text) out.texts.push({ id: `${Date.now()}-${name}`, uploadId, file: name, text: read.text });
     } else if (/\.rdlc?$/i.test(name)) {
       out.texts.push({ id: `${Date.now()}-${name}`, uploadId, file: name, text: rdlAttachment(name, xml) });
     } else {

@@ -13,47 +13,28 @@
  */
 import { posix } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { InMemoryTransport, type JSONRPCMessage } from '@modelcontextprotocol/server';
-import { serveStdio } from '@modelcontextprotocol/server/stdio';
-import { FORMA_INSTRUCTIONS, createFormaServer, formaVersion, nodeSystem, type FormaServerOptions } from './formaServer';
+import { FORMA_INSTRUCTIONS, NO_AI_TOOLS, createFormaServer, formaVersion, nodeSystem, type FormaServerOptions } from './formaServer';
+import { NO_AI } from './reportTools';
 import { noRootMessage, readEnvRoots, type EnvRoots } from './roots';
+import { SKILL_PREFACE, SKILL_URI, loadRepxSkill, skillText } from './skillResource';
+import { connectInMemory, inThread, textJson } from './testClient';
 import { fakeFs } from './testFs';
+import { TOOL_LIST } from './toolList';
 import { MAX_DESCRIPTION } from './toolShape';
 
 const system = { path: posix, home: '/home/me', fs: fakeFs(posix, { dirs: ['/srv/env', '/srv/client', '/srv/claude'], links: { '/srv/linked': '/srv/env' } }) };
 const MODERN = '2026-07-28';
 const LEGACY = '2025-11-25';
 
-type Reply = { id?: number; result?: Record<string, any>; error?: { code: number; message: string } };
-type Answer = (request: { id: number; method: string; params?: unknown }) => Record<string, unknown> | undefined;
+/** The REPX skill's catalog, built once as the stdio entry builds it; strict, so a problem with the skill fails here. */
+const skills = await loadRepxSkill(() => {}, { strict: true });
 
-/** One connection to a fresh server: requests by id, and how the client answers the server's own requests. */
+/** One connection to a fresh server, through the shared in-memory client (testClient.ts). */
 async function connect(env: { FORMA_MCP_ROOTS?: string; CLAUDE_PROJECT_DIR?: string } = {}, more: Partial<FormaServerOptions> = {}) {
-  const [client, serverSide] = InMemoryTransport.createLinkedPair();
-  const pending = new Map<number, (reply: Reply) => void>();
-  const asked: { method: string }[] = [];
   const logged: string[] = [];
-  let answer: Answer = () => undefined;
-  client.onmessage = (message: JSONRPCMessage) => {
-    const m = message as { id?: number; method?: string; params?: unknown };
-    if (m.method !== undefined && m.id !== undefined) {
-      asked.push({ method: m.method });
-      const reply = answer({ id: m.id, method: m.method, params: m.params });
-      if (reply) void client.send({ jsonrpc: '2.0', id: m.id, ...reply } as JSONRPCMessage);
-    } else if (m.id !== undefined) pending.get(m.id)?.(message as Reply);
-  };
-  await client.start();
   const envRoots: EnvRoots = readEnvRoots(env, system);
-  const handle = serveStdio(() => createFormaServer({ envRoots, system, version: formaVersion(), log: (line) => logged.push(line), rootsTimeoutMs: 150, ...more }), { transport: serverSide });
-  let next = 1;
-  const request = (method: string, params?: Record<string, unknown>) =>
-    new Promise<Reply>((done) => {
-      const id = next++;
-      pending.set(id, done);
-      void client.send({ jsonrpc: '2.0', id, method, ...(params ? { params } : {}) } as JSONRPCMessage);
-    });
-  const notify = (method: string) => client.send({ jsonrpc: '2.0', method } as JSONRPCMessage);
-  return { request, notify, asked, logged, answerWith: (fn: Answer) => (answer = fn), close: () => handle.close() };
+  const c = await connectInMemory(() => createFormaServer({ envRoots, system, version: formaVersion(), skills, pipeline: inThread, log: (line) => logged.push(line), rootsTimeoutMs: 150, ...more }));
+  return { ...c, logged };
 }
 
 const meta = (capabilities: Record<string, unknown> = {}) => ({
@@ -74,12 +55,6 @@ async function modern(env = {}, capabilities: Record<string, unknown> = {}) {
   const discover = await c.request('server/discover', { _meta: meta(capabilities) });
   return { ...c, discover, status: (extra: Record<string, unknown> = {}) => c.request('tools/call', { name: 'forma_status', arguments: {}, _meta: meta(capabilities), ...extra }) };
 }
-
-/** The JSON a result's text block carries under its summary. */
-const textJson = (result: Record<string, any>) => {
-  const text: string = result.content[0].text;
-  return JSON.parse(text.slice(text.indexOf('\n\n{') + 2));
-};
 
 describe('a 2025-era client', () => {
   it('is answered with Forma at its version, the instructions, and a tool list that never changes', async () => {
@@ -231,10 +206,45 @@ describe('a 2026-07-28 client', () => {
 });
 
 describe('the tool list', () => {
+  it("lists toolList.ts's tools in its order, each read-only as the list says, and saying it needs no AI where the list says so", async () => {
+    // Finding DOC-5: the list the docs will be held to is the list the server registers from.
+    const c = await legacy();
+    const tools = (await c.request('tools/list')).result?.tools as Record<string, any>[];
+    expect(tools.map((t) => t.name)).toEqual(TOOL_LIST.map((t) => t.name));
+    for (const [i, entry] of TOOL_LIST.entries()) {
+      expect(tools[i].annotations.readOnlyHint, entry.name).toBe(entry.readOnly);
+      expect(tools[i].description.includes('calls no AI'), entry.name).toBe(!entry.needsAi);
+      if (entry.name !== 'forma_status') expect(tools[i].description.includes(NO_AI), entry.name).toBe(!entry.needsAi);
+    }
+    // The instructions every host's model reads say no tool calls an AI exactly while none does (R11 of the wave-4 review).
+    expect(FORMA_INSTRUCTIONS.includes(NO_AI_TOOLS)).toBe(TOOL_LIST.every((t) => !t.needsAi));
+    expect(FORMA_INSTRUCTIONS).not.toMatch(/\bmakes? (DevExpress )?reports\b/);
+    await c.close();
+  });
+
+  it('serves the REPX skill as a resource, with the preface that tells a model to send full paths, the file itself unchanged', async () => {
+    // Findings PROTO-11 and GAP2-5.
+    const c = await legacy();
+    const listed = (await c.request('resources/list')).result?.resources as Record<string, any>[];
+    expect(listed).toEqual([expect.objectContaining({ uri: SKILL_URI, name: 'devexpress-repx', mimeType: 'text/markdown' })]);
+    const contents = (await c.request('resources/read', { uri: SKILL_URI })).result?.contents as Record<string, any>[];
+    const served: string = contents[0].text;
+    const file = skillText();
+    const front = /^---\r?\n[\s\S]*?\r?\n---\r?\n/.exec(file)![0];
+    expect(served).toBe(`${front}\n${SKILL_PREFACE}\n${file.slice(front.length)}`);
+    expect(SKILL_PREFACE).toMatch(/^[\x20-\x7e\n]+$/);
+    expect(SKILL_PREFACE).toContain('G:\\Reports\\invoice.repx');
+    expect(SKILL_PREFACE).toContain('/home/me/reports/invoice.repx');
+    // Every relative link the skill makes is said where it leads, since it leads nowhere in the served copy (R12 of the wave-4 review).
+    const targets = [...new Set([...file.matchAll(/\]\((\.\.\/[^)#\s]+)/g)].map((m) => m[1]))];
+    expect(targets.length).toBeGreaterThan(0);
+    for (const target of targets) expect(SKILL_PREFACE, target).toContain(target);
+    await c.close();
+  });
+
   it('sets every hint on every tool, takes an object, and keeps each description and the instructions within limits', async () => {
     const c = await legacy();
     const tools = (await c.request('tools/list')).result?.tools as Record<string, any>[];
-    expect(tools.map((t) => t.name)).toEqual(['forma_status']);
     for (const tool of tools) {
       for (const hint of ['readOnlyHint', 'destructiveHint', 'idempotentHint', 'openWorldHint']) expect(typeof tool.annotations[hint]).toBe('boolean');
       expect(tool.inputSchema.type).toBe('object');

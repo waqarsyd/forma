@@ -27,6 +27,7 @@ import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { FIRESTORE_CACHE_PREFIX, SIGNED_OUT_DATABASES, SIGNED_OUT_LOCAL_KEYS, SIGNED_OUT_LOCAL_PREFIXES } from '../lib/signOut';
 import { DEFAULT_LEARNING_SETTINGS, MAX_LOCAL } from '../lib/learning';
+import { TOOL_LIST } from '../mcp/toolList';
 
 /** Vitest runs with the repo root as cwd — see the same note in routes.test.ts. */
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
@@ -600,6 +601,56 @@ describe('the policy says what kept reports and Forma Designer are used for', ()
   });
 });
 
+/*
+ * Forma's MCP server (2026-11-24, the MCP design audit's SEC-11 and DOC-6): a
+ * program a person runs on their own computer from a clone, which this site
+ * does not run. A Node process has no CSP, so the policy is the one written
+ * bound on where it sends anything, and the table at the top probes named
+ * browser files only: a host spelled only in src/mcp would pass it unseen. So
+ * every file under src/mcp but its tests is read here, comments taken out (a
+ * doc comment may cite a page without reaching it), and the policy's "send
+ * nothing" is held to the tool list and to the code making no request.
+ * One-directional like the rest: what the code does obliges the sentence.
+ */
+describe("the policy covers Forma's MCP server", () => {
+  const code = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const files = (readdirSync(resolve(process.cwd(), 'src/mcp')) as string[])
+    .filter((f) => /\.(ts|mjs)$/.test(f) && !/\.test\.ts$/.test(f))
+    .map((f) => ({ path: `src/mcp/${f}`, text: code(read(`src/mcp/${f}`)) }));
+  /** This computer, which the policy's "your own computer" covers. */
+  const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+  it('reads the server and its tools, so a scan that stopped finding them cannot pass empty', () => {
+    const paths = files.map((f) => f.path);
+    for (const p of ['src/mcp/run.mjs', 'src/mcp/stdio.ts', 'src/mcp/formaServer.ts', 'src/mcp/reportTools.ts', 'src/mcp/toolList.ts']) expect(paths).toContain(p);
+  });
+
+  it('names the recipient behind every host a file under src/mcp spells', () => {
+    const named = new Map(DISCLOSURES.map((d) => [d.host, d.mustName]));
+    const unnamed: string[] = [];
+    for (const { path, text } of files) {
+      for (const m of text.matchAll(/\b(?:https?|wss?):\/\/([^/\s'"`)]+)/gi)) {
+        const host = m[1].toLowerCase().replace(/:\d+$/, '');
+        if (LOOPBACK.has(host)) continue;
+        const must = named.get(host);
+        if (!must) unnamed.push(`${host} (${path})`);
+        else expect(must.test(legal), `${path} reaches ${host}, so LegalPage.tsx must name the recipient`).toBe(true);
+      }
+    }
+    expect(unnamed, 'src/mcp names a host the policy has no row for: add it to DISCLOSURES and name the recipient in LegalPage.tsx').toEqual([]);
+  });
+
+  it('says its tools send nothing while none calls an AI and nothing under src/mcp makes a request', () => {
+    const asksAi = TOOL_LIST.filter((t) => t.needsAi).map((t) => t.name);
+    const requests = files.filter(({ text }) => /\bfetch\s*\(|\bhttps?\.(?:request|get)\s*\(|\bnet\.connect\s*\(|\bnew\s+WebSocket\b/.test(text)).map((f) => f.path);
+    const promise = /In this version its tools send nothing to any AI, to Forma or to anyone else, and it sends no learning events and no error reports/;
+    if (!asksAi.length && !requests.length) expect(policy).toMatch(promise);
+    else expect(policy, `${[...asksAi, ...requests].join(', ')} reach out: the policy must say where to, not that nothing is sent`).not.toMatch(promise);
+    expect(policy).toMatch(/This website does not run it and it is no part of the site/);
+    expect(policy).toMatch(/What a tool returns goes to your assistant, and from there to the AI behind it, under that assistant’s own terms/);
+  });
+});
+
 /**
  * The "Last updated" date must move when the words above it do.
  *
@@ -760,9 +811,17 @@ describe('the legal copy and its date change together', () => {
      designed; they now say it needs the AI you choose set up, Gemini with a
      key, OpenRouter with a key and a model, or a local AI with a model. What
      a person agrees to changed, so the date moved.
+
+     Moved again on 2026-11-24 (the MCP design audit's SEC-11): the policy
+     gained "Forma from an AI assistant", on Forma's MCP server, a program a
+     person runs on their own computer, which this site does not run: in
+     this version its tools send nothing to any AI, to Forma or to anyone
+     else, what a tool returns goes to the person's assistant and the AI
+     behind it under that assistant's terms, and a stored database login is
+     taken out first. A new recipient is described, so the date moved.
      */
-  const EXPECTED_COPY_HASH = '6cc2de9730e2';
-  const EXPECTED_UPDATED = '23 November 2026';
+  const EXPECTED_COPY_HASH = '4784b3e313ce';
+  const EXPECTED_UPDATED = '24 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {
     const actual = createHash('sha256').update(legalCopy()).digest('hex').slice(0, 12);

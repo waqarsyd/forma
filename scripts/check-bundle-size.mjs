@@ -236,7 +236,12 @@ const BUDGETS = [
    * is the Preview pane's component, `reportPreview-` the engine it draws with.
    */
   { prefix: 'ReportPreview-', ext: '.js', max: 102_500, note: 'the Preview pane, lazy (96,629 B at 94.3%, Vite 8)' },
-  { prefix: 'DocsPage-', ext: '.js', max: 86_500, note: 'the Docs page, lazy (81,521 B at 94.2%, Vite 8)' },
+  // Raised to 94,000 on 2026-11-24, at 88,433 B (102.2%, over): the MCP work's wave 5 put an article on the
+  // Docs page, Forma from an AI assistant (its six tools, the command every host runs, the setup per host,
+  // what it does with files), and the wave-4 review's fixes said a malformed or slow report is refused and
+  // when Claude Code's folder is not enough. Copy a visitor reads, not code: the chunk was 82,662 B before
+  // the article. 94.1%.
+  { prefix: 'DocsPage-', ext: '.js', max: 94_000, note: 'the Docs page, lazy (88,433 B at 94.1%, the MCP article)' },
   { prefix: 'reportPreview-', ext: '.js', max: 66_000, note: 'the Preview engine, lazy (61,825 B at 93.7%, Vite 8)' },
   // Raised to 55,500 on 2026-11-12, at 51,921 B (102.8%): the 1.6.0 entry, the full audit's release note, in a visitor's words (DOCS, dc85c04). 93.6%.
   // Raised to 58,700 the same day, at 55,155 B (99.4%): the 1.6.1 entry, +1,096 B, the releases' own words. 94.0%.
@@ -889,10 +894,18 @@ const isPaddle = (f) => f.path.startsWith(PADDLE_DIR) || f.name.startsWith('padd
  * stored item and what a kept report sends (LG, FIX2D), and PPUB's font
  * preload and module-preload links went into every page's head. Copy a
  * visitor reads and two lines per page, not drift. 94.0%.
+ *
+ * Raised to 970,000 on 2026-11-24, at 912,042 B (100.6%, over): the MCP
+ * work's wave 5 described Forma's MCP server on the public pages, a Docs
+ * article drawn into docs.html, an FAQ answer drawn into both the Docs and
+ * the FAQ pages, a section each on /security and /self-host, and one in the
+ * privacy policy, and the wave-4 review's fixes added two sentences to the
+ * article. The total was 897,185 B (98.9%) before them. Copy a visitor
+ * reads, not drift; this is the raise wave 5 should have carried. 94.0%.
  */
 const isPage = (f) => f.name.endsWith('.html') && dirname(f.path) === DIST;
 const pagesTotal = files.filter(isPage).reduce((a, f) => a + f.size, 0);
-const PAGES_TOTAL_MAX = 907_000;
+const PAGES_TOTAL_MAX = 970_000;
 const total = files.filter((f) => !isOcr(f) && !isPdfFont(f) && !isModel(f) && !isHandwriting(f) && !isPaddle(f) && !isPage(f)).reduce((a, f) => a + f.size, 0);
 const paddleTotal = files.filter(isPaddle).reduce((a, f) => a + f.size, 0);
 // 13,082,453 B with the models (2026-11-10), so 94.0%.

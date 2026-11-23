@@ -121,6 +121,25 @@ export const SECURITY: InfoDoc = {
       ),
     },
     {
+      // Forma's MCP server (2026-11-24, the MCP design audit's DOC-6 and SEC-11): a program, not this site.
+      heading: 'Forma from an AI assistant',
+      body: (
+        <>
+          <p className={P}>
+            Forma&apos;s MCP server is a program you run on your own computer, from the source code, so an AI assistant
+            such as Claude Code can use Forma&apos;s tools; this site does not run it. It talks only to the assistant
+            that started it, over its standard input and output, and opens no network port. Its tools read and write
+            only in the folders they are given and only by full path, never replace a file unless asked, take a
+            database login stored in a report out before reading it, and hand back what they read from a file as data,
+            never as instructions. In this version none of them calls an AI or sends anything anywhere; what a tool
+            returns goes to your assistant and the AI behind it, under that assistant&apos;s terms.{' '}
+            <a href={`${REPO}/blob/main/SECURITY.md`} className={A} {...ext}>SECURITY.md</a> says what is worth reporting
+            about it.
+          </p>
+        </>
+      ),
+    },
+    {
       heading: 'Reporting a vulnerability',
       body: (
         <>
@@ -493,6 +512,24 @@ npm run dev`}</pre>
             Open <code className="doc-code">http://localhost:3000</code> and set up your AI in Settings: a Gemini or
             OpenRouter key, or a model on your own computer. Signed out, projects are kept in your browser, and
             everything works. Open in designer works here as it does on the website, with Forma Designer installed, and from here Forma Designer can also read your SQL Server.
+          </p>
+        </>
+      ),
+    },
+    {
+      // Forma's MCP server (2026-11-24, the MCP work's wave 5, DOC-10). The command is held by stdio.test.ts.
+      heading: 'From an AI assistant',
+      body: (
+        <>
+          <p className={P}>
+            The same copy runs Forma&apos;s MCP server, for an AI assistant such as Claude Code, Visual Studio&apos;s
+            Copilot, VS Code or Claude Desktop: after <code className="doc-code">npm ci</code>, the assistant runs
+          </p>
+          <pre className={CODE}>{`node <clone>/src/mcp/run.mjs`}</pre>
+          <p className={P}>
+            with the full path of the copy, and its tools audit, outline, repair and edit your .repx files and draw a
+            draft PDF, calling no AI. The <a href="/docs#mcp" className={A}>Docs</a> and the README say how to add it to
+            each assistant.
           </p>
         </>
       ),

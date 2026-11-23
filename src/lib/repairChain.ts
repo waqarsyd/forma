@@ -30,6 +30,13 @@
  * - **The data source** carried through a redesign, then **stored logins** and
  *   **scripts** removed (2026-11-11, SE-02b: Forma writes no code, so code in
  *   a generated report came from the model unless the user brought it).
+ * - **The working-file mark** (2026-11-24, finding GAP1-2 of the MCP design
+ *   audit): a Visual Studio `.vsrepx` carries an Extensions item keyed
+ *   `VSReportExtInfo`, and DevExpress says LoadLayoutFromXml refuses a file
+ *   with it from 20.2.4 on (DevExpress 20.1, the only one measured here,
+ *   loads it and keeps it on a re-save). Written as a `.repx` it is
+ *   neutralised as DevExpress's own converter does; written back as a
+ *   `.vsrepx` it is kept. It touches one root item, so its place is free.
  * - **Styles last**: they read every attribute the passes above may write.
  */
 import { normalizeItemNames } from './repxItems';
@@ -59,6 +66,13 @@ export interface RepairContext {
   keepScripts?: boolean;
   /** The data's own fields when known (the Data tab's schema), for the calculated-field repair. */
   fields?: readonly string[];
+  /** What the repaired file is written as: a `.repx` (the default) or a Visual Studio `.vsrepx`, which keeps its working-file mark. */
+  target?: 'repx' | 'vsrepx';
+}
+
+/** The serializer version a report names, for the parameter repair; 20.1 when it names none. */
+export function versionOf(xml: string): string {
+  return /\bSerializerVersion="(\d+\.\d+)/.exec(xml)?.[1] ?? '20.1';
 }
 
 /** One pass, as it went. */
@@ -85,6 +99,7 @@ export const REPAIR_ORDER = [
   'data source',
   'logins',
   'scripts',
+  'working file',
   'styles',
 ] as const;
 
@@ -111,6 +126,34 @@ export function stripReportScripts(xml: string): Result {
   return { xml: out, applied: out !== xml, reason: 'removed the code the answer carried; Forma writes none' };
 }
 
+/** An `<ItemN ...>` opening tag, attributes in any order and either quoting. */
+const ITEM_TAG = /<Item\d+\b(?:\s+[\w.:-]+\s*=\s*(?:"[^"]*"|'[^']*'))*\s*\/?>/g;
+/** The value of one attribute of a tag, either quoting; null when it has none. */
+const valueIn = (tag: string, name: string) => new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`).exec(tag)?.slice(1).find((v) => v !== undefined) ?? null;
+const isWorkingFileItem = (tag: string) => valueIn(tag, 'Key') === 'VSReportExtInfo';
+
+/** True when a report carries Visual Studio's working-file mark (finding GAP1-2). */
+export function hasWorkingFileMark(xml: string): boolean {
+  return [...xml.matchAll(ITEM_TAG)].some((m) => isWorkingFileItem(m[0]));
+}
+
+/**
+ * Visual Studio's working-file mark, for the file a report is written as
+ * (finding GAP1-2): `<ItemN Ref=".." Key="VSReportExtInfo" Value=".vsrepx" />`
+ * in the root's Extensions. For a `.repx` its key and value become `Skip`,
+ * which is the one change DevExpress's own .vsrepx converter makes (its Ref
+ * and item name kept, so nothing else moves); for a `.vsrepx` it is kept as
+ * it is.
+ */
+export function workingFileMark(xml: string, target: 'repx' | 'vsrepx' = 'repx'): Result {
+  if (!hasWorkingFileMark(xml)) return { xml, applied: false, reason: 'no Visual Studio working-file mark' };
+  if (target === 'vsrepx') return { xml, applied: false, reason: 'kept the Visual Studio working-file mark a .vsrepx carries' };
+  const out = xml.replace(ITEM_TAG, (tag) =>
+    isWorkingFileItem(tag) ? tag.replace(/(\s(?:Key|Value)\s*=\s*)(?:"[^"]*"|'[^']*')/g, (_m, lead: string) => `${lead}"Skip"`) : tag,
+  );
+  return { xml: out, applied: out !== xml, reason: "neutralised the mark of a Visual Studio working file, as DevExpress's converter does, since DevExpress says it refuses such a .repx from 20.2.4 on" };
+}
+
 /** How a pass is logged when it acts and when it does not; null says nothing. */
 const LOGGED: Record<RepairName, [applied: 'warn' | 'log', skipped: 'debug' | 'log' | null]> = {
   items: ['warn', 'debug'],
@@ -128,6 +171,7 @@ const LOGGED: Record<RepairName, [applied: 'warn' | 'log', skipped: 'debug' | 'l
   'data source': ['warn', null],
   logins: ['warn', null],
   scripts: ['warn', null],
+  'working file': ['warn', null],
   styles: ['log', 'log'],
 };
 
@@ -149,6 +193,7 @@ export function repairRepx(xml: string, ctx: RepairContext): { xml: string; step
     'data source': ctx.previous ? (text) => carryDataSource(ctx.previous!, text) : null,
     logins: stripStoredCredentials,
     scripts: ctx.keepScripts ? null : stripReportScripts,
+    'working file': (text) => workingFileMark(text, ctx.target),
     styles: liftStyles,
   };
   const steps: RepairStep[] = [];

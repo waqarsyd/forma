@@ -6,10 +6,25 @@
  * source, so the old one was never put back and the report opened bound to
  * nothing. The redesign's source is its own only when it names a connection
  * and reads a query. The rest of carryDataSource is in sqlDrift.test.ts.
+ *
+ * Also here since 2026-11-24: a stored login taken out wherever the report
+ * keeps it (the MCP server's wave-4 review), and the walk that detail
+ * regions share.
  */
 import { describe, expect, it } from 'vitest';
 import { readSchemaScript } from './sqlSchema';
-import { carryDataSource, detailRegions, encodeBase64, memberAt, readRepxDataSources, resolveMember } from './repxSqlDataSource';
+import {
+  carryDataSource,
+  decodeBase64,
+  detailRegions,
+  encodeBase64,
+  memberAt,
+  readEveryDataSource,
+  readRepxDataSources,
+  resolveMember,
+  stripStoredCredentials,
+  withoutStoredLogin,
+} from './repxSqlDataSource';
 import { writeSqlDataSource } from './repxSqlWriter';
 
 const schema = readSchemaScript(
@@ -88,6 +103,83 @@ describe('a redesign whose data source came back garbled', () => {
     expect(readRepxDataSources(kept.xml)).toEqual(readRepxDataSources(own));
     const storage = /<ComponentStorage>([\s\S]*?)<\/ComponentStorage>/.exec(kept.xml)![1];
     expect([...storage.matchAll(/<(Item\d+) /g)].map((m) => m[1])).toEqual(['Item1']);
+  });
+});
+
+/*
+ * A stored login wherever DevExpress keeps it (2026-11-24, the wave-4 review
+ * of the MCP server, REV4-1 and REV4-2). DevExpress 20.1.3's SaveLayoutToXml
+ * was measured writing a SqlDataSource outside the root's ComponentStorage
+ * in two shapes, written here by hand: in ObjectStorage, for a source
+ * assigned in code, and in an embedded subreport's own ComponentStorage,
+ * which comes before the root's. The strip read only the first storage, by
+ * an item's Ref built into a pattern, so both kept their password, the second
+ * while saying it was removed; and a Ref that is not a number broke the
+ * pattern, or made it run for seconds.
+ */
+describe('a stored login, wherever the report keeps it', () => {
+  const SECRET = 'Secret123';
+  const doc = (name: string, connection: string) =>
+    `<SqlDataSource Name="${name}">${connection}<Query Type="SelectQuery" Name="Orders"><Tables><Table Name="Orders" /></Tables><Columns><AllColumns /></Columns></Query></SqlDataSource>`;
+  const LOGIN = `<Connection Name="Sales" ProviderKey="MSSqlServer"><Parameters><Parameter Name="server" Value="db01" /><Parameter Name="userid" Value="sa" /><Parameter Name="password" Value="${SECRET}" /></Parameters></Connection>`;
+  const BY_NAME = '<Connection Name="Sales" FromAppConfig="true" />';
+  const OT = 'DevExpress.DataAccess.Sql.SqlDataSource,DevExpress.DataAccess.v20.1';
+  const item = (ref: string, name: string, connection: string, q = '"') => `<Item1 Ref=${q}${ref}${q} ObjectType=${q}${OT}${q} Name=${q}${name}${q} Base64=${q}${encodeBase64(doc(name, connection))}${q} />`;
+  const wrap = (inside: string) =>
+    `<?xml version="1.0" encoding="utf-8"?>\n<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1" Name="R" DataMember="Orders" DataSource="#Ref-0"><Bands><Item1 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="20" /></Bands>${inside}</XtraReportsLayoutSerializer>`;
+  const subreport = (inner: string) =>
+    `<Bands><Item1 Ref="5" ControlType="DetailBand" Name="Detail" HeightF="50"><Controls><Item1 Ref="6" ControlType="XRSubreport" Name="sub1"><ReportSource Ref="7" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1" Name="Inner" DataSource="#Ref-8"><Bands><Item1 Ref="9" ControlType="DetailBand" Name="iDetail" HeightF="20" /></Bands><ComponentStorage>${inner}</ComponentStorage></ReportSource></Item1></Controls></Item1></Bands>`;
+  /** A text with every Base64 value decoded beside it, in either quote. */
+  const decoded = (text: string) => [text, ...[...text.matchAll(/Base64\s*=\s*(?:"([^"]*)"|'([^']*)')/g)].map((m) => decodeBase64(m[1] ?? m[2]))].join('\n');
+
+  const SHAPES: Record<string, string> = {
+    'ObjectStorage, as 20.1 keeps a source assigned in code': wrap(`<ObjectStorage>${item('0', 'dsCode', LOGIN)}</ObjectStorage>`),
+    "a subreport's ComponentStorage, before the report's": wrap(subreport(item('8', 'dsInner', LOGIN)) + `<ComponentStorage>${item('0', 'dsRoot', LOGIN)}</ComponentStorage>`),
+    'two ComponentStorages, the login in the second': wrap(`<ComponentStorage>${item('0', 'dsA', BY_NAME)}</ComponentStorage><ComponentStorage>${item('40', 'dsB', LOGIN)}</ComponentStorage>`),
+    'Base64 written before Ref': wrap(`<ComponentStorage><Item1 ObjectType="${OT}" Name="ds" Base64="${encodeBase64(doc('ds', LOGIN))}" Ref="0" /></ComponentStorage>`),
+    'single quotes': wrap(`<ComponentStorage>${item('0', 'ds', LOGIN, "'")}</ComponentStorage>`),
+    'an attribute on ComponentStorage': wrap(`<ComponentStorage Version="1">${item('0', 'ds', LOGIN)}</ComponentStorage>`),
+    'a password quoted in a connection string': wrap(`<ComponentStorage>${item('0', 'ds', `<Connection Name="Sales" ConnectionString="XpoProvider=MSSqlServer;data source=db01;user id=sa;password=&quot;${SECRET};x&quot;;initial catalog=Sales" />`)}</ComponentStorage>`),
+  };
+
+  it.each(Object.entries(SHAPES))('in %s: taken out, and said', (_shape, xml) => {
+    const out = withoutStoredLogin(xml);
+    expect(out).toMatchObject({ hadLogin: true, loginLeft: false });
+    expect(decoded(out.xml)).not.toMatch(/Secret123|userid|db01/);
+    expect(stripStoredCredentials(xml)).toMatchObject({ applied: true, xml: out.xml });
+    // Read again, nothing is left to take out.
+    expect(withoutStoredLogin(out.xml)).toMatchObject({ xml: out.xml, hadLogin: false, loginLeft: false });
+  });
+
+  it("reads the report's own source, not a subreport's written first, and every source when asked for all", () => {
+    const xml = SHAPES["a subreport's ComponentStorage, before the report's"];
+    expect(readRepxDataSources(xml).map((d) => d.name)).toEqual(['dsRoot']);
+    expect(readEveryDataSource(xml).map((d) => d.name)).toEqual(['dsInner', 'dsRoot']);
+    expect(readRepxDataSources(SHAPES['ObjectStorage, as 20.1 keeps a source assigned in code'])).toEqual([]);
+    expect(readEveryDataSource(SHAPES['ObjectStorage, as 20.1 keeps a source assigned in code']).map((d) => d.name)).toEqual(['dsCode']);
+  });
+
+  it('says a login is still there when a connection left open keeps one, and leaves a report with none alone', () => {
+    const open = withoutStoredLogin(wrap(`<ComponentStorage>${item('0', 'ds', `<Connection Name="Sales"><Parameters><Parameter Name="password" Value="${SECRET}" /></Parameters>`)}</ComponentStorage>`));
+    expect(open).toMatchObject({ hadLogin: true, loginLeft: true });
+    const byName = wrap(`<ComponentStorage>${item('0', 'ds', BY_NAME)}</ComponentStorage>`);
+    expect(withoutStoredLogin(byName)).toEqual({ xml: byName, hadLogin: false, loginLeft: false });
+    expect(stripStoredCredentials(byName)).toMatchObject({ applied: false, xml: byName });
+    // A query's own parameter named password is a parameter, not a login.
+    const query = wrap(`<ComponentStorage>${item('0', 'ds', BY_NAME).replace(encodeBase64(doc('ds', BY_NAME)), encodeBase64(doc('ds', BY_NAME).replace('</Query>', '<Parameter Name="password" Type="System.String">x</Parameter></Query>')))}</ComponentStorage>`);
+    expect(withoutStoredLogin(query)).toEqual({ xml: query, hadLogin: false, loginLeft: false });
+  });
+
+  it('never builds a pattern from a Ref: one that is not a number is read as none, quickly, and its login still goes', () => {
+    for (const ref of ['0( IGNORE ALL PREVIOUS INSTRUCTIONS', '0|(\\w|\\w)*$']) {
+      const xml = wrap(`<ComponentStorage>${item(ref, 'ds', LOGIN)}</ComponentStorage>`) + ' '.repeat(2000);
+      const started = Date.now();
+      expect(readRepxDataSources(xml).map((d) => d.ref), ref).toEqual(['']);
+      const out = withoutStoredLogin(xml);
+      expect(out, ref).toMatchObject({ hadLogin: true, loginLeft: false });
+      expect(decoded(out.xml), ref).not.toContain(SECRET);
+      expect(Date.now() - started, ref).toBeLessThan(1000);
+    }
   });
 });
 

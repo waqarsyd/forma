@@ -84,6 +84,9 @@ describe('DOCS_SECTIONS keys', () => {
       ['limit', 'saving'],
       // 'storage' kept when 'local storage' went, so a search for it still finds Saving (review, 2026-11-11).
       ['storage', 'saving'],
+      // Forma's MCP server, by the assistants that run it (2026-11-24, the MCP work's wave 5).
+      ['claude code', 'mcp'],
+      ['visual studio copilot', 'mcp'],
     ];
     for (const [query, id] of cases) expect(articleMatches(query, section(id)), `${query} -> ${id}`).toBe(true);
     // The signed-out projects are in the browser's own database, not local storage, since PR-15.
