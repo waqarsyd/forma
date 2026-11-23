@@ -71,8 +71,14 @@ import { APP_CHECK_SITE_KEY } from '../lib/appCheck';
  * for 90 days, the operator's download deleting what is older once it has a
  * copy, and the operator's copies still go when the person deletes theirs,
  * however old (scripts/model/pull-learning.ts).
+ *
+ * 2026-11-23 (the owner's rule that any AI of the person's own opens the
+ * workspace, `workspaceOpen` in lib/aiProvider.ts): the terms said Forma
+ * needed your own Gemini key to open the workspace, whichever AI designed. It
+ * now needs the AI you choose set up, a Gemini key, OpenRouter with a key and
+ * a model, or a local AI with a model.
  */
-const UPDATED = '12 November 2026';
+const UPDATED = '23 November 2026';
 
 type Section = { heading: string; paragraphs: string[] };
 
@@ -101,7 +107,7 @@ const TERMS: Section[] = [
   {
     heading: 'You bring your own AI',
     paragraphs: [
-      'Forma ships without an API key of its own. It needs your own Google Gemini API key to open the workspace, and whichever AI designs your reports — Gemini, OpenRouter with a key of your own, or a local AI on your computer — your browser calls it directly. Any usage, quota or cost is between you and that provider, and your use of it is governed by its terms, not these.',
+      'Forma ships without an API key or an AI of its own. To open the workspace it needs the AI you choose to be set up as your own — Google Gemini with your own API key, OpenRouter with a key and a model of your own, or a local AI on your computer with a model — and whichever designs your reports, your browser calls it directly. Any usage, quota or cost is between you and that provider, and your use of it is governed by its terms, not these.',
       'Keep your keys to yourself. Anyone who has one can spend against your quota.',
     ],
   },

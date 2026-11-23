@@ -1,7 +1,8 @@
 /**
  * Forma's draft of a report as text the AI corrects (2026-11-05).
  *
- * The owner's design: once the key opens the workspace, OCR, the box reader
+ * The owner's design: once an AI set up opens the workspace (the Gemini key
+ * until 2026-11-23, any AI of the person's own since), OCR, the box reader
  * or the vision model, Forma's own model and the AI work together, so that a
  * report burns fewer of the user's tokens. Forma drafts the report and the AI
  * corrects the draft, instead of the AI designing it from nothing. Written as

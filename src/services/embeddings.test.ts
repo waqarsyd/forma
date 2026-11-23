@@ -88,6 +88,19 @@ describe('resolveEmbeddingModel', () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 403, json: async () => ({}) })));
     await expect(resolveEmbeddingModel('k')).rejects.toThrow();
   });
+
+  // 2026-11-23: Local AI or OpenRouter alone opens the workspace, so a caller may have no Gemini key.
+  it('sends nothing to Google without a Gemini key, whichever call is made', async () => {
+    for (const apiKey of ['', '  ']) {
+      await expect(resolveEmbeddingModel(apiKey)).rejects.toThrow(/needs a Gemini key/);
+      await expect(embedTexts(['a'], { apiKey })).rejects.toThrow(/needs a Gemini key/);
+      await expect(embedTexts(['a'], { apiKey, model: 'given-model' })).rejects.toThrow(/needs a Gemini key/);
+      await expect(embedEntries(library(1), { apiKey })).rejects.toThrow(/needs a Gemini key/);
+      await expect(embedEntries(library(1), { apiKey, model: 'given-model' })).rejects.toThrow(/needs a Gemini key/);
+    }
+    expect(fetch).not.toHaveBeenCalled();
+    expect(embedContent).not.toHaveBeenCalled();
+  });
 });
 
 describe('embedEntries', () => {

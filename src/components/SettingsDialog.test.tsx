@@ -18,7 +18,7 @@ vi.mock('../lib/geminiClient', () => ({
 // A secure context, so the encrypted copy is offered whatever jsdom provides.
 vi.mock('../services/keyVault', async (actual) => ({ ...(await actual<typeof import('../services/keyVault')>()), isVaultAvailable: () => true }));
 
-import SettingsDialog, { passphraseProblem } from './SettingsDialog';
+import SettingsDialog, { openingSection, passphraseProblem } from './SettingsDialog';
 import { memoryFrom, readMemory, writeMemory } from '../lib/memory';
 
 afterEach(() => {
@@ -78,11 +78,66 @@ describe('SettingsDialog', () => {
     expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
   });
 
-  it('sends someone who chose another AI and has no Gemini key to the key', () => {
-    render(<SettingsDialog {...props({ config: { ...props().config, customApiKey: '', provider: 'local' } })} />);
-    fireEvent.click(tab('AI'));
+  // Any AI of the person's own opens the workspace since 2026-11-23, where the
+  // Gemini key was needed beside any: the AI section says so, and a Gemini key is
+  // offered for what it still adds, not demanded.
+  it('opens where the AI chosen is set up while it is not, and at General once it is', () => {
+    const none = { ...props().config, customApiKey: '' };
+    const local = { ...none, provider: 'local' as const, localUrl: 'http://localhost:11434/v1', localModel: 'gemma3' };
+    const openRouter = { ...none, provider: 'openrouter' as const, openRouterKey: 'sk-or-test', openRouterModel: 'x:free' };
+    expect(openingSection(none)).toBe('key');
+    expect(openingSection({ ...local, localModel: '' })).toBe('ai');
+    expect(openingSection({ ...openRouter, openRouterKey: '' })).toBe('ai');
+    // A Gemini key does not open a Local AI with no model; the AI section does.
+    expect(openingSection({ ...local, localModel: '', customApiKey: 'AIza' })).toBe('ai');
+    expect(openingSection(local)).toBe('general');
+    expect(openingSection(openRouter)).toBe('general');
+    expect(openingSection(props().config)).toBe('general');
+    render(<SettingsDialog {...props({ config: { ...local, localModel: '' } })} />);
+    expect(tab('AI').getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByText('Local AI needs a model.')).toBeTruthy();
+    cleanup();
+    render(<SettingsDialog {...props({ config: local })} />);
+    expect(tab('General').getAttribute('aria-selected')).toBe('true');
+  });
+
+  // A Gemini key is offered beside OpenRouter for what it adds there, and not
+  // beside Local AI, where it adds nothing: the report library is not searched
+  // while Local AI designs, and the free chain never leaves it (2026-11-24, KEYREV-3).
+  it('calls Local AI or OpenRouter ready with no Gemini key, and offers one only where it adds something', () => {
+    for (const config of [
+      { ...props().config, customApiKey: '', provider: 'local' as const, localUrl: 'http://localhost:11434/v1', localModel: 'gemma3' },
+      { ...props().config, customApiKey: '', provider: 'openrouter' as const, openRouterKey: 'sk-or-test', openRouterModel: 'x:free' },
+    ]) {
+      render(<SettingsDialog {...props({ config, start: 'ai' })} />);
+      const panel = screen.getByRole('tabpanel');
+      expect(panel.textContent).toContain(`${config.provider === 'local' ? 'Local AI' : 'OpenRouter'} is ready.`);
+      expect(panel.textContent).toContain('needs no Gemini key');
+      expect(panel.textContent).not.toMatch(/needs your Gemini key|Gemini key to start/);
+      expect(panel.querySelector('.wb-set-note.is-bad')).toBeNull();
+      if (config.provider === 'local') {
+        expect(screen.queryByRole('button', { name: 'Add a Gemini key' })).toBeNull();
+        expect(panel.textContent).not.toMatch(/report library/);
+        cleanup();
+        continue;
+      }
+      fireEvent.click(screen.getByRole('button', { name: 'Add a Gemini key' }));
+      expect(heading()).toBe('Gemini key');
+      // Pointed back to the other AIs from the key, while there is none.
+      fireEvent.click(screen.getByRole('button', { name: 'Choose another AI' }));
+      expect(heading()).toBe('AI');
+      cleanup();
+    }
+  });
+
+  it('says Automatic needs the Gemini key, with the way to it', () => {
+    render(<SettingsDialog {...props({ config: { ...props().config, customApiKey: '' }, start: 'ai' })} />);
+    expect(screen.getByText(/Automatic needs your Gemini key\./)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Add it' }));
     expect(heading()).toBe('Gemini key');
+    cleanup();
+    render(<SettingsDialog {...props({ start: 'ai' })} />);
+    expect(screen.getByText('Automatic is ready.')).toBeTruthy();
   });
 
   it('checks the key, and clears it from the tab with a line that says so', async () => {

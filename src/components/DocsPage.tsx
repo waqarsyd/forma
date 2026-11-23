@@ -367,7 +367,8 @@ export default function DocsPage({
             <div className={`${CARD} p-[18px]`}>
               <div className={`${KICKER} text-secondary`}>Ready to try it</div>
               <p className="mt-2 mb-3.5 font-body-lg text-[12.5px] leading-[1.55] text-on-surface-variant">
-                Bring a design and your own Gemini key. Nothing to install, and nothing else to set first.
+                Bring a design and your own AI: a Gemini or OpenRouter key, or a model on your own computer. Forma
+                itself needs nothing installed, and nothing else set first.
               </p>
               <button
                 onClick={onEnterWorkspace}
@@ -403,7 +404,7 @@ export default function DocsPage({
               </p>
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
                 {[
-                  ['01 — ADD YOUR KEY', 'Paste a Gemini API key', 'Forma ships without one, so this is the only setup step. The workspace stays locked until a key is present.'],
+                  ['01 — SET UP YOUR AI', 'A key, or a model of your own', 'Forma ships with no AI of its own, so this is the only setup step: a Gemini or OpenRouter key, or a model on your own computer through Ollama or LM Studio. The workspace stays locked until the AI you choose is set up.'],
                   ['02 — SHOW OR DESCRIBE IT', 'Attach a design, or write one', 'Drop a picture, a PDF or a .repx onto the box, or say what the report should show. Every file you add is confirmed on screen before anything is sent.'],
                   ['03 — CHECK THE RESULT', 'Preview it, then ask for changes', 'Switch between the Preview, the mockup, the data, the spec and the XML. Ask for changes in the same conversation, and the chat edits the report in place.'],
                   ['04 — TAKE THE FILE', 'Download the .repx, or export', 'It is parsed and checked in the browser first, then downloads named after the report title; the Preview exports it as PDF, Excel, Word and more.'],
@@ -434,6 +435,12 @@ export default function DocsPage({
                 your browser calls Google directly with it — it never passes through Forma's server, because
                 there is no generation endpoint there to pass through.
               </p>
+              {/* Since 2026-11-23 any AI of your own opens the workspace, so a
+                  Gemini key is one way in, not the only one. */}
+              <p className={`mt-3 ${PROSE}`}>
+                A Gemini key is the default way to start, not the only one: OpenRouter takes a key of its own, and a
+                model on your own computer needs none. <a href="#ai" className={LINK}>Choosing your AI</a> has both.
+              </p>
 
               <h3 className="mt-6 font-display-lg text-[17px] font-bold leading-[1.3] tracking-[-0.018em] text-on-surface">
                 Getting a key
@@ -452,8 +459,9 @@ export default function DocsPage({
                   and create a key.
                 </Def>
                 <Def t="2 · Open the workspace">
-                  Without a key the message box is locked, and its button opens Settings at the key; Settings is
-                  also under Configure in the sidebar.
+                  With no AI set up the message box is locked, and its button opens Settings where the AI you chose
+                  is set up, at Gemini key for Automatic, the default; Settings is also under Configure in the
+                  sidebar.
                 </Def>
                 <Def t="3 · Paste it">
                   Into Settings → Gemini key, where it takes effect as you paste it. Check key sends a single
@@ -549,10 +557,17 @@ export default function DocsPage({
                 <code className="doc-code">OLLAMA_CONTEXT_LENGTH=32768</code>, or load the model in LM Studio with a
                 context of 32,768; a shorter window cuts the request off, and the reply says so.
               </Note>
-              <Note label="The Gemini key is still the way in" tone="safe">
-                Forma needs your Gemini key to open the workspace whichever AI designs, so the box stays locked
-                without one, and Settings → AI offers to add it. Settings → General counts the requests this
-                browser has made today.
+              {/* Any AI of your own is the way in since 2026-11-23; until then
+                  this note said the Gemini key was, whichever AI designed.
+                  Beside Local AI a Gemini key adds nothing since 2026-11-24
+                  (KEYREV-3): the library is not searched while it designs. */}
+              <Note label="One AI of your own is enough" tone="safe">
+                The AI you choose opens the workspace once it is set up: Automatic with your Gemini key, Local AI
+                with its server and a model, OpenRouter with its key and a model. With none set up the box stays
+                locked, and Settings → AI says what the one you chose still needs. A Gemini key beside OpenRouter
+                is optional: with it the report library can find your reports, and Gemini answers when
+                OpenRouter&apos;s free limit is used up. Beside Local AI it adds neither, since nothing you send a
+                local AI leaves your computer. Settings → General counts the requests this browser has made today.
               </Note>
             </Article>
 
@@ -1426,7 +1441,9 @@ report.ExportToPdf("report.pdf");`}
                 link in them is replaced, keeping only positions, fonts, colours and formats, and a report you keep
                 is stripped the same way. A report you add is used only once you tick it as house style; a report
                 you keep is marked You kept this and needs no tick. Remove takes either out. The library lives in
-                this browser; adding a report to it uses your Gemini key, and keeping one does not.
+                this browser; adding a report to it uses your Gemini key, and keeping one does not. While Local AI
+                designs, no report is added and the ones you added are not used, since finding them goes through
+                Google; the ones you keep still are.
               </p>
             </Article>
 
@@ -1590,8 +1607,9 @@ report.ExportToPdf("report.pdf");`}
                   reasoning writes no report; choose another.
                 </Def>
                 <Def t="Nothing happens on send">
-                  Check that a key is set. With none, the box is locked and its button opens Settings at the
-                  key.
+                  Check that the AI you chose is set up: a Gemini key for Automatic, a model for Local AI, a key
+                  and a model for OpenRouter. Until it is, the box is locked and its button opens Settings where
+                  it is set up.
                 </Def>
                 <Def t="The layout is roughly right">
                   Upload the original PDF rather than a screenshot of it. Exact strings and coordinates come

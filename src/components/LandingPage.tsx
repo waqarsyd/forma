@@ -282,7 +282,8 @@ const LandingPage = ({
                 <Reveal eager>
                   <p className="mt-[22px] flex max-w-[54ch] items-baseline gap-[9px] font-code-sm text-[12px] leading-[1.7] text-[color:var(--ink-faint)]">
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-secondary-container ring-[3px] ring-secondary-container/10" />
-                    Bring your own Gemini key — Forma ships with none, and keeps yours in your open Forma tabs, gone when the last one closes, unless you ask it to save an encrypted copy.
+                    {/* Your own AI, not the Gemini key, since 2026-11-23: any AI you set up opens the workspace. */}
+                    Bring your own AI: a Gemini or OpenRouter key, or a model on your own computer. Forma ships with none, and keeps your key in your open Forma tabs, gone when the last one closes, unless you ask it to save an encrypted copy of your Gemini key.
                   </p>
                 </Reveal>
               </div>
@@ -591,16 +592,17 @@ const LandingPage = ({
               </Reveal>
               <Reveal delay={0.12}>
                 <p className={`mt-[17px] ${LEDE}`}>
-                  You supply your own Gemini key and your browser calls Google directly with it. It never touches
-                  Forma's server — there is no generation endpoint there to touch. No shared quota, no waiting behind
-                  anyone else, no per-user cost to whoever runs it.
+                  You supply your own key, Gemini&apos;s or OpenRouter&apos;s, and your browser calls that service
+                  directly with it; a model on your own computer needs none. A key never touches Forma's server —
+                  there is no generation endpoint there to touch. No shared quota, no waiting behind anyone else, no
+                  per-user cost to whoever runs it.
                 </p>
               </Reveal>
               <Reveal delay={0.18}>
                 <p className={`mt-4 max-w-[60ch] ${BODY}`}>
                   The working copy lives in <span className="font-code-sm">sessionStorage</span>, which the browser
-                  erases when the tab closes. If you want it on more than one machine, it is encrypted in your browser
-                  under a passphrase you choose, and only the ciphertext is uploaded.
+                  erases when the tab closes. If you want your Gemini key on more than one machine, it is encrypted in
+                  your browser under a passphrase you choose, and only the ciphertext is uploaded.
                 </p>
               </Reveal>
               <Reveal delay={0.24}>
@@ -656,8 +658,8 @@ const LandingPage = ({
               {/* Body copy, not the lede scale — the source sets this one at
                   the base 16px/1.62. */}
               <p className="mx-auto mt-[18px] max-w-[56ch] font-body-lg text-[16px] leading-[1.62] text-white/[0.64]">
-                Bring a design and your own Gemini key. Once the key is in, there is nothing else to set and nothing to
-                pay for.
+                Bring a design and your own AI: a Gemini or OpenRouter key, or a model on your own computer. Once it is
+                set up, there is nothing else to set and nothing to pay for.
               </p>
             </Reveal>
             <Reveal delay={0.18}>

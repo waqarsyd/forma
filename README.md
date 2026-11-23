@@ -25,13 +25,13 @@ The AI writes only the `.repx`; Forma reads the mockup and the specification out
 
 Rebuilding an existing report in the DevExpress designer is mechanical work: read the layout, place the bands, set the units, repeat. Forma does the transcription pass so you start from a `.repx` that already has the right control types and geometry, and spend your time on the parts that need judgement.
 
-It is built around one constraint that shaped everything else: **the application owns no API key.** An earlier build inlined a build-time Gemini key into the shipped JavaScript, and Google's secret scanner found and revoked it. What replaced it is not a patch but an architecture — the browser calls Google directly with a key the user supplies, and no server is ever in the loop.
+It is built around one constraint that shaped everything else: **the application owns no API key.** An earlier build inlined a build-time Gemini key into the shipped JavaScript, and Google's secret scanner found and revoked it. What replaced it is not a patch but an architecture — the browser calls the AI directly, Google or OpenRouter with a key the user supplies or a model on the user's own computer, and no server is ever in the loop.
 
 ---
 
 ## Demo
 
-**Live at [openforma.web.app](https://openforma.web.app)** — built from `main` and deployed by hand, so it can trail the newest commits: the page names the commit it was built from in `<meta name="forma-version">`, and a check every three hours ([`live.yml`](.github/workflows/live.yml)) says when it is behind `main`. What changed, and when, is on the [changelog](https://openforma.web.app/changelog). It runs signed out with no account, and generating a report needs a Gemini API key of your own, which you paste into Settings and which never leaves your browser.
+**Live at [openforma.web.app](https://openforma.web.app)** — built from `main` and deployed by hand, so it can trail the newest commits: the page names the commit it was built from in `<meta name="forma-version">`, and a check every three hours ([`live.yml`](.github/workflows/live.yml)) says when it is behind `main`. What changed, and when, is on the [changelog](https://openforma.web.app/changelog). It runs signed out with no account, and generating a report needs an AI of your own, set up in Settings: a Gemini or OpenRouter key, which goes from your browser to that service alone, or a model on your own computer through Ollama or LM Studio.
 
 ![Forma's home page: upload a report design and get a specification, a live mockup and valid DevExpress XML](docs/media/screenshot.png)
 
@@ -46,7 +46,7 @@ Both are real captures of the app at `localhost:3000`, not mockups, but from Sep
 ## Table of contents
 
 - [Why this exists](#why-this-exists)
-- [Bring your own key](#bring-your-own-key)
+- [Bring your own AI](#bring-your-own-ai)
 - [Features](#features)
 - [Tech stack](#tech-stack)
 - [Getting started](#getting-started)
@@ -69,16 +69,16 @@ Both are real captures of the app at `localhost:3000`, not mockups, but from Sep
 
 ---
 
-## Bring your own key
+## Bring your own AI
 
-**Forma ships no Gemini API key, and it never will.** Every user supplies their own, and the browser calls Google directly with it — the server is never in the loop and never sees a credential.
+**Forma ships no API key and no AI of its own, and it never will.** To start, it needs an AI of yours, any one of three: a Gemini key (the default), an OpenRouter key and model, or a model on your own computer through Ollama or LM Studio. Until the AI you chose is set up, the message box is locked, and there is no mode without an AI (the owner's rule; from 2026-11-05 until 2026-11-23 it had to be the Gemini key, whichever AI designed). A key goes from your browser straight to Google or OpenRouter — the server is never in the loop and never sees a credential — and a local model needs no key and keeps every request on your computer.
 
 This is not an accident of design. An earlier build inlined a build-time key into the shipped JavaScript; Google's secret scanner found it and revoked it. The architecture that replaced it is deliberate:
 
 | Where the key lives | Lifetime |
 |---|---|
 | `sessionStorage` | Erased by the browser when the tab closes |
-| Firestore (opt-in, signed in) | **AES-GCM ciphertext only** |
+| Firestore (opt-in, signed in, the Gemini key only) | **AES-GCM ciphertext only** |
 
 The optional cloud copy is zero-knowledge: your key is encrypted in your browser with a passphrase derived through PBKDF2-SHA256 (310,000 iterations, per-record salt and IV). The passphrase never leaves your machine, so nobody operating a Forma deployment can read your key.
 
@@ -93,7 +93,7 @@ Every page carries a Content-Security-Policy whose `connect-src` allowlists the 
 Each of these is a shipped code path, not a plan.
 
 - **Image, PDF, `.repx`, SSRS and FastReport intake.** Drop a mockup, a scan, a photo, or an existing report. PDFs are rasterised *and* have their text layer extracted, so exact strings survive rather than being read back out of pixels ([`src/lib/repxIntake.ts`](src/lib/repxIntake.ts), [`src/lib/pdf.ts`](src/lib/pdf.ts)). An SSRS `.rdl` or `.rdlc` and a FastReport `.frx` open as repaired DevExpress reports, converted in the browser ([`src/lib/importForeign.ts`](src/lib/importForeign.ts)); a Word or Excel template's page, margins, table and fonts become the draft when you ask for a report from it ([`src/lib/docxLayout.ts`](src/lib/docxLayout.ts), [`src/lib/xlsxLayout.ts`](src/lib/xlsxLayout.ts)); and a crooked scan or phone photo is straightened before it is read ([`src/lib/deskew.ts`](src/lib/deskew.ts)). Since 2026-11-11.
-- **Your own free key opens it, and Forma's own model works behind it.** Forma ships no key of its own: it starts once your free Gemini key is in Settings, whichever AI then designs (Gemini by default, or a local AI on your own computer through Ollama or LM Studio, or OpenRouter's free models), and until then the chat box is locked (the owner's rule since 2026-11-05; from 2026-11-02 it worked with no key). Forma learned the house style and the kinds of report from the structure of 359 real DevExpress reports (never their words), and that model stands in when the AI cannot answer. It also remembers how you work: say "remember: always use A4 and Tahoma" and every report after follows it, and the reports you keep teach it your house style. The memory, the style and the kept reports are stored in your browser and listed in Settings; what a request needs of them goes to the AI with it, and a signed-in account's learning events, counted and structure only unless you opt in, are kept under the account in Firestore ([`src/lib/offlineGenerator.ts`](src/lib/offlineGenerator.ts), [`docs/proposals/own-model.md`](docs/proposals/own-model.md)). With an AI chosen, the parts work together on each request: OCR reads the words, Forma's own vision model (when you run one) reads the layout, Forma's own model brings the house style, and if the AI cannot answer you get Forma's own draft instead of an error ([`src/lib/formaTeam.ts`](src/lib/formaTeam.ts)). For a picture, Forma drafts the report and the AI only corrects the draft, one short line per control, so a report costs a fraction of the tokens of one the AI designs from nothing ([`src/lib/draftText.ts`](src/lib/draftText.ts), since 2026-11-05).
+- **Your own AI opens it, and Forma's own model works behind it.** Forma ships no key and no AI of its own: it starts once the AI you choose in Settings is set up — Gemini with your free key (the default), OpenRouter's free models with a key and model of your own, or a local AI on your own computer through Ollama or LM Studio with its server and model — and until then the chat box is locked (the owner's rule since 2026-11-05, when it had to be the Gemini key whichever AI designed; any of the three since 2026-11-23; from 2026-11-02 to 2026-11-05 it worked with no AI, which is never coming back). A Gemini key beside OpenRouter is optional: with it the report library can find your reports. Beside a local AI it is not used for that, since finding them sends the request's words to Google ([`src/lib/aiProvider.ts`](src/lib/aiProvider.ts), `librarySearchable`). Forma learned the house style and the kinds of report from the structure of 359 real DevExpress reports (never their words), and that model stands in when the AI cannot answer. It also remembers how you work: say "remember: always use A4 and Tahoma" and every report after follows it, and the reports you keep teach it your house style. The memory, the style and the kept reports are stored in your browser and listed in Settings; what a request needs of them goes to the AI with it, and a signed-in account's learning events, counted and structure only unless you opt in, are kept under the account in Firestore ([`src/lib/offlineGenerator.ts`](src/lib/offlineGenerator.ts), [`docs/proposals/own-model.md`](docs/proposals/own-model.md)). With an AI chosen, the parts work together on each request: OCR reads the words, Forma's own vision model (when you run one) reads the layout, Forma's own model brings the house style, and if the AI cannot answer you get Forma's own draft instead of an error ([`src/lib/formaTeam.ts`](src/lib/formaTeam.ts)). For a picture, Forma drafts the report and the AI only corrects the draft, one short line per control, so a report costs a fraction of the tokens of one the AI designs from nothing ([`src/lib/draftText.ts`](src/lib/draftText.ts), since 2026-11-05).
 - **One chat box for everything.** Attach or paste an image, a scan, a PDF or a `.repx`, describe the report you want, or both, and the box works out what to do: an attachment shows as the file alone, and once you send, its text is read with OCR behind the scenes in the browser (PaddleOCR's PP-OCRv5 for an English page since 2026-11-10, in browser workers, and Tesseract.js for the other languages; nothing leaves the browser; English, Arabic, Hindi, Urdu, French, German or Spanish, the language worked out from the page itself), the image viewer offering a review of what was found over the source from which a `.repx` can be built with no model; a description with no attachment gets a question or two in the thread when it leaves something open, then a report designed from it; words and an attachment together go to one generation ([`src/components/Composer.tsx`](src/components/Composer.tsx), [`src/lib/ocrAttach.ts`](src/lib/ocrAttach.ts), [`src/lib/promptToReport.ts`](src/lib/promptToReport.ts)).
 - **The AI writes the `.repx`, and Forma reads the rest off it.** Since 2026-11-05 the model answers with the REPX as plain XML and nothing else; the spec and the mockup's `layout` are read off that file ([`src/lib/repxViews.ts`](src/lib/repxViews.ts)), which more than halved what each report asks the model to write. A cut-off answer is detected and repaired rather than downloaded half-written ([`src/lib/repxTruncation.ts`](src/lib/repxTruncation.ts)).
 - **Targets your DevExpress version** — eight of them, 26.1 back to 20.1, written into the file's `SerializerVersion` so it drops into the codebase you already have. Worth knowing that the tag is a label rather than a gate: a newer `.repx` still opens in an older designer, which was measured with `RepxProbe inspect` and then confirmed through the product — a 23.2 file opened correctly in a real 20.1 designer, and the designer rewrote the tag on save. There is no picker: the version is read from a report you bring, else the one you last brought, else 23.2 ([`src/lib/autoConfig.ts`](src/lib/autoConfig.ts)), and nothing is lost if it is not the one you build against.
@@ -144,7 +144,7 @@ There is no ESLint config, no state-management library, no date library, no HTTP
 ### Prerequisites
 
 - **Node 24.15.0 or later on 24, or 26+** (`^24.15.0 || >=26`; `node -v; npm -v` prints what you have). Node 22 is out since 2026-11-21: Firebase 13's own packages ask for Node 24.12 or later, and jsdom, which the tests run on, then needs 24.15.0 on that line. Node 20 reached end of life on 2026-04-30. The odd-numbered **25 is outside the range too**, even though it is newer: jsdom and Vitest both skip it.
-- **A Gemini API key** from [Google AI Studio](https://aistudio.google.com/apikey) — supplied in the app at runtime, never in a file.
+- **An AI of your own**: a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey), an OpenRouter key, or Ollama or LM Studio on your own computer — set up in the app at runtime, never in a file.
 - **A JRE** — only for `npm run test:rules`, which starts the Firestore emulator (a JVM process). A runtime is enough; no JDK.
 - **A Firebase project** — only if you want sign-in and cloud sync. Everything else works without one.
 
@@ -181,7 +181,7 @@ Contributors should use `npm ci` instead — it installs exactly what the lockfi
 npm run dev
 ```
 
-Open <http://localhost:3000/workspace>; the locked message box's button opens **Settings** at **Gemini key**, where the key you paste takes effect at once.
+Open <http://localhost:3000/workspace>; the locked message box's button opens **Settings** where the AI you chose is set up — at **Gemini key** for Automatic, the default, or at **AI** for a local model or OpenRouter — and what you enter takes effect at once.
 
 That's enough to generate reports. Sign-in and cloud sync are optional — signed out, Forma saves your projects in your browser (IndexedDB) and works fully.
 
@@ -194,7 +194,7 @@ That's enough to generate reports. Sign-in and cloud sync are optional — signe
 **Generate a report from a design:**
 
 1. `npm run dev`, then open <http://localhost:3000/workspace>.
-2. **Settings → Gemini key** → paste your key. It goes to `sessionStorage` and is erased when the last Forma tab closes.
+2. Set up your AI: **Settings → Gemini key** → paste your key (it goes to `sessionStorage` and is erased when the last Forma tab closes), or **Settings → AI** → **Local AI** with a model, or **OpenRouter** with its key and a model.
 3. Attach an image, a scan, a PDF or a `.repx` to the message box, describe the report you want, or both.
 4. Send. Working dots show while the AI writes, and **Stop** ends it; the report opens over the whole bench when it is done.
 5. Check it in **Preview**, ask the chat for changes, then take the `.repx` from **Export**.

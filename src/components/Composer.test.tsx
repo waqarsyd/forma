@@ -44,7 +44,7 @@ const draw = (props: Partial<React.ComponentProps<typeof Composer>> = {}) =>
       onSend={vi.fn()}
       fileInputRef={createRef<HTMLInputElement>()}
       onFileChange={vi.fn()}
-      hasApiKey
+      aiSetUp
       isAnalyzing={false}
       isChatting={false}
       isIngesting={false}
@@ -64,7 +64,7 @@ describe('an empty box', () => {
     fireEvent.keyDown(field(), { key: 'Enter' });
     expect(onSend).not.toHaveBeenCalled();
     rerender(
-      <Composer previews={['data:image/png;base64,AA']} previewGroups={[]} previewMeta={[]} textGroups={[]} onOpenAttachment={vi.fn()} onRemoveFile={vi.fn()} onRemoveText={vi.fn()} uploadNotices={[]} error={null} prompt="" onPromptChange={vi.fn()} onSend={onSend} fileInputRef={createRef<HTMLInputElement>()} onFileChange={vi.fn()} hasApiKey isAnalyzing={false} isChatting={false} isIngesting={false} />,
+      <Composer previews={['data:image/png;base64,AA']} previewGroups={[]} previewMeta={[]} textGroups={[]} onOpenAttachment={vi.fn()} onRemoveFile={vi.fn()} onRemoveText={vi.fn()} uploadNotices={[]} error={null} prompt="" onPromptChange={vi.fn()} onSend={onSend} fileInputRef={createRef<HTMLInputElement>()} onFileChange={vi.fn()} aiSetUp isAnalyzing={false} isChatting={false} isIngesting={false} />,
     );
     expect(send().disabled).toBe(false);
   });
@@ -201,23 +201,25 @@ describe('when sending is not possible', () => {
     expect(screen.queryByText('Reading the file…')).toBeNull();
   });
 
-  // The key is the entry point again (2026-11-05): with none the box is
-  // locked, as it was until 2026-11-02, and its button opens Settings.
-  it('locks with no key, sends nothing, and offers the way to a key in place of the send', () => {
+  // An AI is the entry point again (2026-11-05): with none the box is locked,
+  // as it was until 2026-11-02, and its button opens Settings. Any AI of the
+  // person's own since 2026-11-23, so it asks for an AI, not an API key.
+  it('locks with no AI set up, sends nothing, and offers the way to set one up in place of the send', () => {
     const onSend = vi.fn();
-    const onAddKey = vi.fn();
-    draw({ hasApiKey: false, onSend, onAddKey });
+    const onSetUpAi = vi.fn();
+    draw({ aiSetUp: false, onSend, onSetUpAi });
     expect(field().disabled).toBe(true);
-    expect(field().placeholder).toBe('Add your API key to start');
+    expect(field().placeholder).toBe('Set up your AI to start');
     expect(screen.getByRole('button', { name: 'Add photos and files' })).toHaveProperty('disabled', true);
     expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
     fireEvent.keyDown(field(), { key: 'Enter' });
     expect(onSend).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Add your API key' }));
-    expect(onAddKey).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: /API key/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Set up your AI' }));
+    expect(onSetUpAi).toHaveBeenCalledTimes(1);
   });
 
-  it('is ready when a key is present and nothing is in flight', () => {
+  it('is ready when an AI is set up and nothing is in flight', () => {
     draw();
     expect(send().disabled).toBe(false);
     expect(field().disabled).toBe(false);
@@ -233,9 +235,9 @@ describe('when sending is not possible', () => {
  * While a generation runs, the send is its Stop, as in other chat apps.
  */
 describe('a clean composer', () => {
-  it('draws nothing under the box, with or without a key', () => {
-    for (const hasApiKey of [true, false]) {
-      const { unmount } = draw({ hasApiKey });
+  it('draws nothing under the box, with or without an AI set up', () => {
+    for (const aiSetUp of [true, false]) {
+      const { unmount } = draw({ aiSetUp });
       expect(screen.queryByText(/Working offline|Your key clears/)).toBeNull();
       expect(document.querySelector('.wb-box')!.nextElementSibling).toBeNull();
       unmount();
@@ -265,7 +267,7 @@ describe('a clean composer', () => {
         onStop={onStop}
         fileInputRef={createRef<HTMLInputElement>()}
         onFileChange={vi.fn()}
-        hasApiKey
+        aiSetUp
         isAnalyzing={false}
         isChatting={false}
         isIngesting={false}
@@ -359,7 +361,7 @@ describe('a clean composer', () => {
           previews={[]} previewGroups={[]} previewMeta={[]} textGroups={[]}
           onOpenAttachment={vi.fn()} onRemoveFile={vi.fn()} onRemoveText={vi.fn()} uploadNotices={[]} error={null}
           prompt={prompt} onPromptChange={setPrompt} onSend={vi.fn()} fileInputRef={createRef<HTMLInputElement>()} onFileChange={vi.fn()}
-          hasApiKey isAnalyzing={false} isChatting={false} isIngesting={false} history={['first', 'second']}
+          aiSetUp isAnalyzing={false} isChatting={false} isIngesting={false} history={['first', 'second']}
         />
       );
     }
@@ -504,11 +506,11 @@ describe('a clean composer', () => {
     const { rerender } = draw({ selection: ['title'] });
     expect(screen.getByRole('status').textContent).toBe('title');
     rerender(
-      <Composer previews={[]} previewGroups={[]} previewMeta={[]} textGroups={[]} onOpenAttachment={vi.fn()} onRemoveFile={vi.fn()} onRemoveText={vi.fn()} uploadNotices={[]} error={null} prompt="" onPromptChange={vi.fn()} onSend={vi.fn()} fileInputRef={createRef<HTMLInputElement>()} onFileChange={vi.fn()} hasApiKey isAnalyzing={false} isChatting={false} isIngesting={false} selection={['title', 'total']} />,
+      <Composer previews={[]} previewGroups={[]} previewMeta={[]} textGroups={[]} onOpenAttachment={vi.fn()} onRemoveFile={vi.fn()} onRemoveText={vi.fn()} uploadNotices={[]} error={null} prompt="" onPromptChange={vi.fn()} onSend={vi.fn()} fileInputRef={createRef<HTMLInputElement>()} onFileChange={vi.fn()} aiSetUp isAnalyzing={false} isChatting={false} isIngesting={false} selection={['title', 'total']} />,
     );
     expect(screen.getByRole('status').textContent).toBe('2 controls: title, total');
     rerender(
-      <Composer previews={[]} previewGroups={[]} previewMeta={[]} textGroups={[]} onOpenAttachment={vi.fn()} onRemoveFile={vi.fn()} onRemoveText={vi.fn()} uploadNotices={[]} error={null} prompt="" onPromptChange={vi.fn()} onSend={vi.fn()} fileInputRef={createRef<HTMLInputElement>()} onFileChange={vi.fn()} hasApiKey isAnalyzing={false} isChatting={false} isIngesting={false} />,
+      <Composer previews={[]} previewGroups={[]} previewMeta={[]} textGroups={[]} onOpenAttachment={vi.fn()} onRemoveFile={vi.fn()} onRemoveText={vi.fn()} uploadNotices={[]} error={null} prompt="" onPromptChange={vi.fn()} onSend={vi.fn()} fileInputRef={createRef<HTMLInputElement>()} onFileChange={vi.fn()} aiSetUp isAnalyzing={false} isChatting={false} isIngesting={false} />,
     );
     expect(screen.queryByRole('status')).toBeNull();
   });
@@ -591,8 +593,8 @@ describe('notices', () => {
   });
 
   it('reports an error as an alert', () => {
-    draw({ error: 'Add your Gemini API key to use the workspace.' });
-    expect(screen.getByRole('alert').textContent).toContain('Add your Gemini API key');
+    draw({ error: 'Set up your AI in Settings to start: a Gemini or OpenRouter key, or a model on your own computer.' });
+    expect(screen.getByRole('alert').textContent).toContain('Set up your AI');
   });
 
   it('shows no notice lines when there is nothing to say', () => {
@@ -703,7 +705,7 @@ describe("the box's +, Tools and house style", () => {
     fireEvent.click(button);
     expect(onToggle).toHaveBeenCalledTimes(1);
     rerender(
-      <Composer previews={[]} previewGroups={[]} previewMeta={[]} textGroups={[]} onOpenAttachment={vi.fn()} onRemoveFile={vi.fn()} onRemoveText={vi.fn()} uploadNotices={[]} error={null} prompt="An invoice" onPromptChange={vi.fn()} onSend={vi.fn()} fileInputRef={createRef<HTMLInputElement>()} onFileChange={vi.fn()} hasApiKey isAnalyzing={false} isChatting={false} isIngesting={false} houseStyle={{ on: false, onToggle }} />,
+      <Composer previews={[]} previewGroups={[]} previewMeta={[]} textGroups={[]} onOpenAttachment={vi.fn()} onRemoveFile={vi.fn()} onRemoveText={vi.fn()} uploadNotices={[]} error={null} prompt="An invoice" onPromptChange={vi.fn()} onSend={vi.fn()} fileInputRef={createRef<HTMLInputElement>()} onFileChange={vi.fn()} aiSetUp isAnalyzing={false} isChatting={false} isIngesting={false} houseStyle={{ on: false, onToggle }} />,
     );
     expect(screen.getByRole('button', { name: 'Use house style' }).getAttribute('aria-pressed')).toBe('false');
     expect(screen.getByRole('button', { name: 'Use house style' }).getAttribute('title')).toMatch(/^House style is off/);
@@ -750,7 +752,7 @@ describe('the words held by the handle', () => {
         previews={[]} previewGroups={[]} previewMeta={[]} textGroups={[]}
         onOpenAttachment={vi.fn()} onRemoveFile={vi.fn()} onRemoveText={vi.fn()} uploadNotices={[]} error={null}
         box={box} onSend={onSend} fileInputRef={createRef<HTMLInputElement>()} onFileChange={vi.fn()}
-        hasApiKey isAnalyzing={false} isChatting={false} isIngesting={false}
+        aiSetUp isAnalyzing={false} isChatting={false} isIngesting={false}
       />
     );
   }

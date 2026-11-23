@@ -167,7 +167,7 @@ export default function SiteFooter({
               </span>
             </a>
             <p className={`max-w-[36ch] ${NOTE}`}>
-              An AI report designer for DevExpress. Open source, bring your own key.
+              An AI report designer for DevExpress. Open source, bring your own AI.
             </p>
             {/* No max-width here, deliberately. The sign-off runs the full
                 width of the brand column so "built by Waqar Sayyed" stays on

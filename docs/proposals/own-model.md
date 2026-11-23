@@ -125,6 +125,13 @@ generator below is unchanged and still designs, as the draft that stands in
 when the AI set up fails to answer. What follows is the record of the three
 days it answered with no key.
 
+**Widened on 2026-11-23.** The key that opened the workspace was the
+Gemini key, whichever AI was chosen; since then any AI of the person's own
+opens it: a Gemini key, an OpenRouter key and model, or a Local AI server
+and model, the one chosen in Settings (`workspaceOpen` in
+`lib/aiProvider.ts`, which is `aiReady` alone). With none set up the chat
+box is still locked, and a mode with no AI is still not coming back.
+
 With no key, the chat box no longer stops: `designOffline` in `App.tsx`
 answers instead of Gemini.
 
@@ -208,7 +215,9 @@ The settings dialog now asks which AI answers, in a panel of its own
   "Find free models" lists (ids ending `:free`).
 
 `lib/aiProvider.ts` keeps the choice and decides `aiReady`, which replaced
-the Gemini key as the workspace's AI gate. The choice, the address and the
+the Gemini key as the workspace's AI gate (from 2026-11-05 the Gemini key
+was required beside it again; since 2026-11-23 `aiReady` alone opens the
+workspace, whichever AI is chosen). The choice, the address and the
 models are preferences in localStorage. The OpenRouter key is not: it is
 kept like the Gemini key, in this tab's sessionStorage, never on disk.
 
@@ -1509,7 +1518,8 @@ end. Gemini already moves to its next model inside the service when one
 model's allowance is spent; `askWithChain` is the step after it, across
 providers, for a generation and a chat turn alike. After Gemini, OpenRouter
 with the person's own key and model, then Local AI; after OpenRouter, Gemini
-(whose key opens the workspace) then Local AI. Only an AI the person set up
+(when its key is in: until 2026-11-23 it always was, since that key opened
+the workspace; since then OpenRouter alone opens it) then Local AI. Only an AI the person set up
 is asked, and only on a limit (429, RESOURCE_EXHAUSTED, a rate limit, read
 on the classified error or its cause): a wrong key or a bad answer is the
 person's to see. The reply's first line names both AIs, as "Gemini had

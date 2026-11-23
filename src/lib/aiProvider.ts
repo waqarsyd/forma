@@ -16,6 +16,16 @@
  * still there behind the scenes, as the draft that stands in when the AI
  * set up fails to answer (lib/formaTeam.ts).
  *
+ * **On 2026-11-23 the owner widened the entry point from the Gemini key to
+ * any AI of the person's own** (`workspaceOpen`): a Gemini key, an OpenRouter
+ * key and model, or a Local AI server and model each open the workspace, and
+ * with none set up the composer stays locked and asks for one. There is
+ * still never a mode with no AI. A Local AI model has no key, which is why
+ * the rule is "an AI set up", not "an API key". What still asks Gemini
+ * itself steps aside without its key: the report library's search
+ * (services/library.ts, through `librarySearchable`, which also keeps it shut
+ * while Local AI designs), model detection and the key vault.
+ *
  * The choice, the local endpoint and the model names are preferences, kept in
  * localStorage. The OpenRouter key is not: like the Gemini key it lives in
  * sessionStorage and goes when the tab closes.
@@ -108,16 +118,26 @@ export function effectiveProvider(config: Pick<ReportConfig, 'provider'>): Effec
 }
 
 /**
- * Whether the workspace opens: the Gemini key is in, whichever AI is chosen,
- * and that AI is ready to answer. The owner's rule (2026-11-05): the key is
- * the entry point to any work, Local AI and OpenRouter included; with no key
- * the composer is locked and asks for one.
+ * Whether the workspace opens: the AI chosen is ready to answer. The owner's
+ * rule since 2026-11-23: any AI of the person's own opens it, Gemini with its
+ * key, OpenRouter with its key and model, or Local AI with its server and
+ * model, and none other is needed beside it; with the AI chosen not set up,
+ * the composer is locked and asks for one. From 2026-11-05 until then the
+ * Gemini key was required as well, whichever AI was chosen.
+ *
+ * The AI chosen, not any AI set up: a Local AI or OpenRouter with no model
+ * falls through to Gemini in services/geminiService.ts (`compatEndpoint` is
+ * null), so opening on a Gemini key beside it would send the first request to
+ * Google from someone who picked an AI on their own computer.
  */
 export function workspaceOpen(config: ReportConfig): boolean {
-  return Boolean(config.customApiKey?.trim()) && aiReady(config);
+  return aiReady(config);
 }
 
-/** Whether the chosen AI is set up to answer: its key, or for Local AI its server and model. */
+/**
+ * Whether the chosen AI is set up to answer: for Gemini its key, for
+ * OpenRouter its key and a model, for Local AI its server and a model.
+ */
 export function aiReady(config: ReportConfig): boolean {
   switch (effectiveProvider(config)) {
     case 'gemini':
@@ -128,6 +148,40 @@ export function aiReady(config: ReportConfig): boolean {
       return Boolean(config.openRouterKey?.trim() && config.openRouterModel?.trim());
   }
 }
+
+/**
+ * Whether a Gemini key is in (2026-11-23). Since the workspace opens on any
+ * AI, this is no longer the gate; it is what the parts that ask Gemini
+ * themselves check before they ask, the report library through
+ * `librarySearchable` below.
+ */
+export function hasGeminiKey(config: Pick<ReportConfig, 'customApiKey'>): boolean {
+  return Boolean(config.customApiKey?.trim());
+}
+
+/**
+ * Whether the report library may be searched and filled (2026-11-24, the
+ * wave-2 review's KEYREV-3 and W1): only Gemini finds its reports, so it
+ * needs a Gemini key, and never while Local AI designs. Searching it sends
+ * the words of the request and the draft's band captions to Google, and
+ * adding a report sends its stripped layout; a person who chose an AI on
+ * their own computer chose that nothing leaves it, the rule
+ * lib/fallbackChain.ts keeps and the privacy policy states. Until then a
+ * Gemini key beside Local AI was searched with on every refinement. The
+ * reports a person keeps need none of this: they are matched on the device
+ * (`nearestKept` in services/library.ts).
+ */
+export function librarySearchable(config: Pick<ReportConfig, 'provider' | 'customApiKey'>): boolean {
+  return hasGeminiKey(config) && effectiveProvider(config) !== 'local';
+}
+
+/**
+ * What Forma says when the AI chosen is not set up (2026-11-23), the rule in
+ * the person's words: the locked workspace's errors, and the message of
+ * `MissingApiKeyError` (services/geminiService.ts). A Local AI model has no
+ * key, so it is not "add your API key".
+ */
+export const SET_UP_AI = 'Set up your AI in Settings to start: a Gemini or OpenRouter key, or a model on your own computer.';
 
 /** A Local AI model imported as Forma's vision model (milestone 6): "forma-vision", any tag. */
 const isFormaVisionName = (model: string | undefined) => /forma-vision/i.test(model ?? '');

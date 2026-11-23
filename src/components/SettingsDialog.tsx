@@ -16,9 +16,12 @@
  * with a Cancel that put the config and the memory back from a snapshot taken
  * when it opened (app-shell.md, *The configuration dialog was refined*).
  *
- * It opens at the Gemini key while there is none, because every route here
- * without one is the locked composer asking for it (`workspaceOpen` in
- * lib/aiProvider.ts), and at General otherwise.
+ * It opens where the AI chosen is set up while it is not, because every route
+ * here without one is the locked composer asking for it (`workspaceOpen` in
+ * lib/aiProvider.ts): at the Gemini key for Automatic, at AI for Local AI and
+ * OpenRouter (2026-11-23, when any AI of the person's own came to open the
+ * workspace; until then it opened at the Gemini key whichever AI was chosen),
+ * and at General otherwise.
  *
  * Lazy, like every other dialog: the key check, the vault and the sections
  * load when Settings opens, and none of it weighs on App's entry chunk. Its
@@ -30,6 +33,7 @@ import { loadGemini } from '../lib/geminiClient';
 import { loadFirebase } from '../lib/firebaseClient';
 import { clearSessionKey, decryptApiKey, encryptApiKey, isVaultAvailable, WrongPassphraseError, type EncryptedKeyRecord } from '../services/keyVault';
 import type { ReportConfig } from '../services/geminiService';
+import { aiReady, effectiveProvider } from '../lib/aiProvider';
 import { IconAlert, IconArchive, IconChat, IconCheck, IconEye, IconEyeOff, IconKey, IconPulse, IconTune, IconWarn } from './landing/icons';
 import SectionedDialog, { type DialogSection } from './SectionedDialog';
 import UsageSettings from './UsageSettings';
@@ -103,10 +107,24 @@ export interface SettingsDialogProps {
   /** What the last request worked out, and why (lib/autoConfig.ts); null before the first. */
   workedOut: string[] | null;
   onClose: () => void;
-  /** The section to open at: AI, from the box's model label (agent audit item 74); otherwise General, or the key when there is none. */
+  /**
+   * The section to open at: AI, from the box's model label (agent audit item
+   * 74); the Gemini key, from the Library panel. Otherwise General, or where
+   * the AI chosen is set up while it is not (`openingSection`).
+   */
   start?: SettingsSection;
   /** Everything kept as a .zip; resolves to how many projects went in and whether a file was saved (site audit item 59, R3-13). */
   onExportProjects?: () => Promise<{ projects: number; saved: boolean }>;
+}
+
+/**
+ * Where Settings opens with no section asked for (2026-11-23): General once
+ * the AI chosen is set up; until then where it is set up, the Gemini key for
+ * Automatic and AI for Local AI and OpenRouter.
+ */
+export function openingSection(config: ReportConfig): SettingsSection {
+  if (aiReady(config)) return 'general';
+  return effectiveProvider(config) === 'gemini' ? 'key' : 'ai';
 }
 
 /** A line under a setting: what happened, or what to know. */
@@ -120,7 +138,7 @@ function Note({ notice }: { notice: Notice }) {
 }
 
 export default function SettingsDialog({ config, onChange, user, workedOut, onClose, start, onExportProjects }: SettingsDialogProps) {
-  const [section, setSection] = useState<SettingsSection>(() => start ?? (config.customApiKey?.trim() ? 'general' : 'key'));
+  const [section, setSection] = useState<SettingsSection>(() => start ?? openingSection(config));
 
   /* ---- Your projects ---- */
   const [exporting, setExporting] = useState(false);
@@ -373,10 +391,22 @@ export default function SettingsDialog({ config, onChange, user, workedOut, onCl
                     </a>
                     . Free; no card needed.
                   </p>
+                  {/* Not "required, whichever AI designs" since 2026-11-23: any
+                      AI of the person's own opens the workspace, and Gemini is
+                      asked beside another AI only by the report library, and
+                      never beside Local AI (2026-11-24, KEYREV-3). */}
                   <p id="cfg-key-note">
-                    Required, whichever AI designs. It goes from this browser straight to Google, is held for this tab only, and is never
-                    written to disk.
+                    Automatic designs with it, and with Automatic or OpenRouter the report library uses it to find your reports. It goes from this
+                    browser straight to Google, is held for this tab only, and is never written to disk.
                   </p>
+                  {!key.trim() && (
+                    <p>
+                      No Gemini key? Local AI and OpenRouter need none.{' '}
+                      <button type="button" className="wb-set-link" onClick={() => setSection('ai')}>
+                        Choose another AI
+                      </button>
+                    </p>
+                  )}
                 </div>
                 <div className="wb-set-field">
                   <span className="wb-set-secret">

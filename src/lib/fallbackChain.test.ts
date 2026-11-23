@@ -35,8 +35,15 @@ describe('who is asked next', () => {
     expect(fallbacksFor({ ...base, ...router, openRouterKey: '' })).toEqual([]);
   });
 
-  it('asks Gemini after OpenRouter, with the key that opens the workspace', () => {
+  it('asks Gemini after OpenRouter when its key is in', () => {
     expect(fallbacksFor({ ...base, ...router, ...local, provider: 'openrouter' })).toEqual(['gemini', 'local']);
+  });
+
+  // Since 2026-11-23 OpenRouter alone opens the workspace, so a Gemini key
+  // beside it is optional, and without one Gemini is not asked (W9).
+  it('skips Gemini after OpenRouter when there is no Gemini key', () => {
+    expect(fallbacksFor({ ...base, ...router, ...local, provider: 'openrouter', customApiKey: '' })).toEqual(['local']);
+    expect(fallbacksFor({ ...base, ...router, provider: 'openrouter', customApiKey: '' })).toEqual([]);
   });
 
   it('never sends a request to Local AI on to another provider', () => {

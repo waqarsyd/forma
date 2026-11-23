@@ -759,13 +759,14 @@ export default function LoginPage({
               </p>
             )}
 
-            {/* People arrive here having been told Forma needs a Gemini key,
-                and this screen asks for a password. Saying which is which at
-                the point of confusion is cheaper than answering it later. */}
+            {/* People arrive here having been told Forma needs an AI of their
+                own, often a key, and this screen asks for a password. Saying
+                which is which at the point of confusion is cheaper than
+                answering it later. */}
             <p className="mt-[18px] border-t border-outline-variant pt-4 font-body-lg text-[12.5px] leading-[1.55] text-[color:var(--ink-faint)]">
               This is a Forma account password —{' '}
-              <b className="font-semibold text-on-surface-variant">not your Gemini API key</b>. The key is only ever
-              entered in the workspace, and signing in never asks for it.
+              <b className="font-semibold text-on-surface-variant">not your Gemini or OpenRouter key</b>. A key is only
+              ever entered in the workspace, and signing in never asks for one.
             </p>
           </div>
 

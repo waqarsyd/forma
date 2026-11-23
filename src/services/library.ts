@@ -195,6 +195,12 @@ export async function importReports(
   if (toEmbed.length === 0) {
     return { added, skipped, embedded: 0, pending: pending.length, empty };
   }
+  // No Gemini key (2026-11-23): any AI opens the workspace now, and only
+  // Gemini embeds. The reports stay kept, as after a failed request, and
+  // nothing is asked of Google without its key.
+  if (!options.apiKey.trim()) {
+    return { added, skipped, embedded: 0, pending: toEmbed.length, empty };
+  }
 
   const { vectors, model } = await deps.embedEntries(toEmbed, {
     apiKey: options.apiKey,
@@ -228,9 +234,11 @@ export interface RetrieveOptions extends StyleBlockOptions {
 /**
  * Build the house-style block for a refine, or `''`.
  *
- * Every early return is a legitimate "nothing to add" rather than an error: the
- * library is empty, the draft and the instruction between them ask nothing, or the
- * stored vectors belong to another model.
+ * Every early return is a legitimate "nothing to add" rather than an error: there
+ * is no Gemini key to search with (2026-11-23: Local AI or OpenRouter alone opens
+ * the workspace, and only Gemini embeds), the library is empty, the draft and the
+ * instruction between them ask nothing, or the stored vectors belong to another
+ * model.
  */
 export async function retrieveHouseStyle(
   draftRepx: string | null | undefined,
@@ -238,6 +246,7 @@ export async function retrieveHouseStyle(
   deps: LibraryDeps,
   options: RetrieveOptions,
 ): Promise<string> {
+  if (!options.apiKey.trim()) return '';
   const entries = await deps.storage.load();
   if (entries.length === 0) return '';
 

@@ -73,8 +73,9 @@ describe('generateTestData', () => {
     expect(body.contents[0].parts[0].text).toContain('exactly 50 rows');
   });
 
-  it('refuses without a key', async () => {
+  // Asking for an AI, not an API key, since 2026-11-23: a model on the person's own computer has none.
+  it('refuses with no AI set up', async () => {
     stubFetch(() => jsonReply('{}'));
-    await expect(generateTestData(['A'], {}, 5, { ...config, customApiKey: '' })).rejects.toThrow(/API key/i);
+    await expect(generateTestData(['A'], {}, 5, { ...config, customApiKey: '' })).rejects.toThrow(/^Set up your AI/);
   });
 });

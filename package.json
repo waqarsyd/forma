@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.6.5",
   "license": "Apache-2.0",
-  "description": "Turn a screenshot, a PDF, or an existing report into a real DevExpress .repx — AI-generated spec, in-browser mockup, and XtraReports XML. Bring your own Gemini key.",
+  "description": "Turn a picture, a PDF, a .repx or a few sentences into a DevExpress report (.repx, XtraReports XML) you can open in the designer. Bring your own AI: a Gemini or OpenRouter key, or a model on your own computer.",
   "type": "module",
   "engines": {
     "node": "^24.15.0 || >=26"

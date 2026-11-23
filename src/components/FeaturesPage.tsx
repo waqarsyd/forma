@@ -1151,7 +1151,7 @@ export default function FeaturesPage({
                 {
                   k: 'The generation',
                   v: 'Google’s free tier',
-                  d: 'You bring your own Gemini key, and Forma is built to stay inside Google’s free tier. If you turn on billing for your key, Google bills you directly; Forma takes no cut and never sees the transaction. A local AI costs nothing at all.',
+                  d: 'You bring your own AI. With a Gemini key, the default, Forma is built to stay inside Google’s free tier; if you turn on billing for your key, Google bills you directly, and Forma takes no cut and never sees the transaction. OpenRouter’s free models cost nothing, and a local AI costs nothing at all.',
                 },
                 {
                   k: 'Your queue',
@@ -1202,7 +1202,7 @@ export default function FeaturesPage({
             <Reveal>
               <Logo size={46} className="mx-auto mb-[22px]" alt="Forma" />
               <div className="font-code-sm text-[11px] font-medium leading-[1.62] tracking-[0.15em] uppercase text-white/[0.46]">
-                Your own key, nothing else to set
+                Your own AI, nothing else to set
               </div>
             </Reveal>
             <Reveal delay={0.06}>
@@ -1212,8 +1212,8 @@ export default function FeaturesPage({
             </Reveal>
             <Reveal delay={0.12}>
               <p className="mx-auto mt-[18px] max-w-[56ch] font-body-lg text-[16px] leading-[1.62] text-white/[0.64]">
-                Bring a design and your own Gemini key. Everything on this page is something you can check in a few
-                minutes, on your own file.
+                Bring a design and your own AI: a Gemini or OpenRouter key, or a model on your own computer. Everything
+                on this page is something you can check in a few minutes, on your own file.
               </p>
             </Reveal>
             <Reveal delay={0.18}>

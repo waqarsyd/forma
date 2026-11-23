@@ -77,7 +77,7 @@ import type {
   DraftRequest,
 } from './services/geminiService';
 import { loadGemini, isMissingApiKey } from './lib/geminiClient';
-import { answeringModel, effectiveProvider, isVisionOnly, pageReaderOf, PROVIDER_NAMES, readProviderSettings, visionModelOf, workspaceOpen, writeProviderSettings } from './lib/aiProvider';
+import { answeringModel, effectiveProvider, isVisionOnly, librarySearchable, pageReaderOf, PROVIDER_NAMES, readProviderSettings, SET_UP_AI, visionModelOf, workspaceOpen, writeProviderSettings } from './lib/aiProvider';
 import type { SettingsSection } from './components/SettingsDialog';
 import type { DraftSource } from './lib/formaTeam';
 import type { JobPlan } from './lib/jobPlan';
@@ -1778,13 +1778,15 @@ export default function App() {
 
 
   /**
-   * Whether the workspace is open to work: the Gemini key, whichever AI is
-   * chosen (2026-11-05, `workspaceOpen` in lib/aiProvider.ts). Without it the
-   * box is locked and its button opens Settings at the key. From 2026-11-02
-   * to 2026-11-05 the box handed words to Forma's own model and images to OCR
-   * without one; that went, and this comment kept saying it until 2026-11-06.
+   * Whether the workspace is open to work: the AI chosen is set up, a Gemini
+   * key, an OpenRouter key and model, or a Local AI server and model
+   * (2026-11-23, `workspaceOpen` in lib/aiProvider.ts; from 2026-11-05 until
+   * then the Gemini key was needed whichever AI was chosen). Without it the
+   * box is locked and its button opens Settings where that AI is set up.
+   * From 2026-11-02 to 2026-11-05 the box handed words to Forma's own model
+   * and images to OCR with no AI; that went, and there is no mode without one.
    */
-  const hasApiKey = workspaceOpen(config);
+  const aiSetUp = workspaceOpen(config);
 
   /** A short conversational turn is in flight (not a report generation). */
   const [isChatting, setIsChatting] = useState(false);
@@ -2253,7 +2255,8 @@ export default function App() {
       const { importReports } = await loadLibrary();
       try {
         return await importReports(read, await getLibraryDeps(), {
-          apiKey: config.customApiKey?.trim() ?? '',
+          // No key while Local AI designs, so nothing is embedded through Google (KEYREV-3).
+          apiKey: librarySearchable(config) ? config.customApiKey?.trim() ?? '' : '',
         });
       } finally {
         /* In a `finally`, because the chunks are written BEFORE the embedding
@@ -2265,7 +2268,8 @@ export default function App() {
         await refreshLibrary();
       }
     },
-    [config.customApiKey, getLibraryDeps, refreshLibrary],
+    // librarySearchable reads only these two of the config.
+    [config.customApiKey, config.provider, getLibraryDeps, refreshLibrary],
   );
 
   const handleLibraryRemove = useCallback(
@@ -4003,7 +4007,9 @@ export default function App() {
        * generation they actually asked for.
        */
       let houseStyle = '';
-      if (houseStyleOn && open?.repxContent && canonicalSources.size > 0) {
+      // Never while Local AI designs (2026-11-24, KEYREV-3): the search sends
+      // the request's words to Google, and nothing leaves a local AI.
+      if (houseStyleOn && open?.repxContent && canonicalSources.size > 0 && librarySearchable(config)) {
         try {
           const { retrieveHouseStyle } = await loadLibrary();
           houseStyle = await retrieveHouseStyle(
@@ -4282,12 +4288,12 @@ export default function App() {
       }
       console.error('Error during report generation:', err);
 
-      // No key configured is a setup step, not a failure — send the user straight
+      // No AI set up is a setup step, not a failure — send the user straight
       // to the place they can fix it instead of showing a dead-end error.
       if (isMissingApiKey(err)) {
         // Once, on the request, or over the box when there is none (item 54).
-        if (messages.some((m) => m.role === 'user')) setMessages((prev) => markAskError(prev, 'Add your own Gemini API key in Settings to generate reports.', turnOf?.askId));
-        else setError('Add your own Gemini API key in Settings to generate reports.');
+        if (messages.some((m) => m.role === 'user')) setMessages((prev) => markAskError(prev, SET_UP_AI, turnOf?.askId));
+        else setError(SET_UP_AI);
         setIsConfigOpen(true);
         return;
       }
@@ -4809,8 +4815,9 @@ export default function App() {
   const withdrawUndoes = useMemo(() => requestsThatUndo(requests, undoableIds), [requests, undoableIds]);
 
   /* `designOffline`, the chat box with no key, went on 2026-11-05: the owner
-     made the key the entry point to any work again, and the composer locks
-     without one. It answered words with Forma's own model and images with
+     made the key the entry point to any work again (any AI of the person's
+     own since 2026-11-23), and the composer locks without one. It answered
+     words with Forma's own model and images with
      OCR from 2026-11-02 (adccf55); `git log -S"const designOffline"` finds
      it. Forma's own model and OCR's build still stand in when the AI set up
      fails to answer (`offlineDesign`, `prepareTeam`'s draft). */
@@ -5093,10 +5100,10 @@ export default function App() {
     // this request brings (lib/autoConfig.ts); again once its pages are read.
     detectFor({ texts: stagedTexts, metas: stagedImageMeta, words: promptText });
 
-    // No AI set up, no work (2026-11-05): the key is the entry point, as it
-    // was until 2026-11-02. The composer is locked without one; this is the
-    // guard that makes it true whoever calls.
-    if (!hasApiKey) {
+    // No AI set up, no work (2026-11-05; any AI of the person's own since
+    // 2026-11-23, where it was the Gemini key). The composer is locked
+    // without one; this is the guard that makes it true whoever calls.
+    if (!aiSetUp) {
       setIsConfigOpen(true);
       return;
     }
@@ -5738,7 +5745,7 @@ export default function App() {
         if (turn.signal.aborted) return;
         console.error('Chat turn failed:', err);
         const message = isMissingApiKey(err)
-          ? 'Add your Gemini API key to use the workspace.'
+          ? SET_UP_AI
           : err?.message || 'Could not reach the assistant.';
         // Mark the message that failed, so the transcript shows which turn went
         // wrong instead of leaving it looking merely unanswered. Said there
@@ -5851,7 +5858,7 @@ export default function App() {
       }
     } catch (err: any) {
       if (signal?.aborted) return;
-      const message = isMissingApiKey(err) ? 'Add your Gemini API key to use the workspace.' : err?.message || 'Could not reach the assistant.';
+      const message = isMissingApiKey(err) ? SET_UP_AI : err?.message || 'Could not reach the assistant.';
       // On the request (agent audit item 5), with its Try again, and not over the box too (item 54).
       setMessages((prev) => markAskError(prev, message, askId));
       if (isMissingApiKey(err)) setIsConfigOpen(true);
@@ -5936,8 +5943,8 @@ export default function App() {
    */
   const handleTestData = async () => {
     if (!result?.repxContent || boundFields.length === 0) return;
-    if (!hasApiKey) {
-      setError('Add your Gemini API key to use the workspace.');
+    if (!aiSetUp) {
+      setError(SET_UP_AI);
       setIsConfigOpen(true);
       return;
     }
@@ -5959,7 +5966,7 @@ export default function App() {
     } catch (err: any) {
       if (stop.aborted) return;
       if (isMissingApiKey(err)) {
-        setError('Add your Gemini API key to use the workspace.');
+        setError(SET_UP_AI);
         setIsConfigOpen(true);
       } else {
         setError(err?.message || 'Could not generate test data.');
@@ -5986,7 +5993,7 @@ export default function App() {
   const translateReport = async (named: string, replyId?: string | null) => {
     const open = result;
     if (!open?.repxContent) return;
-    if (!hasApiKey) {
+    if (!aiSetUp) {
       setIsConfigOpen(true);
       return;
     }
@@ -6985,7 +6992,7 @@ export default function App() {
             <Suspense fallback={null}>
               <BatchPanel
                 incoming={batchIncoming}
-                ready={hasApiKey}
+                ready={aiSetUp}
                 onNeedKey={() => setIsConfigOpen(true)}
                 runOne={runOneBatchFile}
                 onFinished={(note) =>
@@ -7039,8 +7046,15 @@ export default function App() {
                 onImport={handleLibraryImport}
                 onRemove={handleLibraryRemove}
                 onToggleCanonical={handleToggleCanonical}
-                ready={hasApiKey}
-                onNeedKey={() => setIsConfigOpen(true)}
+                /* The Gemini key, not the AI set up (2026-11-23): only Gemini
+                   finds the reports added here, and never while Local AI
+                   designs (2026-11-24, KEYREV-3). */
+                ready={librarySearchable(config)}
+                localOnly={effectiveProvider(config) === 'local'}
+                onNeedKey={() => {
+                  setConfigStart(effectiveProvider(config) === 'local' ? 'ai' : 'key');
+                  setIsConfigOpen(true);
+                }}
               />
             </Suspense>
           </div>
@@ -7361,7 +7375,14 @@ export default function App() {
                       }}
                       // Read through the companion on this PC (Phase 2), as a pasted layout is.
                       onLayoutText={databaseFromText}
-                      onAskSql={async (sentence, layout) => (await loadGemini()).promptToSql(sentence, layout, effectiveConfig())}
+                      // Guarded as Prompt-to-Expression is: the Data tab opens with no AI set up (2026-11-24, KEYREV-1).
+                      onAskSql={async (sentence, layout) => {
+                        if (!aiSetUp) {
+                          setIsConfigOpen(true);
+                          throw new Error(SET_UP_AI);
+                        }
+                        return (await loadGemini()).promptToSql(sentence, layout, effectiveConfig());
+                      }}
                       // Asked once per project before the sentence and the layout go (owner decision 3, 2026-11-12).
                       sqlConsented={sqlConsent}
                       onSqlConsent={() => setSqlConsent(true)}
@@ -7414,9 +7435,9 @@ export default function App() {
                       /* Prompt-to-Expression. The call is here, not in the
                          pane, so the pane renders and is tested with no key. */
                       onPromptToExpression={async (prompt, fields) => {
-                        if (!hasApiKey) {
+                        if (!aiSetUp) {
                           setIsConfigOpen(true);
-                          throw new Error('Add your Gemini API key to use the workspace.');
+                          throw new Error(SET_UP_AI);
                         }
                         const { promptToExpression } = await loadGemini();
                         return promptToExpression(prompt, fields, config);
@@ -7500,21 +7521,17 @@ export default function App() {
                   if (report) void handleLoadReport(report);
                 }}
                 onAllProjects={() => showRailPanel('projects')}
-                // No key yet (2026-11-11, the full audit's SA-05): the home says
-                // so first, and a starting point picked waits in the locked box
-                // while Settings opens at the key, where it used to land there
-                // with nothing said.
-                needsKey={!hasApiKey}
-                onAddKey={() => {
-                  setConfigStart('key');
-                  setIsConfigOpen(true);
-                }}
+                // No AI set up yet (2026-11-11, the full audit's SA-05; any AI
+                // since 2026-11-23): the home says so first, and a starting
+                // point picked waits in the locked box while Settings opens
+                // where the AI chosen is set up (its own default with none
+                // ready), where it used to land with nothing said.
+                needsAi={!aiSetUp}
+                onSetUpAi={() => setIsConfigOpen(true)}
                 onPick={(point) => {
                   addToBox(point.text);
-                  if (!hasApiKey) {
-                    setConfigStart('key');
-                    setIsConfigOpen(true);
-                  } else focusBox();
+                  if (!aiSetUp) setIsConfigOpen(true);
+                  else focusBox();
                 }}
               />
             </Suspense>
@@ -7649,8 +7666,8 @@ export default function App() {
                       onStop={handleStop}
                       fileInputRef={fileInputRef}
                       onFileChange={handleFileChange}
-                      hasApiKey={hasApiKey}
-                      onAddKey={() => setIsConfigOpen(true)}
+                      aiSetUp={aiSetUp}
+                      onSetUpAi={() => setIsConfigOpen(true)}
                       isAnalyzing={isAnalyzing}
                       // Between a turn's steps the box still queues and stops (see `turnBusy`).
                       isChatting={isChatting || (turnBusy && !isAnalyzing)}

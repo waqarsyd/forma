@@ -140,12 +140,25 @@ describe('importing', () => {
     expect(props.onImport).not.toHaveBeenCalled();
   });
 
-  it('asks for a key instead of opening a picker that cannot finish', () => {
+  // The Gemini key, not the AI set up, since 2026-11-23: Local AI or OpenRouter
+  // alone opens the workspace, and only Gemini finds the reports added here.
+  it('asks for a Gemini key instead of opening a picker that cannot finish', () => {
     const props = panel({ ready: false });
     fireEvent.click(screen.getByRole('button', { name: /Add \.repx files/ }));
     expect(props.onNeedKey).toHaveBeenCalled();
     expect(props.onImport).not.toHaveBeenCalled();
-    expect(screen.getByText('Adding reports needs your Gemini key.')).toBeTruthy();
+    expect(screen.getByText('Adding reports needs a Gemini key.')).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(MACHINERY);
+  });
+
+  // Never while Local AI designs (2026-11-24, KEYREV-3): a key would not help,
+  // since finding the reports goes through Google, so it is not asked for.
+  it('says adding is off while Local AI designs, rather than asking for a key', () => {
+    const props = panel({ ready: false, localOnly: true });
+    fireEvent.click(screen.getByRole('button', { name: /Add \.repx files/ }));
+    expect(props.onImport).not.toHaveBeenCalled();
+    expect(screen.getByText('Adding reports is off while Local AI designs, so your reports stay on this computer.')).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/Gemini key/);
     expect(document.body.textContent).not.toMatch(MACHINERY);
   });
 });

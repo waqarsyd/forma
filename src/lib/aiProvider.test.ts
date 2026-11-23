@@ -4,7 +4,7 @@
  * localStorage and sessionStorage; this must stay line 1.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { aiReady, answeringModel, DEFAULT_LOCAL_URL, effectiveProvider, isVisionOnly, pageReaderOf, readProviderSettings, visionModelOf, workspaceOpen, writeProviderSettings } from './aiProvider';
+import { aiReady, answeringModel, DEFAULT_LOCAL_URL, effectiveProvider, hasGeminiKey, isVisionOnly, librarySearchable, pageReaderOf, readProviderSettings, SET_UP_AI, visionModelOf, workspaceOpen, writeProviderSettings } from './aiProvider';
 import type { ReportConfig } from '../services/geminiService';
 
 const base: ReportConfig = { version: '20.1', unit: 'HundredthsOfAnInch', pageSize: 'A4' };
@@ -31,15 +31,61 @@ describe('which provider answers', () => {
     expect(aiReady({ ...base, provider: 'openrouter', openRouterModel: 'x:free', openRouterKey: 'k' })).toBe(true);
   });
 
-  it('opens the workspace only with the Gemini key in, whichever AI is chosen, and that AI ready (2026-11-05)', () => {
+  // The owner's rule of 2026-11-23: any AI of the person's own opens the
+  // workspace; from 2026-11-05 until then the Gemini key was needed beside any.
+  it('opens the workspace on any AI set up, Local AI or OpenRouter alone included (2026-11-23)', () => {
     const local = { ...base, provider: 'local' as const, localUrl: DEFAULT_LOCAL_URL, localModel: 'gemma3' };
     const openRouter = { ...base, provider: 'openrouter' as const, openRouterModel: 'x:free', openRouterKey: 'k' };
     expect(workspaceOpen({ ...base, customApiKey: 'AIza' })).toBe(true);
-    expect(workspaceOpen(local)).toBe(false);
+    expect(workspaceOpen({ ...base, provider: 'auto', customApiKey: 'AIza' })).toBe(true);
+    expect(workspaceOpen(local)).toBe(true);
+    expect(workspaceOpen(openRouter)).toBe(true);
+    // A Gemini key beside them changes nothing.
     expect(workspaceOpen({ ...local, customApiKey: 'AIza' })).toBe(true);
-    expect(workspaceOpen({ ...local, localModel: '', customApiKey: 'AIza' })).toBe(false);
-    expect(workspaceOpen(openRouter)).toBe(false);
     expect(workspaceOpen({ ...openRouter, customApiKey: 'AIza' })).toBe(true);
+  });
+
+  it('stays shut with nothing set up, and with the AI chosen not ready, whatever else is', () => {
+    const local = { ...base, provider: 'local' as const, localUrl: DEFAULT_LOCAL_URL, localModel: 'gemma3' };
+    const openRouter = { ...base, provider: 'openrouter' as const, openRouterModel: 'x:free', openRouterKey: 'k' };
+    expect(workspaceOpen(base)).toBe(false);
+    expect(workspaceOpen({ ...base, customApiKey: '   ' })).toBe(false);
+    expect(workspaceOpen({ ...base, provider: 'local' })).toBe(false);
+    expect(workspaceOpen({ ...base, provider: 'openrouter' })).toBe(false);
+    // The AI chosen not ready: a Local AI or OpenRouter with no model would
+    // fall through to Gemini, so neither a Gemini key nor another AI opens it.
+    expect(workspaceOpen({ ...local, localModel: '' })).toBe(false);
+    expect(workspaceOpen({ ...local, localModel: '', customApiKey: 'AIza' })).toBe(false);
+    expect(workspaceOpen({ ...local, localUrl: ' ', customApiKey: 'AIza' })).toBe(false);
+    expect(workspaceOpen({ ...openRouter, openRouterKey: '' })).toBe(false);
+    expect(workspaceOpen({ ...openRouter, openRouterModel: '', customApiKey: 'AIza' })).toBe(false);
+    // Automatic chosen with no Gemini key, though OpenRouter and Local AI are set up beside it.
+    expect(workspaceOpen({ ...openRouter, ...local, provider: 'auto' })).toBe(false);
+  });
+
+  it('tells a Gemini key from the AI set up, for what asks Gemini itself', () => {
+    expect(hasGeminiKey({ customApiKey: 'AIza' })).toBe(true);
+    expect(hasGeminiKey({ customApiKey: '  ' })).toBe(false);
+    expect(hasGeminiKey({})).toBe(false);
+  });
+
+  // Searching the report library sends the request's words to Google, so it
+  // waits for a Gemini key and never runs while Local AI designs (2026-11-24, KEYREV-3).
+  it('searches the report library with a Gemini key, never while Local AI designs', () => {
+    expect(librarySearchable({ customApiKey: 'AIza' })).toBe(true);
+    expect(librarySearchable({ provider: 'auto', customApiKey: 'AIza' })).toBe(true);
+    expect(librarySearchable({ provider: 'openrouter', customApiKey: 'AIza' })).toBe(true);
+    expect(librarySearchable({ provider: 'local', customApiKey: 'AIza' })).toBe(false);
+    expect(librarySearchable({ provider: 'openrouter', customApiKey: ' ' })).toBe(false);
+    expect(librarySearchable({})).toBe(false);
+  });
+
+  it('says the rule in the person\'s words, never as an API key a local model does not have', () => {
+    expect(SET_UP_AI).toMatch(/^Set up your AI/);
+    expect(SET_UP_AI).toMatch(/Gemini/);
+    expect(SET_UP_AI).toMatch(/OpenRouter/);
+    expect(SET_UP_AI).toMatch(/your own computer/);
+    expect(SET_UP_AI).not.toMatch(/API key/i);
   });
 
   it("finds Forma's vision model as a helper beside any AI, or as the Local AI model itself", () => {

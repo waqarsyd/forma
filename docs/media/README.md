@@ -42,12 +42,14 @@ makes eight.
 files were opened and read frame by frame for anything personal — an account email, a
 key, a saved report title — and both are clean. The stat was noticed on the way past.
 
-**Neither shows generated output, and that is deliberate.** Generating a report needs a
-Gemini key, which is the user's and does not belong in a capture. `VITE_FORMA_MOCK=true`
-produces a report without one, but the canned fixture prints `INVOICE - FORMA MOCK
-ENGINE` across the sheet — an honesty marker that works exactly as intended and makes
-the image useless as a README lead. If you want a screenshot of real output, capture it
-yourself with your own key and follow the checklist below.
+**Neither shows generated output, and that is deliberate.** Generating a report needs an
+AI of the user's own (a Gemini or OpenRouter key, or a model on their own computer, since
+2026-11-23; a Gemini key until then), and a key is the user's and does not belong in a
+capture. `VITE_FORMA_MOCK=true` produces a report without asking any AI, but the canned
+fixture prints `INVOICE - FORMA MOCK ENGINE` across the sheet — an honesty marker that
+works exactly as intended and makes the image useless as a README lead. If you want a
+screenshot of real output, capture it yourself with your own AI and follow the checklist
+below.
 
 ## Recapturing
 
@@ -56,7 +58,7 @@ The README's Demo section points here. Swap an image in one commit:
 1. For the two images above, start the mock server
    (`$env:VITE_FORMA_MOCK='true'; $env:PORT='3001'; npm run dev`) and open
    <http://localhost:3001> in your own browser; neither image needs a key or a report.
-2. For a capture of real output instead, run `npm run dev`, supply a Gemini key, generate
+2. For a capture of real output instead, run `npm run dev`, set up your AI, generate
    a report from a sample document, and wait for it to finish drawing — the mock's report
    is marked as canned (above), so it cannot stand in.
 3. Capture the viewport at roughly 1280×720 or 1600×900. Keep the browser chrome out

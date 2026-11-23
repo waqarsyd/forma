@@ -1,7 +1,7 @@
 {
   "name": "Forma — DevExpress reports from a picture, a PDF or your words",
   "short_name": "Forma",
-  "description": "Turn a picture, a PDF, a .repx or a few sentences into a DevExpress report you can open in the designer, with a print preview, exports and a chat that edits it. Free, in your browser, with your own Gemini key.",
+  "description": "Turn a picture, a PDF, a .repx or a few sentences into a DevExpress report you can open in the designer, with a print preview, exports and a chat that edits it. Free, in your browser, with your own AI: a Gemini or OpenRouter key, or a model on your own computer.",
   "id": "/",
   "start_url": "/workspace",
   "scope": "/",

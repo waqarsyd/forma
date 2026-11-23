@@ -52,6 +52,7 @@ import { detectRunaway, isRunawayOutput, RunawayOutputError } from "../lib/runaw
 import { buildDescriptionBrief, type ReportDescriptionRequest, type ClarificationQuestion } from "../lib/promptToReport";
 import { EXPRESSION_REFERENCE, checkExpression } from "../lib/expressions";
 import { noteDailyLimit, noteRequest } from "../lib/requestCount";
+import { SET_UP_AI } from "../lib/aiProvider";
 // A type only: the edit library is App's to load on demand, and importing
 // it here put it and repxEdit in this chunk, over its budget (2026-11-05).
 import type { AgentEdit, AgentTool } from "../lib/agentEdit";
@@ -153,10 +154,20 @@ export function compatEndpoint(config?: ReportConfig): CompatEndpoint | null {
  * OpenAI-compatible provider names its own model, so `modelName` pins it and
  * the detection and probing, which are Gemini's, never run; and its key stands
  * in for `customApiKey`, a local endpoint needing none.
+ *
+ * A Local AI or OpenRouter chosen but not ready (no model, or OpenRouter with
+ * no key) gets an empty key, so every caller below throws `MissingApiKeyError`
+ * before a request (2026-11-24, the wave-2 review's KEYREV-1). Until then such
+ * a choice fell through to Gemini with the Gemini key whenever one was in, so
+ * the Data tab's Write the SQL sent a database's layout to Google from someone
+ * who had picked an AI on their own computer, and OpenRouter with no key sent
+ * an unauthenticated request. The workspace gate (`workspaceOpen`) already
+ * closes on both; this holds every path the gate does not guard.
  */
 function withProvider(config?: ReportConfig): ReportConfig | undefined {
+  if (!config || (config.provider !== 'local' && config.provider !== 'openrouter')) return config;
   const endpoint = compatEndpoint(config);
-  if (!config || !endpoint) return config;
+  if (!endpoint || (endpoint.kind === 'openrouter' && !endpoint.apiKey)) return { ...config, customApiKey: '' };
   return { ...config, customApiKey: endpoint.apiKey || 'local', modelName: endpoint.model };
 }
 
@@ -401,10 +412,24 @@ export const MOCK_INVOICE_RESPONSE: AnalysisResponse = {
 const viteEnv: Record<string, string | undefined> =
   (import.meta as any).env ?? {};
 
-/** Thrown when no key is configured, so the UI can open Settings at the key instead of guessing. */
+/**
+ * Thrown when the AI chosen is not set up, so the UI can open Settings where
+ * it is set up instead of guessing.
+ *
+ * Every request below goes through `withProvider`, which hands a ready Local
+ * AI or OpenRouter its own key (or none) in `customApiKey`, and an unready one
+ * an empty key, whatever Gemini key is in. So it is thrown when the AI chosen
+ * cannot be asked: Automatic with no Gemini key, Local AI with no model, or
+ * OpenRouter with no key or no model, each of which `workspaceOpen` in
+ * lib/aiProvider.ts calls not set up too (2026-11-24, the wave-2 review's W7).
+ * Since 2026-11-23 any AI of the person's own opens the workspace, and the
+ * message says so (`SET_UP_AI`). The name is older than that rule and stays,
+ * because `isMissingApiKey` (lib/geminiClient.ts) matches it across the
+ * chunk boundary.
+ */
 export class MissingApiKeyError extends Error {
   constructor() {
-    super("Add your Gemini API key to generate a report.");
+    super(SET_UP_AI);
     this.name = "MissingApiKeyError";
   }
 }
@@ -945,7 +970,8 @@ export function buildMockChatReply(userText: string): ChatOutcome {
     reply: asks
       ? "Mock mode is on, so I'm not calling Gemini — I'll design the canned invoice layout from your description."
       // A little Markdown, so the chat's rendering of it (2026-11-05) shows offline.
-      : "**Mock mode is on**, so this reply is canned rather than generated. For real answers:\n\n- set `VITE_FORMA_MOCK` aside\n- add your API key",
+      // "Set up your AI", not "add your API key", since 2026-11-23: a local model has no key.
+      : "**Mock mode is on**, so this reply is canned rather than generated. For real answers:\n\n- set `VITE_FORMA_MOCK` aside\n- set up your AI in Settings",
     wantsReport: asks,
     ...(asks ? { brief: userText.trim() } : {}),
   };
@@ -2628,8 +2654,8 @@ export async function analyzeReportDesign(
     return mockTable ? { ...mock, dataQuery: { table: mockTable } } : mock;
   }
 
-  // No key means no request. Surfaced as a distinct type so the caller can open
-  // Settings at the key rather than showing a generic failure.
+  // No AI set up means no request. Surfaced as a distinct type so the caller can
+  // open Settings where it is set up rather than showing a generic failure.
   if (!currentApiKey) {
     throw new MissingApiKeyError();
   }
@@ -3306,18 +3332,28 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
          * redesign, Test data, a translation and a Batch row. The ids stay in
          * the console lines above. "busy" stays in the second: formaTeam's
          * failureReason reads it.
+         *
+         * Neither names Google or a key for Local AI or OpenRouter (2026-11-24,
+         * the wave-2 review's KEYREV-2): since any AI of the person's own opens
+         * the workspace, a person with a model on their own computer and no key
+         * was told Google's servers were busy. Their model is pinned, so there
+         * is never a next one and every failure of theirs ends here; their busy
+         * answer is classifyCompatError's, which names their AI and keeps
+         * "busy". The loop's sentence says "your setup", which is true of all
+         * three, and no longer reads as a refused key to failureReason.
          */
         if (runaway) {
           throw new Error(
             `The AI kept repeating itself while writing this report, even after trying again. ` +
-            `Nothing is wrong with your API key. Send it again; if it happens again, add a sentence ` +
+            `Nothing is wrong with your setup. Send it again; if it happens again, add a sentence ` +
             `describing the report, or try a simpler picture.`
           );
         }
 
         // Every model this key can use is out of quota: say which limit, and when.
         // Or its streams kept breaking: say that, not the SDK's parser message.
-        if (quota || cut) throw classifyGeminiError(error, failure);
+        // Or the AI is Local AI or OpenRouter: say it in that AI's name.
+        if (quota || cut || failure.provider) throw classifyGeminiError(error, failure);
 
         // Every model this key can use is busy. Say so: "try again" reads very
         // differently when the person can see it was not one unlucky try. The

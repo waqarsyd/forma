@@ -139,6 +139,14 @@ change, no third party that could not already see a request, and the bring-your-
 position is unchanged — the app still owns no key and still calls Google from the
 browser.
 
+That holds while Gemini designs, and only then (2026-11-24, the wave-2 review's
+KEYREV-3 and W1). Since 2026-11-23 a local AI or OpenRouter alone opens the workspace, and
+a Gemini key beside a local AI was searched with on every refinement, sending the
+request's words and the draft's band captions to Google from someone who chose that
+nothing leave their computer. The library is now neither searched nor filled while a local
+AI designs (`librarySearchable` in `lib/aiProvider.ts`). Beside OpenRouter a Gemini key the
+person adds is still searched with, so there Google sees the search beside OpenRouter.
+
 Rules:
 
 - **Embed at import time, never per generation.** A library of 200 reports is embedded

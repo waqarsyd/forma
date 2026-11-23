@@ -169,6 +169,21 @@ describe('importReports', () => {
     expect(result.added).toBe(4);
     expect(sources(storage.held()).map((s) => s.name)).toEqual(['a.repx', 'b.repx']);
   });
+
+  // 2026-11-23: Local AI or OpenRouter alone opens the workspace, and only Gemini embeds.
+  it('keeps the reports and asks Google nothing when there is no Gemini key', async () => {
+    for (const apiKey of ['', '   ']) {
+      const storage = fakeStorage();
+      const embed = fakeEmbed();
+      const result = await importReports([{ name: 'a.repx', text: report(label('Arial, 9pt')) }], deps({ storage: storage.store, embedEntries: embed as never }), { apiKey });
+      expect(embed, JSON.stringify(apiKey)).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ added: 2, embedded: 0, pending: 2, empty: [] });
+      expect(storage.held()).toHaveLength(2);
+      // Read with a key on a later import, as after a failed request.
+      const later = await importReports([], deps({ storage: storage.store }), { apiKey: 'k' });
+      expect(later.embedded).toBe(2);
+    }
+  });
 });
 
 describe('retrieveHouseStyle', () => {
@@ -185,6 +200,18 @@ describe('retrieveHouseStyle', () => {
     });
     expect(block).toContain('HOUSE STYLE REFERENCE');
     expect(block).toContain('ControlType="XRLabel"');
+  });
+
+  it('answers empty with no Gemini key, without asking Google or reading the library', async () => {
+    const storage = await stocked();
+    const load = vi.spyOn(storage.store, 'load');
+    const embedTexts = fakeEmbedTexts();
+    for (const apiKey of ['', '  ']) {
+      const block = await retrieveHouseStyle(report(label('Arial, 10pt')), 'match our totals', deps({ storage: storage.store, embedTexts: embedTexts as never }), { apiKey });
+      expect(block).toBe('');
+    }
+    expect(embedTexts).not.toHaveBeenCalled();
+    expect(load).not.toHaveBeenCalled();
   });
 
   it('answers empty for an empty library, without embedding anything', async () => {

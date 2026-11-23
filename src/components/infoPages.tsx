@@ -57,15 +57,17 @@ export const SECURITY: InfoDoc = {
   ),
   sections: [
     {
-      heading: 'Bring your own key',
+      // Your own AI, not the Gemini key alone, since 2026-11-23: any AI you set up opens the workspace.
+      heading: 'Bring your own AI',
       body: (
         <>
           <p className={P}>
-            Forma ships with no API key and has no quota of its own. You supply your Gemini key, and your browser calls
-            Google directly with it. It is held in your open Forma tabs, never written to disk in readable form, and
-            gone when the last tab closes. An encrypted copy is kept in your account only if you ask, encrypted in your
-            browser under a passphrase that never leaves it, so it is unreadable without your passphrase, the
-            operator’s view included; choose one nobody could guess.
+            Forma ships with no API key and has no quota of its own. You bring your own AI: a Gemini or OpenRouter
+            key, which your browser sends straight to Google or OpenRouter, or a model on your own computer, which
+            needs no key and keeps every request there. A key is held in your open Forma tabs, never written to disk
+            in readable form, and gone when the last tab closes. An encrypted copy of your Gemini key is kept in your
+            account only if you ask, encrypted in your browser under a passphrase that never leaves it, so it is
+            unreadable without your passphrase, the operator’s view included; choose one nobody could guess.
           </p>
         </>
       ),
@@ -158,7 +160,7 @@ const PRICING: InfoDoc = {
       body: (
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {[
-            ['Forma', 'Free', 'Every feature, signed in or not. No account is needed to use it.'],
+            ['Forma', 'Free', 'Every feature, signed in or not, with no account. Any one of the AIs here, set up as your own, opens it; adding reports to the report library also needs a Gemini key, and is off while a local AI designs.'],
             ['Google Gemini', 'Free tier', 'Your own key from Google AI Studio, with daily limits per model; Settings shows today’s count. Turn on billing for the key and Google bills you directly; Forma takes no cut.'],
             ['A local AI', 'Free', 'Ollama or LM Studio on your own computer: no limits but your machine’s, and nothing leaves it.'],
             ['OpenRouter', 'Free models', 'Its free models with a key of your own, with daily limits; their providers may log requests.'],
@@ -178,9 +180,9 @@ const PRICING: InfoDoc = {
       heading: 'Why it can be free',
       body: (
         <p className={P}>
-          Forma does its work in your browser and with your own key, so the site has almost nothing to pay for: the
+          Forma does its work in your browser and with your own AI, so the site has almost nothing to pay for: the
           pages are static, the database holds only what signed-in people save, and the AI is paid for, if at all, by
-          whoever owns the key. Even the OCR and Forma’s own models run on your machine.
+          whoever owns the key or the computer it runs on. Even the OCR and Forma’s own models run on your machine.
         </p>
       ),
     },
@@ -488,8 +490,9 @@ npm run dev`}</pre>
             it Forma reads pictures with Tesseract alone.
           </p>
           <p className={P}>
-            Open <code className="doc-code">http://localhost:3000</code> and add your Gemini key in Settings. Signed
-            out, projects are kept in your browser, and everything works. Open in designer works here as it does on the website, with Forma Designer installed, and from here Forma Designer can also read your SQL Server.
+            Open <code className="doc-code">http://localhost:3000</code> and set up your AI in Settings: a Gemini or
+            OpenRouter key, or a model on your own computer. Signed out, projects are kept in your browser, and
+            everything works. Open in designer works here as it does on the website, with Forma Designer installed, and from here Forma Designer can also read your SQL Server.
           </p>
         </>
       ),

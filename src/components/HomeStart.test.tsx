@@ -58,15 +58,20 @@ describe('HomeStart', () => {
     expect(onPick).toHaveBeenCalledWith(STARTING_POINTS[2]);
   });
 
-  // The full audit's SA-05 (2026-11-11): with no key the box is locked, so the home says so first.
-  it('says first that a free key is needed, with the way to add it, and still hands back a starting point', () => {
-    const onAddKey = vi.fn();
+  // The full audit's SA-05 (2026-11-11): with no AI set up the box is locked, so
+  // the home says so first. Any AI of the person's own since 2026-11-23, where it
+  // was the Gemini key, so it names all three and asks for no API key.
+  it('says first that an AI is needed, which ones count, with the way to set one up, and still hands back a starting point', () => {
+    const onSetUpAi = vi.fn();
     const onPick = vi.fn();
-    render(<HomeStart projects={[]} archived={[]} onOpen={vi.fn()} onAllProjects={vi.fn()} onPick={onPick} needsKey onAddKey={onAddKey} />);
-    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Add a free Gemini key to start');
+    render(<HomeStart projects={[]} archived={[]} onOpen={vi.fn()} onAllProjects={vi.fn()} onPick={onPick} needsAi onSetUpAi={onSetUpAi} />);
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Set up your AI to start');
     expect(screen.queryByRole('heading', { name: 'What report shall we make?' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Add your free key' }));
-    expect(onAddKey).toHaveBeenCalledTimes(1);
+    const said = document.querySelector('.wb-home-main')!.textContent!;
+    for (const each of ['a Gemini key', 'an OpenRouter key', 'a model on your own computer']) expect(said).toContain(each);
+    expect(said).not.toMatch(/API key/i);
+    fireEvent.click(screen.getByRole('button', { name: 'Set up your AI' }));
+    expect(onSetUpAi).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: /Sales by region/ }));
     expect(onPick).toHaveBeenCalledWith(STARTING_POINTS[2]);
   });

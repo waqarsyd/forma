@@ -48,18 +48,20 @@ export const INDEXED_ROUTES = ['/', '/features', '/pricing', '/docs', '/faq', '/
  * One sentence per route, for search results and link previews. The home
  * page's is index.html's own, and the manifest's (2026-11-11, full audit
  * PS-10: all three said "screenshot to .repx" with a written spec first,
- * the framing from before a description was an input).
+ * the framing from before a description was an input). Since 2026-11-23 the
+ * home's and the Docs' name an AI of your own, not the Gemini key: any AI the
+ * person sets up opens the workspace (`workspaceOpen` in lib/aiProvider.ts).
  */
 export const ROUTE_DESCRIPTIONS: Record<string, string> = {
-  '/': 'Turn a picture, a PDF, a .repx or a few sentences into a DevExpress report you can open in the designer, with a print preview, exports and a chat that edits it. Free, in your browser, with your own Gemini key.',
+  '/': 'Turn a picture, a PDF, a .repx or a few sentences into a DevExpress report you can open in the designer, with a print preview, exports and a chat that edits it. Free, in your browser, with your own AI: a Gemini or OpenRouter key, or a model on your own computer.',
   '/features': 'Everything Forma does: a picture, a PDF or a description to a DevExpress .repx, a print preview with exports, a chat that edits the report in place and translates it, sharing by link, and text read from pictures in your browser.',
-  '/docs': 'How to use Forma: add your own Gemini key, attach a design or describe one, read the checks, edit in the chat, preview and export, and open the result in the DevExpress designer.',
+  '/docs': 'How to use Forma: set up your own AI, attach a design or describe one, read the checks, edit in the chat, preview and export, and open the result in the DevExpress designer.',
   '/contact': 'Questions, bug reports and security issues for Forma, by email or on GitHub.',
   '/changelog': 'What is new in Forma, release by release, with an Atom feed.',
   '/terms': 'The terms of use for Forma, a free and open-source DevExpress report designer.',
   '/privacy': 'How Forma handles your data, your Gemini key and the files you upload.',
   '/accessibility': 'What Forma does to be usable by everyone, what still falls short, and how to tell us.',
-  '/security': 'How Forma keeps your API key and your reports safe: bring your own key, a strict content policy, owner-only data and how to report a vulnerability.',
+  '/security': 'How Forma keeps your API key and your reports safe: bring your own AI, a strict content policy, owner-only data and how to report a vulnerability.',
   '/pricing': 'Forma is free, with no plans. What the AI costs: Google’s free Gemini tier, a free local AI, or OpenRouter’s free models.',
   '/examples': 'Six example reports to start from in Forma, from an invoice to an inventory report, each opened in the workspace with one click.',
   '/compare': 'Forma beside DevExpress’s own AI features and the other report tools with AI, and how to move Crystal Reports and SSRS reports to DevExpress for free.',
@@ -287,7 +289,8 @@ export function llmsTxt(): string {
   return [
     `# ${SITE_NAME}`,
     '',
-    `> ${ROUTE_DESCRIPTIONS['/']} Open source (Apache-2.0); a local AI or OpenRouter's free models can answer instead of Gemini.`,
+    // The AIs that can answer are the home's own words since 2026-11-23, so they are not said twice.
+    `> ${ROUTE_DESCRIPTIONS['/']} Open source (Apache-2.0).`,
     '',
     '## Pages',
     '',

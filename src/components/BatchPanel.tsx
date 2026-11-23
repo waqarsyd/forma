@@ -49,8 +49,9 @@ interface Props {
   runOne: (file: File, signal: AbortSignal, id: string, words: string) => Promise<BatchOutcome>;
   /** Loads a finished item into the workspace. */
   onOpen: (item: BatchItem) => void;
-  /** False when there is no API key; the panel explains rather than failing. */
+  /** False when no AI is set up (`workspaceOpen` in lib/aiProvider.ts); the panel opens Settings rather than failing. */
   ready: boolean;
+  /** Opens Settings where the AI is set up. */
   onNeedKey: () => void;
   /**
    * Files a plan in the chat sent here, each its own report, started at once
@@ -419,8 +420,9 @@ export default function BatchPanel({ runOne, onOpen, ready, onNeedKey, incoming,
             Clear
           </button>
         )}
+        {/* Worded for any AI since 2026-11-24 (KEYREV-4): Local AI alone opens Batch, with no key and no quota. */}
         {queue.length > 1 && (
-          <label className="bp-at" title="More at once finishes sooner when your key's quota allows it; a free key is safest at one.">
+          <label className="bp-at" title="More at once finishes sooner when your AI allows it; a free Gemini or OpenRouter key is safest at one.">
             At a time
             <select value={parallel} disabled={running} onChange={(e) => setParallel(Number(e.target.value))}>
               {BATCH_PARALLEL.map((n) => (

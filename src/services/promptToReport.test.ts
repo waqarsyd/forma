@@ -179,8 +179,9 @@ describe('clarifyReportRequest', () => {
     expect(outcome.questions).toEqual([]);
   });
 
-  it('refuses without a key, like every other call', async () => {
+  // Asking for an AI, not an API key, since 2026-11-23: a model on the person's own computer has none.
+  it('refuses with no AI set up, like every other call', async () => {
     stubFetch(() => jsonReply('{}'));
-    await expect(clarifyReportRequest({ description: 'A sales report' }, { ...config, customApiKey: '' })).rejects.toThrow(/API key/i);
+    await expect(clarifyReportRequest({ description: 'A sales report' }, { ...config, customApiKey: '' })).rejects.toThrow(/^Set up your AI/);
   });
 });

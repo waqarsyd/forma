@@ -31,13 +31,15 @@ interface Props<P extends Project> {
    */
   showRecent?: boolean;
   /**
-   * There is no Gemini key yet (2026-11-11, the full audit's SA-05): the home
-   * says first that one is needed and free, with the way to add it, since the
-   * box below is locked until then. A starting point picked meanwhile is App's
-   * to keep in the box while Settings opens at the key.
+   * There is no AI set up yet (2026-11-11, the full audit's SA-05, when it
+   * was the Gemini key; any AI of the person's own since 2026-11-23): the home
+   * says first that one is needed, which ones count and that a Gemini key is
+   * free, with the way to set one up, since the box below is locked until
+   * then. A starting point picked meanwhile is App's to keep in the box while
+   * Settings opens where the AI chosen is set up.
    */
-  needsKey?: boolean;
-  onAddKey?: () => void;
+  needsAi?: boolean;
+  onSetUpAi?: () => void;
   /**
    * A project whose content is on its way (2026-11-11, the full audit's WS-16
    * and BW2): its own row says so, with the spinner the Projects panel's row
@@ -52,7 +54,7 @@ interface Props<P extends Project> {
 // the generic, which `memo` drops.
 export default memo(HomeStart) as typeof HomeStart;
 
-function HomeStart<P extends Project>({ projects, archived, onOpen, onAllProjects, onPick, showRecent = true, needsKey = false, onAddKey, openingId = null }: Props<P>) {
+function HomeStart<P extends Project>({ projects, archived, onOpen, onAllProjects, onPick, showRecent = true, needsAi = false, onSetUpAi, openingId = null }: Props<P>) {
   const recent = showRecent ? recentProjects(projects, archived) : [];
   // Shown in the Projects panel's row instead while that panel is open (`showRecent` false).
   const openingElsewhere = showRecent && openingId !== null && !recent.some((p) => p.id === openingId);
@@ -85,16 +87,17 @@ function HomeStart<P extends Project>({ projects, archived, onOpen, onAllProject
       )}
       <div className="wb-home-main">
         {openingElsewhere && <p className="wb-empty" role="status">Opening…</p>}
-        {needsKey ? (
+        {needsAi ? (
           <>
-            <h2>Add a free Gemini key to start</h2>
+            <h2>Set up your AI to start</h2>
             <p>
-              Forma designs with a Gemini key of your own. It is free, needs no card and takes a minute to get. Then attach a screenshot,
-              a scan, a PDF or a .repx, or describe the report you want, or start from one of these:
+              Forma designs with an AI of your own: a Gemini key, an OpenRouter key, or a model on your own computer through Ollama or
+              LM Studio. A Gemini key is free, needs no card and takes a minute to get. Then attach a screenshot, a scan, a PDF or a
+              .repx, or describe the report you want, or start from one of these:
             </p>
             <p>
-              <button type="button" className="wb-pill wb-pill--go" onClick={onAddKey}>
-                Add your free key
+              <button type="button" className="wb-pill wb-pill--go" onClick={onSetUpAi}>
+                Set up your AI
               </button>
             </p>
           </>

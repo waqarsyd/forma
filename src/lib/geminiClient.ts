@@ -10,7 +10,7 @@
  * mega-prompt alone is **19,615 B of the 648,550 B eager chunk — 3.0%** — and
  * every visitor to the landing page, the features page and the privacy policy
  * downloaded all of it. None of those pages can generate anything. The workspace
- * itself cannot either until a key is configured.
+ * itself cannot either until an AI is set up.
  *
  * This is the same move `lib/firebaseClient.ts` made for the SDK on 2026-09-01,
  * and `lib/pdf.ts` and `lib/genai.ts` before it. The precedent matters for the
@@ -51,7 +51,9 @@ export function loadGemini(): Promise<GeminiService> {
 }
 
 /**
- * Is this the "no key configured" error?
+ * Is this the "no AI set up" error? Named for the key it once meant: since
+ * 2026-11-23 any AI of the person's own opens the workspace, and the error
+ * means the AI chosen is not set up (`MissingApiKeyError`'s own comment).
  *
  * A predicate rather than an `instanceof`, and the reason is the chunk boundary
  * this file creates. The three call sites are all `catch` blocks, and reaching
@@ -65,7 +67,7 @@ export function loadGemini(): Promise<GeminiService> {
  * the class without its `name`, and that test fails.
  *
  * The cost of the weaker check is that a different error happening to carry the
- * same `name` would be misread as a missing key. Nothing constructs one, and the
+ * same `name` would be misread as no AI set up. Nothing constructs one, and the
  * consequence would be opening the settings dialog.
  */
 export function isMissingApiKey(err: unknown): boolean {

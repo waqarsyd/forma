@@ -80,12 +80,23 @@ export interface EmbedOptions {
 }
 
 /**
+ * No request without a Gemini key (2026-11-23). Since Local AI or OpenRouter
+ * alone opens the workspace, a caller may have none; services/library.ts steps
+ * aside before it gets here, and this refuses before anything is sent if a
+ * caller does not.
+ */
+function requireKey(apiKey: string): void {
+  if (!apiKey?.trim()) throw new Error('The report library needs a Gemini key to find your reports. Add one in Settings, under Gemini key.');
+}
+
+/**
  * Which embedding model this key can call.
  *
  * Reads the same catalogue endpoint generation uses. A key that cannot list models
  * cannot embed either, so the failure is reported rather than guessed around.
  */
 export async function resolveEmbeddingModel(apiKey: string, signal?: AbortSignal): Promise<string> {
+  requireKey(apiKey);
   let entries: CatalogEntry[] | undefined;
   try {
     // The key in the x-goog-api-key header, as geminiService's catalogue read
@@ -132,6 +143,7 @@ export async function embedTexts(
   options: EmbedOptions,
 ): Promise<{ vectors: Float32Array[]; model: string }> {
   if (texts.length === 0) return { vectors: [], model: options.model ?? '' };
+  requireKey(options.apiKey);
 
   const model = options.model ?? (await resolveEmbeddingModel(options.apiKey, options.signal));
   const { GoogleGenAI } = await loadGenAI();
@@ -205,6 +217,7 @@ export async function embedEntries(
 ): Promise<EmbedResult> {
   const vectors = new Map<string, Float32Array>();
   if (entries.length === 0) return { vectors, model: options.model ?? '', missing: 0 };
+  requireKey(options.apiKey);
 
   const model = options.model ?? (await resolveEmbeddingModel(options.apiKey, options.signal));
   const { GoogleGenAI } = await loadGenAI();

@@ -8,8 +8,8 @@ body:
         For a report that generated but came back *wrong*, use "The report came
         back wrong" instead — it asks for the details that make those diagnosable.
 
-        **Do not paste your Gemini API key.** Error messages sometimes quote a
-        request; check before pasting.
+        **Do not paste your Gemini or OpenRouter key.** Error messages sometimes
+        quote a request; check before pasting.
 
   - type: textarea
     id: what

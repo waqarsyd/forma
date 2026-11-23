@@ -9,6 +9,9 @@
  * - Automatic: Gemini, with the key in the Gemini key section.
  * - Local AI: Ollama or LM Studio on this computer.
  * - OpenRouter: its free models, with a key of the user's own.
+ * Since 2026-11-23 the one chosen, set up, opens the workspace on its own
+ * (`workspaceOpen` in lib/aiProvider.ts); until then the Gemini key was needed
+ * beside Local AI and OpenRouter too.
  * For a local server or OpenRouter, "Find models" asks the server what it
  * offers, and a model that reads images is listed first. Below them,
  * Forma's vision model can be named as a helper to any of them
@@ -25,7 +28,7 @@
  */
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { IconAlert, IconCheck } from './landing/icons';
-import { aiReady, DEFAULT_LOCAL_URL, isVisionOnly, OPENROUTER_URL, PROVIDER_NAMES, PROVIDERS, type AiProvider } from '../lib/aiProvider';
+import { aiReady, DEFAULT_LOCAL_URL, hasGeminiKey, isVisionOnly, OPENROUTER_URL, PROVIDER_NAMES, PROVIDERS, type AiProvider } from '../lib/aiProvider';
 import { presetPair, pullCommands } from '../lib/localModels';
 import type { ReportConfig } from '../services/geminiService';
 
@@ -38,7 +41,7 @@ const NOTES: Record<AiProvider, string> = {
 export interface ProviderSettingsProps {
   config: ReportConfig;
   onChange: (changes: Partial<ReportConfig>) => void;
-  /** Open the Gemini key section, which Forma needs whichever AI designs. */
+  /** Open the Gemini key section: Automatic's key, and the report library's with Automatic or OpenRouter. */
   onKey: () => void;
 }
 
@@ -147,24 +150,43 @@ export default function ProviderSettings({ config, onChange, onKey }: ProviderSe
             </button>
           ))}
         </div>
-        {(provider === 'local' || provider === 'openrouter') && (
-          <p className={`wb-set-note ${aiReady(config) ? 'is-ok' : 'is-bad'}`}>
-            {aiReady(config) ? <IconCheck size={13} /> : <IconAlert size={13} />}
+        {/* Whether the AI chosen is set up, which is what opens the workspace
+            (2026-11-23): said of Automatic too since then, which needs the
+            Gemini key, as Local AI and OpenRouter need a model. */}
+        <p className={`wb-set-note ${aiReady(config) ? 'is-ok' : 'is-bad'}`}>
+          {aiReady(config) ? <IconCheck size={13} /> : <IconAlert size={13} />}
+          <span>
+            {aiReady(config) ? (
+              `${PROVIDER_NAMES[provider]} is ready.`
+            ) : provider === 'auto' ? (
+              <>
+                Automatic needs your Gemini key.{' '}
+                <button type="button" className="wb-set-link" onClick={onKey}>Add it</button>
+              </>
+            ) : (
+              `${PROVIDER_NAMES[provider]} needs ${provider === 'openrouter' && !config.openRouterKey?.trim() ? 'a key and ' : ''}a model.`
+            )}
+          </span>
+        </p>
+        {/* A Gemini key beside another AI (2026-11-23): no longer needed to
+            start, as it was from 2026-11-05, so not a warning. What it still
+            adds beside OpenRouter is said: the report library, which only
+            Gemini searches, and the free chain's next AI (lib/fallbackChain.ts).
+            Beside Local AI it adds neither (2026-11-24, the wave-2 review's
+            KEYREV-3): the library is not searched while Local AI designs and
+            the chain never leaves it, so no key is offered there. */}
+        {provider !== 'auto' && !hasGeminiKey(config) && (
+          <p className="wb-set-note">
             <span>
-              {aiReady(config)
-                ? `${PROVIDER_NAMES[provider]} is ready.`
-                : `${PROVIDER_NAMES[provider]} needs ${provider === 'openrouter' && !config.openRouterKey?.trim() ? 'a key and ' : ''}a model.`}
-            </span>
-          </p>
-        )}
-        {/* The Gemini key opens the workspace whichever AI designs (2026-11-05),
-            so choosing another one does not let anyone past it. */}
-        {provider !== 'auto' && !config.customApiKey?.trim() && (
-          <p className="wb-set-note is-bad">
-            <IconAlert size={13} />
-            <span>
-              Forma also needs your Gemini key to start.{' '}
-              <button type="button" className="wb-set-link" onClick={onKey}>Add it</button>
+              {provider === 'local' ? (
+                'Local AI needs no Gemini key.'
+              ) : (
+                <>
+                  OpenRouter needs no Gemini key. With one, the report library can find your reports, and Gemini answers
+                  when OpenRouter&apos;s free limit is used up.{' '}
+                  <button type="button" className="wb-set-link" onClick={onKey}>Add a Gemini key</button>
+                </>
+              )}
             </span>
           </p>
         )}

@@ -76,8 +76,8 @@ export interface OfflineDesign {
  * The no-key chat's words went on 2026-11-11 (the full audit's PL-31a): the
  * request test, the two help texts and the reply for a report designed
  * offline. Nothing showed them since the key became the entry point
- * (2026-11-05), and they promised a workspace with no key that the owner's rule
- * forbids. Forma's own design is now only the stand-in when the AI fails, and
+ * (2026-11-05; any AI of the person's own since 2026-11-23), and they promised
+ * a workspace with no AI that the owner's rule forbids. Forma's own design is now only the stand-in when the AI fails, and
  * the thread speaks of it as of any other report. `git show 0cec241:src/lib/offlineGenerator.ts`
  * has them.
  */

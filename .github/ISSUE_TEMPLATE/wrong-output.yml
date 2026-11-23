@@ -8,9 +8,10 @@ body:
         This is the one that matters most, so it asks for a little more than a
         normal bug report.
 
-        **Do not paste your Gemini API key anywhere in this issue.** Nothing here
-        needs it, and an issue is public. If you think you have already pasted one
-        somewhere, revoke it at [Google AI Studio](https://aistudio.google.com/apikey)
+        **Do not paste your Gemini or OpenRouter key anywhere in this issue.**
+        Nothing here needs it, and an issue is public. If you think you have
+        already pasted one somewhere, revoke it where you made it, at
+        [Google AI Studio](https://aistudio.google.com/apikey) or on openrouter.ai,
         rather than editing the issue — edit history is public too.
 
   - type: dropdown

@@ -66,8 +66,9 @@ describe('promptToExpression', () => {
     await expect(promptToExpression('something', ['A'], config)).rejects.toThrow(/no expression/i);
   });
 
-  it('refuses without a key', async () => {
+  // Asking for an AI, not an API key, since 2026-11-23: a model on the person's own computer has none.
+  it('refuses with no AI set up', async () => {
     stubFetch(() => jsonReply('{}'));
-    await expect(promptToExpression('total', ['A'], { ...config, customApiKey: '' })).rejects.toThrow(/API key/i);
+    await expect(promptToExpression('total', ['A'], { ...config, customApiKey: '' })).rejects.toThrow(/^Set up your AI/);
   });
 });

@@ -37,7 +37,8 @@ export function createPromptBox(initial = ''): PromptBox {
     },
     /*
      * The same words are not put in twice (2026-11-12, the end-to-end
-     * retest): a starting point picked with no key opens Settings at the key,
+     * retest): a starting point picked with no AI set up opens Settings (at
+     * the key until 2026-11-23, where the AI chosen is set up since),
      * and picked again after closing it, it stood in the box twice, as did a
      * second click on the same point. The words stay where they are, so
      * nothing typed around them is lost.

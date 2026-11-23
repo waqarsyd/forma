@@ -147,6 +147,8 @@ describe('a generation whose model begins repeating itself', () => {
     const message = (failed as Error).message;
     expect(message).toMatch(/^The AI kept repeating itself/);
     expect(message).not.toMatch(/model-a|model-b|\bmodel\b/i);
+    // True of a model on the person's own computer too, which has no key (2026-11-24, KEYREV-2).
+    expect(message).not.toMatch(/API key|Google/);
   });
 
   it('asks the retry with a little sampling, since at temperature 0 the same request loops the same way (2026-11-04)', async () => {
@@ -298,4 +300,42 @@ describe('a generation cut off because thinking took the output limit (2026-11-0
     await expect(analyzeReportDesign('', parts, { ...config, thinkingBudget: 2048 })).rejects.toThrow(/cut off/i);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+});
+
+/**
+ * Local AI or OpenRouter busy through every retry (2026-11-24, the wave-2
+ * review's KEYREV-2). Since any AI of the person's own opens the workspace,
+ * someone with a model on their own computer and no key at all was told
+ * "Google's servers are busy ... Nothing is wrong with your API key", although
+ * nothing had gone to Google. Their model is pinned, so no next model is
+ * tried; the message names their AI and keeps "busy", which failureReason
+ * reads. Fake timers: the overload path backs off between tries, and the
+ * adapter is imported first, since a backoff scheduled after the clock has
+ * been advanced would never fire.
+ */
+describe('a generation whose own AI stays busy, with no Gemini key', () => {
+  beforeAll(async () => {
+    await import('./compatClient');
+  }, 60_000);
+  const keyless = { version: '20.1', unit: 'HundredthsOfAnInch', pageSize: 'Letter' } as const;
+  const cases: Array<[string, ReportConfig, RegExp]> = [
+    ['Local AI', { ...keyless, provider: 'local', localUrl: 'http://localhost:11434/v1', localModel: 'gemma3' }, /^The local AI gemma3 is busy/],
+    ['OpenRouter', { ...keyless, provider: 'openrouter', openRouterKey: 'sk-or-test', openRouterModel: 'x:free' }, /^OpenRouter x:free is busy/],
+  ];
+  for (const [name, asked, said] of cases) {
+    it(`says ${name} was busy, never Google or a key`, async () => {
+      vi.useFakeTimers();
+      try {
+        const fetchMock = stubSequence(() => failure(503, 'The model is overloaded.'));
+        const pending = analyzeReportDesign('', parts, asked).catch((e: Error) => e);
+        await vi.advanceTimersByTimeAsync(30_000);
+        const message = ((await pending) as Error).message;
+        expect(message).toMatch(said);
+        expect(message).not.toMatch(/Google|API key/);
+        expect(urlsOf(fetchMock).some((u) => u.includes('googleapis'))).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  }
 });

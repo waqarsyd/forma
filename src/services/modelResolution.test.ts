@@ -33,6 +33,8 @@ import {
   MissingApiKeyError,
   MODEL_PREFERENCE,
   pageResolutionFor,
+  promptToExpression,
+  promptToSql,
 } from './geminiService';
 import { cacheModel, DAILY_TTL_MS, keyTag, lightModel, readDailyModel } from '../lib/modelCache';
 
@@ -369,10 +371,50 @@ describe('no key means no request', () => {
     ).rejects.toBeInstanceOf(MissingApiKeyError);
   });
 
+  // Since 2026-11-23 any AI of the person's own opens the workspace, and a
+  // model on their own computer has no key: the message names all three.
   it('carries a message that tells the user what to do', async () => {
     const error = new MissingApiKeyError();
     expect(error.name).toBe('MissingApiKeyError');
-    expect(error.message).toMatch(/api key/i);
+    expect(error.message).toMatch(/^Set up your AI/);
+    expect(error.message).toMatch(/Gemini or OpenRouter key, or a model on your own computer/);
+  });
+
+  // The other side of that rule: a ready Local AI, with no Gemini key at all,
+  // is not "no AI", and nothing of a request goes to Google.
+  it('asks a ready Local AI, never Google, when there is no Gemini key', async () => {
+    const mock = stubNetwork();
+    const local = { ...configWithoutKey, provider: 'local' as const, localUrl: 'http://localhost:11434/v1', localModel: 'gemma3' };
+    const asked = [
+      promptToExpression('the total', ['Amount'], local),
+      chatReply([{ role: 'user', text: 'hello' }], local),
+    ];
+    for (const call of asked) {
+      const outcome = await call.then(() => null, (err: unknown) => err);
+      expect(outcome).not.toBeInstanceOf(MissingApiKeyError);
+    }
+    const urls = mock.mock.calls.map(([url]) => String(url));
+    expect(urls.length).toBeGreaterThan(0);
+    expect(urls.every((url) => url.startsWith('http://localhost:11434/v1/'))).toBe(true);
+  });
+
+  // A Local AI or OpenRouter chosen but not ready is no AI, whatever Gemini
+  // key is in (2026-11-24, KEYREV-1): it used to fall through to Google with
+  // that key, so the Data tab's SQL sent a database's names there.
+  it('never sends an unready Local AI or OpenRouter choice to Google, even with a Gemini key in', async () => {
+    const mock = stubNetwork();
+    const unready = [
+      { ...configWithoutKey, customApiKey: KEY, provider: 'local' as const, localUrl: 'http://localhost:11434/v1', localModel: '' },
+      { ...configWithoutKey, customApiKey: KEY, provider: 'openrouter' as const, openRouterKey: 'sk-or-test', openRouterModel: '' },
+      { ...configWithoutKey, customApiKey: KEY, provider: 'openrouter' as const, openRouterKey: '', openRouterModel: 'x:free' },
+    ];
+    for (const config of unready) {
+      await expect(promptToSql('orders from last month', '- Orders (table): Id int', config)).rejects.toBeInstanceOf(MissingApiKeyError);
+      await expect(promptToExpression('the total', ['Amount'], config)).rejects.toBeInstanceOf(MissingApiKeyError);
+      await expect(chatReply([{ role: 'user', text: 'hello' }], config)).rejects.toBeInstanceOf(MissingApiKeyError);
+      await expect(analyzeReportDesign('draw this', [], config)).rejects.toBeInstanceOf(MissingApiKeyError);
+    }
+    expect(mock).not.toHaveBeenCalled();
   });
 });
 

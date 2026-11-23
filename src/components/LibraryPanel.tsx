@@ -73,8 +73,21 @@ export interface LibraryPanelProps {
   onImport: (files: File[]) => Promise<ImportResult>;
   onRemove: (name: string) => void;
   onToggleCanonical: (name: string, canonical: boolean) => void;
-  /** False when there is no API key — importing needs one, to embed. */
+  /**
+   * False when there is no Gemini key — importing needs one, to embed, and
+   * only Gemini embeds (2026-11-23: Local AI or OpenRouter alone opens the
+   * workspace, so this is no longer the same as the workspace being open) —
+   * and while Local AI designs (`librarySearchable` in lib/aiProvider.ts).
+   */
   ready: boolean;
+  /**
+   * Local AI designs (2026-11-24, the wave-2 review's KEYREV-3): adding is
+   * off whatever key is in, since finding the reports goes through Google
+   * and nothing leaves a local AI, so the hint says that rather than asking
+   * for a key that would not help.
+   */
+  localOnly?: boolean;
+  /** Opens Settings where adding can be turned on: the Gemini key, or the AI while Local AI designs. */
   onNeedKey: () => void;
 }
 
@@ -85,6 +98,7 @@ export default function LibraryPanel({
   onRemove,
   onToggleCanonical,
   ready,
+  localOnly = false,
   onNeedKey,
 }: LibraryPanelProps) {
   const input = useRef<HTMLInputElement>(null);
@@ -186,7 +200,11 @@ export default function LibraryPanel({
       </p>
 
       {!ready && (
-        <p className="lp-hint">Adding reports needs your Gemini key.</p>
+        <p className="lp-hint">
+          {localOnly
+            ? 'Adding reports is off while Local AI designs, so your reports stay on this computer.'
+            : 'Adding reports needs a Gemini key.'}
+        </p>
       )}
       {notice && <p className="lp-notice">{notice}</p>}
       {error && <p className="lp-error">{error}</p>}

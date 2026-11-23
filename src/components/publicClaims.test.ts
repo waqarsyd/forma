@@ -27,6 +27,7 @@ import { MAX_DATABASES } from '../lib/sqlSchemaStore';
 import { MAX_AI_OBJECTS } from '../lib/databaseAi';
 import { DESIGNER_REQUIREMENTS, DEVEXPRESS_TRIAL_URL, designerDownloadUrl } from '../lib/designerRelease';
 import { DESIGNER_ORIGIN } from '../lib/designerBridge';
+import { SET_UP_AI } from '../lib/aiProvider';
 
 const page = (name: string) => readFileSync(`src/components/${name}.tsx`, 'utf8');
 const landing = page('LandingPage');
@@ -114,6 +115,8 @@ describe('the public pages do not claim what Forma no longer does', () => {
     ['the checks described as an audit', /structural audit|The audit runs after|how many the checks found/i],
     ['a Retry that runs only what failed', /Retry requeues only what failed/i],
     ['SSRS reports converted elsewhere before Forma opens them', /convert with Reporting\.Import, then bring the \.repx/i],
+    // 2026-11-23, the owner's rule: any AI of the person's own opens the workspace, not the Gemini key alone.
+    ['a Gemini key as the only way in', /Gemini key is still the way in|needs your (own )?(Google )?Gemini (API )?key to (open|start)|Bring (a design and )?your own Gemini key|ADD YOUR KEY|Paste a Gemini API key/i],
   ])('no longer claims %s', (_what, pattern) => {
     // On one line, so a sentence the source wraps between two words is still found (2026-11-11).
     expect(all.replace(/\s+/g, ' ')).not.toMatch(pattern);
@@ -277,6 +280,22 @@ describe('what the pages state, the code answers', () => {
       expect(prose(src), name).toContain('Settings → Learning');
     }
     expect(prose(docs)).toContain('Opens Settings: General, AI, Gemini key, Memory and Learning.');
+  });
+
+  /*
+   * The way in (2026-11-23, the owner's rule): any AI of the person's own
+   * opens the workspace, so each page that says what to bring names all
+   * three, in the words the locked workspace itself says (SET_UP_AI). Until
+   * then the pages said "your own Gemini key", which a local model never
+   * needed and now nothing does.
+   */
+  it('names the AIs that open the workspace in the words the workspace uses, on the home, Features and Docs pages', () => {
+    expect(readFileSync('src/lib/aiProvider.ts', 'utf8')).toMatch(/export function workspaceOpen\(config: ReportConfig\): boolean \{\s*return aiReady\(config\);\s*\}/);
+    const which = SET_UP_AI.slice(SET_UP_AI.indexOf(': ') + 2).replace(/\.$/, '');
+    expect(which).toBe('a Gemini or OpenRouter key, or a model on your own computer');
+    for (const [name, src] of [['home', landing], ['Features', features], ['Docs', docs]] as const) {
+      expect(prose(src), name).toContain(`your own AI: ${which}`);
+    }
   });
 
   it('counts the examples it offers', () => {

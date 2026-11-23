@@ -753,9 +753,16 @@ describe('the legal copy and its date change together', () => {
      what is older once it has a copy, and the operator's copies still going
      when the person deletes theirs, however old. Substantive, and already
      that day's date.
+
+     Moved again on 2026-11-23 (the owner's rule that any AI of the person's
+     own opens the workspace, lib/aiProvider.ts's workspaceOpen): the terms
+     said Forma needed your own Gemini key to open the workspace whichever AI
+     designed; they now say it needs the AI you choose set up, Gemini with a
+     key, OpenRouter with a key and a model, or a local AI with a model. What
+     a person agrees to changed, so the date moved.
      */
-  const EXPECTED_COPY_HASH = 'cf75cfba3dd4';
-  const EXPECTED_UPDATED = '12 November 2026';
+  const EXPECTED_COPY_HASH = '6cc2de9730e2';
+  const EXPECTED_UPDATED = '23 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {
     const actual = createHash('sha256').update(legalCopy()).digest('hex').slice(0, 12);

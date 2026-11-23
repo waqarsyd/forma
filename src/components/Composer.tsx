@@ -40,7 +40,6 @@ import {
   IconClose,
   IconDoc,
   IconGrid,
-  IconKey,
   IconMic,
   IconPalette,
   IconPencil,
@@ -48,6 +47,7 @@ import {
   IconSlash,
   IconTarget,
   IconTrash,
+  IconTune,
   IconWarn,
 } from './landing/icons';
 
@@ -124,13 +124,16 @@ export interface ComposerProps {
   fileInputRef: RefObject<HTMLInputElement | null>;
   onFileChange: ChangeEventHandler<HTMLInputElement>;
   /**
-   * Whether an AI is set up. Forma ships no key of its own, and with none the
-   * box is locked and its button opens Settings for one (2026-11-05, the
-   * owner's rule that the key is the entry point to any work).
+   * Whether an AI is set up: a Gemini key, an OpenRouter key and model, or a
+   * Local AI server and model (`workspaceOpen` in lib/aiProvider.ts). Forma
+   * ships no key of its own, and with none the box is locked and its button
+   * opens Settings for one (2026-11-05, the owner's rule that an AI is the
+   * entry point to any work; any AI of the person's own since 2026-11-23,
+   * where it was the Gemini key).
    */
-  hasApiKey: boolean;
-  /** Opens Settings at the key, from the locked box's button. */
-  onAddKey?: () => void;
+  aiSetUp: boolean;
+  /** Opens Settings where the AI is set up, from the locked box's button. */
+  onSetUpAi?: () => void;
   isAnalyzing: boolean;
   /** A chat turn is in flight. Blocks a second send — see `canSend` below. */
   isChatting: boolean;
@@ -223,8 +226,8 @@ export default function Composer({
   onStop,
   fileInputRef,
   onFileChange,
-  hasApiKey,
-  onAddKey,
+  aiSetUp,
+  onSetUpAi,
   isAnalyzing,
   isChatting,
   isIngesting,
@@ -296,17 +299,18 @@ export default function Composer({
    * `isChatting` is new here for the same reason: the button never had it, so a
    * chat turn in flight left the control fully live.
    */
-  // No key, no send (2026-11-05): the key is the entry point to any work, as
-  // it was before 2026-11-02, when for three days Forma's own model answered
-  // without one. Nothing about an attachment holds the send (2026-11-03): its
-  // text is read after the message goes, as a step of the run.
+  // No AI, no send (2026-11-05): an AI set up is the entry point to any work,
+  // as it was before 2026-11-02, when for three days Forma's own model
+  // answered without one; any AI of the person's own counts since 2026-11-23,
+  // where it was the Gemini key. Nothing about an attachment holds the send
+  // (2026-11-03): its text is read after the message goes, as a step of the run.
   // And something to send (2026-11-06, the workspace audit), as ChatGPT's and
   // Gemini's buttons wait for words or a file: an empty box sent, and was
   // answered with an error line.
   const hasContent = prompt.trim().length > 0 || previews.length > 0 || textGroups.length > 0;
-  const canSend = hasApiKey && !isAnalyzing && !isChatting && !isIngesting && hasContent;
+  const canSend = aiSetUp && !isAnalyzing && !isChatting && !isIngesting && hasContent;
   // While Forma works, words in the box queue rather than wait (2026-11-05).
-  const canQueue = hasApiKey && (isAnalyzing || isChatting) && !!onQueue && prompt.trim().length > 0;
+  const canQueue = aiSetUp && (isAnalyzing || isChatting) && !!onQueue && prompt.trim().length > 0;
 
   /*
    * Sending puts the caret back in the field, and this is not a nicety.
@@ -590,7 +594,7 @@ export default function Composer({
         </div>
       )}
 
-      <div className={`wb-box${hasApiKey ? '' : ' wb-is-locked'}`}>
+      <div className={`wb-box${aiSetUp ? '' : ' wb-is-locked'}`}>
         {/* A plus at the left of the box, as ChatGPT's and Gemini's are
             (2026-11-05, at the owner's request): it was a paperclip. */}
         {/* Upload, straight to the picker, as ChatGPT's and Gemini's plus. It
@@ -604,7 +608,7 @@ export default function Composer({
             aria-label="Add photos and files"
             title="Add photos and files: an image, a PDF, a .repx or SSRS report, or data (CSV, Excel, JSON, Word, text, SQL)"
             onClick={() => fileInputRef.current?.click()}
-            disabled={!hasApiKey}
+            disabled={!aiSetUp}
           >
             <IconPlus size={18} />
           </button>
@@ -620,7 +624,7 @@ export default function Composer({
               aria-expanded={boxMenu === 'tools'}
               title="Tools: a total, a group, a column, the paper, the headings (/)"
               onClick={() => setBoxMenu((open) => (open === 'tools' ? null : 'tools'))}
-              disabled={!hasApiKey}
+              disabled={!aiSetUp}
             >
               <IconSlash size={16} />
             </button>
@@ -669,7 +673,7 @@ export default function Composer({
               onStop();
               return;
             }
-            if (e.key === '/' && prompt === '' && hasApiKey) {
+            if (e.key === '/' && prompt === '' && aiSetUp) {
               e.preventDefault();
               setBoxMenu('tools');
               return;
@@ -698,13 +702,13 @@ export default function Composer({
               onPasteFiles(files);
             }
           }}
-          disabled={!hasApiKey}
+          disabled={!aiSetUp}
           // Stitch's question (2026-11-05), now the box sits under the report as its bar does.
-          placeholder={listening ? 'Listening…' : hasApiKey ? 'What would you like to change or create?' : 'Add your API key to start'}
+          placeholder={listening ? 'Listening…' : aiSetUp ? 'What would you like to change or create?' : 'Set up your AI to start'}
           aria-label="Message"
           aria-describedby={describedBy}
         />
-        {hasApiKey && houseStyle && (
+        {aiSetUp && houseStyle && (
           <button
             type="button"
             className={`wb-tool wb-box-style${houseStyle.on ? ' wb-is-on' : ''}`}
@@ -722,7 +726,7 @@ export default function Composer({
             audit item 74): Gemini has its picker here, and Local AI and
             OpenRouter said nothing. Their model is chosen in Settings, which
             this opens. */}
-        {hasApiKey && !models && answering && (
+        {aiSetUp && !models && answering && (
           <div className="wb-model">
             <button
               type="button"
@@ -736,7 +740,7 @@ export default function Composer({
             </button>
           </div>
         )}
-        {hasApiKey && models && (
+        {aiSetUp && models && (
           <div className="wb-model" ref={modelMenuRef}>
             <button
               type="button"
@@ -777,7 +781,7 @@ export default function Composer({
             )}
           </div>
         )}
-        {hasApiKey && Recognizer && (
+        {aiSetUp && Recognizer && (
           <button
             type="button"
             className={`wb-tool${listening ? ' wb-is-listening' : ''}`}
@@ -790,11 +794,13 @@ export default function Composer({
             <IconMic size={16} />
           </button>
         )}
-        {!hasApiKey ? (
-          /* Locked, the send button is the way in: it opens Settings at the
-             key, so nothing has to be added under the box (2026-11-04). */
-          <button className="wb-send" aria-label="Add your API key" title="Add your API key in Settings" onClick={onAddKey}>
-            <IconKey size={15} />
+        {!aiSetUp ? (
+          /* Locked, the send button is the way in: it opens Settings where
+             the AI is set up, so nothing has to be added under the box
+             (2026-11-04). Settings' sliders, not a key, since 2026-11-23: a
+             model on the person's own computer has no key. */
+          <button className="wb-send" aria-label="Set up your AI" title="Set up your AI in Settings" onClick={onSetUpAi}>
+            <IconTune size={15} />
           </button>
         ) : canQueue ? (
           /* Words typed while Forma works go to the queue (2026-11-05), and

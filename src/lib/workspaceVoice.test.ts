@@ -424,8 +424,8 @@ describe('the panels that draw their own words', () => {
   it('the report library says what it holds, never how it searches', async () => {
     const { default: LibraryPanel } = await import('../components/LibraryPanel');
     const sources = [{ name: 'Invoice.repx', chunks: 4, embedded: 1 }, { name: 'Statement.repx', chunks: 2, embedded: 2 }] as unknown as Parameters<typeof LibraryPanel>[0]['sources'];
-    for (const ready of [true, false]) {
-      const html = renderToString(createElement(LibraryPanel, { sources, canonical: new Set(['Invoice.repx']), onImport: async () => ({ added: 0, empty: [] }) as never, onRemove: () => {}, onToggleCanonical: () => {}, ready, onNeedKey: () => {} }));
+    for (const [ready, localOnly] of [[true, false], [false, false], [false, true]] as const) {
+      const html = renderToString(createElement(LibraryPanel, { sources, canonical: new Set(['Invoice.repx']), onImport: async () => ({ added: 0, empty: [] }) as never, onRemove: () => {}, onToggleCanonical: () => {}, ready, localOnly, onNeedKey: () => {} }));
       expect(html).toContain('Invoice.repx');
       expect(wordsShown(html)).not.toMatch(MACHINERY);
       expect(wordsShown(html)).not.toMatch(/\b(embed|embedding|chunks?|fragments?|vectors?)\b/i);
