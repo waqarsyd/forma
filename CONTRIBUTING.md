@@ -52,7 +52,10 @@ deliberately does not install them for you — the alternative is a dependency p
 postinstall step, and a codebase whose entire dependency list is justified should not add
 one to lint filenames. The hook blocks files over 1 MB, backup and archive extensions, log
 files, OS droppings, names that look like a manual copy (`copy`, `-final`, `_backup`,
-`_deprecated`), and what looks like a real API key assignment. Bypass a single commit with
+`_deprecated`), what looks like a real API key assignment (also written as JSON, and under
+`FORMA_*KEY` and OpenRouter names), and a key, token or password written into an MCP host
+config such as `.mcp.json`, which should hold `${VAR}` references only. Bypass a single
+commit with
 `git commit --no-verify`.
 
 It also holds every commit to the **project hierarchy**,

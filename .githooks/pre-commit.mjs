@@ -11,12 +11,12 @@
  * commit, and the working tree is not what lands.
  */
 import { execFileSync } from 'node:child_process';
-import { statSync, readFileSync, existsSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 
 const git = (...args) =>
   execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 
-const staged = git('diff', '--cached', '--name-only', '--diff-filter=ACM')
+const staged = git('diff', '--cached', '--name-only', '--diff-filter=ACMR')
   .split('\n')
   .map((s) => s.trim())
   .filter(Boolean);
@@ -26,6 +26,28 @@ const staged = git('diff', '--cached', '--name-only', '--diff-filter=ACM')
  * still has to reach the project hierarchy (section 4). */
 const problems = [];
 const flag = (label, file, detail) => problems.push({ label, file, detail });
+
+/*
+ * What lands is the index, so every check reads it (2026-11-23). Until then the
+ * sizes and the key scan read the working tree, despite the note above: a key
+ * staged and then removed from the working copy passed. Renames were left out
+ * of the list too (ACM), so a file renamed into .mcp.json with a key in it
+ * skipped every content check; R joined it.
+ */
+const stagedSize = (file) => {
+  try {
+    return Number(git('cat-file', '-s', `:${file}`).trim());
+  } catch {
+    return null;
+  }
+};
+const stagedText = (file) => {
+  try {
+    return git('show', `:${file}`);
+  } catch {
+    return null;
+  }
+};
 
 /* ---- 1. large files ---------------------------------------------------- */
 /*
@@ -49,9 +71,8 @@ const flag = (label, file, detail) => problems.push({ label, file, detail });
  */
 const SIZE_LIMIT = 1_048_576;
 for (const file of staged) {
-  if (!existsSync(file)) continue;
-  const size = statSync(file).size;
-  if (size > SIZE_LIMIT) {
+  const size = stagedSize(file);
+  if (size !== null && size > SIZE_LIMIT) {
     flag(
       'TOO LARGE',
       file,
@@ -97,16 +118,45 @@ for (const file of staged) {
  * and this pattern, which knew only `AIzaSy`, would have let it be committed.
  */
 const SECRET = /(GEMINI_API_KEY|GOOGLE_API_KEY|apiKey)\s*[:=]\s*["'`]?(AIzaSy[A-Za-z0-9_-]{10}|AQ\.[A-Za-z0-9_-]{20})/;
+/*
+ * A second shape since 2026-11-23 (the MCP design audit's SEC-10): an
+ * environment-style name written as JSON, where a closing quote stands between
+ * the name and the colon -- the shape of an MCP host's config (.mcp.json,
+ * claude_desktop_config.json) with a literal key in it -- and the Forma and
+ * OpenRouter names the pattern above never knew. The generic `apiKey` above
+ * stays case-sensitive and unquoted on purpose: widening it flags the public
+ * Firebase config and test fixtures.
+ */
+/* `{0,40}`, not `*`: an unbounded run before KEY made the scan quadratic on a long FORMA_FORMA_... input (15 s at 240 KB). */
+const SECRET_ENV = /(GEMINI_API_KEY|GOOGLE_API_KEY|OPENROUTER_API_KEY|FORMA_[A-Z_]{0,40}KEY)["']?\s*[:=]\s*["'`]?(AIzaSy[A-Za-z0-9_-]{10}|AQ\.[A-Za-z0-9_-]{20}|sk-or-v1-[0-9a-f]{20})/;
+/*
+ * An MCP host's config should hold ${VAR} references only: Claude Code's
+ * .mcp.json, VS Code's and Cursor's mcp.json, Claude Desktop's
+ * claude_desktop_config.json, Windsurf's mcp_config.json, Gemini CLI's
+ * .gemini/settings.json. In one of those, a key-shaped literal under any name
+ * is a leak, and so is a long literal under a name that reads as a
+ * credential (a GitHub token, another vendor's key): a value made only of
+ * references and short words ("Bearer ${input:token}") holds none.
+ */
+const MCP_CONFIG = /(^|\/)(\.?mcp\.json|claude_desktop_config\.json|mcp_config\.json|\.gemini\/settings\.json)$/i;
+const KEY_LITERAL = /AIzaSy[A-Za-z0-9_-]{30}|AQ\.[A-Za-z0-9_-]{40}|sk-or-v1-[0-9a-f]{40}/;
+const CREDENTIAL_PAIR = /"([A-Za-z0-9_.-]{0,60}(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|AUTH)[A-Za-z0-9_.-]{0,60})"\s*:\s*"([^"]*)"/gi;
+const holdsLiteral = (value) => /[A-Za-z0-9_.-]{16,}/.test(value.replace(/\$\{[^}]*\}/g, ''));
+const mcpLeak = (text) =>
+  KEY_LITERAL.test(text) || SECRET.test(text) || SECRET_ENV.test(text) || [...text.matchAll(CREDENTIAL_PAIR)].some((m) => holdsLiteral(m[2]));
 const SKIP_BINARY = /\.(png|jpe?g|webp|ico|pdf|woff2?|ttf|zip|gz)$/i;
 for (const file of staged) {
-  if (SKIP_BINARY.test(file) || file === 'package-lock.json' || !existsSync(file)) continue;
-  let text;
-  try {
-    text = readFileSync(file, 'utf8');
-  } catch {
-    continue;
-  }
-  if (SECRET.test(text)) {
+  if (SKIP_BINARY.test(file) || file === 'package-lock.json') continue;
+  const text = stagedText(file);
+  if (text === null) continue;
+  // The MCP case first: its advice differs, since an MCP server has no Settings dialog.
+  if (MCP_CONFIG.test(file) && mcpLeak(text)) {
+    flag(
+      'SECRET?',
+      file,
+      'an MCP host config with a key, token or password in it. Write a ${VAR} reference (or the host\'s ${input:...} prompt) and set the value outside the file, or keep the server in local or user scope.',
+    );
+  } else if (SECRET.test(text) || SECRET_ENV.test(text)) {
     flag(
       'SECRET?',
       file,
