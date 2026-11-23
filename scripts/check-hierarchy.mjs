@@ -80,8 +80,9 @@ export const SURFACES = {
   notes: { layer: 'spec', path: 'docs/notes/', what: 'the note that owns the area; the routing table in CLAUDE.md says which' },
   appShell: { layer: 'spec', path: 'docs/notes/app-shell.md', what: 'the workspace, routing and the public pages' },
   persistence: { layer: 'spec', path: 'docs/notes/persistence.md', what: 'Firestore, the device, the rules, sign-in and deletion' },
-  structure: { layer: 'spec', path: 'docs/project-structure.md', what: 'the file layout; names every file under src/lib, src/services, src/components and src/server' },
+  structure: { layer: 'spec', path: 'docs/project-structure.md', what: 'the file layout; names every file under src/lib, src/services, src/components, src/server and src/mcp' },
   claude: { layer: 'spec', path: 'CLAUDE.md', what: 'the code map, the routing table, the commands, and the facts stated in more than one file' },
+  skill: { layer: 'spec', path: 'docs/skills/devexpress-repx/SKILL.md', what: 'what Forma measured about the REPX format, for a person or an assistant editing a .repx; scripts/repx.ts stands on it, and the MCP server will' },
   designerReadme: { layer: 'spec', path: 'tools/RepxDesigner/README.md', what: 'Forma Designer: its routes, its guards, its download and install' },
   probeReadme: { layer: 'spec', path: 'tools/RepxProbe/README.md', what: 'RepxProbe: what it asks DevExpress, and how' },
 
@@ -101,6 +102,7 @@ export const SURFACES = {
   mobileNav: { layer: 'site', path: 'src/components/MobileNav.tsx', what: 'the phone menu\'s links' },
 
   readme: { layer: 'repo', path: 'README.md', what: 'the front door: setup, the script table, the honest limitations' },
+  security: { layer: 'repo', path: 'SECURITY.md', what: 'how to report a vulnerability, and what the threat model covers' },
   contributing: { layer: 'repo', path: 'CONTRIBUTING.md', what: 'what a contributor runs, what the hook blocks, what a pull request needs' },
 
   securityHeaders: { layer: 'config', path: 'src/server/securityHeaders.ts', what: 'the CSP; connect-src is every origin the browser may reach' },
@@ -108,10 +110,11 @@ export const SURFACES = {
   firestoreRules: { layer: 'config', path: 'firestore.rules', what: 'what an account may read and write in Firestore' },
   checksYml: { layer: 'config', path: '.github/workflows/checks.yml', what: 'CI: the Node versions and every check' },
   lockfile: { layer: 'config', path: 'package-lock.json', what: 'the installed versions; npm ci fails when it disagrees with package.json' },
+  envExample: { layer: 'config', path: '.env.example', what: 'the environment variables there are; no AI key ever belongs in .env' },
   encoding: { layer: 'config', path: 'scripts/check-encoding.mjs', what: 'ROOT_FILES, the root files the mojibake sweep reads' },
 };
 
-const LAYOUT_DIRS = ['src/lib/', 'src/services/', 'src/components/', 'src/server/'];
+const LAYOUT_DIRS = ['src/lib/', 'src/services/', 'src/components/', 'src/server/', 'src/mcp/'];
 const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies', 'overrides'];
 /** Where a removed file's name is looked for. */
 const DOC_PATHS = ['docs', 'CLAUDE.md', 'README.md', 'CONTRIBUTING.md', '.claude', 'tools/RepxDesigner/README.md', 'tools/RepxProbe/README.md'];
@@ -121,7 +124,7 @@ const isTestFile = (p) => isTest(p) && (p.startsWith('src/') || p.startsWith('te
 const SURFACE_PATHS = new Set(Object.values(SURFACES).map((s) => s.path));
 /** Code a person uses: what the pages, the notes and the release notes describe. */
 const isFeatureCode = (p) =>
-  !isTest(p) && !SURFACE_PATHS.has(p) && !p.endsWith('.d.ts') && (/^src\/.+\.(ts|tsx)$/.test(p) || p === 'server.ts' || p === 'index.html');
+  !isTest(p) && !SURFACE_PATHS.has(p) && !p.endsWith('.d.ts') && !p.startsWith('src/mcp/') && (/^src\/.+\.(ts|tsx)$/.test(p) || p === 'server.ts' || p === 'index.html');
 
 /** Both sides of a rename, or the one path. */
 const pathsOf = (c) => (c.oldPath ? [c.oldPath, c.path] : [c.path]);
@@ -142,7 +145,7 @@ const scriptNames = (side) => Object.keys(side?.scripts ?? {}).sort().join('\n')
 export const RULES = [
   {
     id: 'layout', kind: 'block',
-    title: 'A file is added, removed or renamed under src/lib, src/services, src/components or src/server',
+    title: 'A file is added, removed or renamed under src/lib, src/services, src/components, src/server or src/mcp',
     why: 'docs/project-structure.md names every file there, so it changes in the same commit.',
     surfaces: ['structure'],
     when: ({ changes }) => changes.filter((c) => addedOrRemoved(c) && pathsOf(c).some((p) => !isTest(p) && LAYOUT_DIRS.some((d) => p.startsWith(d)))).map(labelOf),
@@ -202,6 +205,13 @@ export const RULES = [
     why: 'A feature is never one file. Each line below describes the product, and must describe it as it is after this commit, including what was taken away.',
     surfaces: ['releases', 'features', 'docs', 'faq', 'home', 'info', 'legal', 'prd', 'notes', 'readme', 'claude', 'claims', 'securityHeaders', 'firestoreRules'],
     when: ({ changes }) => changes.filter((c) => pathsOf(c).some(isFeatureCode)).map(labelOf),
+  },
+  {
+    id: 'mcp', kind: 'review',
+    title: "Forma's MCP server or its command line changes (src/mcp, scripts/repx.ts)",
+    why: 'They are how other programs use Forma: the tools they offer, what each needs and where data goes are stated on the Docs page, in README.md, on the security and self-host pages, in the privacy policy, in SECURITY.md, in the REPX skill and in the note that owns it; .env.example lists the variables such a program reads.',
+    surfaces: ['readme', 'docs', 'info', 'legal', 'security', 'skill', 'prd', 'releases', 'notes', 'claude', 'envExample'],
+    when: ({ changes }) => changes.filter((c) => pathsOf(c).some((p) => (p.startsWith('src/mcp/') && !isTest(p)) || p === 'scripts/repx.ts')).map(labelOf),
   },
   {
     id: 'removed', kind: 'review',
@@ -423,10 +433,17 @@ function gather(staged) {
   return { changes, pkg, topLevel, mentionsOf, doc };
 }
 
-/** The hierarchy's own problems: a surface that is gone, or a readable copy that has drifted. */
-function selfCheck(doc) {
+/**
+ * The hierarchy's own problems: a surface that is gone, or a readable copy that has drifted.
+ * A commit that stages neither this script nor its doc leaves the committed pair as HEAD had
+ * it, so the copy is not compared then: the working tree's script may already hold the next
+ * commit's change (found 2026-11-23, committing the MCP work's first wave batch by batch).
+ */
+function selfCheck(doc, stagedChanges) {
   const out = missingSurfaces(existsSync).map((p) => `${p} is named in the hierarchy and does not exist: update SURFACES in scripts/check-hierarchy.mjs.`);
-  if (doc.replace(/\r\n/g, '\n') !== hierarchyMarkdown()) out.push(`${DOC_PATH} is not the hierarchy as the script writes it: run npm run check:hierarchy -- --write, and stage it.`);
+  const SCRIPT = 'scripts/check-hierarchy.mjs';
+  const pairStaged = !stagedChanges || stagedChanges.some((c) => pathsOf(c).some((p) => p === SCRIPT || p === DOC_PATH));
+  if (pairStaged && doc.replace(/\r\n/g, '\n') !== hierarchyMarkdown()) out.push(`${DOC_PATH} is not the hierarchy as the script writes it: run npm run check:hierarchy -- --write, and stage it.`);
   return out;
 }
 
@@ -472,7 +489,7 @@ function main(argv) {
     return 0;
   }
   const all = findings(ctx);
-  const own = selfCheck(ctx.doc);
+  const own = selfCheck(ctx.doc, staged ? ctx.changes : null);
   const blocked = all.filter((f) => f.rule.kind === 'block' && f.open.length);
   const toReview = all.filter((f) => f.rule.kind === 'review' && f.open.length);
   const isReviewed = staged && toReview.length > 0 && reviewed();

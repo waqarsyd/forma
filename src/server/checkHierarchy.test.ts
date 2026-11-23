@@ -78,6 +78,15 @@ describe('project hierarchy', () => {
     expect(open(dir, 'top-dir')).toEqual(['docs/project-structure.md', 'README.md']);
   });
 
+  it('the MCP server or the command line changing lists what tells other programs how to use Forma, and a file added there waits for the layout', () => {
+    const out = check([add('src/mcp/tools.ts'), edit('scripts/repx.ts')]);
+    expect(open(out, 'layout')).toEqual(['docs/project-structure.md']);
+    expect(rule(out, 'mcp')?.triggers).toEqual(['src/mcp/tools.ts (added)', 'scripts/repx.ts']);
+    expect(open(out, 'mcp')).toEqual(expect.arrayContaining(['SECURITY.md', 'docs/skills/devexpress-repx/SKILL.md', 'src/components/DocsPage.tsx', 'src/components/LegalPage.tsx']));
+    expect(rule(out, 'feature')).toBeUndefined();
+    expect(rule(check([edit('src/mcp/tools.test.ts')]), 'mcp')).toBeUndefined();
+  });
+
   it('an edit to a page on its own is not a feature change', () => {
     const out = check([edit('src/components/FeaturesPage.tsx'), edit('src/lib/releases.ts')]);
     expect(rule(out, 'feature')).toBeUndefined();

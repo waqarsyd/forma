@@ -27,8 +27,9 @@ Two strengths of rule. One that blocks is always true here, so the commit waits 
 | [`docs/notes/`](notes/) | the note that owns the area; the routing table in CLAUDE.md says which |
 | [`docs/notes/app-shell.md`](notes/app-shell.md) | the workspace, routing and the public pages |
 | [`docs/notes/persistence.md`](notes/persistence.md) | Firestore, the device, the rules, sign-in and deletion |
-| [`docs/project-structure.md`](project-structure.md) | the file layout; names every file under src/lib, src/services, src/components and src/server |
+| [`docs/project-structure.md`](project-structure.md) | the file layout; names every file under src/lib, src/services, src/components, src/server and src/mcp |
 | [`CLAUDE.md`](../CLAUDE.md) | the code map, the routing table, the commands, and the facts stated in more than one file |
+| [`docs/skills/devexpress-repx/SKILL.md`](skills/devexpress-repx/SKILL.md) | what Forma measured about the REPX format, for a person or an assistant editing a .repx; scripts/repx.ts stands on it, and the MCP server will |
 | [`tools/RepxDesigner/README.md`](../tools/RepxDesigner/README.md) | Forma Designer: its routes, its guards, its download and install |
 | [`tools/RepxProbe/README.md`](../tools/RepxProbe/README.md) | RepxProbe: what it asks DevExpress, and how |
 
@@ -56,6 +57,7 @@ Two strengths of rule. One that blocks is always true here, so the commit waits 
 | Surface | What it holds |
 |---|---|
 | [`README.md`](../README.md) | the front door: setup, the script table, the honest limitations |
+| [`SECURITY.md`](../SECURITY.md) | how to report a vulnerability, and what the threat model covers |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | what a contributor runs, what the hook blocks, what a pull request needs |
 
 ### Configuration that must agree with the code
@@ -67,13 +69,14 @@ Two strengths of rule. One that blocks is always true here, so the commit waits 
 | [`firestore.rules`](../firestore.rules) | what an account may read and write in Firestore |
 | [`.github/workflows/checks.yml`](../.github/workflows/checks.yml) | CI: the Node versions and every check |
 | [`package-lock.json`](../package-lock.json) | the installed versions; npm ci fails when it disagrees with package.json |
+| [`.env.example`](../.env.example) | the environment variables there are; no AI key ever belongs in .env |
 | [`scripts/check-encoding.mjs`](../scripts/check-encoding.mjs) | ROOT_FILES, the root files the mojibake sweep reads |
 
 ## What each change is checked against
 
 | When | It must reach | Strength | Why |
 |---|---|---|---|
-| A file is added, removed or renamed under src/lib, src/services, src/components or src/server | `docs/project-structure.md` | Blocks | docs/project-structure.md names every file there, so it changes in the same commit. |
+| A file is added, removed or renamed under src/lib, src/services, src/components, src/server or src/mcp | `docs/project-structure.md` | Blocks | docs/project-structure.md names every file there, so it changes in the same commit. |
 | A test file is added, removed or renamed | `docs/notes/testing.md` | Blocks | testing.md lists every test file with its count, and the total moves with it. Recount by running the suite, never by grepping. |
 | The Node floor changes (engines in package.json) | `README.md`, `CONTRIBUTING.md`, `.github/workflows/checks.yml`, `src/components/infoPages.tsx`, `CLAUDE.md` | Blocks | The floor is restated in five other files, and nothing else keeps them in step. |
 | The release version changes (version in package.json) | `src/lib/releases.ts`, `package-lock.json` | Blocks | Every deploy of main is a numbered release: its notes are the newest entry of releases.ts, and the lockfile carries the version too. |
@@ -82,6 +85,7 @@ Two strengths of rule. One that blocks is always true here, so the commit waits 
 | A file is added at the root of the repository | `scripts/check-encoding.mjs` | Blocks | The mojibake sweep reads a root file only once ROOT_FILES names it. |
 | A new top-level directory appears | `docs/project-structure.md`, `README.md` | Blocks | A new top-level directory needs a stated reason, in the file layout and in the overview of the top level in README.md. |
 | Code a person uses is added, changed or removed | `src/lib/releases.ts`, `src/components/FeaturesPage.tsx`, `src/components/DocsPage.tsx`, `src/components/faqs.tsx`, `src/components/LandingPage.tsx`, `src/components/infoPages.tsx`, `src/components/LegalPage.tsx`, `docs/PRD.md`, `docs/notes/`, `README.md`, `CLAUDE.md`, `src/components/publicClaims.test.ts`, `src/server/securityHeaders.ts`, `firestore.rules` | Review | A feature is never one file. Each line below describes the product, and must describe it as it is after this commit, including what was taken away. |
+| Forma's MCP server or its command line changes (src/mcp, scripts/repx.ts) | `README.md`, `src/components/DocsPage.tsx`, `src/components/infoPages.tsx`, `src/components/LegalPage.tsx`, `SECURITY.md`, `docs/skills/devexpress-repx/SKILL.md`, `docs/PRD.md`, `src/lib/releases.ts`, `docs/notes/`, `CLAUDE.md`, `.env.example` | Review | They are how other programs use Forma: the tools they offer, what each needs and where data goes are stated on the Docs page, in README.md, on the security and self-host pages, in the privacy policy, in SECURITY.md, in the REPX skill and in the note that owns it; .env.example lists the variables such a program reads. |
 | A file is removed or renamed, and the docs still name it | every doc that still names it | Review | A pointer to something gone is worse than none. Update each mention, or keep it where the history is the point and date the removal. |
 | A test file changes | `docs/notes/testing.md` | Review | A case added or removed changes its row in testing.md and the total. Recount by running the suite, never by grepping. |
 | A file is added, removed or renamed under scripts | `docs/project-structure.md`, `CLAUDE.md` | Review | The file layout names the scripts a person runs, and CLAUDE.md the ones a session needs. |
