@@ -13,7 +13,10 @@
  *   512 MB of heap and a 4 MB stack) and a deadline of 30 seconds. Running
  *   out of memory, passing the deadline and the call's cancellation each end
  *   that worker and become a refusal in plain words (or, for a cancellation,
- *   the wrapper's "Stopped"); nothing is written, and the server goes on.
+ *   the wrapper's "Stopped"), in the job's voice since the CLI and Forma
+ *   Designer work's wave 2 ("one call" to a host's model, "one report" to a
+ *   person at a command line, `ONE_CALL`, CLI-10); nothing is written, and
+ *   the server goes on.
  *   A failure inside the worker that is not a refusal ends it too, and its
  *   stack goes to the log, never into the result (toolShape.ts).
  * - One worker is kept idle between calls, unref'd so it never holds the
@@ -30,8 +33,8 @@
  */
 import { Worker } from 'node:worker_threads';
 import type { Readable } from 'node:stream';
+import { ToolRefusal, type Voice } from './caller';
 import type { Done, Job, JobName } from './pipeline';
-import { ToolRefusal } from './toolShape';
 
 /** How long one call's work may take, and how much memory it may use. */
 export interface PipelineLimits {
@@ -49,13 +52,16 @@ export interface Pipeline {
   close(): Promise<void>;
 }
 
-/** The refusal when a call's work passes its deadline. */
-export const tooLong = (ms: number) =>
-  `Forma stopped working on this report after ${ms / 1000} seconds, the longest one call may take. A report this slow to read is usually damaged, or far larger than a report needs to be. Nothing was written.`;
+/** What one piece of work is to whoever it is said to (CLI-10): a call to a host's model, a report to a person at a command line. */
+export const ONE_CALL: Record<Voice, string> = { mcp: 'one call', cli: 'one report' };
 
-/** The refusal when a call's work runs out of memory. */
-export const tooMuchMemory = (mb: number) =>
-  `Forma stopped working on this report when it needed more than ${mb} MB of memory, the most one call may use. A report that needs this much is usually damaged, or far larger than a report needs to be. Nothing was written.`;
+/** The refusal when a call's work passes its deadline, in the job's words (the server's by default). */
+export const tooLong = (ms: number, voice: Voice = 'mcp') =>
+  `Forma stopped working on this report after ${ms / 1000} seconds, the longest ${ONE_CALL[voice]} may take. A report this slow to read is usually damaged, or far larger than a report needs to be. Nothing was written.`;
+
+/** The refusal when a call's work runs out of memory, in the job's words. */
+export const tooMuchMemory = (mb: number, voice: Voice = 'mcp') =>
+  `Forma stopped working on this report when it needed more than ${mb} MB of memory, the most ${ONE_CALL[voice]} may use. A report that needs this much is usually damaged, or far larger than a report needs to be. Nothing was written.`;
 
 const WORKER_FILE = new URL('./worker.mjs', import.meta.url);
 
@@ -142,10 +148,10 @@ export function workerPipeline(options: PipelineOptions): Pipeline {
           else end(false, () => reject(workerError(reply.error)));
         };
         const onError = (error: Error & { code?: string }) =>
-          end(false, () => reject(error.code === 'ERR_WORKER_OUT_OF_MEMORY' ? new ToolRefusal(tooMuchMemory(limits.heapMb)) : error));
+          end(false, () => reject(error.code === 'ERR_WORKER_OUT_OF_MEMORY' ? new ToolRefusal(tooMuchMemory(limits.heapMb, job.voice)) : error));
         const onExit = (code: number) => end(false, () => reject(new Error(`the worker stopped before it answered (exit code ${code})`)));
         const onAbort = () => end(false, () => reject(new Error('cancelled')));
-        const timer = setTimeout(() => end(false, () => reject(new ToolRefusal(tooLong(limits.deadlineMs)))), limits.deadlineMs);
+        const timer = setTimeout(() => end(false, () => reject(new ToolRefusal(tooLong(limits.deadlineMs, job.voice)))), limits.deadlineMs);
         worker.on('message', onMessage);
         worker.on('error', onError);
         worker.on('exit', onExit);

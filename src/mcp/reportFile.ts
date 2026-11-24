@@ -3,7 +3,10 @@
  * one (2026-11-24, the MCP work's wave 4; findings SEC-3, GAP1-1, GAP1-2,
  * GAP1-3 and PROTO-5 of the 2026-11-23 design audit). Every path goes
  * through paths.ts's `resolveReadPath` and `resolveWritePath`, every write
- * through its `writeOutput`, never around them.
+ * through its `writeOutput`, never around them. Since the CLI and Forma
+ * Designer work's wave 2 (2026-11-24, SEC-4) the command line is to read and
+ * write through the same functions (reportCalls.ts calls them for both), with
+ * its working folder where the server has its roots (paths.ts `PathScope`).
  *
  * Reading is in two halves, since the wave-4 review (REV4-3): `readReport`
  * judges the path and reads the file on the thread that answers the host,
@@ -36,7 +39,9 @@
  *
  * - An output is named by the caller, or put beside the input under the
  *   tool's own suffix (`outputPath`), and written by `writeReport`, which
- *   never replaces a file unless the call asked to.
+ *   never replaces a file unless the call asked to: a name holding other
+ *   content sends the server's file beside it, and refuses the command
+ *   line's (CLI-6).
  * - A `.vsrepx` is written only from a `.vsrepx` (`targetKind`), and the
  *   working-file mark is neutralised in any `.repx` (repairChain.ts,
  *   `workingFileMark`).
@@ -50,23 +55,46 @@
  * every line within what toolShape.ts lets a string read from a file carry,
  * so a long line is continued rather than cut.
  *
+ * The login's notice and refusal, and the verb a C# report's refusal uses,
+ * are in the caller's words (caller.ts `Voice`, CLI-10): `openReport` takes
+ * the job's voice, and `codeRefusal` the scope's (paths.ts `voiceOf`). The
+ * server's are exactly what they were (`LOGIN_REMOVED`).
+ *
  * Pure ASCII.
  */
 import { readFileSync } from 'node:fs';
 import { MAX_FILE_BYTES } from '../lib/attachmentBudget';
 import { withoutStoredLogin } from '../lib/repxSqlDataSource';
 import { codeReportClass, codeReportMessage, reportFileKind } from '../lib/vsReport';
-import { parseToolPath, resolveReadPath, resolveWritePath, writeOutput, type PathSystem, type Root, type WriteFs, type WriteStatus } from './paths';
-import { MAX_FILE_TEXT, ToolRefusal } from './toolShape';
+import { MAX_FILE_TEXT, ToolRefusal, type Voice } from './caller';
+import { parsePath, resolveReadPath, resolveWritePath, voiceOf, writeOutput, type IfExists, type PathScope, type PathSystem, type PlacedStatus, type WriteFs, type WriteStatus } from './paths';
 
 /** What a report tool reads and writes. */
 export const LAYOUT_EXTENSIONS = ['.repx', '.vsrepx'] as const;
 
 export type LayoutKind = 'repx' | 'vsrepx';
 
-/** Said in every result when a login was taken out. */
-export const LOGIN_REMOVED =
-  'This report kept a database login. Forma removed it before reading the report: nothing this tool returns or writes carries it, and the file you named is unchanged.';
+/** The phrases of this file that a host's model and a person at a command line are told differently (caller.ts `Voice`, CLI-10). */
+const WORDS = {
+  mcp: {
+    loginRemoved: 'This report kept a database login. Forma removed it before reading the report: nothing this tool returns or writes carries it, and the file you named is unchanged.',
+    loginLeft: (name: string) =>
+      `${name} keeps a database login in a data source Forma could not read cleanly, so no tool reads it and nothing is written from it. Save the report with its connection stored by name only, then send it again.`,
+    give: 'send',
+  },
+  cli: {
+    loginRemoved: 'This report kept a database login. Forma removed it before reading the report: nothing Forma prints or writes carries it, and the file you named is unchanged.',
+    loginLeft: (name: string) =>
+      `${name} keeps a database login in a data source Forma could not read cleanly, so Forma does not read it and writes nothing from it. Save the report with its connection stored by name only, then run the command again.`,
+    give: 'give',
+  },
+} as const satisfies Record<Voice, Record<string, unknown>>;
+
+/** Said in every result when a login was taken out, in the server's words. */
+export const LOGIN_REMOVED = WORDS.mcp.loginRemoved;
+
+/** The login notice in the caller's words; the server's is `LOGIN_REMOVED`. */
+export const loginRemovedNotice = (voice: Voice): string => WORDS[voice].loginRemoved;
 
 /** Said when a written report's connection, kept with more than its name but no login, is now stored by name only. */
 export const CONNECTION_BY_NAME =
@@ -90,7 +118,7 @@ export interface OpenedReport {
   loginRemoved: boolean;
   /** A connection was stored by more than its name, a login or not, and is now stored by name only. */
   connectionsChanged: boolean;
-  /** Notices in this server's own words, never text from the file. */
+  /** Notices in Forma's own words, the caller's, never text from the file. */
   notices: string[];
 }
 
@@ -196,28 +224,31 @@ export function xmlShapeProblem(text: string): string | null {
  * A report's text opened for a tool, in the worker thread: refused unless it
  * is well-formed XML, its stored login taken out, and refused when one is
  * still there after that (REV4-1). `name` is the path as the caller sent it,
- * for the refusal's words. Throws a `ToolRefusal` in plain words.
+ * for the refusal's words, which are the caller's (`voice`, the server's by
+ * default). Throws a `ToolRefusal` in plain words.
  */
-export function openReport(text: string, name: string): OpenedReport {
+export function openReport(text: string, name: string, voice: Voice = 'mcp'): OpenedReport {
   const problem = xmlShapeProblem(text);
   if (problem) throw new ToolRefusal(`${shown(name)} is not well-formed XML, so Forma does not read it: ${problem}.`);
   const clean = withoutStoredLogin(text);
-  if (clean.loginLeft) {
-    throw new ToolRefusal(
-      `${shown(name)} keeps a database login in a data source Forma could not read cleanly, so no tool reads it and nothing is written from it. Save the report with its connection stored by name only, then send it again.`,
-    );
-  }
-  return { xml: clean.xml, loginRemoved: clean.hadLogin, connectionsChanged: clean.xml !== text, notices: clean.hadLogin ? [LOGIN_REMOVED] : [] };
+  if (clean.loginLeft) throw new ToolRefusal(WORDS[voice].loginLeft(shown(name)));
+  return { xml: clean.xml, loginRemoved: clean.hadLogin, connectionsChanged: clean.xml !== text, notices: clean.hadLogin ? [WORDS[voice].loginRemoved] : [] };
 }
 
-/** Why a C# or VB file is refused, naming the `.vsrepx` beside it when there is one (a stat through the path rules, no read); generate_report's too. */
-export function codeRefusal(spelled: string, roots: readonly Root[], sys: PathSystem): string {
+/**
+ * Why a C# or VB file is refused, naming the `.vsrepx` beside it when there
+ * is one (a stat through the path rules, no read); generate_report's too.
+ * `scope` is the server's roots or the command line's working folder
+ * (paths.ts `PathScope`), as for every function here that judges a path,
+ * and says whose words: "send" to a model, "give" to a person.
+ */
+export function codeRefusal(spelled: string, scope: PathScope, sys: PathSystem): string {
   const { path } = sys;
   const dir = path.dirname(spelled);
   const cls = codeReportClass(spelled);
   const sibling = path.join(dir, `${cls}.vsrepx`);
-  const layout = resolveReadPath(sibling, roots, sys, { extensions: ['.vsrepx'] }).ok ? sibling : null;
-  return codeReportMessage(spelled, layout, path.join(dir, `${cls}.repx`));
+  const layout = resolveReadPath(sibling, scope, sys, { extensions: ['.vsrepx'] }).ok ? sibling : null;
+  return codeReportMessage(spelled, layout, path.join(dir, `${cls}.repx`), WORDS[voiceOf(scope)].give);
 }
 
 /**
@@ -226,11 +257,11 @@ export function codeRefusal(spelled: string, roots: readonly Root[], sys: PathSy
  * DevExpress's layout element. Its text is opened only by `openReport`, in
  * the worker. Throws a `ToolRefusal` in plain words.
  */
-export function readReport(raw: unknown, roots: readonly Root[], sys: PathSystem, read: (p: string) => string = readText): ReportFile {
-  const parsed = parseToolPath(raw, sys.path, sys.home);
+export function readReport(raw: unknown, scope: PathScope, sys: PathSystem, read: (p: string) => string = readText): ReportFile {
+  const parsed = parsePath(raw, scope, sys);
   if (!parsed.ok) throw new ToolRefusal(parsed.reason);
-  if (reportFileKind(parsed.path) === 'code') throw new ToolRefusal(codeRefusal(parsed.path, roots, sys));
-  const found = resolveReadPath(raw, roots, sys, { extensions: LAYOUT_EXTENSIONS, maxBytes: MAX_FILE_BYTES });
+  if (reportFileKind(parsed.path) === 'code') throw new ToolRefusal(codeRefusal(parsed.path, scope, sys));
+  const found = resolveReadPath(raw, scope, sys, { extensions: LAYOUT_EXTENSIONS, maxBytes: MAX_FILE_BYTES });
   if (!found.ok) throw new ToolRefusal(found.reason);
   const text = read(found.path);
   if (!/<XtraReportsLayoutSerializer\b/.test(text)) {
@@ -250,9 +281,9 @@ export function besideName(spelled: string, suffix: string, sys: PathSystem): st
  * input under `suffix`; judged by paths.ts for a write of one of
  * `extensions`. Throws a `ToolRefusal` in plain words.
  */
-export function outputPath(output: string | undefined, report: ReportFile, suffix: string, extensions: readonly string[], roots: readonly Root[], sys: PathSystem): string {
+export function outputPath(output: string | undefined, report: ReportFile, suffix: string, extensions: readonly string[], scope: PathScope, sys: PathSystem): string {
   const raw = output === undefined || output === '' ? besideName(report.spelled, suffix, sys) : output;
-  const verdict = resolveWritePath(raw, roots, sys, { extensions });
+  const verdict = resolveWritePath(raw, scope, sys, { extensions });
   if (!verdict.ok) throw new ToolRefusal(verdict.reason);
   return verdict.path;
 }
@@ -269,17 +300,28 @@ export function targetKind(target: string, report: ReportFile): LayoutKind {
 /** True when two real paths name one file (case aside on Windows). */
 export const sameFile = (a: string, b: string, sys: PathSystem) => sys.path.relative(a, b) === '';
 
-/** What a write did, as a result says it (a type, not an interface, so a result's loose schema takes it). */
-export type Written = {
+/**
+ * What a write did, as a result says it (a type, not an interface, so a
+ * result's loose schema takes it). `S` narrows the status for a write that
+ * never refuses a name, whose result schema has no `exists`.
+ */
+export type Written<S extends WriteStatus = WriteStatus> = {
   path: string;
-  status: WriteStatus;
+  status: S;
   bytes: number;
 };
 
-/** Writes `data` to `target` through `writeOutput`, replacing a file only when `overwrite` is true. */
-export function writeReport(target: string, data: string | Uint8Array, wfs: WriteFs, sys: PathSystem, overwrite = false): Written {
+/**
+ * Writes `data` to `target` through `writeOutput`; when the name holds other
+ * content, `ifExists` decides (paths.ts `IfExists`): beside it by default,
+ * replaced only when the call asked, or, for the command line, nothing
+ * written and the status `exists`.
+ */
+export function writeReport(target: string, data: string | Uint8Array, wfs: WriteFs, sys: PathSystem, ifExists?: Exclude<IfExists, 'refuse'>): Written<PlacedStatus>;
+export function writeReport(target: string, data: string | Uint8Array, wfs: WriteFs, sys: PathSystem, ifExists: IfExists): Written;
+export function writeReport(target: string, data: string | Uint8Array, wfs: WriteFs, sys: PathSystem, ifExists: IfExists = 'beside'): Written {
   const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
-  const done = writeOutput(target, bytes, wfs, sys.path, { overwrite });
+  const done = writeOutput(target, bytes, wfs, sys.path, { ifExists });
   return { path: done.path, status: done.status, bytes: bytes.length };
 }
 
@@ -289,12 +331,12 @@ export function writeReport(target: string, data: string | Uint8Array, wfs: Writ
  * the worker reads for the names it looks up (`designerLookups`); null when
  * there is none, or none the path rules let a tool read.
  */
-export function designerFor(layout: string, roots: readonly Root[], sys: PathSystem, read: (p: string) => string = readText): { file: string; text: string } | null {
+export function designerFor(layout: string, scope: PathScope, sys: PathSystem, read: (p: string) => string = readText): { file: string; text: string } | null {
   const { path } = sys;
   const base = path.join(path.dirname(layout), path.basename(layout, path.extname(layout)));
   for (const ext of ['.cs', '.vb']) {
     const candidate = `${base}.Designer${ext}`;
-    const found = resolveReadPath(candidate, roots, sys, { extensions: [ext], maxBytes: MAX_FILE_BYTES });
+    const found = resolveReadPath(candidate, scope, sys, { extensions: [ext], maxBytes: MAX_FILE_BYTES });
     if (found.ok) return { file: candidate, text: read(found.path) };
   }
   return null;

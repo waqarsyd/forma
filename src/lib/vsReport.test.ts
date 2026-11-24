@@ -64,6 +64,13 @@ describe('a C# or VB report, refused', () => {
       '"G:\\\\Shop\\\\Invoice.cs" is code. Its report keeps its layout in "G:\\\\Shop\\\\Invoice.vsrepx", beside it, which Forma reads: send that path instead.',
     );
   });
+
+  it("tells a person at Forma's command line to give a file where a host's model is told to send one", () => {
+    expect(codeReportMessage('/src/Invoice.cs', '/src/Invoice.vsrepx', '/src/Invoice.repx', 'give')).toMatch(/which Forma reads: give that path instead\.$/);
+    const said = codeReportMessage('/src/Invoice.cs', null, '/src/Invoice.repx', 'give');
+    expect(said).toContain('Give a .repx of it instead.');
+    expect(said).not.toMatch(/\bsend\b/i);
+  });
 });
 
 describe("the names a report class's Designer file looks up (GAP1-3)", () => {

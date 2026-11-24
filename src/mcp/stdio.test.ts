@@ -10,7 +10,13 @@
  * stderr only as "(a key)", forma_status must answer in both eras, the
  * process must leave by itself when stdin ends, and nothing may be written
  * into the folder it was started in. A key set in its environment (built at
- * run time, TST-10) must never appear in what it prints either. With the home
+ * run time, TST-10) must never appear in what it prints either; the one set
+ * as FORMA_GEMINI_KEY is in a shape no pattern knows and the noise prints it
+ * too, so only the scrub by value, the keys the entry's hardening hands the
+ * guard, can take it out (the CLI work's wave-2 review, SEC-W2-1). A case
+ * that asks for the mock chooses an AI that cannot leave this computer as
+ * well, so a mock that is not read never becomes a request (SEC-W2-7,
+ * `NOWHERE_AI`). With the home
  * and the system's temp folder scratch ones, the AI tools write nothing but
  * their reports, OCR's languages in Forma's folder, and tsx's compile cache
  * (`tsx-<user>`) in the temp folder (wave 10's end-to-end probe found the
@@ -26,11 +32,20 @@
  * of the command line's design audit, 2026-11-24): its `paths` reach every
  * package Forma's sources import, each bare specifier, and its compiler
  * settings reach them when it takes the clone in. So the launcher and both
- * worker threads name
- * the clone's own, and one case starts the server from a folder whose
- * tsconfig.json sends zod, which every thread loads on start, to a stub that
- * throws; a control case first shows that folder breaks each thread's
- * modules when tsx is registered as the launchers did before.
+ * worker threads name the clone's own. One case starts the server from a
+ * folder whose tsconfig.json sends zod (which the thread that answers loads
+ * on start) and @napi-rs/canvas (which the AI tools' thread loads on start)
+ * to a stub that throws, and the AI tools' worker and the thread that
+ * answers still load Forma's modules. A control case first shows that folder
+ * breaking those two start-up modules, through their package, when tsx is
+ * registered as the launchers did before CLI-8, and pipeline.ts, the report
+ * tools' thread, loading all the same: since the CLI work's wave 2 it names
+ * no package on start, so no `paths` can reach it (the comment on HOSTILE).
+ * So no spawned case here proves that worker.mjs ignores the folder's
+ * tsconfig.json; the hostile case only shows that thread still answering.
+ * Its pin is held statically, by boundaries.test.ts, and matters there only
+ * for compiler settings, none of which breaks a module on that thread's way
+ * today (CLI-8 found the risk latent).
  *
  * Each request waits at most 30 seconds and fails with the server's stderr in
  * its message; every process a case starts is ended after it, pass or fail,
@@ -57,23 +72,57 @@ afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 /** The keys the entry's noise prints: the same construction as there. */
 const fakeKey = ['AI', 'za', 'Sy'].join('') + 'n'.repeat(33);
 const fakeNewerKey = ['A', 'Q.'].join('') + 'n'.repeat(40);
+/**
+ * The key every case sets as FORMA_GEMINI_KEY, in a shape no pattern knows
+ * (lib/keyRedact.ts `FORMA_KEYS`), which the noise prints too: only the
+ * scrub by value takes it out, so a case shows the entry handing the guard
+ * the keys `takeAiEnv` took, which the patterns alone would never show (the
+ * CLI work's wave-2 review, SEC-W2-1).
+ */
+const shapelessKey = ['gq', '00'].join('') + 'f4aba7fbd7a9'.repeat(3);
+/**
+ * The AI a case that asks for the mock chooses as well: Local AI at a port
+ * fetch refuses to open (port 1, one of the Fetch standard's bad ports), so
+ * a mock that is not read fails on this computer and is never a request to
+ * an AI (the wave-2 review's SEC-W2-7: the mock is read in the entry's voice
+ * since that wave, and an entry that read it in the wrong one sent this
+ * test's stand-in key to Google once). Local AI is never left for another AI
+ * on a limit (lib/fallbackChain.ts `fallbacksFor`).
+ */
+const NOWHERE_AI = { FORMA_PROVIDER: 'local', FORMA_LOCAL_MODEL: 'forma-test-model', FORMA_LOCAL_URL: 'http://127.0.0.1:1/v1' };
 const MODERN_META = { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {}, 'io.modelcontextprotocol/clientInfo': { name: 'smoke', version: '1' } };
 const REQUEST_MS = 30_000;
 
 /**
  * A user's project files that would break Forma if tsx applied their
- * tsconfig.json (CLI-8): its `paths` sends zod, which toolShape.ts imports and
- * so every thread of the server loads on start, to a stub that throws. tsx
- * applies `paths` to a bare specifier from every importer outside
- * node_modules, whatever the tsconfig's `include` says (read in tsx
- * 4.23.15), so it reaches the clone from any folder; compiler settings would
- * reach it only from a project whose tsconfig takes the clone in.
+ * tsconfig.json (CLI-8): its `paths` sends a package each thread loads on
+ * start to a stub that throws, zod (toolShape.ts, the thread that answers)
+ * and @napi-rs/canvas (nodeGeneration.ts, the AI tools' thread). tsx applies
+ * `paths` to a bare specifier from every importer outside node_modules,
+ * whatever the tsconfig's `include` says (read in tsx 4.23.15), so it
+ * reaches the clone from any folder; compiler settings would reach it only
+ * from a project whose tsconfig takes the clone in.
+ *
+ * Until the CLI and Forma Designer work's wave 2 (2026-11-24) zod alone did
+ * it, since every thread reached zod through toolShape.ts, where ToolRefusal
+ * lived; that wave moved ToolRefusal to caller.ts so nothing on the command
+ * line's way loads zod, and the report tools' thread (pipeline.ts) now names
+ * no package on start at all (measured that day by importing each start-up
+ * module under tsx registered with no tsconfig, from a folder whose `paths`
+ * also sent node:fs and node:path to the stub, which tsx leaves alone), so
+ * no `paths` can reach it, and the control below says so; its launcher's
+ * pin stays for the compiler settings, which boundaries.test.ts holds.
  */
 const STUB_SAYS = 'FORMA-HOSTILE-TSCONFIG';
 const HOSTILE: Record<string, string> = {
-  'tsconfig.json': `${JSON.stringify({ compilerOptions: { paths: { zod: ['./zod-stub.mjs'] } } }, null, 2)}\n`,
-  'zod-stub.mjs': `throw new Error('${STUB_SAYS}: zod was resolved through the tsconfig.json of the working folder');\n`,
+  'tsconfig.json': `${JSON.stringify({ compilerOptions: { paths: { zod: ['./stub.mjs'], '@napi-rs/canvas': ['./stub.mjs'] } } }, null, 2)}\n`,
+  'stub.mjs': `throw new Error('${STUB_SAYS}: a package was resolved through the tsconfig.json of the working folder');\n`,
 };
+/** Each start-up module the stub reaches, and the package through which: a namespace import fails on the stub's throw, a named one on its missing export, which names the package. */
+const REDIRECTED: [string, string][] = [
+  ['formaServer.ts', 'zod'],
+  ['genJobs.ts', '@napi-rs/canvas'],
+];
 
 /** A server started for one case. */
 interface Started {
@@ -99,14 +148,16 @@ afterEach(async () => {
 /**
  * The server started as a host starts it, and a way to talk to it line by
  * line. `more` adds to its environment, a value left undefined taking that
- * variable out; `files` are written into the folder it starts in, first.
+ * variable out; with FORMA_MCP_MOCK in it, `NOWHERE_AI` is chosen too.
+ * `files` are written into the folder it starts in, first.
  */
 function start(noise: string, more: Record<string, string | undefined> = {}, files: Record<string, string> = {}): Started {
   const cwd = mkdtempSync(join(scratch, 'host-'));
   for (const [name, content] of Object.entries(files)) writeFileSync(join(cwd, name), content);
-  const env: NodeJS.ProcessEnv = { ...process.env, FORMA_MCP_ROOTS: realpathSync.native(cwd), FORMA_MCP_TEST_NOISE: noise, FORMA_GEMINI_KEY: fakeKey, GEMINI_API_KEY: fakeNewerKey };
+  const env: NodeJS.ProcessEnv = { ...process.env, FORMA_MCP_ROOTS: realpathSync.native(cwd), FORMA_MCP_TEST_NOISE: noise, FORMA_GEMINI_KEY: shapelessKey, GEMINI_API_KEY: fakeNewerKey };
   delete env.CLAUDE_PROJECT_DIR;
   for (const name of Object.keys(env)) if (name.startsWith('FORMA_') && !['FORMA_MCP_ROOTS', 'FORMA_MCP_TEST_NOISE', 'FORMA_GEMINI_KEY'].includes(name)) delete env[name];
+  if (more.FORMA_MCP_MOCK !== undefined) Object.assign(env, NOWHERE_AI);
   for (const [name, value] of Object.entries(more)) {
     if (value === undefined) delete env[name];
     else env[name] = value;
@@ -158,13 +209,14 @@ function expectOnlyJsonRpc(stdout: string) {
   return lines.length;
 }
 
-/** No key of either form anywhere it printed, and each printed key on stderr as "(a key)". */
+/** No key of any form anywhere it printed, and each printed key on stderr as "(a key)", the shapeless one by its value alone. */
 function expectKeysTakenOut(s: Started) {
-  expect(s.out() + s.err()).not.toContain(fakeKey);
-  expect(s.out() + s.err()).not.toContain(fakeNewerKey);
+  for (const key of [fakeKey, fakeNewerKey, shapelessKey]) expect(s.out() + s.err()).not.toContain(key.slice(0, 12));
   expect(s.err()).toContain('FORMA-NOISE key on console.log (a key)');
   expect(s.err()).toContain('FORMA-NOISE key on process.stdout.write (a key)');
   expect(s.err()).toContain("FORMA-NOISE key on the guard's log (a key)");
+  expect(s.err()).toContain('FORMA-NOISE shapeless key on console.log (a key)');
+  expect(s.err()).toContain("FORMA-NOISE shapeless key on the guard's log (a key)");
 }
 
 /** Ends stdin and waits for the process to leave by itself, within ten seconds. */
@@ -255,8 +307,7 @@ describe('the stdio server, started as a host starts it', () => {
     expect(progress.length).toBeGreaterThan(0);
     const values = progress.map((m) => m.params.progress as number);
     for (let i = 1; i < values.length; i++) expect(values[i]).toBeGreaterThan(values[i - 1]);
-    expect(s.out() + s.err()).not.toContain(fakeKey);
-    expect(s.out() + s.err()).not.toContain(fakeNewerKey);
+    for (const key of [fakeKey, fakeNewerKey, shapelessKey]) expect(s.out() + s.err()).not.toContain(key.slice(0, 12));
     expect(s.err()).toContain(`generate_report wrote ${JSON.stringify(join(cwd, 'invoice.repx'))}`);
     expect(readdirSync(s.cwd).sort()).toEqual(['invoice.repx', 'invoice.revised.repx']);
     // Forma's folder is the scratch home's, never the user's own, and holds OCR's gathered languages alone (no model was probed, the AI mocked).
@@ -283,14 +334,15 @@ describe('the stdio server, started as a host starts it', () => {
     expect(readdirSync(s.cwd)).toEqual([]);
   });
 
-  it("the control: from a folder whose tsconfig.json sends zod to a stub, tsx registered with no tsconfig named breaks every thread's modules", { timeout: 60_000 }, async () => {
+  it("the control: from a folder whose tsconfig.json sends their packages to a stub, tsx registered with no tsconfig named breaks the start-up modules of the threads that load one", { timeout: 60_000 }, async () => {
     // As run.mjs, worker.mjs and genWorker.mjs registered it before CLI-8: the modules each thread loads on start fail on the stub,
-    // so the case below cannot pass by the folder's tsconfig.json being ignored for some other reason.
+    // so the case below cannot pass by the folder's tsconfig.json being ignored for some other reason. pipeline.ts, the report
+    // tools' thread, names no package on start since the CLI work's wave 2 (the comment on HOSTILE), so it loads either way.
     const cwd = mkdtempSync(join(scratch, 'control-'));
     for (const [name, content] of Object.entries(HOSTILE)) writeFileSync(join(cwd, name), content);
     const tsxPackage = join(CLONE, 'node_modules', 'tsx');
     const tsxApi = pathToFileURL(join(tsxPackage, JSON.parse(readFileSync(join(tsxPackage, 'package.json'), 'utf8')).exports['./esm/api'].import.default)).href;
-    const modules = ['formaServer.ts', 'pipeline.ts', 'genJobs.ts'];
+    const modules = [...REDIRECTED.map(([m]) => m), 'pipeline.ts'];
     const unpinned = [
       `import { register } from ${JSON.stringify(tsxApi)};`,
       'register();',
@@ -318,10 +370,12 @@ describe('the stdio server, started as a host starts it', () => {
         await Promise.race([exited, new Promise((done) => setTimeout(done, 5000).unref())]);
       }
     }
-    for (const m of modules) expect(out, `${out}\n${err.slice(-1000)}`).toContain(`${m} failed: ${STUB_SAYS}`);
+    const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+    for (const [m, pkg] of REDIRECTED) expect(out, `${out}\n${err.slice(-1000)}`).toMatch(new RegExp(`${escape(m)} failed: (?:${STUB_SAYS}|.*'${escape(pkg)}')`));
+    expect(out, `${out}\n${err.slice(-1000)}`).toContain('pipeline.ts loaded');
   });
 
-  it("ignores the tsconfig.json of the folder it is started in: the thread that answers, the report tools' worker and the AI tools' worker all load Forma's modules", { timeout: 120_000 }, async () => {
+  it("ignores the tsconfig.json of the folder it is started in: the thread that answers and the AI tools' worker load Forma's modules, and the report tools' worker, which no `paths` can reach, still answers", { timeout: 120_000 }, async () => {
     // CLI-8: each launcher names the clone's tsconfig.json. The AI mocked and Forma's folder in a scratch home, as in the AI tools' case.
     const home = mkdtempSync(join(scratch, 'home-'));
     const s = start('', { FORMA_MCP_MOCK: '1', USERPROFILE: home, HOME: home, TSX_TSCONFIG_PATH: undefined }, HOSTILE);
@@ -341,7 +395,7 @@ describe('the stdio server, started as a host starts it', () => {
     expect(await leaves(s)).toBe(0);
     expect(expectOnlyJsonRpc(s.out())).toBe(4);
     expect(s.err()).not.toContain(STUB_SAYS);
-    expect(readdirSync(s.cwd).sort()).toEqual(['r.repx', 'r.revised.repx', 'tsconfig.json', 'zod-stub.mjs']);
+    expect(readdirSync(s.cwd).sort()).toEqual(['r.repx', 'r.revised.repx', 'stub.mjs', 'tsconfig.json']);
   });
 
   it('exits non-zero after an uncaught exception, saying why on stderr and nothing on stdout', { timeout: 60_000 }, async () => {

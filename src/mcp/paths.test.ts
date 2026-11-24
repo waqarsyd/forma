@@ -12,7 +12,7 @@ import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSy
 import { tmpdir } from 'node:os';
 import { join, posix, resolve, win32, type PlatformPath } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { describePath, isInside, nodePathFs, nodeWriteFs, parseToolPath, resolveReadPath, resolveWritePath, writeOutput, type Root, type WriteFs } from './paths';
+import { describePath, isInside, nodePathFs, nodeSystem, nodeWriteFs, parsePath, parseToolPath, resolveReadPath, resolveWritePath, voiceOf, writeOutput, type Root, type WorkingFolder, type WriteFs } from './paths';
 import { checkRoot } from './roots';
 import { fakeFs, untouchable } from './testFs';
 
@@ -83,12 +83,21 @@ describe('parseToolPath, Windows rules', () => {
     expect(refused('file://')).toMatch(/is a URL; send a path\.$/);
   });
 
-  it.each(['\\\\host\\share\\x.repx', '//host/share/x.repx', '/\\host\\share\\x.repx', '\\\\?\\G:\\x.repx', '\\\\.\\G:\\x.repx', '//g/DevFiles/forma/x.repx'])(
+  it.each(['\\\\host\\share\\x.repx', '//host/share/x.repx', '/\\host\\share\\x.repx', '\\\\?\\UNC\\host\\share\\x.repx', '\\\\.\\UNC\\host\\share\\x.repx', '//g/DevFiles/forma/x.repx'])(
     'refuses %j as a path on another computer',
     (raw) => {
       expect(refused(raw)).toMatch(/another computer, which this server never opens/);
     },
   );
+
+  it.each([
+    ['\\\\?\\G:\\x.repx', 'G:\\x.repx'],
+    ['\\\\.\\G:\\x.repx', 'G:\\x.repx'],
+    ['//?/g:/Reports/x.repx', 'G:\\Reports\\x.repx'],
+  ])('refuses %j, a path on a drive of this computer in its long form, handing back the plain one', (raw, plain) => {
+    // The CLI work's wave-2 review, SEC-W2-6: these were refused as paths on another computer, which they are not.
+    expect(refused(raw)).toBe(`${q(raw)} is the long form of a path on drive ${plain[0]}:; send it as ${q(plain)}.`);
+  });
 
   it('offers the drive for the Git Bash slip //g/...', () => {
     expect(refused('//g/DevFiles/forma/x.repx')).toContain(`If you meant drive G:, send ${q('G:\\DevFiles\\forma\\x.repx')}`);
@@ -299,7 +308,7 @@ describe('the refusals that come before the file system', () => {
       const fs = untouchable();
       const sys = { path: win32, fs };
       for (const verdict of [resolveReadPath(raw, [plainRoot('G:\\proj')], sys), resolveWritePath(raw, [plainRoot('G:\\proj')], sys)]) {
-        expect(verdict).toEqual({ ok: false, reason: expect.stringMatching(/another computer|outside the folders|Git Bash|stream/) });
+        expect(verdict).toEqual({ ok: false, reason: expect.stringMatching(/another computer|long form of a path on drive|outside the folders|Git Bash|stream/) });
         expect(verdict).not.toEqual({ ok: false, reason: expect.stringMatching(/could not be resolved/) });
       }
       expect(fs.calls).toEqual([]);
@@ -311,6 +320,214 @@ describe('describePath', () => {
   it('gives an example only for the platform the server runs on', () => {
     expect(describePath(win32, 'The report.')).toBe('The report. The full path, for example G:\\Reports\\invoice.repx. Not relative, not ~, not a Git Bash /g/... path.');
     expect(describePath(posix, 'The report.')).toMatch(/\/home\/me\/reports\/invoice\.repx\. Not relative, not ~\.$/);
+  });
+});
+
+/**
+ * The command line's mode (2026-11-24, the CLI and Forma Designer work's
+ * wave 2, CLI-3 and SEC-4): a working folder in place of roots, a relative
+ * path resolved against it, every other check the server's, in a person's
+ * words. The scene, spelled for each platform: the folder the command runs
+ * in, inside a dot-folder the person chose; a folder outside it; a junction
+ * from one to the other; a file link outside it that leads back in; and a
+ * credential, a big file and a dot-folder of its own. Since the wave-2
+ * review (SEC-W2-2), another name for the working folder too, a link to it
+ * (as a junction, a symlink, a subst drive or the shell's logical `$PWD`
+ * names it), and a file link in it that leads out.
+ */
+function cliScene(path: PlatformPath) {
+  const at = (...parts: string[]) => (path === win32 ? `G:\\${parts.join('\\')}` : `/srv/${parts.join('/')}`);
+  const base = at('home', '.work', 'proj');
+  const fs = fakeFs(path, {
+    dirs: [at('home', '.work', 'proj', 'sub'), at('elsewhere'), at('home', '.cache')],
+    files: {
+      [at('home', '.work', 'proj', 'a.repx')]: 100,
+      [at('home', '.work', 'proj', 'page.png')]: 100,
+      [at('home', '.work', 'proj', 'big.png')]: 30_000_000,
+      [at('home', '.work', 'proj', 'appsettings.json')]: 10,
+      [at('home', '.work', 'proj', '.git', 'x.repx')]: 10,
+      [at('elsewhere', 'scan.png')]: 100,
+      [at('home', '.cache', 'x.repx')]: 10,
+    },
+    links: {
+      [at('home', '.work', 'proj', 'link')]: at('elsewhere'),
+      [at('elsewhere', 'back.repx')]: at('home', '.work', 'proj', 'a.repx'),
+      [at('alias')]: at('home', '.work', 'proj'),
+      [at('home', '.work', 'proj', 'leak.png')]: at('elsewhere', 'scan.png'),
+    },
+  });
+  const scope: WorkingFolder = { base };
+  return { at, base, fs, sys: { path, fs, home: at('home') }, scope };
+}
+
+/** A refusal speaks to a person: none of the words a host's model is told. */
+const MODEL_WORDS = /\bsend\b|this server|forma_status|\ba tool\b/i;
+
+describe.each([
+  ['Windows', win32],
+  ['POSIX', posix],
+] as const)("the command line's working folder, %s rules", (_name, path) => {
+  const sep = path.sep;
+  const reason = (v: { ok: boolean; reason?: string }) => (v.ok ? 'admitted' : (v.reason as string));
+
+  it('resolves a relative path against the working folder, once, then judges what it names as any path', () => {
+    const { at, base, sys, scope } = cliScene(path);
+    expect(voiceOf(scope)).toBe('cli');
+    expect(voiceOf([])).toBe('mcp');
+    expect(parsePath('a.repx', scope, sys)).toEqual({ ok: true, path: at('home', '.work', 'proj', 'a.repx') });
+    expect(parsePath(`sub${sep}..${sep}a.repx`, scope, sys)).toEqual({ ok: true, path: at('home', '.work', 'proj', 'a.repx') });
+    expect(resolveReadPath('a.repx', scope, sys, { extensions: ['.repx'] })).toEqual({ ok: true, path: at('home', '.work', 'proj', 'a.repx') });
+    expect(resolveReadPath(`.${sep}page.png`, scope, sys)).toEqual({ ok: true, path: at('home', '.work', 'proj', 'page.png') });
+    expect(resolveWritePath(`out${sep}deep${sep}new.repx`, scope, sys, { extensions: ['.repx'] })).toEqual({ ok: true, path: at('home', '.work', 'proj', 'out', 'deep', 'new.repx') });
+    // A full path, and a relative one that leaves the working folder, name a file the person chose, wherever it is.
+    expect(resolveReadPath(at('elsewhere', 'scan.png'), scope, sys)).toEqual({ ok: true, path: at('elsewhere', 'scan.png') });
+    expect(resolveReadPath(`..${sep}..${sep}..${sep}elsewhere${sep}scan.png`, scope, sys)).toEqual({ ok: true, path: at('elsewhere', 'scan.png') });
+    expect(base).toBe(at('home', '.work', 'proj'));
+  });
+
+  it('refuses a path named inside the working folder that a link leads out of, and a file link out of the folder it is named in', () => {
+    const { at, sys, scope } = cliScene(path);
+    expect(reason(resolveReadPath(`link${sep}scan.png`, scope, sys))).toMatch(/leads through a link to .*scan\.png", outside the folder the command is run in; Forma follows no link out of it\.$/);
+    expect(reason(resolveWritePath(`link${sep}new.repx`, scope, sys))).toMatch(/outside the folder the command is run in/);
+    expect(reason(resolveReadPath(at('elsewhere', 'back.repx'), scope, sys))).toMatch(/leads through a link to .*a\.repx", outside the folder it is named in/);
+    expect(reason(resolveReadPath('leak.png', scope, sys))).toMatch(/leads through a link to .*scan\.png", outside the folder the command is run in; Forma follows no link out of it\.$/);
+  });
+
+  it('judges a path by where it really is, never by its spelling: through another name for the working folder, a link the folder holds is still refused (SEC-W2-2)', () => {
+    const { at, sys, scope } = cliScene(path);
+    const outOf = /outside the folder the command is run in; Forma follows no link out of it\.$/;
+    // The working folder spelled as itself, a path spelled through the link to it: a directory link and a file link out are refused.
+    expect(reason(resolveReadPath(at('alias', 'link', 'scan.png'), scope, sys))).toMatch(outOf);
+    expect(reason(resolveWritePath(at('alias', 'link', 'new.repx'), scope, sys))).toMatch(outOf);
+    expect(reason(resolveReadPath(at('alias', 'leak.png'), scope, sys))).toMatch(outOf);
+    // The working folder given by the link to it, as a shell's logical $PWD or a subst drive names it: the same.
+    const aliased: WorkingFolder = { base: at('alias') };
+    expect(reason(resolveReadPath(`link${sep}scan.png`, aliased, sys))).toMatch(outOf);
+    expect(reason(resolveReadPath(at('home', '.work', 'proj', 'link', 'scan.png'), aliased, sys))).toMatch(outOf);
+    // What stays in it is read at its real place, whichever name reached it, and below it no dot-folder is looked for.
+    expect(resolveReadPath(at('alias', 'a.repx'), scope, sys)).toEqual({ ok: true, path: at('home', '.work', 'proj', 'a.repx') });
+    expect(resolveReadPath('page.png', aliased, sys)).toEqual({ ok: true, path: at('home', '.work', 'proj', 'page.png') });
+    expect(resolveWritePath(at('alias', 'out', 'r.repx'), scope, sys)).toEqual({ ok: true, path: at('home', '.work', 'proj', 'out', 'r.repx') });
+    // A link in a folder above the working folder, reached by .. from a subfolder, is not in the folder the command runs in:
+    // followed, by design (paths.ts's header), as any directory link on the way to a folder elsewhere is.
+    const below: WorkingFolder = { base: at('home', '.work', 'proj', 'sub') };
+    expect(resolveReadPath(`..${sep}link${sep}scan.png`, below, sys)).toEqual({ ok: true, path: at('elsewhere', 'scan.png') });
+  });
+
+  it('looks for dot-folders below the working folder, or below the drive outside it, so only the folder the command runs in may be one', () => {
+    const { at, sys, scope } = cliScene(path);
+    // The working folder is inside .work, which the person chose: nothing below it is refused for that.
+    expect(resolveReadPath('a.repx', scope, sys).ok).toBe(true);
+    expect(reason(resolveReadPath(`.git${sep}x.repx`, scope, sys))).toBe(`${q(at('home', '.work', 'proj', '.git', 'x.repx'))} is inside ".git"; Forma never reads from a dot-folder or a dot-file; only the folder the command is run in may be one.`);
+    expect(reason(resolveWritePath(`.claude${sep}x.repx`, scope, sys))).toMatch(/is inside "\.claude"; Forma never writes into a dot-folder/);
+    expect(reason(resolveWritePath(`node_modules${sep}x.repx`, scope, sys))).toMatch(/is inside node_modules; Forma never writes there; only the folder the command is run in may be inside it\.$/);
+    expect(reason(resolveReadPath(at('home', '.cache', 'x.repx'), scope, sys))).toMatch(/is inside "\.cache"/);
+    expect(reason(resolveWritePath(at('home', '.cache', 'out.repx'), scope, sys))).toMatch(/is inside "\.cache"/);
+  });
+
+  it("refuses a credential, another kind, a file too large and a folder, in a person's words", () => {
+    const { sys, scope } = cliScene(path);
+    const said = [
+      reason(resolveReadPath('appsettings.json', scope, sys)),
+      reason(resolveReadPath('page.png', scope, sys, { extensions: ['.repx'] })),
+      reason(resolveReadPath('big.png', scope, sys, { maxBytes: 20_000_000 })),
+      reason(resolveReadPath('sub', scope, sys)),
+      reason(resolveWritePath('sub', scope, sys)),
+      reason(resolveReadPath('missing.png', scope, sys)),
+    ];
+    expect(said[0]).toMatch(/named as a file of credentials, which Forma never opens\.$/);
+    expect(said[1]).toMatch(/is not a \.repx file/);
+    expect(said[2]).toMatch(/30000000 bytes, more than the 20000000 Forma reads\.$/);
+    expect(said[3]).toMatch(/is not a file/);
+    expect(said[4]).toMatch(/is a folder, not a file/);
+    expect(said[5]).toMatch(/There is no file at/);
+    for (const s of said) expect(s).not.toMatch(MODEL_WORDS);
+  });
+});
+
+describe("the command line's refusals before the file system, Windows rules", () => {
+  it.each([
+    ['\\\\host\\share\\x.repx', /another computer, which Forma never opens/],
+    ['//host/share/x.repx', /another computer, which Forma never opens/],
+    ['/\\host\\share\\x.repx', /another computer, which Forma never opens/],
+    ['//g/DevFiles/x.repx', /If you meant drive G:, give "G:\\\\DevFiles\\\\x\.repx"/],
+    ['\\\\?\\G:\\very\\long\\x.png', /^"\\\\\\\\\?\\\\G:\\\\very\\\\long\\\\x\.png" is the long form of a path on drive G:; give it as "G:\\\\very\\\\long\\\\x\.png"\.$/],
+    ['\\\\.\\G:\\x.png', /long form of a path on drive G:; give it as "G:\\\\x\.png"/],
+    ['/g/DevFiles/x.repx', /Git Bash or WSL path; give "G:\\\\DevFiles\\\\x\.repx"/],
+    ['~\\x.repx', /starts with ~; give the full path of the home folder/],
+    ['file:///G:/a/x.repx', /is a URL; give a path, "G:\\\\a\\\\x\.repx"/],
+    ['x.repx:hidden', /has a ':', which names a hidden stream of a file; give a plain file path/],
+    ['G:\\proj\\x.repx:ads', /after the drive letter/],
+    ['G:x.repx', /relative to the current folder of drive G:; give the full path/],
+    ['\\a\\x.repx', /root of whichever drive is current; give it with its drive letter/],
+    ['"x.repx"', /in quotes; give the path without them/],
+    [' x.repx', /space; give the path without it/],
+    ['sub\\CON', /device \(CON\)/],
+    ['sub\\nul.repx', /device \(NUL\)/],
+    ['a?.repx', /does not allow/],
+    ['sub. \\x.repx', /ending in a space or a dot/],
+    ['', /^Give the path to the file\.$/],
+  ])('refuses %j without touching the disk', (raw, words) => {
+    const fs = untouchable();
+    const sys = { path: win32, fs, home: 'C:\\Users\\me' };
+    for (const verdict of [parsePath(raw, { base: 'G:\\proj' }, sys), resolveReadPath(raw, { base: 'G:\\proj' }, sys), resolveWritePath(raw, { base: 'G:\\proj' }, sys)]) {
+      expect(verdict).toEqual({ ok: false, reason: expect.stringMatching(words) });
+      expect(verdict.ok ? '' : verdict.reason).not.toMatch(MODEL_WORDS);
+    }
+    expect(fs.calls).toEqual([]);
+  });
+
+  it('refuses every path when the command runs in a folder on another computer, without touching the disk', () => {
+    const fs = untouchable();
+    const sys = { path: win32, fs };
+    for (const raw of ['x.repx', 'G:\\proj\\x.repx']) {
+      expect(resolveReadPath(raw, { base: '\\\\host\\share\\work' }, sys)).toEqual({ ok: false, reason: expect.stringMatching(/^Forma cannot use the folder the command is run in: "\\\\\\\\host\\\\share\\\\work" names a path on another computer, which Forma never opens\.$/) });
+    }
+    expect(fs.calls).toEqual([]);
+  });
+
+  it("refuses a link on the way to another computer, the working folder's own way included, never following it", () => {
+    const fs = fakeFs(win32, {
+      dirs: ['G:\\proj'],
+      files: { 'G:\\proj\\a.repx': 1 },
+      links: { 'G:\\proj\\uncl': '\\\\host\\share\\' },
+    });
+    const sys = { path: win32, fs };
+    expect(resolveReadPath('uncl\\x.repx', { base: 'G:\\proj' }, sys)).toEqual({ ok: false, reason: expect.stringMatching(/goes through a link to another computer, which Forma never opens\.$/) });
+    expect(resolveReadPath('G:\\proj\\a.repx', { base: 'G:\\proj\\uncl\\work' }, sys)).toEqual({ ok: false, reason: expect.stringMatching(/^Forma cannot use the folder the command is run in: .* goes through a link to another computer/) });
+    expect(resolveReadPath('a.repx', { base: 'G:\\proj' }, sys)).toEqual({ ok: true, path: 'G:\\proj\\a.repx' });
+    expect(fs.calls.filter((c) => c.startsWith('network'))).toEqual([]);
+  });
+});
+
+describe("the command line's refusals before the file system, POSIX rules", () => {
+  it.each([
+    ['G:\\x.repx', /Windows path, and Forma is running on another system; give a path such as/],
+    ['//host/x.repx', /two slashes; give it with one/],
+    ['~/x.repx', /starts with ~; give the full path of the home folder, "\/home\/me\/x\.repx"/],
+    ['file:///home/u/x.repx', /is a URL; give a path, "\/home\/u\/x\.repx"/],
+    ['x.repx ', /space/],
+  ])('refuses %j without touching the disk', (raw, words) => {
+    const fs = untouchable();
+    const sys = { path: posix, fs, home: '/home/me' };
+    const verdict = resolveReadPath(raw, { base: '/srv/proj' }, sys);
+    expect(verdict).toEqual({ ok: false, reason: expect.stringMatching(words) });
+    expect(verdict.ok ? '' : verdict.reason).not.toMatch(MODEL_WORDS);
+    expect(fs.calls).toEqual([]);
+  });
+
+  it('resolves a relative name against the working folder', () => {
+    expect(parsePath('in/a.png', { base: '/srv/proj' }, { path: posix, fs: untouchable() })).toEqual({ ok: true, path: '/srv/proj/in/a.png' });
+    expect(parsePath('../a.png', { base: '/srv/proj' }, { path: posix, fs: untouchable() })).toEqual({ ok: true, path: '/srv/a.png' });
+  });
+});
+
+describe("the server's words are unchanged by the command line's mode", () => {
+  it('still refuses a relative path, and names forma_status when a path is outside', () => {
+    const fs = untouchable();
+    expect(parsePath('x.repx', [plainRoot('G:\\proj')], { path: win32, fs })).toEqual({ ok: false, reason: expect.stringMatching(/not a full path; send the full path \(this server cannot see your shell's current folder\)/) });
+    expect(resolveReadPath('C:\\x.repx', [plainRoot('G:\\proj')], { path: win32, fs })).toEqual({ ok: false, reason: expect.stringMatching(/outside the folders this server may use; forma_status lists them/) });
+    expect(fs.calls).toEqual([]);
   });
 });
 
@@ -375,6 +592,35 @@ describe('on this computer', () => {
     }
     expect(nodePathFs.readlink(join(base, 'unc'))).toMatch(/^[\\/]{2}nohost\.invalid[\\/]share[\\/]$/);
   });
+
+  it("judges the command line's relative paths against a real working folder, and refuses a real junction out of it", () => {
+    // CLI-3 and SEC-1: a directory link a checkout carries out of the folder the command runs in is never followed out.
+    const base = realpathSync.native(mkdtempSync(join(scratch, 'cli-')));
+    const work = join(base, 'work');
+    const outside = join(base, 'outside');
+    mkdirSync(work);
+    mkdirSync(outside);
+    writeFileSync(join(work, 'page.png'), 'x');
+    writeFileSync(join(outside, 'secret.png'), 'x');
+    symlinkSync(outside, join(work, 'link'), 'junction');
+    const sys = nodeSystem();
+    const scope: WorkingFolder = { base: work };
+    expect(resolveReadPath('page.png', scope, sys)).toEqual({ ok: true, path: join(work, 'page.png') });
+    expect(resolveReadPath(join('link', 'secret.png'), scope, sys)).toEqual({ ok: false, reason: expect.stringMatching(/outside the folder the command is run in; Forma follows no link out of it/) });
+    expect(resolveWritePath(join('link', 'new.repx'), scope, sys)).toEqual({ ok: false, reason: expect.stringMatching(/outside the folder the command is run in/) });
+    // The same file named by its own full path is the person's to name.
+    expect(resolveReadPath(join(outside, 'secret.png'), scope, sys)).toEqual({ ok: true, path: join(outside, 'secret.png') });
+    expect(resolveWritePath(join('out', 'r.repx'), scope, sys, { extensions: ['.repx'] })).toEqual({ ok: true, path: join(work, 'out', 'r.repx') });
+    // SEC-W2-2, the review's probe on real links: the working folder reached through another link to it, its own link out still refused.
+    const alias = join(base, 'work-alias');
+    symlinkSync(work, alias, 'junction');
+    expect(resolveReadPath(join(alias, 'link', 'secret.png'), scope, sys)).toEqual({ ok: false, reason: expect.stringMatching(/outside the folder the command is run in; Forma follows no link out of it/) });
+    expect(resolveReadPath(join('link', 'secret.png'), { base: alias }, sys)).toEqual({ ok: false, reason: expect.stringMatching(/outside the folder the command is run in/) });
+    expect(resolveReadPath(join(alias, 'page.png'), scope, sys)).toEqual({ ok: true, path: join(work, 'page.png') });
+    // From a subfolder, a link in the folder above reached by .. is followed, by design (paths.ts's header).
+    mkdirSync(join(work, 'sub'));
+    expect(resolveReadPath(join('..', 'link', 'secret.png'), { base: join(work, 'sub') }, sys)).toEqual({ ok: true, path: join(outside, 'secret.png') });
+  });
 });
 
 describe('writeOutput', () => {
@@ -396,9 +642,9 @@ describe('writeOutput', () => {
     const dir = mkdtempSync(join(scratch, 'write-'));
     const target = join(dir, 'out.repx');
     writeFileSync(target, 'old');
-    expect(writeOutput(target, bytes('new'), nodeWriteFs, sys, { overwrite: true })).toEqual({ path: target, status: 'replaced' });
+    expect(writeOutput(target, bytes('new'), nodeWriteFs, sys, { ifExists: 'replace' })).toEqual({ path: target, status: 'replaced' });
     expect(readFileSync(target, 'utf8')).toBe('new');
-    expect(writeOutput(join(dir, 'fresh.repx'), bytes('x'), nodeWriteFs, sys, { overwrite: true })).toEqual({ path: join(dir, 'fresh.repx'), status: 'written' });
+    expect(writeOutput(join(dir, 'fresh.repx'), bytes('x'), nodeWriteFs, sys, { ifExists: 'replace' })).toEqual({ path: join(dir, 'fresh.repx'), status: 'written' });
     expect(readdirSync(dir).filter((n) => n.includes('forma-partial'))).toEqual([]);
   });
 
@@ -446,5 +692,65 @@ describe('writeOutput', () => {
     const { files, wfs } = memoryWrites('EACCES');
     expect(() => writeOutput('/x/out.repx', bytes('mine'), wfs, posix, { random: () => 'r' })).toThrow('EACCES');
     expect([...files.keys()]).toEqual([]);
+  });
+
+  // The command line's modes (2026-11-24, the CLI and Forma Designer work's wave 2, CLI-6).
+  it("refuses a taken name with other content, writing nothing and leaving no partial file, and finds the same bytes unchanged", () => {
+    const dir = mkdtempSync(join(scratch, 'refuse-'));
+    const target = join(dir, 'out.repx');
+    expect(writeOutput(target, bytes('one'), nodeWriteFs, sys, { ifExists: 'refuse' })).toEqual({ path: target, status: 'written' });
+    expect(writeOutput(target, bytes('one'), nodeWriteFs, sys, { ifExists: 'refuse' })).toEqual({ path: target, status: 'unchanged' });
+    expect(writeOutput(target, bytes('two'), nodeWriteFs, sys, { ifExists: 'refuse' })).toEqual({ path: target, status: 'exists' });
+    expect(readFileSync(target, 'utf8')).toBe('one');
+    expect(readdirSync(dir)).toEqual(['out.repx']);
+  });
+
+  it('refuses, on disk, a file that appeared after its path was judged free and before the write: the check that counts is the one at the write', () => {
+    const dir = realpathSync.native(mkdtempSync(join(scratch, 'race-')));
+    const target = join(dir, 'out.repx');
+    const pathSys = { path: sys, fs: nodePathFs };
+    expect(resolveWritePath(target, { base: dir }, pathSys)).toEqual({ ok: true, path: target });
+    writeFileSync(target, 'theirs');
+    expect(writeOutput(target, bytes('ours'), nodeWriteFs, sys, { ifExists: 'refuse' })).toEqual({ path: target, status: 'exists' });
+    expect(readFileSync(target, 'utf8')).toBe('theirs');
+    expect(readdirSync(dir)).toEqual(['out.repx']);
+  });
+
+  /** A file system in memory where another writer's file lands at `target` once the partial file is written, between the check and the placing. */
+  function raced(target: string, theirs: Uint8Array, linkError?: string) {
+    const made = memoryWrites(linkError);
+    const writeNew = made.wfs.writeNew;
+    let renamed = false;
+    made.wfs.writeNew = (p, d) => {
+      writeNew(p, d);
+      made.files.set(target, theirs);
+    };
+    made.wfs.rename = (from, to) => {
+      renamed = true;
+      made.files.set(to, made.files.get(from) as Uint8Array);
+      made.files.delete(from);
+    };
+    return { ...made, renamed: () => renamed };
+  }
+
+  it.each([
+    ['refuse', { path: '/x/out.repx', status: 'exists' }, 'theirs'],
+    ['replace', { path: '/x/out.repx', status: 'replaced' }, 'ours'],
+    ['beside', { path: '/x/out (2).repx', status: 'beside' }, 'theirs'],
+  ] as const)('with %s, says what happened to a file that appeared between the check and the write', (ifExists, said, left) => {
+    const { files, wfs } = raced('/x/out.repx', bytes('theirs'));
+    expect(writeOutput('/x/out.repx', bytes('ours'), wfs, posix, { ifExists, random: () => 'r' })).toEqual(said);
+    expect(new TextDecoder().decode(files.get('/x/out.repx'))).toBe(left);
+    expect([...files.keys()].filter((k) => k.includes('forma-partial'))).toEqual([]);
+  });
+
+  it('replaces by a rename only when the name is taken, so a free name is written, and refuses through the copy where links are not supported', () => {
+    const free = raced('/elsewhere/other.repx', bytes('unrelated'));
+    expect(writeOutput('/x/out.repx', bytes('ours'), free.wfs, posix, { ifExists: 'replace', random: () => 'r' })).toEqual({ path: '/x/out.repx', status: 'written' });
+    expect(free.renamed()).toBe(false);
+    const fat = raced('/x/out.repx', bytes('theirs'), 'EPERM');
+    expect(writeOutput('/x/out.repx', bytes('ours'), fat.wfs, posix, { ifExists: 'refuse', random: () => 'r' })).toEqual({ path: '/x/out.repx', status: 'exists' });
+    expect(fat.used).toContain('copy');
+    expect(new TextDecoder().decode(fat.files.get('/x/out.repx'))).toBe('theirs');
   });
 });

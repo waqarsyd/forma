@@ -28,20 +28,32 @@
  *   is a Node one (2026-11-24, the wave-4 review's REV4-3): workerPool.ts
  *   starts worker.mjs, which loads only tsx's loader and pipeline.ts, and the
  *   walk below reads both as files of src/mcp.
- * - The entry's order (stdio.ts): the stdout guard is its only static
- *   import and is installed before its first lazy import; the guard imports
- *   only Node built-ins and the key scrubber the web app shares
- *   (lib/keyRedact.ts since wave 8), which imports nothing; the launcher,
- *   run.mjs, loads only tsx's loader and the entry. The AI tools' worker
- *   thread (genWorker.mjs, wave 8) is a Node one of worker.mjs's shape,
- *   started only by generator.ts.
+ * - Each entry's order (`ENTRIES`: stdio.ts, and the command line's
+ *   cliEntry.ts once its wave 4 writes it): the stdout guard is its only
+ *   static import and is installed before its first lazy import, which is
+ *   aiSettings.ts, a module that loads no package at all; the AI's
+ *   environment is taken there (`takeAiEnv`), in the entry's own voice, and
+ *   applied with exactly what that gave (its keys to the guard, its names
+ *   deleted, nothing of the entry's own) before the next lazy import, so
+ *   before anything can load the Gemini SDK or start a worker (2026-11-24,
+ *   the CLI and Forma Designer work's CLI-9 and TEST-2, and SEC-W2-1 of its
+ *   wave-2 review; stdio.test.ts shows the keys reaching the guard, with a
+ *   key in a shape no pattern knows). The guard imports only Node
+ *   built-ins and the key scrubber the web app shares (lib/keyRedact.ts
+ *   since wave 8), which imports nothing; the launcher, run.mjs, loads only
+ *   tsx's loader and the entry. The AI tools' worker thread (genWorker.mjs,
+ *   wave 8) is a Node one of worker.mjs's shape, started only by
+ *   generator.ts.
  * - Never the v1 SDK, @modelcontextprotocol/sdk: it is in the tree (through
  *   firebase-tools and @google/genai) and would resolve silently, speaking
  *   only the 2025 protocol.
  * - Stdio only, no port: src/mcp opens no listener of any kind, which is
  *   what makes it the user's own program rather than a server (PRD section 6).
  * - Only src/mcp may read a key from the environment, and within it only
- *   the entry touches the environment at all; it never loads dotenv.
+ *   the entries touch the environment at all, never loading dotenv. Each
+ *   hands its environment to aiSettings.ts's `takeAiEnv`, which is the one
+ *   shape below these readers cannot see, decided (CLI-9): its own test
+ *   hands it a proxy that fails on any read of a name it does not list.
  *   Outside it, the reads that exist are named below with their reasons, so
  *   a new one fails here until someone decides it belongs.
  *
@@ -57,6 +69,7 @@ import { builtinModules } from 'node:module';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import type { Voice } from './caller';
 
 const CLONE = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const rel = (abs: string) => relative(CLONE, abs).split(sep).join('/');
@@ -71,6 +84,19 @@ function filesUnder(dir: string): string[] {
 
 const SRC = filesUnder('src');
 const SCRIPTS = filesUnder('scripts');
+
+/**
+ * The entries of src/mcp, the only files in it that may touch the
+ * environment, each held to the same order below and to taking its
+ * environment in its own voice, the one given here (2026-11-24, findings
+ * CLI-9 and TEST-2 of the command line's design audit, and SEC-W2-1 of that
+ * work's wave-2 review): the MCP server's, and, once the command line's wave
+ * 4 writes it, its own, which joins this map as one more line,
+ * 'src/mcp/cliEntry.ts': 'cli'. Until then a cliEntry.ts that touched the
+ * environment would fail the environment case, as any other file would, and
+ * one that copied stdio.ts's line, voice and all, would fail the voice.
+ */
+const ENTRIES: Record<string, Voice> = { 'src/mcp/stdio.ts': 'mcp' };
 const ROOT = ['server.ts', 'vite.config.ts', 'vitest.config.ts', 'vitest.rules.config.ts'].map((f) => join(CLONE, f)).filter(existsSync);
 const inMcp = (abs: string) => rel(abs).startsWith('src/mcp/');
 const inServer = (abs: string) => rel(abs).startsWith('src/server/');
@@ -266,6 +292,41 @@ describe('the import boundaries', () => {
     expect([...seen].map(rel)).toEqual(expect.arrayContaining(['src/mcp/run.mjs', 'src/mcp/stdio.ts', 'src/mcp/formaServer.ts', 'src/mcp/roots.ts', 'src/lib/keyRedact.ts', 'src/mcp/genWorker.mjs', 'src/mcp/genJobs.ts']));
   });
 
+  it("the command line's layer loads neither the MCP SDK nor zod, nor any module only the server needs, through any import of Forma's own, static or lazy", () => {
+    // 2026-11-24, findings CLI-2 and SEC-4 of the command line's design audit: what the command line is to import on its
+    // main thread (the calls, the path rules, reading and writing a report, the AI's settings, the two generators, the stdout
+    // guard, Forma's version) and the work its two threads run (genJobs.ts, pipeline.ts). ToolRefusal lived in toolShape.ts,
+    // which loads zod, so every one of them loaded zod until it moved to caller.ts. A package's own dependencies are not
+    // walked (@google/genai depends on zod itself, inside the AI tools' thread); what is held is that Forma's modules never
+    // name either on the command line's way. CLI_LAYER is the one list of that layer: cliVoice.test.ts reads it from this
+    // file and walks from it, so whatever the layer loads has its words read. SERVER_ONLY names the server's own modules and
+    // the tests' helpers, which the layer never reaches, toolList.ts (every MCP tool's name) among them since the wave-2
+    // review (SEC-W2-4: an import of it from the layer passed here, and cliVoice.test.ts skipped it by name).
+    const CLI_LAYER = ['reportCalls.ts', 'paths.ts', 'reportFile.ts', 'caller.ts', 'version.ts', 'aiSettings.ts', 'generator.ts', 'workerPool.ts', 'stdoutGuard.ts', 'genJobs.ts', 'pipeline.ts'].map((f) => join(CLONE, 'src', 'mcp', f));
+    const SERVER_ONLY = ['toolShape.ts', 'formaServer.ts', 'aiTools.ts', 'reportTools.ts', 'statusTool.ts', 'roots.ts', 'skillResource.ts', 'toolList.ts', 'stdio.ts', 'run.mjs', 'testFs.ts', 'testClient.ts'].map((f) => `src/mcp/${f}`);
+    const seen = new Set<string>(CLI_LAYER);
+    const queue = [...CLI_LAYER];
+    const problems: string[] = [];
+    while (queue.length) {
+      const file = queue.shift() as string;
+      for (const spec of runtimeSpecifiersOf(text(file))) {
+        if (spec === 'zod' || spec.startsWith('zod/') || spec.startsWith('@modelcontextprotocol/')) problems.push(`${rel(file)} -> ${spec}`);
+        const target = resolveRelative(file, spec);
+        if (!target) continue;
+        if (SERVER_ONLY.includes(rel(target))) problems.push(`${rel(file)} -> ${rel(target)}`);
+        if (!seen.has(target)) {
+          seen.add(target);
+          queue.push(target);
+        }
+      }
+    }
+    expect(problems).toEqual([]);
+    // The walk really happened: it reached the Node parts, the web app's generation core, and the scrubber.
+    expect([...seen].map(rel)).toEqual(expect.arrayContaining(['src/mcp/nodeGeneration.ts', 'src/lib/generationCore.ts', 'src/lib/keyRedact.ts', 'src/services/geminiService.ts']));
+    // And it would have caught the import it was written for.
+    expect(runtimeSpecifiersOf(text(join(CLONE, 'src', 'mcp', 'toolShape.ts')))).toContain('zod');
+  });
+
   it('finds every shape of write to stdout that the guard cannot catch', () => {
     const shapes = [
       "writeSync(1, 'x')",
@@ -290,15 +351,130 @@ describe('the import boundaries', () => {
   });
 });
 
+/** Where each lazy import in a source begins, and the specifier it names, in order. */
+function lazyImportsOf(source: string): { at: number; spec: string }[] {
+  return [...source.matchAll(new RegExp(String.raw`\bimport\s*\(\s*${COMMENTS}['"\`]([^'"\`]+)['"\`]\s*\)`, 'g'))].map((m) => ({ at: m.index ?? -1, spec: m[1] }));
+}
+
+/**
+ * What is wrong with an entry's hardening (aiSettings.ts's header), with
+ * `voice` the one ENTRIES gives it. In order: its first lazy import is
+ * aiSettings.ts; then exactly one call of takeAiEnv, destructured where it is
+ * made, `const { ..., secrets, remove } = takeAiEnv(process.env, '<voice>')`,
+ * in the entry's own voice; then `guard.addSecrets(secrets)`, the only call
+ * that hands the guard keys, with that `secrets` and nothing else; then
+ * `for (const name of remove) delete process.env[name]`, over that `remove`;
+ * all of it before the next lazy import. And `secrets` and `remove` bound and
+ * used nowhere else (the wave-2 review's SEC-W2-1: the reader once checked
+ * only that calls of these names came in this order, so `addSecrets([])`, the
+ * guard handed Forma's two keys alone, a list of its own to delete, and
+ * another entry's voice all passed); no other deletion from, or write to, the
+ * environment. Empty when it is right. `body` is the source without its
+ * comments.
+ */
+function hardeningProblems(body: string, voice: Voice): string[] {
+  const problems: string[] = [];
+  const lazy = lazyImportsOf(body);
+  if (lazy[0]?.spec !== './aiSettings') problems.push(`its first lazy import is ${lazy[0]?.spec ?? 'nothing'}, not ./aiSettings`);
+  const takes = [...body.matchAll(/\bconst\s*\{([^{}]*)\}\s*=\s*takeAiEnv\(\s*process\.env\s*,\s*'(\w+)'\s*\)/g)];
+  if (takes.length !== 1 || (body.match(/\btakeAiEnv\b/g) ?? []).length !== 2) problems.push('takeAiEnv(process.env, voice) is not imported once and called once, its result destructured where it is called');
+  const take = takes[0];
+  if (take && take[2] !== voice) problems.push(`it takes its environment in the voice '${take[2]}', not its own, '${voice}'`);
+  const fields = (take?.[1] ?? '').split(',').map((f) => f.trim());
+  if (!fields.includes('secrets') || !fields.includes('remove')) problems.push("takeAiEnv's secrets and remove are not destructured by those names");
+  const taken = take?.index ?? -1;
+  const secrets = body.search(/\bguard\.addSecrets\(\s*secrets\s*\)/);
+  const deleted = body.search(/\bfor\s*\(\s*const\s+(\w+)\s+of\s+remove\s*\)\s*delete\s+process\.env\[\s*\1\s*\]/);
+  if (taken < 0 || taken < (lazy[0]?.at ?? Infinity)) problems.push('takeAiEnv(process.env, voice) is not called after aiSettings.ts is imported');
+  if (secrets < 0 || secrets < taken) problems.push('the keys takeAiEnv gave do not reach the guard, by guard.addSecrets(secrets), after they are taken');
+  if ((body.match(/\baddSecrets\s*\(/g) ?? []).length !== 1) problems.push('the guard is handed keys other than by guard.addSecrets(secrets)');
+  if (deleted < 0 || deleted < secrets) problems.push('the names takeAiEnv gave (remove) are not deleted after the keys reach the guard');
+  for (const name of ['secrets', 'remove']) {
+    // The destructuring and the one use: any other binding, assignment or use of either name is a list of the entry's own.
+    if ((body.match(new RegExp(String.raw`(?<![\w$.])${name}(?![\w$])`, 'g')) ?? []).length !== 2) problems.push(`${name} is bound or used other than by takeAiEnv's destructuring and its one use`);
+  }
+  if ((lazy[1]?.at ?? Infinity) < Math.max(taken, secrets, deleted)) problems.push(`${lazy[1].spec} is imported before the hardening is done`);
+  if ((body.match(/\bdelete\s+process\.env\b/g) ?? []).length !== 1) problems.push('it deletes from the environment other than by the list aiSettings.ts gives');
+  if (/\bprocess\.env(?:\.\w+|\[[^\]]+\])\s*=[^=]/.test(body)) problems.push('it writes to the environment');
+  return problems;
+}
+
 describe("the entry's order", () => {
-  it('installs the stdout guard before anything else loads: its only static import, called before the first lazy import', () => {
-    const entry = text(join(CLONE, 'src', 'mcp', 'stdio.ts'));
+  it.each(Object.keys(ENTRIES))('%s installs the stdout guard before anything else loads: its only static import, called before the first lazy import', (entryPath) => {
+    const entry = text(join(CLONE, entryPath));
     expect(staticSpecifiersOf(entry)).toEqual(['./stdoutGuard']);
     const body = code(entry);
     const installed = body.indexOf('installStdoutGuard(');
     const firstLazy = body.search(/\bimport\s*\(/);
     expect(installed).toBeGreaterThan(-1);
     expect(firstLazy).toBeGreaterThan(installed);
+  });
+
+  it("reads the hardening it is meant to, and refuses the ways of breaking it written here: a step out of order or left out, the guard handed other keys or another list deleted than takeAiEnv's, another voice, any other deletion or write", () => {
+    const lines = {
+      guard: 'const guard = installStdoutGuard();',
+      settings: "const { readAiSettings, takeAiEnv } = await import('./aiSettings');",
+      take: "const { aiEnv, secrets, remove } = takeAiEnv(process.env, 'cli');",
+      secrets: 'guard.addSecrets(secrets);',
+      remove: 'for (const name of remove) delete process.env[name];',
+      next: "const { workerGenerator } = await import('./generator');",
+    };
+    const shape = (...keys: (keyof typeof lines)[]) => keys.map((k) => lines[k]).join('\n');
+    const right = shape('guard', 'settings', 'take', 'secrets', 'remove', 'next');
+    expect(hardeningProblems(right, 'cli')).toEqual([]);
+    // The order, and a step left out.
+    expect(hardeningProblems(shape('guard', 'next', 'settings', 'take', 'secrets', 'remove'), 'cli')).not.toEqual([]);
+    expect(hardeningProblems(shape('guard', 'settings', 'take', 'secrets', 'next', 'remove'), 'cli')).not.toEqual([]);
+    expect(hardeningProblems(shape('guard', 'settings', 'take', 'remove', 'secrets', 'next'), 'cli')).not.toEqual([]);
+    expect(hardeningProblems(shape('guard', 'settings', 'take', 'secrets', 'next'), 'cli')).not.toEqual([]);
+    // Another deletion, and a write.
+    expect(hardeningProblems(`${right}\ndelete process.env.GEMINI_API_KEY;`, 'cli')).not.toEqual([]);
+    expect(hardeningProblems(`${right}\nprocess.env.FORMA_GEMINI_KEY = '';`, 'cli')).not.toEqual([]);
+    // SEC-W2-1: the guard handed nothing, or Forma's two keys alone (GEMINI_API_KEY's and GOOGLE_API_KEY's values dropped).
+    expect(hardeningProblems(right.replace('guard.addSecrets(secrets);', 'guard.addSecrets([]);'), 'cli')).not.toEqual([]);
+    expect(hardeningProblems(right.replace('guard.addSecrets(secrets);', 'guard.addSecrets([aiEnv.FORMA_GEMINI_KEY, aiEnv.FORMA_OPENROUTER_KEY]);'), 'cli')).not.toEqual([]);
+    expect(hardeningProblems(right.replace('guard.addSecrets(secrets);', 'guard.addSecrets(secrets);\nguard.addSecrets([process.env.X]);'), 'cli')).not.toEqual([]);
+    // A list of the entry's own to delete, in place of takeAiEnv's or shadowing it, and a result never destructured.
+    expect(hardeningProblems(right.replace('{ aiEnv, secrets, remove }', '{ aiEnv, secrets }').replace('for (const name', "const remove = ['GEMINI_API_KEY'];\nfor (const name"), 'cli')).not.toEqual([]);
+    expect(hardeningProblems(right.replace('for (const name', "{ const remove = ['GEMINI_API_KEY']; }\nfor (const name"), 'cli')).not.toEqual([]);
+    expect(hardeningProblems(right.replace('const { aiEnv, secrets, remove } = takeAiEnv', 'const taken = takeAiEnv').replace('addSecrets(secrets)', 'addSecrets(taken.secrets)').replace('of remove', 'of taken.remove'), 'cli')).not.toEqual([]);
+    // Another entry's voice: stdio.ts's line copied into the command line's entry, or the other way round.
+    expect(hardeningProblems(right, 'mcp')).toEqual([expect.stringMatching(/in the voice 'cli', not its own, 'mcp'/)]);
+  });
+
+  it.each(Object.keys(ENTRIES))(
+    "%s takes the AI's environment through aiSettings.ts, in its own voice, and applies it before anything that can load the Gemini SDK or start a worker: the keys it took to the guard, then the names it took deleted, before its second lazy import",
+    (entryPath) => {
+      // 2026-11-24, CLI-9 and TEST-2: the hardening was inline in stdio.ts, its foreign names a literal there alone, so a
+      // second entry could only have copied it. aiSettings.ts lists them once; each entry applies what it takes, in order.
+      expect(hardeningProblems(code(text(join(CLONE, entryPath))), ENTRIES[entryPath])).toEqual([]);
+    },
+  );
+
+  it('aiSettings.ts, imported before the hardening, loads no package, no Node built-in and nothing that starts a worker, however deep', () => {
+    const start = join(CLONE, 'src', 'mcp', 'aiSettings.ts');
+    const seen = new Set<string>([start]);
+    const queue = [start];
+    const problems: string[] = [];
+    while (queue.length) {
+      const file = queue.shift() as string;
+      const source = text(file);
+      if (/\bnew\s+Worker\s*\(/.test(code(source))) problems.push(`${rel(file)} starts a worker`);
+      for (const spec of runtimeSpecifiersOf(source)) {
+        const target = resolveRelative(file, spec);
+        if (!target) {
+          problems.push(`${rel(file)} -> ${spec}`);
+          continue;
+        }
+        if (!seen.has(target)) {
+          seen.add(target);
+          queue.push(target);
+        }
+      }
+    }
+    expect(problems).toEqual([]);
+    // What it loads today: the web app's AI settings, which name the Gemini SDK's module only as a type.
+    expect([...seen].map(rel).sort()).toEqual(['src/lib/aiProvider.ts', 'src/mcp/aiSettings.ts']);
   });
 
   it('the guard imports only Node built-ins and the shared key scrubber, and the scrubber imports nothing', () => {
@@ -330,7 +506,9 @@ describe("the entry's order", () => {
     // 2026-11-24, finding CLI-8 of the command line's design audit: tsx given no tsconfig applies the one in the folder the
     // host started in, the user's project. Through import.meta.dirname, so no launcher imports more than the cases above
     // allow, and never through TSX_TSCONFIG_PATH, which the environment case below would refuse. stdio.test.ts starts
-    // the server from a folder whose tsconfig.json breaks each thread unless its launcher does this.
+    // the server from a folder whose tsconfig.json breaks the thread that answers and the AI tools' thread unless their
+    // launchers do this; the report tools' thread names no package on start since the CLI work's wave 2, so no `paths`
+    // reaches it, and this case is all that holds worker.mjs's pin (the wave-2 review's EQ-1).
     const launchers = SRC.filter((f) => inMcp(f) && !isTest(f) && specifiersOf(text(f)).includes('tsx/esm/api'));
     expect(launchers.map(rel).sort()).toEqual(['src/mcp/genWorker.mjs', 'src/mcp/run.mjs', 'src/mcp/worker.mjs']);
     for (const file of launchers) {
@@ -443,9 +621,9 @@ describe('only src/mcp reads a key from the environment', () => {
     expect(found).toEqual(KNOWN_OUTSIDE);
   });
 
-  it('within src/mcp only the entry touches the environment, and nothing loads dotenv', () => {
+  it('within src/mcp only the entries touch the environment, and nothing loads dotenv', () => {
     const mcp = SRC.filter((f) => inMcp(f) && !isTest(f));
-    expect(mcp.filter((f) => touchesEnv(text(f))).map(rel)).toEqual(['src/mcp/stdio.ts']);
+    expect(mcp.filter((f) => touchesEnv(text(f))).map(rel).sort()).toEqual(Object.keys(ENTRIES).sort());
     expect(mcp.filter((f) => specifiersOf(text(f)).some((s) => s.startsWith('dotenv'))).map(rel)).toEqual([]);
   });
 });

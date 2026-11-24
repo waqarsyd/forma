@@ -23,8 +23,8 @@
  * Pure ASCII.
  */
 import type { AgentEdit } from '../lib/agentEdit';
+import { ToolRefusal, type Voice } from './caller';
 import { fileLines, openReport, type LayoutKind } from './reportFile';
-import { ToolRefusal } from './toolShape';
 
 /** A Designer file read beside a `.vsrepx`, for the names it looks up (GAP1-3). */
 export interface DesignerText {
@@ -71,7 +71,12 @@ export interface Results {
 }
 
 export type JobName = keyof Jobs;
-export type Job = { [T in JobName]: { tool: T } & Jobs[T] }[JobName];
+/**
+ * A job: its tool, what that tool is sent, and whose words the refusals and
+ * notices are in (caller.ts `Voice`; since the CLI and Forma Designer work's
+ * wave 2, CLI-10), plain data, since a function cannot cross to the worker.
+ */
+export type Job = { [T in JobName]: { tool: T; voice: Voice } & Jobs[T] }[JobName];
 /** What reading the report found: whether a login was taken out, whether a connection changed, and the notices. */
 export type ReportRead = { loginRemoved: boolean; connectionsChanged: boolean; notices: string[] };
 export type Done<T extends JobName> = { report: ReportRead } & Results[T];
@@ -160,7 +165,7 @@ const WORK: { [T in JobName]: (job: Jobs[T], xml: string) => Promise<Results[T]>
 
 /** Opens the report a job carries and runs its tool's work on it. Throws a `ToolRefusal` in plain words. */
 export async function runJob<T extends JobName>(job: Extract<Job, { tool: T }>): Promise<Done<T>> {
-  const opened = openReport(job.text, job.name);
+  const opened = openReport(job.text, job.name, job.voice);
   const work = WORK[job.tool as T] as (job: Jobs[T], xml: string) => Promise<Results[T]>;
   const result = await work(job as unknown as Jobs[T], opened.xml);
   return { report: { loginRemoved: opened.loginRemoved, connectionsChanged: opened.connectionsChanged, notices: opened.notices }, ...result } as Done<T>;

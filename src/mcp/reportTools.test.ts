@@ -577,7 +577,7 @@ describe("the worker's bounds: each ends the call, never the server (REV4-3)", (
   it('ends a job when its call is cancelled', async () => {
     const pipeline = workerPipeline({ log: () => {}, spawn: silent });
     const stop = new AbortController();
-    const job = pipeline.run({ tool: 'audit', name: 'r.repx', text: report() }, stop.signal);
+    const job = pipeline.run({ tool: 'audit', voice: 'mcp', name: 'r.repx', text: report() }, stop.signal);
     setTimeout(() => stop.abort(), 50);
     await expect(job).rejects.toThrow('cancelled');
     await pipeline.close();

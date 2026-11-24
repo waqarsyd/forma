@@ -23,22 +23,26 @@
  *   1. The stdout guard is the only static import, and it is installed
  *      before anything else is loaded (static imports are evaluated before
  *      the body, so everything else is imported dynamically after it).
- *   2. The environment is read here and nowhere else in src/mcp: the roots'
+ *   2. The environment is touched here and nowhere else in src/mcp but the
+ *      command line's own entry, to come (boundaries.test.ts): the roots'
  *      two variables, and since wave 8 the AI's (aiSettings.ts names them:
  *      FORMA_GEMINI_KEY, FORMA_PROVIDER, OpenRouter's and Local AI's, the
- *      model pin, the locale and the mock switch), copied out by name and
- *      handed to readAiSettings, which reads nothing itself. The keys'
- *      values go to the guard first (`addSecrets`), so from then on each is
- *      taken out of every line on stderr and every result by its value, a
- *      key in a format the patterns do not know included (SEC-7; no Local
- *      AI token is read, so none is handed over); GEMINI_API_KEY's and
- *      GOOGLE_API_KEY's too, which are then deleted from the environment
- *      with Google's Vertex AI switches before anything loads the Gemini
- *      SDK, which would fall back on them by itself (SEC-9, DOC-4); Forma's
- *      two key variables are deleted too once copied, so no worker thread
- *      inherits them (each job carries its settings). No
- *      dotenv: a .env in the host's working folder is never this server's
- *      business (SEC-9).
+ *      model pin, the locale and the mock switch). Since the CLI and Forma
+ *      Designer work's wave 2 (2026-11-24, CLI-9, TEST-2) what is taken is
+ *      aiSettings.ts's `takeAiEnv`, one list for both entries, the first
+ *      thing imported after the guard, which loads no SDK and starts
+ *      nothing; this file applies it, in its old order. The keys' values go
+ *      to the guard first (`addSecrets`), so from then on each is taken out
+ *      of every line on stderr and every result by its value, a key in a
+ *      format the patterns do not know included (SEC-7; no Local AI token is
+ *      read, so none is handed over); GEMINI_API_KEY's and GOOGLE_API_KEY's
+ *      too, which are then deleted from the environment with Google's Vertex
+ *      AI switches before anything loads the Gemini SDK, which would fall
+ *      back on them by itself (SEC-9, DOC-4); Forma's two key variables are
+ *      deleted too once copied, so no worker thread inherits them (each job
+ *      carries its settings). The AI's values go to readAiSettings, which
+ *      reads nothing itself. No dotenv: a .env in the host's working folder
+ *      is never this server's business (SEC-9).
  *   3. serveStdio serves both eras from one factory: a 2026-07-28 client
  *      opens with server/discover, a 2025-era client with initialize. Its
  *      transport writes through the guard's `protocolOut`, the one Writable
@@ -53,13 +57,16 @@
  * A test-only switch, FORMA_MCP_TEST_NOISE, used by stdio.test.ts and by
  * nothing else: `1` writes to console.log, console.info, console.debug and
  * process.stdout.write at start and every 25 ms, prints a key of each of AI
- * Studio's forms (built here at run time, never read from anywhere) through
- * those and the guard's own log, says its process id on stderr, and leaves
- * one promise rejected with no handler, so the test can show that stdout
- * still carries only JSON-RPC, that every key reaches stderr as "(a key)",
- * that the process the host started is the server itself, and that the
- * server keeps serving; `crash` throws an uncaught exception, so the test can
- * show the process then exits non-zero.
+ * Studio's forms and one in a shape no pattern knows (each built here at run
+ * time, never read from anywhere; the test sets the last as
+ * FORMA_GEMINI_KEY, so only the scrub by value can take it out, which shows
+ * this file handing the guard the keys `takeAiEnv` took: the CLI work's
+ * wave-2 review, SEC-W2-1) through those and the guard's own log, says its
+ * process id on stderr, and leaves one promise rejected with no handler, so
+ * the test can show that stdout still carries only JSON-RPC, that every key
+ * reaches stderr as "(a key)", that the process the host started is the
+ * server itself, and that the server keeps serving; `crash` throws an
+ * uncaught exception, so the test can show the process then exits non-zero.
  *
  * This file and run.mjs are outside the coverage measure: they run only in
  * the process stdio.test.ts spawns, which v8 coverage does not follow.
@@ -70,33 +77,25 @@ import { installStdoutGuard } from './stdoutGuard';
 
 const guard = installStdoutGuard();
 
-// The AI's settings, copied out by name; the keys' values to the guard before anything can print them.
-const aiEnv = {
-  FORMA_PROVIDER: process.env.FORMA_PROVIDER,
-  FORMA_GEMINI_KEY: process.env.FORMA_GEMINI_KEY,
-  FORMA_OPENROUTER_KEY: process.env.FORMA_OPENROUTER_KEY,
-  FORMA_OPENROUTER_MODEL: process.env.FORMA_OPENROUTER_MODEL,
-  FORMA_LOCAL_URL: process.env.FORMA_LOCAL_URL,
-  FORMA_LOCAL_MODEL: process.env.FORMA_LOCAL_MODEL,
-  FORMA_MODEL: process.env.FORMA_MODEL,
-  FORMA_LOCALE: process.env.FORMA_LOCALE,
-  FORMA_MCP_MOCK: process.env.FORMA_MCP_MOCK,
-};
-guard.addSecrets([aiEnv.FORMA_GEMINI_KEY, aiEnv.FORMA_OPENROUTER_KEY, process.env.GEMINI_API_KEY, process.env.GOOGLE_API_KEY]);
-// Never this server's: the Gemini SDK would take a key or a Vertex AI endpoint from these by itself (SEC-9, DOC-4).
-for (const name of ['GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GOOGLE_GENAI_USE_VERTEXAI', 'GOOGLE_CLOUD_PROJECT', 'GOOGLE_CLOUD_LOCATION']) delete process.env[name];
-// The keys live in the settings from here on, never in an environment a worker thread copies.
-for (const name of ['FORMA_GEMINI_KEY', 'FORMA_OPENROUTER_KEY']) delete process.env[name];
+// The AI's names, taken by aiSettings.ts's one list before anything that can load the Gemini SDK or start a worker (it
+// loads neither): the keys' values to the guard before anything can print them; then the Gemini SDK's own fallbacks, which
+// are never this server's (SEC-9, DOC-4), and Forma's key variables, which live in the settings from here on, never in an
+// environment a worker thread copies, are deleted.
+const { readAiSettings, takeAiEnv } = await import('./aiSettings');
+const { aiEnv, secrets, remove } = takeAiEnv(process.env, 'mcp');
+guard.addSecrets(secrets);
+for (const name of remove) delete process.env[name];
 
 const noise = process.env.FORMA_MCP_TEST_NOISE;
 if (noise) makeTestNoise(noise);
 
 const { serveStdio, StdioServerTransport } = await import('@modelcontextprotocol/server/stdio');
-const { createFormaServer, formaVersion, nodeSystem } = await import('./formaServer');
+const { createFormaServer } = await import('./formaServer');
+const { nodeSystem } = await import('./paths');
+const { formaVersion } = await import('./version');
 const { readEnvRoots } = await import('./roots');
 const { loadRepxSkill } = await import('./skillResource');
 const { workerPipeline } = await import('./workerPool');
-const { readAiSettings } = await import('./aiSettings');
 const { oneAtATime, workerGenerator } = await import('./generator');
 
 const system = nodeSystem();
@@ -139,12 +138,15 @@ function makeTestNoise(mode: string): void {
     console.debug('FORMA-NOISE console.debug');
     process.stdout.write('FORMA-NOISE process.stdout.write\n');
   };
-  // The same two keys stdio.test.ts builds; the guard must take each out on every path.
+  // The same keys stdio.test.ts builds; the guard must take each out on every path, the shapeless one by its value alone.
   const key = ['AI', 'za', 'Sy'].join('') + 'n'.repeat(33);
   const newer = ['A', 'Q.'].join('') + 'n'.repeat(40);
+  const shapeless = ['gq', '00'].join('') + 'f4aba7fbd7a9'.repeat(3);
   console.log(`FORMA-NOISE key on console.log ${key}`);
   process.stdout.write(`FORMA-NOISE key on process.stdout.write ${newer}\n`);
   guard.log(`FORMA-NOISE key on the guard's log ${key}`);
+  console.log(`FORMA-NOISE shapeless key on console.log ${shapeless}`);
+  guard.log(`FORMA-NOISE shapeless key on the guard's log ${shapeless}`);
   console.error(`FORMA-NOISE pid ${process.pid}`);
   say();
   setInterval(say, 25).unref();

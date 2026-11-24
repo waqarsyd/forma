@@ -54,7 +54,7 @@ const REPORT_READ = {
   loginRemoved: z.boolean(),
   notices: z.array(z.string()),
 };
-/** A file written, as every result that writes says it; the AI tools' too (aiTools.ts). */
+/** A file written, as every result that writes says it; the AI tools' too (aiTools.ts). The server never refuses a taken name, so `exists` (the command line's) is not here. */
 export const WRITTEN = z.looseObject({ path: z.string(), status: z.enum(['written', 'unchanged', 'replaced', 'beside']), bytes: z.number() });
 /** A finding's severity and code, its message under fromFile. */
 export const FINDING = z.looseObject({ severity: z.enum(['error', 'warning']), code: z.string() });
@@ -161,7 +161,7 @@ export function reportTools(sys: PathSystem, pipeline: Pipeline, wfs: WriteFs = 
         },
         async (args, tc) => {
           const { report } = await open(args.path, tc);
-          const done = await pipeline.run({ tool: 'audit', name: report.spelled, text: report.text }, tc.signal);
+          const done = await pipeline.run({ tool: 'audit', voice: 'mcp', name: report.spelled, text: report.text }, tc.signal);
           return {
             summary: `Audited ${JSON.stringify(report.path)}: ${done.audit.words}.`,
             data: { ...read(report, done.report), ...done.audit.data },
@@ -184,7 +184,7 @@ export function reportTools(sys: PathSystem, pipeline: Pipeline, wfs: WriteFs = 
         },
         async (args, tc) => {
           const { report } = await open(args.path, tc);
-          const done = await pipeline.run({ tool: 'outline', name: report.spelled, text: report.text }, tc.signal);
+          const done = await pipeline.run({ tool: 'outline', voice: 'mcp', name: report.spelled, text: report.text }, tc.signal);
           const counts = done.counts;
           return {
             summary: `Outlined ${JSON.stringify(report.path)}: ${plural(counts.bands, 'band')}, ${plural(counts.controls, 'control')}, ${plural(counts.fields, 'field')} printed, ${plural(counts.parameters, 'parameter')} and ${plural(counts.dataSources, 'SQL data source')}.`,
@@ -215,7 +215,7 @@ export function reportTools(sys: PathSystem, pipeline: Pipeline, wfs: WriteFs = 
           const kind = targetKind(target, report);
           const designers = kind === 'vsrepx' ? designersFor(report, target, roots) : [];
           // The developer's own code is kept (GAP1-3, SE-02b), in pipeline.ts.
-          const done = await pipeline.run({ tool: 'repair', name: report.spelled, text: report.text, target: kind, designers }, tc.signal);
+          const done = await pipeline.run({ tool: 'repair', voice: 'mcp', name: report.spelled, text: report.text, target: kind, designers }, tc.signal);
           const notices = [...done.report.notices];
           if (done.report.connectionsChanged && !done.report.loginRemoved) notices.push(CONNECTION_BY_NAME);
           // A repair writes even where its Designer looks up a name it lost, and says which (GAP1-3).
@@ -260,7 +260,7 @@ export function reportTools(sys: PathSystem, pipeline: Pipeline, wfs: WriteFs = 
           const kind = targetKind(target, report);
           const inPlace = overwrite && sameFile(target, report.path, sys);
           const designers = kind === 'vsrepx' ? designersFor(report, target, roots) : [];
-          const done = await pipeline.run({ tool: 'edit', name: report.spelled, text: report.text, target: kind, edits: args.edits, designers }, tc.signal);
+          const done = await pipeline.run({ tool: 'edit', voice: 'mcp', name: report.spelled, text: report.text, target: kind, edits: args.edits, designers }, tc.signal);
           if (inPlace && done.report.connectionsChanged) {
             throw new ToolRefusal(
               `${JSON.stringify(report.path)} ${done.report.loginRemoved ? 'kept a database login' : "stores its data source's connection with more than its name"}, which Forma removes before reading a report, so writing over it would take that out of your file. Leave overwrite off to write a new file.`,
@@ -289,7 +289,7 @@ export function reportTools(sys: PathSystem, pipeline: Pipeline, wfs: WriteFs = 
           }
           if (dropped) notices.push(droppedNotice(dropped));
           stillWanted(tc);
-          const written = writeReport(target, done.xml, wfs, sys, overwrite);
+          const written = writeReport(target, done.xml, wfs, sys, overwrite ? 'replace' : 'beside');
           return {
             summary: `${wroteWords(written)} ${plural(counts.applied, 'edit')} made${counts.declined ? `, ${counts.declined} declined` : ''}.`,
             data: { ...read(report, done.report), notices, written, ...counts },
@@ -316,7 +316,7 @@ export function reportTools(sys: PathSystem, pipeline: Pipeline, wfs: WriteFs = 
         async (args, tc) => {
           const { roots, report } = await open(args.path, tc);
           const target = outputPath(args.output, report, '.pdf', ['.pdf'], roots, sys);
-          const done = await pipeline.run({ tool: 'pdf', name: report.spelled, text: report.text, title: sys.path.basename(report.spelled) }, tc.signal);
+          const done = await pipeline.run({ tool: 'pdf', voice: 'mcp', name: report.spelled, text: report.text, title: sys.path.basename(report.spelled) }, tc.signal);
           const drawn = done.drawn;
           if (!drawn) throw new ToolRefusal(`No band could be read from ${JSON.stringify(report.path)}, so there is nothing to draw; repx_audit says what is wrong with it.`);
           stillWanted(tc);

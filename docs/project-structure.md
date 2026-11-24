@@ -639,22 +639,37 @@ src/
                        stray writes and stdout's end go to stderr, keys taken
                        out, by their shape and, once the entry hands them
                        over, by the values the server was given),
-                       formaServer (the factory: name, version from
-                       package.json, instructions, the tools registered
-                       from toolList, the REPX skill attached),
+                       formaServer (the factory: name, version,
+                       instructions, the tools registered from toolList,
+                       the REPX skill attached), version (Forma's version
+                       from package.json, for both entries, with no SDK),
                        toolList (the tools in their order, each read-only
                        or not and needing an AI or not: a pure list, no
                        SDK, which publicClaims.test.ts holds the Docs page
                        and README to),
                        toolShape (defineTool, the one wrapper every tool goes
                        through: every hint set, object schemas, plain isError
-                       results, text read from a file framed as data), paths
+                       results, text read from a file framed as data), caller
+                       (what every caller is told, the server's host or the
+                       command line: a refusal in plain words, the longest
+                       string read from a file a result carries, the one
+                       way a result is made safe to show, keys out and then
+                       the clip, and whose voice the words are in; no zod,
+                       no SDK), paths
                        (which path a tool may read or write: full paths only,
                        the corrected path handed back, roots held as spelled
                        and as they really are, checked before and after links
                        are followed, no link to another computer ever
                        followed, writes that never replace a file unless
-                       asked), roots (the folders, from FORMA_MCP_ROOTS, the
+                       asked; since the CLI and Forma Designer work's wave 2
+                       the command line's mode, a working folder in place of
+                       roots, a relative path resolved against it, each path
+                       judged by where it really is, so no link the working
+                       folder holds is followed out of it whatever name it
+                       was reached by, in a person's words, and what a
+                       write does with a taken
+                       name: beside, refuse or replace; the real platform's
+                       rules, nodeSystem), roots (the folders, from FORMA_MCP_ROOTS, the
                        client's roots asked for per connection era, or
                        CLAUDE_PROJECT_DIR, else each host's recipe),
                        statusTool (forma_status, the first tool),
@@ -713,11 +728,24 @@ src/
                        FORMA_PROVIDER, OpenRouter's and Local AI's, the model
                        pin, the locale and the mock switch; the web app's
                        gate, Local AI on this computer only, and the
-                       refusal that names what to set), aiTools
-                       (generate_report and revise_report on the thread that
-                       answers the host: the gate, the paths judged and the
-                       files read, the result written to a new file and
-                       said in the log, who answered and the switch note),
+                       refusal that names what to set; since the CLI and
+                       Forma Designer work's wave 2, takeAiEnv, what every
+                       entry takes out of its environment and deletes from
+                       it, one list for the server's and the command line's,
+                       and the words in each one's voice), aiTools
+                       (generate_report and revise_report as the server
+                       offers them: their schemas, the folders asked for,
+                       the progress, the summary and the line in the log
+                       naming the file written), reportCalls (their steps on
+                       the thread that answers, since the CLI and Forma
+                       Designer work's wave 2 for the server and the command
+                       line alike: the gate, the call's words and paths
+                       judged through the caller's policy, the files read
+                       at the call's turn, a failure's keys out before its
+                       cut, the report written by the policy's rule for a
+                       taken name, the result as plain data, unscrubbed
+                       until its caller shows it through caller's; no SDK,
+                       no zod),
                        genJobs (their work: makeReport through
                        nodeGeneration, and revise_report as the chat's own
                        path, stateless; the mock and a test's stand-ins
@@ -740,7 +768,13 @@ src/
                        aiSettings, generator and aiTools have one each
                        (aiTools' drives both AI tools in both eras, the AI
                        stood in: the refusal, the queue, progress, a
-                       cancellation, the switch note, no key in any result);
+                       cancellation, the switch note, no key in any result),
+                       and so does reportCalls (the same calls as the
+                       command line is to make them: a working folder, a
+                       person's words, a taken name refused); cliVoice.test.ts
+                       holds what the command line is told to none of the
+                       server's words, read from the source of every module
+                       it runs and heard from its calls;
                        stdio.test.ts spawns the exact command a host runs;
                        boundaries.test.ts holds src/mcp and src/server
                        apart from the browser code

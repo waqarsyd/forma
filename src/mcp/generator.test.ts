@@ -13,7 +13,7 @@ import { ToolRefusal } from './toolShape';
 
 afterEach(() => vi.useRealTimers());
 
-const JOB = { kind: 'revise', config: { version: '', unit: '', pageSize: '' }, request: 'x', name: 'x', text: '' } as GenJob;
+const JOB = { kind: 'revise', voice: 'mcp', config: { version: '', unit: '', pageSize: '' }, request: 'x', name: 'x', text: '' } as GenJob;
 
 describe('progressReporter', () => {
   const reporter = (options: { heartbeatMs?: number; gapMs?: number } = {}) => {
@@ -258,6 +258,20 @@ describe('workerGenerator', () => {
     await expect(refused).rejects.toBeInstanceOf(ToolRefusal);
     await expect(refused).rejects.toThrow('No, in plain words.');
     await refusing.close();
+  });
+
+  it("refuses past its deadline in the job's own words: a person at a command line hears of one report, never one call (CLI-10)", async () => {
+    const slow = workerGenerator({ setup: { mock: true }, log: () => {}, limits: { deadlineMs: 100 }, spawn: scripted("parentPort.on('message', () => {});") });
+    const said = await slow.run({ ...JOB, voice: 'cli' }, new AbortController().signal, () => {}).catch((e: unknown) => e as Error);
+    expect(said).toBeInstanceOf(ToolRefusal);
+    expect((said as Error).message).toBe(genTooLong(100, 'cli'));
+    expect((said as Error).message).toContain('the longest one report may take');
+    await slow.close();
+    expect(genTooMuchMemory(GEN_LIMITS.heapMb, 'cli')).toMatch(/the most one report may use\..*; give fewer or smaller files\. Nothing was written\.$/);
+    // The server's words are what they were.
+    expect(genTooLong(100)).toBe(genTooLong(100, 'mcp'));
+    expect(genTooLong(15 * 60_000)).toContain('the longest one call may take');
+    expect(genTooMuchMemory(GEN_LIMITS.heapMb)).toContain('; send fewer or smaller files.');
   });
 
   it('keeps a failure inside the work for the log, and names the bounds a generation runs within', async () => {

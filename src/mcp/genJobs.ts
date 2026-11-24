@@ -2,10 +2,11 @@
  * The work of the MCP server's two AI tools, generate_report and
  * revise_report, as it runs in their worker thread (2026-11-24, the MCP
  * work's wave 8): genWorker.mjs runs `makeRunner` there, generator.ts starts
- * that thread with a memory bound and a deadline sized for a generation, and
- * aiTools.ts, on the thread that answers the host, judges the paths, reads
- * the files, writes the result and shapes what the host is told. The tests
- * run the same runner in their own thread, with the AI stood in.
+ * that thread with a memory bound and a deadline sized for a generation,
+ * reportCalls.ts, on the thread that answers, judges the paths, reads the
+ * files and writes the result (since the CLI and Forma Designer work's wave
+ * 2, for the command line too), and aiTools.ts shapes what the host is told.
+ * The tests run the same runner in their own thread, with the AI stood in.
  *
  * Nothing here writes a file; whatever it returns crosses to the other thread
  * by structured clone, so it holds only data.
@@ -59,6 +60,20 @@
  * elicited. The house font from the memory is not applied: the server keeps
  * no memory.
  *
+ * ## Whose words
+ *
+ * A job carries its caller's voice (caller.ts `Voice`) as plain data, since
+ * a function cannot cross to the worker (the CLI and Forma Designer work's
+ * wave 2, CLI-10): the few phrases that name the caller's own way of doing
+ * a thing are said to a host's model as the server's (`repx_pdf`, this
+ * server, `fromFile`, revise_report in the log) and to a person at a command
+ * line as its own (the pdf command, the command line, the label its output
+ * gives the stand-in fonts, revise in the log), from `WORDS`. The command
+ * line's words for the stand-in fonts promise that its output lists the
+ * families under "stand-in fonts", which its wave 4 prints. Everything else
+ * the work says is the same to both, and the server's words are exactly
+ * what they were.
+ *
  * ## The mock, and a test's stand-ins
  *
  * With `mock` (FORMA_MCP_MOCK) the design is the mock invoice and the chat's
@@ -76,8 +91,8 @@ import type { ChatOutcome, ChatTurn, ReportConfig, chatReply } from '../services
 import { nodeGeneration, type MakeHooks, type MakeStage, type NodeGeneration } from './nodeGeneration';
 import { fileFrom } from './nodeIntake';
 import { audited, jobFailure, type Audited, type ReportRead } from './pipeline';
+import { ToolRefusal, type Voice } from './caller';
 import { CONNECTION_BY_NAME, fileLines, openReport } from './reportFile';
-import { ToolRefusal } from './toolShape';
 
 /** What the runner is made with: plain data, so it crosses to the worker thread as `workerData`. */
 export interface GenSetup {
@@ -112,6 +127,8 @@ export interface InputFile {
 
 export interface GenerateJob {
   kind: 'generate';
+  /** Whose words the work's own phrases are in (the header's *Whose words*). */
+  voice: Voice;
   /** The stored settings, the AI's among them (aiSettings.ts). */
   config: ReportConfig;
   /** The description, or what to make from the files. */
@@ -122,6 +139,7 @@ export interface GenerateJob {
 
 export interface ReviseJob {
   kind: 'revise';
+  voice: Voice;
   config: ReportConfig;
   /** What to change, in words. */
   request: string;
@@ -196,13 +214,34 @@ export interface ReviseDone {
 
 export type GenDone = GenerateDone | ReviseDone;
 
+/** The phrases of the work that a host's model and a person at a command line are told differently (the header's *Whose words*). */
+const WORDS = {
+  mcp: {
+    standInFonts:
+      'Some fonts the report names were measured in a stand-in on this machine (fromFile.standInFonts names them); line breaks and the print check are approximate for them.',
+    pdf: 'repx_pdf draws a draft PDF',
+    noPreview: 'which this server does not have',
+    revise: 'revise_report',
+  },
+  cli: {
+    standInFonts: 'Some fonts the report names were measured in a stand-in on this machine (listed as stand-in fonts); line breaks and the print check are approximate for them.',
+    pdf: 'the pdf command draws a draft PDF',
+    noPreview: 'which the command line does not have',
+    revise: 'revise',
+  },
+} as const satisfies Record<Voice, Record<string, string>>;
+
 /**
  * The notice a report made through the core carries when some of its fonts
- * were measured in a stand-in on this machine (GAP2-4). The families are the
- * report's text, so the result names them under fromFile, never here.
+ * were measured in a stand-in on this machine (GAP2-4), in the server's
+ * words. The families are the report's text, so the result names them under
+ * fromFile, never here; the command line's words name the label its output
+ * lists them under (`standInFontsNotice('cli')`).
  */
-export const STAND_IN_FONTS =
-  'Some fonts the report names were measured in a stand-in on this machine (fromFile.standInFonts names them); line breaks and the print check are approximate for them.';
+export const STAND_IN_FONTS = WORDS.mcp.standInFonts;
+
+/** The stand-in fonts notice in the caller's words; the server's is `STAND_IN_FONTS`. */
+export const standInFontsNotice = (voice: Voice): string => WORDS[voice].standInFonts;
 
 /** Runs the AI tools' jobs on one set of Node parts, assembled on the first job. */
 export interface GenRunner {
@@ -218,7 +257,7 @@ const stoppedError = () => Object.assign(new Error('The operation was aborted.')
  * sentence's own closing stop taken off, since a result's words go on after
  * it (the wave-8 review's W8C-3: "rate limit.. Nothing was written."). Never
  * cut short here (W8C-1): this thread has no scrubber, and a key cut in two
- * is no longer its value, so aiTools.ts cuts it only once its keys are out,
+ * is no longer its value, so reportCalls.ts `failureSaid` cuts it only once its keys are out,
  * and the result's own clip comes after the scrub too.
  */
 export function failureWords(error: unknown): string {
@@ -258,7 +297,7 @@ function printedOf(findings: readonly { severity: 'error' | 'warning'; code: str
  * wave-1 review's FONTS-R1), so an error is a line in the log and the report
  * goes out without the notice.
  */
-function measuredInStandIns(gen: NodeGeneration, xml: string, notices: string[], log: (line: string) => void): string[] {
+function measuredInStandIns(gen: NodeGeneration, xml: string, notices: string[], log: (line: string) => void, voice: Voice): string[] {
   let families: string[];
   try {
     families = gen.standInFonts(xml);
@@ -266,21 +305,23 @@ function measuredInStandIns(gen: NodeGeneration, xml: string, notices: string[],
     log(`The fonts the report names could not be checked for a stand-in, so the result does not say whether any was measured in one: ${failureWords(error)}`);
     return [];
   }
-  if (families.length && !notices.includes(STAND_IN_FONTS)) notices.push(STAND_IN_FONTS);
+  const notice = standInFontsNotice(voice);
+  if (families.length && !notices.includes(notice)) notices.push(notice);
   return families;
 }
 
-/** A tool the chat brought that has no equivalent here, said in plain words; '' for one dropped without a word. */
-function notHere(tool: AgentTool): string {
+/** A tool the chat brought that has no equivalent here, said in plain words and the caller's own (the header); '' for one dropped without a word. */
+function notHere(tool: AgentTool, voice: Voice): string {
+  const w = WORDS[voice];
   switch (tool.name) {
     case 'export':
-      return `Exporting it as ${(tool.format ?? 'repx').toUpperCase()} is not done here: repx_pdf draws a draft PDF, and Forma's Preview exports the rest.`;
+      return `Exporting it as ${(tool.format ?? 'repx').toUpperCase()} is not done here: ${w.pdf}, and Forma's Preview exports the rest.`;
     case 'designer':
       return 'Opening it in the DevExpress designer is not done here: open the file written in Visual Studio or Forma Designer.';
     case 'undo':
       return 'Undo is not done here: the file you named is never changed, so keeping it is the undo.';
     case 'testData':
-      return "Sample rows are not made here: they fill Forma's Preview, which this server does not have.";
+      return `Sample rows are not made here: they fill Forma's Preview, ${w.noPreview}.`;
     default:
       return '';
   }
@@ -326,13 +367,13 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
     const base = { kind: 'generate' as const, notices: [...made.notices], pictures: made.pictures, translated: null, audit: null, printed: printedOf([]), standInFonts: [] as string[] };
     if (made.ok) {
       const xml = await asWritten(made.repxContent);
-      const standInFonts = measuredInStandIns(gen, xml, base.notices, log);
+      const standInFonts = measuredInStandIns(gen, xml, base.notices, log, job.voice);
       return { ...base, xml, by: answerer(made.by), note: made.note, standIn: null, failure: '', translated: made.translated, audit: await audited(xml), printed: printedOf(made.response.printFindings), standInFonts };
     }
     const failure = failureWords(made.error);
     if (made.standIn?.result.repxContent) {
       const xml = await asWritten(made.standIn.result.repxContent);
-      const standInFonts = measuredInStandIns(gen, xml, base.notices, log);
+      const standInFonts = measuredInStandIns(gen, xml, base.notices, log, job.voice);
       return { ...base, xml, by: null, note: '', standIn: made.standIn.source, failure, audit: await audited(xml), standInFonts };
     }
     return { ...base, xml: '', by: null, note: '', standIn: null, failure };
@@ -340,7 +381,8 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
 
   async function revise(job: ReviseJob, gen: NodeGeneration, signal: AbortSignal, tell: (event: GenEvent) => void): Promise<ReviseDone | null> {
     tell({ stage: 'reading' });
-    const opened = openReport(job.text, job.name);
+    const w = WORDS[job.voice];
+    const opened = openReport(job.text, job.name, job.voice);
     const open = opened.xml;
     const report: ReportRead = { loginRemoved: opened.loginRemoved, connectionsChanged: opened.connectionsChanged, notices: opened.notices };
     const notices: string[] = [];
@@ -365,7 +407,7 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
     } catch (error) {
       // Every AI set up failed: said in plain words, nothing written (a wrong key, a limit, a server not running).
       if (signal.aborted) return null;
-      log(`revise_report: the AI did not answer: ${failureWords(error)}`);
+      log(`${w.revise}: the AI did not answer: ${failureWords(error)}`);
       return { ...empty, action: 'answer', by: null, failure: failureWords(error) };
     }
     if (signal.aborted) return null;
@@ -384,10 +426,10 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
 
     // The chat's tools: a translation only when the words ask for it; the rest have no equivalent here (PROTO-9).
     const split = agent.splitTools(outcome.tools ?? [], job.request);
-    if (split.dropped.length) log(`revise_report dropped what the request did not ask for: ${split.dropped.map((t) => t.name).join(', ')}.`);
+    if (split.dropped.length) log(`${w.revise} dropped what the request did not ask for: ${split.dropped.map((t) => t.name).join(', ')}.`);
     const translateTool = split.now.find((t) => t.name === 'translate');
     for (const tool of split.now) {
-      const said = notHere(tool);
+      const said = notHere(tool, job.voice);
       if (said && !notices.includes(said)) notices.push(said);
     }
     const declinedTools = outcome.toolsDeclined ?? [];
@@ -407,7 +449,7 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
       } catch (error) {
         if (signal.aborted) throw error;
         notices.push(`The report could not be translated into ${language}; it stays as it was.`);
-        log(`revise_report: the translation failed: ${failureWords(error)}`);
+        log(`${w.revise}: the translation failed: ${failureWords(error)}`);
         return { xml, translated: null };
       }
     };
@@ -431,7 +473,7 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
         note: [...notes].join(' '),
         translated: made.translated,
         audit: await audited(xml),
-        standInFonts: measuredInStandIns(gen, xml, notices, log),
+        standInFonts: measuredInStandIns(gen, xml, notices, log, job.voice),
       };
     };
 
@@ -460,7 +502,7 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
           if (more?.changed) done = { xml: more.xml, applied: [...done.applied, ...more.applied], appliedOps: [...done.appliedOps, ...more.appliedOps], declined: more.declined, changed: true };
         } catch (error) {
           if (signal.aborted) return null;
-          log(`revise_report: the second pass did not answer; the first stands: ${failureWords(error)}`);
+          log(`${w.revise}: the second pass did not answer; the first stands: ${failureWords(error)}`);
         }
       }
       if (done.changed) {

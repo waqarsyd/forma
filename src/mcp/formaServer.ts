@@ -38,21 +38,23 @@
  *
  * Pure ASCII.
  */
-import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { posix, win32 } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/server';
 import type { SkillsExtension } from '@modelcontextprotocol/server/ext/skills';
 import { FORMA_KEYS, redactorFor } from '../lib/keyRedact';
 import { readAiSettings } from './aiSettings';
 import { aiTools, type AiToolsOptions } from './aiTools';
-import { nodePathFs, type PathSystem } from './paths';
+import type { PathSystem } from './paths';
 import { createRootResolver, type EnvRoots } from './roots';
 import { reportTools } from './reportTools';
 import { registerStatus } from './statusTool';
 import { TOOL_LIST, type ToolEntry, type ToolName } from './toolList';
 import type { ToolDeps } from './toolShape';
 import type { Pipeline } from './workerPool';
+
+// Forma's version and the real platform's path rules, in modules of their own since the CLI and Forma Designer work's
+// wave 2 (2026-11-24, CLI-2), so the command line has them without the MCP SDK this file loads; re-exported here.
+export { nodeSystem } from './paths';
+export { formaVersion } from './version';
 
 /** Said in the instructions while no tool calls an AI; formaServer.test.ts holds it to toolList.ts's `needsAi`. */
 export const NO_AI_TOOLS = 'No tool of this server calls an AI or needs a key.';
@@ -72,16 +74,6 @@ export const FORMA_INSTRUCTIONS = [
   `- ${TOOL_LIST.some((t) => t.needsAi) ? AI_TOOLS : NO_AI_TOOLS}`,
   '- A result names every file it wrote. A tool never replaces an existing file unless the call asks it to.',
 ].join('\n');
-
-/** Forma's version, from package.json. */
-export function formaVersion(): string {
-  return (JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version: string }).version;
-}
-
-/** The real platform's path rules, file system and home folder. */
-export function nodeSystem(platform: string = process.platform): PathSystem {
-  return { path: platform === 'win32' ? win32 : posix, fs: nodePathFs, home: homedir() };
-}
 
 export interface FormaServerOptions {
   envRoots: EnvRoots;

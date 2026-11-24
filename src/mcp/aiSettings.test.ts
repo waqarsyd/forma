@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import { SET_UP_AI } from '../lib/aiProvider';
 import { fallbacksFor } from '../lib/fallbackChain';
-import { AI_ENV_NAMES, HOW_TO_SET_UP, localUrlProblem, notReadyMessage, readAiSettings } from './aiSettings';
+import { AI_ENV_NAMES, FOREIGN_AI_ENV, HOW_TO_SET_UP, howToSetUp, localUrlProblem, notReadyMessage, readAiSettings, takeAiEnv } from './aiSettings';
 
 const geminiKey = ['AI', 'za', 'Sy'].join('') + 'C'.repeat(33);
 const openRouterKey = ['sk', 'or', 'v1'].join('-') + '-' + 'cd34'.repeat(16);
@@ -98,6 +98,105 @@ describe('readAiSettings', () => {
     expect(s).toMatchObject({ ready: true, mock: true, model: 'gemini-3-flash', locale: 'de-DE' });
     expect(readAiSettings({ FORMA_GEMINI_KEY: geminiKey, FORMA_MCP_MOCK: '0' }).mock).toBe(false);
     expect([...AI_ENV_NAMES].sort()).toEqual(['FORMA_GEMINI_KEY', 'FORMA_LOCALE', 'FORMA_LOCAL_MODEL', 'FORMA_LOCAL_URL', 'FORMA_MCP_MOCK', 'FORMA_MODEL', 'FORMA_OPENROUTER_KEY', 'FORMA_OPENROUTER_MODEL', 'FORMA_PROVIDER']);
+  });
+});
+
+describe('takeAiEnv, what an entry takes out of its environment (CLI-9, TEST-2)', () => {
+  const newer = ['A', 'Q.'].join('') + 'n'.repeat(40);
+  const full = {
+    FORMA_GEMINI_KEY: ` ${geminiKey} `,
+    FORMA_OPENROUTER_KEY: openRouterKey,
+    FORMA_OPENROUTER_MODEL: 'm',
+    FORMA_PROVIDER: 'gemini',
+    FORMA_MCP_MOCK: '1',
+    GEMINI_API_KEY: newer,
+    GOOGLE_API_KEY: '',
+    GOOGLE_GENAI_USE_VERTEXAI: 'true',
+    FORMA_MCP_ROOTS: '/home/me/reports',
+    CLAUDE_PROJECT_DIR: '/home/me/project',
+    PATH: '/usr/bin',
+  };
+
+  it('reads only the names it lists, never the rest of the environment, and changes nothing', () => {
+    for (const voice of ['mcp', 'cli'] as const) {
+      const read: string[] = [];
+      const source = new Proxy({ ...full }, {
+        get: (target, name) => {
+          read.push(String(name));
+          return Reflect.get(target, name);
+        },
+        ownKeys: () => {
+          throw new Error('takeAiEnv must not walk the environment');
+        },
+        set: () => {
+          throw new Error('takeAiEnv must not write to the environment');
+        },
+        deleteProperty: () => {
+          throw new Error('takeAiEnv must not delete from the environment; the entry does');
+        },
+      });
+      takeAiEnv(source, voice);
+      expect([...new Set(read)].sort(), voice).toEqual([...new Set([...AI_ENV_NAMES.filter((n) => voice === 'mcp' || n !== 'FORMA_MCP_MOCK'), 'GEMINI_API_KEY', 'GOOGLE_API_KEY'])].sort());
+      expect(read, voice).not.toContain('FORMA_MCP_ROOTS');
+      expect(read, voice).not.toContain('CLAUDE_PROJECT_DIR');
+    }
+  });
+
+  it("gives the AI's values by name, every key for the scrubber, and the names to delete: the Gemini SDK's own fallbacks, then Forma's two key variables", () => {
+    const taken = takeAiEnv(full, 'mcp');
+    expect(taken.aiEnv).toEqual({
+      FORMA_PROVIDER: 'gemini',
+      FORMA_GEMINI_KEY: ` ${geminiKey} `,
+      FORMA_OPENROUTER_KEY: openRouterKey,
+      FORMA_OPENROUTER_MODEL: 'm',
+      FORMA_LOCAL_URL: undefined,
+      FORMA_LOCAL_MODEL: undefined,
+      FORMA_MODEL: undefined,
+      FORMA_LOCALE: undefined,
+      FORMA_MCP_MOCK: '1',
+    });
+    // As they were set: the scrubber trims them itself. A blank one is none.
+    expect(taken.secrets).toEqual([` ${geminiKey} `, openRouterKey, newer]);
+    expect(taken.remove).toEqual([...FOREIGN_AI_ENV, 'FORMA_GEMINI_KEY', 'FORMA_OPENROUTER_KEY']);
+    expect([...FOREIGN_AI_ENV]).toEqual(['GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GOOGLE_GENAI_USE_VERTEXAI', 'GOOGLE_CLOUD_PROJECT', 'GOOGLE_CLOUD_LOCATION']);
+    expect(takeAiEnv({}, 'mcp')).toEqual({ aiEnv: expect.any(Object), secrets: [], remove: taken.remove });
+  });
+
+  it("leaves the server's mock switch out for the command line, whose mock is its --mock flag, and takes and deletes the rest alike", () => {
+    const cli = takeAiEnv(full, 'cli');
+    expect(Object.keys(cli.aiEnv)).not.toContain('FORMA_MCP_MOCK');
+    expect(cli.secrets).toEqual(takeAiEnv(full, 'mcp').secrets);
+    expect(cli.remove).toEqual(takeAiEnv(full, 'mcp').remove);
+    // A FORMA_MCP_MOCK the command line is handed anyway is never read: the flag alone turns the mock on.
+    expect(readAiSettings({ ...cli.aiEnv, FORMA_MCP_MOCK: '1' }, { voice: 'cli' }).mock).toBe(false);
+    expect(readAiSettings(cli.aiEnv, { voice: 'cli', mock: true })).toMatchObject({ ready: true, mock: true, voice: 'cli' });
+    // The server's reading is what it was.
+    expect(readAiSettings(takeAiEnv(full, 'mcp').aiEnv)).toMatchObject({ ready: true, mock: true, voice: 'mcp' });
+  });
+});
+
+describe("the command line's words (CLI-10)", () => {
+  it('says where the settings go and how to start again in its own words, and the same names to set', () => {
+    const said = notReadyMessage(readAiSettings({}, { voice: 'cli' }));
+    expect(said.startsWith(SET_UP_AI)).toBe(true);
+    expect(said).toContain('No AI is set up.');
+    expect(said).toContain(howToSetUp('cli'));
+    expect(said).toContain('the environment the command runs in');
+    for (const name of ['FORMA_GEMINI_KEY', 'FORMA_OPENROUTER_KEY', 'FORMA_OPENROUTER_MODEL', 'FORMA_LOCAL_MODEL', 'FORMA_LOCAL_URL', 'FORMA_PROVIDER']) expect(said, name).toContain(name);
+    expect(said).toMatch(/^[\x20-\x7e]+$/);
+    // The server's message is the server's, word for word.
+    expect(notReadyMessage(readAiSettings({}))).toBe([SET_UP_AI, 'No AI is set up for this server.', HOW_TO_SET_UP].join(' '));
+    expect(howToSetUp('mcp')).toBe(HOW_TO_SET_UP);
+  });
+
+  it('says a reference was left unexpanded, and a Local AI address refused, without the server, the assistant or a restart of either', () => {
+    expect(readAiSettings({ FORMA_GEMINI_KEY: '%FORMA_GEMINI_KEY%' }, { voice: 'cli' }).problems).toEqual([
+      'FORMA_GEMINI_KEY arrived as %FORMA_GEMINI_KEY%, a reference nothing expanded, so it is not set: set the variable it names in the environment the command runs in, then run the command again.',
+    ]);
+    expect(localUrlProblem('http://user:pw@localhost:1234/v1', 'cli')).toBe('FORMA_LOCAL_URL holds a user name or password, which Forma never sends; give the address alone.');
+    expect(localUrlProblem('http://192.168.1.20:11434/v1', 'cli')).toMatch(/; Forma refuses any other address\.$/);
+    expect(readAiSettings({ FORMA_LOCAL_URL: 'http://192.168.1.20:11434/v1', FORMA_LOCAL_MODEL: 'q' }, { voice: 'cli' }).problems[0]).toMatch(/; Forma refuses any other address\.$/);
+    expect(localUrlProblem('http://192.168.1.20:11434/v1')).toMatch(/; this server refuses any other address\.$/);
   });
 });
 

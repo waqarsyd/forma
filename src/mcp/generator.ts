@@ -15,8 +15,9 @@
  * workerPool.ts's 30 seconds, since one report may cost six requests and the
  * fidelity benchmark recorded single runs of four minutes. Running out of
  * memory or passing the deadline ends the thread and becomes a refusal in
- * plain words; a cancellation ends it at once, so no request goes out after
- * it and nothing it made is written (PROTO-4). One thread is kept idle
+ * plain words, the job's own (its voice, since the CLI and Forma Designer
+ * work's wave 2, CLI-10); a cancellation ends it at once, so no request goes
+ * out after it and nothing it made is written (PROTO-4). One thread is kept idle
  * between calls, unref'd so it never holds the process open, with Forma's
  * models already read; a thread ended for any reason is replaced by the
  * next call. Its stdout and stderr are its own, read here line by line into
@@ -62,9 +63,9 @@
  * Pure ASCII.
  */
 import { Worker } from 'node:worker_threads';
+import { ToolRefusal, type Voice } from './caller';
 import type { GenDone, GenEvent, GenJob, GenSetup, GenStage } from './genJobs';
-import { ToolRefusal } from './toolShape';
-import { toLog, workerError, type PipelineLimits } from './workerPool';
+import { ONE_CALL, toLog, workerError, type PipelineLimits } from './workerPool';
 
 /**
  * A job, or what makes it once the call has its turn (the wave-8 review's
@@ -93,13 +94,16 @@ function movable(job: GenJob): ArrayBuffer[] {
 /** How long one AI call may take, and how much memory its thread may use. */
 export const GEN_LIMITS: PipelineLimits = { deadlineMs: 15 * 60_000, heapMb: 2048, stackMb: 4 };
 
-/** The refusal when an AI call passes its deadline. */
-export const genTooLong = (ms: number) =>
-  `Forma stopped working on this report after ${Math.round(ms / 60_000)} minutes, the longest one call may take. The AI may be slow or out of reach; try again later, or with fewer pages. Nothing was written.`;
+/** The refusal when an AI call passes its deadline, in the job's words (the server's by default; CLI-10). */
+export const genTooLong = (ms: number, voice: Voice = 'mcp') =>
+  `Forma stopped working on this report after ${Math.round(ms / 60_000)} minutes, the longest ${ONE_CALL[voice]} may take. The AI may be slow or out of reach; try again later, or with fewer pages. Nothing was written.`;
 
-/** The refusal when an AI call runs out of memory. */
-export const genTooMuchMemory = (mb: number) =>
-  `Forma stopped working on this report when it needed more than ${mb} MB of memory, the most one call may use. A file this costly to read is usually damaged, or far larger than a report needs; send fewer or smaller files. Nothing was written.`;
+/** The refusal when an AI call runs out of memory, in the job's words. */
+export const genTooMuchMemory = (mb: number, voice: Voice = 'mcp') =>
+  `Forma stopped working on this report when it needed more than ${mb} MB of memory, the most ${ONE_CALL[voice]} may use. A file this costly to read is usually damaged, or far larger than a report needs; ${voice === 'cli' ? 'give' : 'send'} fewer or smaller files. Nothing was written.`;
+
+/** What the work's thread is called in an error for the log, by whose it is. */
+const WORKER_NAME: Record<Voice, string> = { mcp: "the AI tools' worker", cli: "the AI's worker" };
 
 const GEN_WORKER_FILE = new URL('./genWorker.mjs', import.meta.url);
 
@@ -175,11 +179,11 @@ export function workerGenerator(options: WorkerGeneratorOptions): Generator {
           else end(false, () => reject(workerError(reply.error)));
         };
         const onError = (error: Error & { code?: string }) =>
-          end(false, () => reject(error.code === 'ERR_WORKER_OUT_OF_MEMORY' ? new ToolRefusal(genTooMuchMemory(limits.heapMb)) : error));
-        const onExit = (code: number) => end(false, () => reject(new Error(`the AI tools' worker stopped before it answered (exit code ${code})`)));
+          end(false, () => reject(error.code === 'ERR_WORKER_OUT_OF_MEMORY' ? new ToolRefusal(genTooMuchMemory(limits.heapMb, job.voice)) : error));
+        const onExit = (code: number) => end(false, () => reject(new Error(`${WORKER_NAME[job.voice] ?? WORKER_NAME.mcp} stopped before it answered (exit code ${code})`)));
         // Ended at once: no request goes out after a cancellation, and what it made is never written.
         const onAbort = () => end(false, () => resolve(null));
-        const timer = setTimeout(() => end(false, () => reject(new ToolRefusal(genTooLong(limits.deadlineMs)))), limits.deadlineMs);
+        const timer = setTimeout(() => end(false, () => reject(new ToolRefusal(genTooLong(limits.deadlineMs, job.voice)))), limits.deadlineMs);
         worker.on('message', onMessage);
         worker.on('error', onError);
         worker.on('exit', onExit);
