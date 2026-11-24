@@ -320,7 +320,7 @@ describe('the report commands, which need no AI', () => {
     const [line, summary] = json.json();
     expect(json.lines).toHaveLength(2);
     expect(line).toMatchObject({ type: 'input', command: 'audit', input: join('reports', 'a.repx'), status: 'done', exitCode: 0, path: join(dir, 'reports', 'a.repx'), kind: 'repx', loginRemoved: false, errors: 0 });
-    expect(summary).toEqual({ type: 'summary', command: 'audit', inputs: 1, done: 1, errors: 0, skipped: 0, draft: 0, exists: 0, refused: 0, failed: 0, declined: 0, limit: 0, notStarted: 0, stopped: 0, internal: 0, exitCode: 0 });
+    expect(summary).toEqual({ type: 'summary', command: 'audit', inputs: 1, done: 1, errors: 0, skipped: 0, draft: 0, unbound: 0, exists: 0, refused: 0, failed: 0, declined: 0, limit: 0, notStarted: 0, stopped: 0, internal: 0, exitCode: 0 });
   });
 
   it('gives each finding under --json as one string, whole, beside its code, where the plain lines keep their folding (U9)', async () => {

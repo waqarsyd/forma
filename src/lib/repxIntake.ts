@@ -604,9 +604,12 @@ export async function ingestFile(file: File, uploadId: string, reportUnit: strin
     // A database's layout or sample rows, from Forma's scripts or an SSMS
     // "Generate Scripts" file (2026-11-08, lib/sqlSchema.ts): recognised before
     // it is read as plain data, and loaded only when such a file arrives.
+    // Decoded by its byte order mark, so a UTF-16 layout is read too, and
+    // Forma's own export cut short is said, never read as a script (2026-11-24,
+    // D1-3 and D1-4: `readDatabaseBytes`, the reader every caller shares).
     if (/\.(json|sql|txt)$/i.test(name)) {
-      const { readDatabaseText } = await import('./sqlSchema');
-      const found = readDatabaseText(new TextDecoder().decode(bytes).replace(/^﻿/, ''), name.replace(/\.[^.]+$/, ''));
+      const { readDatabaseBytes } = await import('./sqlSchema');
+      const found = readDatabaseBytes(bytes, name);
       if (found) {
         out.database = { ...found, file: name, uploadId };
         return out;

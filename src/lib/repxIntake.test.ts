@@ -269,6 +269,27 @@ describe('Crystal Reports and SSRS (CP-01a)', () => {
   });
 });
 
+// The CLI and Forma Designer work's wave 5 (2026-11-24, D1-3 and D1-4): the box reads a layout as every caller does.
+describe('a database layout attached in the box', () => {
+  it('is read by its byte order mark, said when it is cut short, and a file that is no layout stays data', async () => {
+    const { ingestFile } = await import('./repxIntake');
+    const { SCHEMA_EXPORT } = await import('./sqlFixtures');
+    const drawing = {} as Drawing;
+    const utf16 = new File([new Uint8Array([0xff, 0xfe]), new Uint8Array(Buffer.from(SCHEMA_EXPORT, 'utf16le'))], 'forma-schema.txt');
+    const read = await ingestFile(utf16, 'u1', undefined, drawing);
+    expect(read.database).toMatchObject({ kind: 'schema', file: 'forma-schema.txt', uploadId: 'u1', schema: { database: 'FormaSample' } });
+    expect(read.texts).toEqual([]);
+    // Cut short: said, never read as the one-table script its procedure text holds, and never sent as data.
+    const cut = await ingestFile(new File([SCHEMA_EXPORT.slice(0, -3)], 'forma-schema.txt'), 'u2', undefined, drawing);
+    expect(cut.database).toMatchObject({ kind: 'damaged', file: 'forma-schema.txt' });
+    expect(cut.texts).toEqual([]);
+    // A CSV saved as text in Latin-1 is the person's data, as before.
+    const rows = await ingestFile(new File([new Uint8Array(Buffer.from('City,Total\nRoma,1', 'latin1'))], 'rows.txt'), 'u3', undefined, drawing);
+    expect(rows.database).toBeUndefined();
+    expect(rows.texts).toHaveLength(1);
+  });
+});
+
 describe('what the page shows the report lacks (PL-11b)', () => {
   // The PIPE1 review: the general fallback said a table drawn as texts "will not print as drawn", which is untrue.
   it('says a table drawn as separate texts in a sentence of its own', () => {

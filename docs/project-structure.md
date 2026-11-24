@@ -549,14 +549,20 @@ src/
                        sqlSchema + sqlSchemaScript + sqlSchemaStore (a SQL
                        Server database's layout, read from Forma's script or
                        an SSMS file with no connection, and kept on the
-                       device), repxSqlDataSource (the SQL data source inside
-                       a .repx), sqlQuery (what a report reads from it: a
+                       device), layoutFile (a layout read from a file, by its
+                       byte order mark, a report's own source or sample rows
+                       beside it, and one among a request's files made its
+                       database step), sqlFixtures (test-only: the FormaSample
+                       captures the layout tests share), repxSqlDataSource
+                       (the SQL data source inside a .repx), sqlQuery (what
+                       a report reads from it: a
                        table with its joins, a procedure, or checked custom
                        SQL), repxSqlWriter (that query written into the
                        report as DevExpress's SqlDataSource, by connection
                        name, as measured and run by DevExpress),
-                       databaseAi (a shared database shown to the AI, the
-                       query it names held to the layout), fieldMatch (a
+                       databaseAi (a shared database shown to the AI, escaped
+                       and capped, the query it names held to the layout, and
+                       the one step every caller builds), fieldMatch (a
                        column matched to a field by heading and value),
                        sqlPreview (the Preview over the database's sample
                        rows, typed as DevExpress prints each SQL type),
@@ -804,6 +810,17 @@ src/
                        folder walked level by level with no link followed,
                        each file's route by its kind, every name it writes,
                        and what a limit does).
+                       Since that work's wave 5, nodeDatabase (a database's
+                       layout in a work thread: read by lib/layoutFile with
+                       the sample rows the person passed, the query a caller
+                       pinned held to it, a procedure it does not describe
+                       refused; the binding read back from the report
+                       written; a report bound with no AI; an SSRS report's
+                       own DataSet read and the converted report bound to
+                       it), which genJobs and pipeline run, and layoutCalls
+                       reads a layout and binds a report with on the
+                       pipeline (the command line's --database, bind,
+                       convert --database and sql-script).
                        Tests beside them: stdoutGuard, toolShape, paths,
                        roots, formaServer and reportTools each have one
                        (formaServer's drives forma_status in both eras and
@@ -835,7 +852,12 @@ src/
                        clone; folderBatch.test.ts holds the batch's walk (on
                        both platforms' path rules, and on the real disk with
                        a junction or link out of the folder), its routes,
-                       names and limit rule;
+                       names and limit rule; nodeDatabase.test.ts holds the
+                       database's functions, and cliDatabase.test.ts the
+                       command line's --database, --samples, bind, convert
+                       --database, sql-script and a batch over the
+                       FormaSample captures written to files, in process and
+                       spawned from outside the clone;
                        boundaries.test.ts holds src/mcp and src/server
                        apart from the browser code
   fonts/               the three self-hosted typefaces as variable woff2, their

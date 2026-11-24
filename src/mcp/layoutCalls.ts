@@ -13,6 +13,13 @@
  * And, since that wave's review (U1), `copyLayout` and `writeLayout`, with
  * which the batch writes a report its words changed nothing in, as it reads
  * or as converted, so no file it was given is missing from its output.
+ * And since that work's wave 5 (D1-3, D1-7, D1-11, GAP1-5, OC7): `readLayout`,
+ * a database's layout read with no report, so a caller says what it read
+ * before any AI is asked; `bindLayout`, a report bound to a table, view,
+ * procedure or query of a layout with no AI (the command line's bind, and
+ * the server's repx_edit `data` edit is to use it in that work's wave 7);
+ * and a database given to `convertLayout`, which binds the converted SSRS
+ * report to what its own DataSet reads (nodeDatabase.ts `bindConverted`).
  * Until this wave the steps were inside the tools'
  * handlers, bound to the MCP's ToolContext and zod, so the command line
  * could only have copied them, and with them rules whose order is their
@@ -47,8 +54,9 @@
 import type { AgentEdit } from '../lib/agentEdit';
 import { CallStopped, ToolRefusal, quoted, type Voice } from './caller';
 import { nodeWriteFs, resolveWritePath, type IfExists, type PathScope, type PathSystem } from './paths';
-import type { Audited, DesignerText, Dropped, ReportRead } from './pipeline';
-import { scopeOf, type PathPolicy, type WrittenBy } from './reportCalls';
+import type { Binding, ChosenBy, DatabaseJob } from './nodeDatabase';
+import type { Audited, DesignerText, Dropped, LayoutSaid, ReportRead } from './pipeline';
+import { bindingParts, judgeDatabase, readDatabaseFiles, scopeOf, type BindingText, type DatabaseInput, type PathPolicy, type WrittenBy } from './reportCalls';
 import {
   CONNECTION_BY_NAME,
   LAYOUT_EXTENSIONS,
@@ -296,6 +304,71 @@ export async function copyLayout<W extends IfExists>(report: ReportFile, target:
 /** The report program a converted file came from, by its name. */
 export type ForeignKind = 'SSRS' | 'FastReport';
 
+/* ------------------------------------------------------------ a database's layout (the CLI work's wave 5) */
+
+/**
+ * A database's layout read on the caller's pipeline, with no report and no
+ * AI (the CLI and Forma Designer work's wave 5; D1-3, D1-7): what the caller
+ * says before any AI is asked, so a wrong layout, or a pinned procedure whose
+ * result it does not describe, is seen before any quota is spent; and, for a
+ * batch, before its first file. The files are judged and read as a call
+ * reads them (reportCalls.ts `judgeDatabase`), and read again by each job
+ * that uses them, at its turn.
+ */
+export async function readLayout(database: DatabaseInput, policy: PathPolicy, run: LayoutRun): Promise<LayoutSaid> {
+  const scope = await scopeOf(policy);
+  const files = await readDatabaseFiles(judgeDatabase(database, scope, policy.sys), policy.voice);
+  const done = await run.pipeline.run({ tool: 'layout', voice: policy.voice, database: files }, run.signal);
+  return { said: done.said, notices: done.notices, database: done.database, query: done.query };
+}
+
+/** A binding's result: the file written (null when nothing could be bound), the binding, the note, the layout read and the audit of the report bound. */
+export interface BindDone<W extends IfExists> {
+  data: LayoutRead & { written: WrittenBy<W> | null; bound: boolean } & AuditData;
+  fromFile: { binding: BindingText; findings: string[] };
+  /** The layout read: what it was, and what was not read. */
+  layout: LayoutSaid;
+  words: string | null;
+}
+
+/**
+ * A report bound to the query pinned, with no AI (D1-11; the owner's OC7):
+ * the report read and its login taken out, the layout read, the query held to
+ * it and written as the report's SQL data source by the writer a generation
+ * uses (nodeDatabase.ts `bindReport`, in the pipeline's bounded thread), at
+ * the report's own version, then audited; written to `output`, else
+ * `<name>.bound.repx` (or `.vsrepx`) beside it, never over a file unless the
+ * policy replaces, and never over the report in place when its connection
+ * was stored with more than its name. Nothing is written when nothing could
+ * be bound, and the binding says why.
+ */
+export async function bindLayout<W extends IfExists>(raw: string, database: DatabaseInput, output: string | undefined, policy: PathPolicy<W>, run: LayoutRun): Promise<BindDone<W>> {
+  const { sys, voice } = policy;
+  const { scope, report } = await opened(raw, policy);
+  const ext = report.kind === 'vsrepx' ? '.vsrepx' : '.repx';
+  const target = outputPath(output, report, `.bound${ext}`, LAYOUT_EXTENSIONS, scope, sys);
+  const kind = targetKind(target, report, voice);
+  const judged = judgeDatabase(database, scope, sys);
+  if (policy.ifExists === 'replace' && [judged.layout, ...judged.samples].some((d) => sameFile(target, d.path, sys) && !sameFile(target, report.path, sys))) {
+    throw new ToolRefusal(`${quoted(target, voice)} is the database layout the report is bound with; ${voice === 'cli' ? 'name another --out' : 'name another output'}.`);
+  }
+  const files = await readDatabaseFiles(judged, voice);
+  const inPlace = policy.ifExists === 'replace' && sameFile(target, report.path, sys);
+  const done = await run.pipeline.run({ tool: 'bind', voice, name: report.spelled, text: report.text, target: kind, database: files }, run.signal);
+  if (inPlace && done.report.connectionsChanged) throw overInputRefusal(report.path, done.report.loginRemoved, voice);
+  const notices = [...done.report.notices, ...done.notices];
+  if (done.unmarked) notices.push("Visual Studio's working-file mark was neutralised, because the file written is a .repx (DevExpress says it refuses a marked .repx from 20.2.4 on).");
+  if (done.report.connectionsChanged && !done.report.loginRemoved) notices.push(CONNECTION_BY_NAME);
+  const { bound, text } = bindingParts(done.binding);
+  const audit = done.audit;
+  const counts = audit?.data ?? { errors: 0, warnings: 0, summary: '', findings: [] };
+  const fromFile = { binding: text as BindingText, findings: audit?.lines ?? [] };
+  if (!done.xml || !bound) return { data: { ...readOf(report, done.report), notices, written: null, bound: false, ...counts }, fromFile, layout: done.layout, words: null };
+  stillWanted(run.signal);
+  const written = writeReport(target, done.xml, policy.wfs ?? nodeWriteFs, sys, policy.ifExists as IfExists) as WrittenBy<W>;
+  return { data: { ...readOf(report, done.report), notices, written, bound: true, ...counts }, fromFile, layout: done.layout, words: audit?.words ?? null };
+}
+
 /** The DevExpress version a converted report is written as (lib/importForeign.ts writes 20.1.3.0, and the repair runs at 20.1). */
 export const CONVERTED_VERSION = '20.1';
 
@@ -303,20 +376,32 @@ export const CONVERTED_VERSION = '20.1';
 export interface Converted {
   source: ForeignFile;
   from: ForeignKind;
-  report: { xml: string; notices: string[]; audit: Audited } | null;
+  report: { xml: string; notices: string[]; audit: Audited; bound: ConvertBound | null } | null;
   /** What opening the file found (pipeline.ts), its notices among them. */
   read: ReportRead;
 }
+
+/** What binding a converted report did, with a database given (GAP1-5): the binding, how its query was chosen, and the layout read. */
+export type ConvertBound = { binding: Binding; chosenBy: ChosenBy | null; layout: LayoutSaid };
 
 /** Why a file will not convert, in the caller's words, its path as the caller shows one (`shown`, in quotes): an SSRS file can still be made by the AI from its text, a FastReport file cannot. */
 export const notConverted = (shown: string, from: ForeignKind, voice: Voice) =>
   `${shown} could not be converted: Forma reads SSRS reports from RDL 2005 to 2016 and FastReport's .frx${from === 'SSRS' ? `, and ${SAY[voice].fromText}` : ''}. Nothing was written.`;
 
 /** The conversion of a file already read and judged, on the caller's pipeline. */
-async function converted(source: ForeignFile, policy: PathPolicy, run: LayoutRun): Promise<Converted> {
+async function converted(source: ForeignFile, policy: PathPolicy, run: LayoutRun, database?: DatabaseJob): Promise<Converted> {
   const from: ForeignKind = /\.frx$/i.test(source.path) ? 'FastReport' : 'SSRS';
-  const done = await run.pipeline.run({ tool: 'convert', voice: policy.voice, name: source.spelled, text: source.text, file: policy.sys.path.basename(source.path) }, run.signal);
+  const done = await run.pipeline.run(
+    { tool: 'convert', voice: policy.voice, name: source.spelled, text: source.text, file: policy.sys.path.basename(source.path), ...(database ? { database } : {}) },
+    run.signal,
+  );
   return { source, from, report: done.converted, read: done.report };
+}
+
+/** A database's files judged and read for a conversion, in the caller's scope: none without one. */
+async function databaseFiles(database: DatabaseInput | undefined, policy: PathPolicy): Promise<DatabaseJob | undefined> {
+  if (!database) return undefined;
+  return readDatabaseFiles(judgeDatabase(database, await scopeOf(policy), policy.sys), policy.voice);
 }
 
 /**
@@ -325,16 +410,19 @@ async function converted(source: ForeignFile, policy: PathPolicy, run: LayoutRun
  * nothing: the command line's batch revises what it makes when it is given
  * words (GAP1-3), and `convertLayout` writes it.
  */
-export async function convertForeign(raw: string, policy: PathPolicy, run: LayoutRun): Promise<Converted> {
+export async function convertForeign(raw: string, policy: PathPolicy, run: LayoutRun, database?: DatabaseInput): Promise<Converted> {
   const scope = await scopeOf(policy);
-  return converted(readForeign(raw, scope, policy.sys), policy, run);
+  const source = readForeign(raw, scope, policy.sys);
+  return converted(source, policy, run, await databaseFiles(database, policy));
 }
 
 /** A conversion's result: the file written, or null and why not; what it came from, the version written, the converter's notices and the audit. */
 export interface ConvertDone<W extends IfExists> {
-  data: { path: string; from: ForeignKind; version: string; written: WrittenBy<W> | null; notConverted?: string; notices: string[] } & AuditData;
-  fromFile: { findings: string[] };
+  data: { path: string; from: ForeignKind; version: string; written: WrittenBy<W> | null; notConverted?: string; notices: string[]; bound: boolean | null; chosenBy: ChosenBy | null } & AuditData;
+  fromFile: { findings: string[]; binding?: BindingText };
   words: string | null;
+  /** With a database given, the layout read; null without one. */
+  layout: LayoutSaid | null;
 }
 
 /**
@@ -344,19 +432,31 @@ export interface ConvertDone<W extends IfExists> {
  * says why (`notConverted`); the converter's notices (a formula printed as
  * written, a chart left out) are the result's notices.
  */
-export async function convertLayout<W extends IfExists>(raw: string, output: string | undefined, policy: PathPolicy<W>, run: LayoutRun): Promise<ConvertDone<W>> {
+export async function convertLayout<W extends IfExists>(raw: string, output: string | undefined, policy: PathPolicy<W>, run: LayoutRun, database?: DatabaseInput): Promise<ConvertDone<W>> {
   const { sys, voice } = policy;
   const scope = await scopeOf(policy);
   const source = readForeign(raw, scope, sys);
   const target = resolveWritePath(output === undefined || output === '' ? besideName(source.spelled, '.converted.repx', sys) : output, scope, sys, { extensions: ['.repx'] });
   if (!target.ok) throw new ToolRefusal(target.reason);
-  const done = await converted(source, policy, run);
+  const done = await converted(source, policy, run, await databaseFiles(database, policy));
   const base = { path: source.path, from: done.from, version: CONVERTED_VERSION };
   if (!done.report) {
-    return { data: { ...base, written: null, notConverted: notConverted(quoted(source.spelled, voice), done.from, voice), notices: [...done.read.notices], errors: 0, warnings: 0, summary: '', findings: [] }, fromFile: { findings: [] }, words: null };
+    return {
+      data: { ...base, written: null, notConverted: notConverted(quoted(source.spelled, voice), done.from, voice), notices: [...done.read.notices], bound: null, chosenBy: null, errors: 0, warnings: 0, summary: '', findings: [] },
+      fromFile: { findings: [] },
+      words: null,
+      layout: null,
+    };
   }
+  const bound = done.report.bound;
+  const parts = bindingParts(bound?.binding ?? null);
   const report = done.report;
   stillWanted(run.signal);
   const written = writeReport(target.path, report.xml, policy.wfs ?? nodeWriteFs, sys, policy.ifExists as IfExists) as WrittenBy<W>;
-  return { data: { ...base, written, notices: [...done.read.notices, ...report.notices], ...report.audit.data }, fromFile: { findings: report.audit.lines }, words: report.audit.words };
+  return {
+    data: { ...base, written, notices: [...done.read.notices, ...report.notices], bound: parts.bound, chosenBy: bound?.chosenBy ?? null, ...report.audit.data },
+    fromFile: { findings: report.audit.lines, ...(parts.text ? { binding: parts.text } : {}) },
+    words: report.audit.words,
+    layout: bound?.layout ?? null,
+  };
 }

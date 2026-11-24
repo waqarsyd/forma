@@ -656,6 +656,36 @@ export function resolveMember(member: string, roots: { has(name: string): boolea
 }
 
 /**
+ * Every detail report band reading a SQL data source of the report's own
+ * (its `DataSource` that source's Ref, or none, so it reads the report's)
+ * whose `DataMember` that source has no query or relation for (2026-11-25,
+ * the CLI and Forma Designer work's wave-5 review, BT-2): a master-detail
+ * report bound to another query kept its detail band on
+ * `Orders.OrderLinesOfOrders`, which the new source no longer had, and
+ * DevExpress could not print the report at all ("Invalid data member").
+ * Each with its band's name and the member it reads, in the order of the
+ * file.
+ */
+export function unknownBandMembers(xml: string): { band: string; member: string; source: string }[] {
+  const sources = readRepxDataSources(xml);
+  if (!sources.length) return [];
+  const root = /<XtraReportsLayoutSerializer\b[^>]*>/.exec(xml)?.[0] ?? '';
+  const rootSource = attr(root, 'DataSource') ?? '';
+  const out: { band: string; member: string; source: string }[] = [];
+  for (const open of xml.matchAll(/<Item\d+\s[^>]*ControlType="DetailReportBand"[^>]*>/g)) {
+    const member = attr(open[0], 'DataMember') ?? '';
+    if (!member) continue;
+    const reads = attr(open[0], 'DataSource') ?? rootSource;
+    const ds = sources.find((s) => reads === `#Ref-${s.ref}`);
+    if (!ds) continue;
+    const roots = new Set([...ds.queries.map((q) => q.name), ...ds.views.map((v) => v.name)]);
+    const relations = new Map(ds.relations.map((r) => [r.name, r.detail] as const));
+    if (resolveMember(member, roots, relations) === null) out.push({ band: attr(open[0], 'Name') ?? '', member, source: ds.name });
+  }
+  return out;
+}
+
+/**
  * The SQL data source's own checks (2026-11-08, the SQL Server programme,
  * checklist item 20), for `auditRepx`: a stored login, a report or query
  * reading a query the source does not have, a query parameter with no report
@@ -689,6 +719,10 @@ export function auditDataSources(xml: string): { severity: 'error' | 'warning'; 
     if (rootMember && attr(root, 'DataSource') === `#Ref-${ds.ref}` && !queryNames.has(rootMember.split('.')[0])) {
       out.push({ severity: 'error', code: 'datamember-unknown', message: `The report reads "${rootMember}", which the data source "${ds.name}" has no query for.` });
     }
+  }
+  // A detail report reading a member its source lacks: DevExpress then prints nothing of the report (BT-2).
+  for (const u of unknownBandMembers(xml)) {
+    out.push({ severity: 'error', code: 'datamember-unknown', message: `The detail report "${u.band}" reads "${u.member}", which the data source "${u.source}" has no query or relation for, so DevExpress cannot print the report.` });
   }
   if (!views.size) return out;
 

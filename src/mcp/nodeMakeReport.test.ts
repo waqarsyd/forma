@@ -271,6 +271,19 @@ describe('a report made in Node, with only the AI stood in', () => {
     expect(readdirSync(join(folder, 'tessdata')).sort()).toEqual(['ara', 'deu', 'eng', 'fra', 'hin', 'spa', 'urd'].map((l) => `${l}.traineddata.gz`));
   }, 180_000);
 
+  // D1-1 (2026-11-24): a layout passed among the files was taken in and dropped with no word; the MCP server's generate_report took it as data.
+  it('binds a report to a database layout passed among its files, a UTF-16 one as sqlcmd -u writes it', async () => {
+    const { SCHEMA_EXPORT } = await import('../lib/sqlFixtures');
+    const layout = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(SCHEMA_EXPORT, 'utf16le')]);
+    const made = await gen.make({ files: [{ file: fileFrom('forma-schema.txt', layout), uploadId: 'u6' }], words: 'a list of customers with their city', config: CONFIG, signal: new AbortController().signal });
+    expect(made).toMatchObject({ ok: true, pictures: 0, notices: ['"forma-schema.txt" is a database layout, given to the AI with the request so the report can be bound to it.'] });
+    const { options } = lastRequest() as unknown as { options: { database?: string } };
+    expect(options.database).toContain('\n<database>\nDATABASE "FormaSample" (SQL Server 13.0.4001.0).');
+    expect(options.database).toContain('- dbo.Customers (table): CustomerID int PK not null, CompanyName nvarchar(80) not null, City nvarchar(40), Region nvarchar(20)');
+    // Bound or not, the reply says what the report reads: never silence.
+    expect(made?.ok && made.dataNote).toMatch(/FormaSample/);
+  }, 120_000);
+
   it('wrote nothing outside its own folder, and read no storage', () => {
     expect(readdirSync(process.cwd()).sort()).toEqual(cwdBefore);
     // The gathered language data is all Forma's folder holds: no probe ran, the AI being stood in.

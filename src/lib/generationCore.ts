@@ -124,6 +124,7 @@ import type { ReportSkeleton } from './reportSkeleton';
 import type { ReportLayout } from './reportTypes';
 import type { RepxFinding } from './repxAudit';
 import type { Drawing, TextAttachment } from './repxIntake';
+import type { FoundDatabase, LayoutFiles } from './layoutFile';
 import type { ReportQuery } from './sqlQuery';
 import type { TokenUsage } from './tokenUsage';
 import type { DraftRequest, GenerationResult, ReportConfig, StreamProgress, analyzeReportDesign, translateTexts } from '../services/geminiService';
@@ -272,6 +273,16 @@ export type GenerationDeps = ReadDeps & TeamDeps & AskDeps;
 /** What a file is drawn on as it is taken in (lib/repxIntake.ts `Drawing`): the browser's, or the MCP server's in Node. */
 export interface IntakeDeps {
   drawing: Drawing;
+  /**
+   * What a database layout among the files becomes (lib/layoutFile.ts
+   * `withLayoutStep`, D1-1), handed in by the callers that take one: Node's
+   * (nodeGeneration.ts) and the fidelity benchmark. Handed in rather than
+   * imported (2026-11-25, the wave-5 review, W5-PB-8): the workspace warms
+   * this module's chunk and never makes a report from a layout file, and the
+   * import with its preloads took it to 99.7% of its budget. Absent, each
+   * such file is said, never dropped without a word.
+   */
+  layoutStep?: <D extends Pick<AskDeps, 'database'>>(found: readonly FoundDatabase[], deps: D, notices: string[], options?: LayoutFiles) => D;
 }
 
 /* ------------------------------------------------------------------ the parts */
@@ -711,8 +722,13 @@ export async function generateReport(request: GenerateRequest, deps: TeamDeps & 
     const { remembered, kept } = await deps
       .beforeGeneration({ first: !open && !startedFromReport, drafting: Boolean(team.correct && !description), shape: team.shape, words, description: description?.description })
       .catch(() => ({ remembered: '', kept: null }));
-    // A shared database's likeliest objects and sample values, in place of "assume the procedure" (batch DE).
-    const db = deps.database ? await deps.database([words, team.brief, ...texts.map((t) => t.text)].join('\n')) : null;
+    // A shared database's likeliest objects and sample values, in place of "assume the procedure" (batch DE), ranked by
+    // what was asked: a described report's words are its description, its `words` empty, and its team brief Forma's
+    // house style, which names no object (2026-11-25, the wave-5 review, BT-6: the description never reached the ranking,
+    // so the objects it named could miss the twelve the AI is shown, and with it beside the house style the style's
+    // words still outranked it, "Customer list" binding dbo.OrderLines). A picture's brief is the page as read, kept.
+    const rankedBy = description ? [words, description.description] : [words, team.brief];
+    const db = deps.database ? await deps.database([...rankedBy, ...texts.map((t) => t.text)].join('\n')) : null;
     const database = db ? db.section : undefined;
     const askAi = (asked: ReportConfig) => {
       budget = { left: REQUEST_BUDGET };
@@ -922,6 +938,13 @@ export interface MakeRequest {
   batchFile?: boolean;
   /** False: nothing stands in when every AI fails, and the failure is returned (the header's *Nothing standing in*). */
   standIn?: boolean;
+  /**
+   * A database layout among the files (2026-11-24, finding D1-1 of the CLI
+   * and Forma Designer work's design audit): how its step is built when no
+   * `database` was handed in (lib/layoutFile.ts `stepFromFiles`). Absent, in
+   * the Data tab's words, sample rows among the files left out.
+   */
+  layoutFiles?: LayoutFiles;
 }
 
 /** What `makeReport` returns: the report or the failure, and what taking the files in said. */
@@ -934,7 +957,10 @@ export type Made = Generated & {
 
 /**
  * A report from files and words, or from a description, in one call: the
- * files taken in, the pages read, the request made. Null when stopped.
+ * files taken in, the pages read, the request made. Null when stopped. A
+ * database layout among the files is the request's database step when none
+ * was handed in, and said either way (`layoutFiles`, D1-1): it was dropped
+ * with no word until then.
  */
 export async function makeReport(request: MakeRequest, deps: GenerationDeps & IntakeDeps): Promise<Made | null> {
   const { signal, config } = request;
@@ -942,6 +968,7 @@ export async function makeReport(request: MakeRequest, deps: GenerationDeps & In
   const imageMeta: PreviewMeta[] = [];
   const texts: TextAttachment[] = [];
   const notices: string[] = [];
+  const databases: FoundDatabase[] = [];
   if (request.files?.length) {
     const { ingestFile } = await import('./repxIntake');
     for (const { file, uploadId } of request.files) {
@@ -952,8 +979,13 @@ export async function makeReport(request: MakeRequest, deps: GenerationDeps & In
       imageMeta.push(...taken.imageMeta);
       texts.push(...taken.texts);
       notices.push(...taken.notices);
+      if (taken.database) databases.push(taken.database);
     }
     if (signal.aborted) return null;
+  }
+  if (databases.length) {
+    if (deps.layoutStep) deps = deps.layoutStep(databases, deps, notices, request.layoutFiles);
+    else for (const d of databases) notices.push(`"${d.file}" is a database's layout or sample rows, which a report made here is not bound to, so it was not read.`);
   }
   const described = request.description;
   if (described && !images.length && !texts.length) {

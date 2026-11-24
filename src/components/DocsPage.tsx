@@ -1425,8 +1425,9 @@ npm ci`}
               </p>
               <Note label="What leaves your computer" tone="safe">
                 Only through the two tools that need an AI: the pages of the files you give them, the text OCR read
-                from them on your computer, your words and the report go from your computer to the AI you set up, with
-                your own key, never through Forma. The other tools send nothing, and the server sends no learning
+                from them on your computer, the data files you pass as data (a database layout among them: its table,
+                view, procedure and column names), your words and the report go from your computer to the AI you set
+                up, with your own key, never through Forma. The other tools send nothing, and the server sends no learning
                 events or error reports. What a tool returns goes to your assistant and to the AI behind it, under that
                 assistant&apos;s own terms, and what it read from a report goes as data, never as instructions.
               </Note>

@@ -1048,16 +1048,30 @@ export function distinctTools(tools: readonly AgentTool[]): AgentTool[] {
   return out;
 }
 
+/** The C0 and C1 controls, DEL, and the two separators some readers end a line at, made from their codes (sqlSchema.ts `aiText`'s set). */
+const LINE_BREAKING = new RegExp(`[\\u0000-\\u001f\\u007f-\\u009f${String.fromCharCode(0x2028, 0x2029)}]`, 'g');
+
+/** A line said to the AI, kept one line: each control character written as `\u` and its code, as `aiText` writes them. */
+function oneLine(text: string): string {
+  return text.replace(LINE_BREAKING, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+}
+
 /**
  * What the agent is told for its one more pass (2026-11-07, agent audit item
  * 23): what it asked for that could not be made, and what the checks found
  * that its edits brought. Until then a declined edit offered a whole
  * redesign, and an error an edit brought was reported and left.
+ *
+ * Each line is kept one line (`oneLine`, 2026-11-25, the CLI and Forma
+ * Designer work's wave-5 review, W5-PB-1): a reason can quote a name from a
+ * file, a database layout's or a report's, and the message goes to the AI as
+ * the user's own turn in a transcript whose turns are lines, so a name
+ * holding a line break could start a turn of its own ("Assistant: ...").
  */
 export function followUpMessage(declined: readonly string[], brought: readonly string[]): string {
   const parts = ['Forma applied your edits.'];
-  if (declined.length) parts.push(`These could not be made:\n${declined.map((d) => `- ${d}`).join('\n')}`);
-  if (brought.length) parts.push(`The checks found these errors the edits brought:\n${brought.map((b) => `- ${b}`).join('\n')}`);
+  if (declined.length) parts.push(`These could not be made:\n${declined.map((d) => `- ${oneLine(d)}`).join('\n')}`);
+  if (brought.length) parts.push(`The checks found these errors the edits brought:\n${brought.map((b) => `- ${oneLine(b)}`).join('\n')}`);
   parts.push('If the edits can make what was meant another way, or fix those errors, answer with "edit" and only those edits, against the report as it now is (the outline). Otherwise answer with "answer" and say plainly what could not be done.');
   return parts.join('\n\n');
 }

@@ -126,8 +126,8 @@ export function kindOf(name: string): SourceKind | null {
   return null;
 }
 
-/** Every suffix Forma writes a report under, its draft's included (the header's *The names*). */
-export const OUTPUT_SUFFIXES = ['generated', 'revised', 'converted', 'repaired', 'edited', 'draft'] as const;
+/** Every suffix Forma writes a report under, its draft's included, and bind's since the CLI work's wave 5 (the header's *The names*). */
+export const OUTPUT_SUFFIXES = ['generated', 'revised', 'converted', 'repaired', 'edited', 'bound', 'draft'] as const;
 
 const FORMA_OUTPUT = new RegExp(String.raw`\.(?:${OUTPUT_SUFFIXES.join('|')})(?: \(\d+\))?\.(?:repx|vsrepx)$`, 'i');
 const PARTIAL = /\.forma-partial-[A-Za-z0-9]+$/;

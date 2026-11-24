@@ -106,7 +106,10 @@ export default defineConfig({
        * tests' in-memory file system and client: they are test code, which
        * the tests exercise in full, so counting them would raise the number
        * without measuring the server (finding T7 of the wave-3 review;
-       * `boundaries.test.ts` fails if anything but a test imports them).
+       * `boundaries.test.ts` fails if anything but a test imports them). So
+       * is `src/lib/sqlFixtures.ts` (2026-11-24, the CLI and Forma Designer
+       * work's wave 5, D1-12), the FormaSample captures the tests that read
+       * a database layout share: test data, held to the same rule.
        */
       include: ['src/lib/**', 'src/services/**', 'src/server/**', 'src/mcp/**'],
       exclude: [
@@ -127,6 +130,8 @@ export default defineConfig({
         // The MCP tests' in-memory file system and client: test code, not the server's (above).
         'src/mcp/testFs.ts',
         'src/mcp/testClient.ts',
+        // The database captures the layout tests share: test data, not code (above).
+        'src/lib/sqlFixtures.ts',
       ],
       reporter: ['text-summary', 'text'],
       /*

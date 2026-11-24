@@ -62,6 +62,33 @@
  * who answered, the time, why it stopped, and the bounds each file had.
  * `--dry-run` prints the plan with nothing read and no AI asked.
  *
+ * ## A database (the same work's wave 5)
+ *
+ * Findings D1-2, D1-3, D1-4, D1-6, D1-7, D1-9, D1-10, D1-11 and GAP1-5, the
+ * owner's OC6 and OC7. `--database <layout>` binds what generate, revise
+ * and batch make to a database's layout (sql-script's script's answer saved
+ * as a file, an SSMS "Generate Scripts" file, or a .repx's own source), as
+ * the workspace's shared database does: the AI names what the report reads
+ * and Forma writes the SQL data source, the connection by name only
+ * (`--connection-name`, else the database's own). `--samples <file>`, once
+ * for each file, sends that file's sample values to the AI with the layout:
+ * passing it is the person's consent (OC6); without it only names go, a
+ * value is never printed or put in a JSON line. One of `--procedure`,
+ * `--object` or `--query` pins what the report reads, held to the layout
+ * before anything else, a stored procedure whose result the layout does not
+ * describe refused with what would describe it (D1-7). The layout is read in
+ * the report work's bounded thread and said on stderr (the database, its
+ * objects, each sample file's tables and counts) before any AI is asked: for
+ * a batch once, before its first file, each file's job then reading it again
+ * and building a step of its own, so no file's query carries to the next
+ * (D1-9), a deliberate departure from browser Batch, which shares no
+ * database. bind (D1-11) and convert --database (GAP1-5) bind with no AI;
+ * sql-script prints the scripts and the sqlcmd line (D1-4). Each input's
+ * result says what the report binds, read back from the file written
+ * (`binding` in its JSON line, lines under it otherwise, control characters
+ * shown as `?` as every line's are), and `--require-binding` makes a report
+ * written but not bound an input that failed (`unbound`, exit 4).
+ *
  * ## Paths and writes
  *
  * Every path goes through paths.ts in the working-folder mode (`PathScope`
@@ -123,8 +150,9 @@
  *
  * 0 done; 1 a report written, or audited, with audit errors (`--fail-on
  * never` makes it 0); 2 a usage error; 3 no AI set up; 4 an input failed,
- * was refused, declined, only Forma's draft was written, or its output is
- * already there (a file the AI refusing the key left not started too); 5
+ * was refused, declined, only Forma's draft was written, a report was
+ * written but not bound under --require-binding, or its output is already
+ * there (a file the AI refusing the key left not started too); 5
  * stopped at an AI limit (a file it left not started too); 70 an internal
  * error (the guard's own exit code for an uncaught exception too); 130
  * interrupted. With several inputs the run's code is the highest in the
@@ -151,7 +179,9 @@ import { readFileSync, readdirSync } from 'node:fs';
 import type { AgentEdit } from '../lib/agentEdit';
 import { PROVIDER_NAMES } from '../lib/aiProvider';
 import type { AiLimit } from '../lib/aiLimit';
+import type { QueryJson } from '../lib/databaseAi';
 import { EDIT_OPS } from '../lib/editLanguage';
+import type { SampleTarget } from '../lib/sqlSchemaScript';
 import { fallbacksFor } from '../lib/fallbackChain';
 import { MAX_BATCH_FILES } from '../lib/folderDrop';
 import { MAX_FILE_BYTES } from '../lib/attachmentBudget';
@@ -161,10 +191,11 @@ import { CLI_COMMANDS, CLI_LAUNCHER, type CliCommand, type CliCommandName } from
 import { BATCH_DEPTH, KEY_REFUSED, ROUTE_WORDS, afterLimit, planBatch, skipWords, walkBatch, type BatchItem, type ListFolder, type Route, type Walked } from './folderBatch';
 import type { GenEvent, GenSetup } from './genJobs';
 import { GEN_LIMITS, STAGES, workerGenerator, type Generator } from './generator';
-import { CONVERTED_VERSION, NO_EDIT_MADE, auditLayout, convertForeign, convertLayout, copyLayout, editLayout, notConverted, outlineLayout, pdfLayout, repairLayout, writeLayout, type LayoutRun } from './layoutCalls';
+import { CONVERTED_VERSION, NO_EDIT_MADE, auditLayout, bindLayout, convertForeign, convertLayout, copyLayout, editLayout, notConverted, outlineLayout, pdfLayout, readLayout, repairLayout, writeLayout, type LayoutRun } from './layoutCalls';
 import { formaUserFolder, keyParked } from './modelParks';
+import { CHOSEN_WORDS } from './nodeDatabase';
 import { nodeSystem, parsePath, resolveFolderPath, resolveReadPath, resolveWritePath, type PathSystem, type PathVerdict, type WorkingFolder, type WriteFs, type WriteStatus } from './paths';
-import { DATA_EXTENSIONS, SOURCE_EXTENSIONS, answeredBy, judgeInput, planGenerate, planRevise, runGenerate, runRevise, type PathPolicy, type RevisePlan } from './reportCalls';
+import { DATA_EXTENSIONS, SOURCE_EXTENSIONS, answeredBy, judgeDatabase, judgeInput, planGenerate, planRevise, runGenerate, runRevise, type BindingText, type DatabaseInput, type PathPolicy, type RevisePlan } from './reportCalls';
 import { FOREIGN_EXTENSIONS, LAYOUT_EXTENSIONS, besideName } from './reportFile';
 import { formaVersion } from './version';
 import type { Audited } from './pipeline';
@@ -234,14 +265,16 @@ export function worstExit(codes: readonly number[]): number {
  * failure (a report nothing was asked of, or one made already under
  * `--skip-existing`). `draft`: every AI failed and only Forma's own draft was
  * written, under `--allow-stand-in`, so the report asked for was not made
- * (CLI-4: a draft never passes for success). `notStarted`: a file that asks
+ * (CLI-4: a draft never passes for success). `unbound`: a report written,
+ * but not bound to the database given, under --require-binding (D1-9).
+ * `notStarted`: a file that asks
  * the AI, left when the batch stopped asking it (OC5), listed so a person or
  * a CI step can see which are left.
  */
-export type Status = 'done' | 'errors' | 'skipped' | 'draft' | 'exists' | 'refused' | 'failed' | 'declined' | 'limit' | 'notStarted' | 'stopped' | 'internal';
+export type Status = 'done' | 'errors' | 'skipped' | 'draft' | 'unbound' | 'exists' | 'refused' | 'failed' | 'declined' | 'limit' | 'notStarted' | 'stopped' | 'internal';
 
 /** Each status's exit code; a file not started takes the code of what stopped the batch (`Row`'s `exit`), the limit's by default. */
-const EXIT_OF: Record<Status, number> = { done: 0, errors: 1, skipped: 0, draft: 4, exists: 4, refused: 4, failed: 4, declined: 4, limit: 5, notStarted: 5, stopped: 130, internal: 70 };
+const EXIT_OF: Record<Status, number> = { done: 0, errors: 1, skipped: 0, draft: 4, unbound: 4, exists: 4, refused: 4, failed: 4, declined: 4, limit: 5, notStarted: 5, stopped: 130, internal: 70 };
 
 /** How each status is counted in a summary line. */
 const COUNTED: Record<Status, string> = {
@@ -249,6 +282,7 @@ const COUNTED: Record<Status, string> = {
   errors: 'with audit errors',
   skipped: 'skipped',
   draft: "Forma's draft only (the AI did not make the report)",
+  unbound: 'written, but not bound to the database (--require-binding)',
   exists: 'already there',
   refused: 'refused',
   failed: 'failed',
@@ -284,15 +318,80 @@ interface Options {
   dryRun: boolean;
   /** The batch: the most files it makes; `MAX_BATCH_FILES` unless the person says more. */
   max: number;
+  /** A database's layout file: generate, revise, batch, convert and bind bind their reports to it (the header's *A database*). */
+  database?: string;
+  /** Files of sample rows of the same database, whose values go to the AI: passing one is the person's consent (OC6). */
+  samples: string[];
+  /** The query pinned, as JSON (databaseAi.ts `QueryJson`): from --procedure, --object or --query. */
+  query: QueryJson | null;
+  /** The connection a report names when it names none of its own. */
+  connectionName?: string;
+  /** A report written but not bound to the database given ends the input with 4. */
+  requireBinding: boolean;
+  /** sql-script: the tables and views to read sample rows of, as `schema.name`. */
+  sample?: SampleTarget[];
+  /** sql-script: the rows read of each. */
+  rows?: number;
+  /** sql-script: the server and database the sqlcmd line names. */
+  sqlcmd?: { server: string; database: string };
 }
 
 /** What the arguments ask for. */
 export type Parsed = { kind: 'help' } | { kind: 'version' } | { kind: 'run'; command: CliCommand; inputs: string[]; options: Options };
 
 /** Options that take a value. */
-const VALUED = new Set(['--out', '--fail-on', '--description', '--data', '--words', '--edits', '--max']);
+const VALUED = new Set(['--out', '--fail-on', '--description', '--data', '--words', '--edits', '--max', '--database', '--samples', '--procedure', '--query', '--object', '--connection-name', '--sample', '--rows']);
+/** Options that take two values: sql-script's `--sqlcmd <server> <database>`. */
+const PAIRED_VALUES = new Set(['--sqlcmd']);
+/** Options given once for each file. */
+const REPEATED = new Set(['--data', '--samples']);
 /** Options that are switches. */
-const SWITCHES = new Set(['--json', '--verbose', '--help', '--version', '--force', '--mock', '--allow-stand-in', '--edits-only', '--repair', '--skip-existing', '--dry-run']);
+const SWITCHES = new Set(['--json', '--verbose', '--help', '--version', '--force', '--mock', '--allow-stand-in', '--edits-only', '--repair', '--skip-existing', '--dry-run', '--require-binding']);
+/** The options that say what a report reads, of which one is given. */
+const PINS = ['--procedure', '--query', '--object'] as const;
+
+/**
+ * The tables and views sql-script's `--sample` names, `dbo.Orders,Sales.[Order Lines]`:
+ * split at commas outside brackets, each `schema.name` (`dbo` when only a name is given),
+ * a bracketed part taken as it is written. Throws a `UsageError`.
+ */
+export function sampleTargets(text: string): SampleTarget[] {
+  const parts: string[] = [];
+  let at = '';
+  let depth = 0;
+  for (const c of text) {
+    if (c === '[') depth += 1;
+    if (c === ']') depth = Math.max(0, depth - 1);
+    if (c === ',' && !depth) {
+      parts.push(at);
+      at = '';
+    } else at += c;
+  }
+  parts.push(at);
+  return parts.map((part) => {
+    const names = [...part.trim().matchAll(/\[((?:[^\]]|\]\])+)\]|([^.[\]]+)/g)].map((m) => (m[1] !== undefined ? m[1].replace(/\]\]/g, ']') : m[2].trim())).filter(Boolean);
+    // A control character is refused, never put in a script printed whole (UNSAFE_IN_LINE, as every line's are).
+    const safe = part.replace(UNSAFE_IN_LINE, '?');
+    if (!names.length || names.length > 2 || safe !== part) {
+      throw new UsageError(`--sample names tables or views as schema.name, separated by commas, such as dbo.Orders,dbo.Customers; ${quoted(safe.trim() || safe)} is not one.`);
+    }
+    return names.length === 1 ? { schema: 'dbo', name: names[0] } : { schema: names[0], name: names[1] };
+  });
+}
+
+/** The query a person pinned, from --procedure, --object or --query, as JSON for the layout to hold. Throws a `UsageError`. */
+function pinnedJson(option: (typeof PINS)[number], value: string): QueryJson {
+  if (option === '--procedure') return { procedure: value.trim() };
+  if (option === '--object') return { table: value.trim() };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch (error) {
+    throw new UsageError(`--query is not JSON: ${error instanceof Error ? error.message.split('\n')[0] : 'it does not parse'}; give an object such as {"table":"dbo.Orders"} or {"procedure":"dbo.usp_Sales"}.`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new UsageError('--query takes one JSON object, such as {"table":"dbo.Orders","columns":["OrderID"]} or {"procedure":"dbo.usp_Sales"}.');
+  return parsed as QueryJson;
+}
 /** The options every command takes. */
 const EVERY = ['--json', '--verbose', '--help'];
 
@@ -325,6 +424,14 @@ export function parseArgs(argv: readonly string[]): Parsed {
       switched.add(name);
       continue;
     }
+    if (PAIRED_VALUES.has(name)) {
+      const pair = [argv[i + 1], argv[i + 2]];
+      const last = end < 0 ? argv.length : end;
+      if (eq > 0 || i + 2 >= last || pair.some((v) => v === undefined || v.startsWith('--'))) throw new UsageError(`${name} takes two values after it: the server, then the database.`);
+      i += 2;
+      given.set(name, [...(given.get(name) ?? []), ...pair]);
+      continue;
+    }
     if (!VALUED.has(name)) throw new UsageError(`${quoted(name)} is not an option of Forma's command line.`);
     const value = eq > 0 ? arg.slice(eq + 1) : argv[i + 1];
     if (value === undefined || (eq < 0 && (value.startsWith('--') || i + 1 === end))) throw new UsageError(`${name} needs a value after it.`);
@@ -340,7 +447,10 @@ export function parseArgs(argv: readonly string[]): Parsed {
   for (const option of [...given.keys(), ...switched]) {
     if (!EVERY.includes(option) && !command.options.includes(option)) throw new UsageError(`${option} is not an option of ${command.name}.`);
   }
-  for (const [option, values] of given) if (option !== '--data' && values.length > 1) throw new UsageError(`${option} is given ${values.length} times; give it once.`);
+  for (const [option, values] of given) {
+    const once = PAIRED_VALUES.has(option) ? 2 : 1;
+    if (!REPEATED.has(option) && values.length > once) throw new UsageError(`${option} is given ${values.length / once} times; give it once.`);
+  }
   const one = (option: string) => given.get(option)?.[0];
   const failOn = one('--fail-on') ?? 'errors';
   if (failOn !== 'errors' && failOn !== 'never') throw new UsageError('--fail-on takes errors or never.');
@@ -363,7 +473,43 @@ export function parseArgs(argv: readonly string[]): Parsed {
     skipExisting: switched.has('--skip-existing'),
     dryRun: switched.has('--dry-run'),
     max: maxGiven === undefined ? MAX_BATCH_FILES : Number(maxGiven),
+    database: one('--database'),
+    samples: given.get('--samples') ?? [],
+    query: null,
+    connectionName: one('--connection-name'),
+    requireBinding: switched.has('--require-binding'),
   };
+  for (const [option, value] of [['--out', options.out], ['--edits', options.edits], ['--database', options.database], ...options.samples.map((s) => ['--samples', s] as const), ...PINS.map((p) => [p, one(p)] as const)] as const) {
+    if (value !== undefined && !value.trim()) throw new UsageError(`${option} needs a value after it.`);
+  }
+  // A database's layout, and what goes with it (the header's *A database*): each of these needs --database, and one query at most.
+  const pins = PINS.filter((p) => given.has(p));
+  if (options.database === undefined) {
+    const without = [...(options.samples.length ? ['--samples'] : []), ...pins, ...(options.connectionName !== undefined ? ['--connection-name'] : [])];
+    if (without.length) throw new UsageError(`${without[0]} goes with --database, the layout of the database the report reads.`);
+    if (options.requireBinding && !options.data.length) throw new UsageError('--require-binding goes with --database, or a layout given with --data: with no database, no report is bound.');
+  }
+  if (pins.length > 1) throw new UsageError(`${pins.join(' and ')} each say what the report reads; give one of them.`);
+  if (pins.length) options.query = pinnedJson(pins[0], one(pins[0]) as string);
+  if (options.connectionName !== undefined && !options.connectionName.trim()) throw new UsageError('--connection-name needs a value after it.');
+  if (command.name === 'bind' && !pins.length) throw new UsageError('Name what the report reads with --procedure, --object or --query; bind binds with no AI, so nothing chooses it for you.');
+  if (command.name === 'bind' && options.database === undefined) throw new UsageError('Give the layout of the database the report reads with --database.');
+  if (command.name === 'sql-script') {
+    if (rest.length) throw new UsageError(`sql-script takes no file; ${rest.length === 1 ? 'one was' : `${rest.length} were`} named. Give --out to write the script to a file.`);
+    const sample = one('--sample');
+    if (sample !== undefined) options.sample = sampleTargets(sample);
+    const rows = one('--rows');
+    if (rows !== undefined) {
+      if (sample === undefined) throw new UsageError('--rows goes with --sample, the tables whose rows are read.');
+      if (!/^\d+$/.test(rows) || Number(rows) < 1 || Number(rows) > 50) throw new UsageError('--rows takes a whole number of rows from 1 to 50.');
+      options.rows = Number(rows);
+    }
+    const pair = given.get('--sqlcmd');
+    if (pair) {
+      options.sqlcmd = { server: pair[0], database: pair[1] };
+      if (options.out === undefined) throw new UsageError('--sqlcmd names the script file it runs: give --out with the .sql file to write the script to, such as --out forma-schema.sql.');
+    }
+  }
   for (const [option, value] of [['--out', options.out], ['--edits', options.edits]] as const) if (value !== undefined && !value.trim()) throw new UsageError(`${option} needs a value after it.`);
   if (command.name === 'audit') {
     if (!rest.length) throw new UsageError('Name a report, or a folder of reports, to audit.');
@@ -378,7 +524,7 @@ export function parseArgs(argv: readonly string[]): Parsed {
   } else if (command.name === 'generate') {
     if (!rest.length && !options.description?.trim()) throw new UsageError('Name files to make the report from, give --description "...", or both.');
     if (!rest.length && options.out === undefined) throw new UsageError('Name where to write the report with --out, since there is no file to write it beside.');
-  } else if (rest.length !== 1) throw new UsageError(`${command.name} takes one report; ${rest.length} were named.`);
+  } else if (command.name !== 'sql-script' && rest.length !== 1) throw new UsageError(`${command.name} takes one report; ${rest.length} were named.`);
   if (command.name === 'edit' && options.edits === undefined) throw new UsageError('Give the edits with --edits: a .json file, or the JSON itself, an array of edits each with its op.');
   if (command.name === 'revise' && !options.words?.trim()) throw new UsageError('Give the request with --words "...": what to change in the report, or what to ask about it.');
   return { kind: 'run', command, inputs: rest, options };
@@ -424,12 +570,22 @@ export function helpText(version: string): string {
     '  --skip-existing     skip an input whose report is already under --out, so running the same command again carries on (batch)',
     '  --dry-run           print what each file would be made into, and which need the AI, reading no file and asking no AI (batch)',
     `  --max <n>           the most files a batch makes; ${MAX_BATCH_FILES} unless given, and a folder holding more is refused before anything is read`,
+    "  --database <layout> a database's layout: what sql-script's script answers, saved as a file (UTF-8 or UTF-16), an SSMS \"Generate Scripts\" file, or a .repx whose data source it reads; the AI binds the report to it, and Forma writes the SQL data source with the connection by name only (generate, revise, batch; convert and bind with no AI)",
+    "  --samples <file>    sample rows of the same database (sql-script --sample's answer), whose values go to the AI with the layout: giving the file is your consent; once for each file (generate, revise, batch). Without it, only names go",
+    '  --procedure <name>  the stored procedure the report reads, such as dbo.usp_Sales; refused before any AI is asked when the layout does not say what it returns (generate, revise, batch, bind)',
+    '  --object <name>     the table or view the report reads, such as dbo.Orders (generate, revise, batch, bind)',
+    '  --query <json>      the query the report reads, as JSON: {"table":"dbo.Orders","joins":[{"table":"dbo.Customers"}],"filter":"[Orders.Freight] > ?Min"}, or {"procedure":"..."}, or {"name":"...","sql":"SELECT ..."}; every name must be in the layout (generate, revise, batch, bind)',
+    "  --connection-name <name>  the name your application knows the database by, written as the report's connection when it names none; the database's own name by default",
+    '  --require-binding   a report written but not bound to the database given ends its input with exit 4 (generate, revise, batch, convert)',
+    '  --sample <dbo.A,dbo.B>  sql-script: the script that reads a few rows of these tables and views instead of the layout',
+    '  --rows <n>          sql-script --sample: the rows read of each, 1 to 50; 5 unless given',
+    '  --sqlcmd <server> <database>  sql-script with --out: also prints the sqlcmd line that runs the script into a UTF-8 .txt beside it',
     '',
     `A batch makes one file at a time, each that asks the AI in a thread of its own, with at most ${Math.round(GEN_LIMITS.deadlineMs / 60_000)} minutes and ${GEN_LIMITS.heapMb} MB of memory, so one bad file cannot end the batch. A minute's limit is waited out and the file made once more; the day's limit stops the files that ask the AI, each listed as not started, while those that need none are still made, and the same command with --skip-existing carries on once it lifts. A report the words leave as it was is written as it reads (an SSRS or FastReport report as converted), so --out holds every report.`,
     '',
     'The AI, from the environment the command runs in (in CI, from its secrets into the step\'s environment): FORMA_GEMINI_KEY; or FORMA_OPENROUTER_KEY and FORMA_OPENROUTER_MODEL; or FORMA_LOCAL_MODEL, with FORMA_LOCAL_URL for a server not at Ollama\'s address; FORMA_PROVIDER when more than one is set; FORMA_MODEL and FORMA_LOCALE if wanted.',
     '',
-    "Exit codes: 0 done; 1 a report written or audited with audit errors; 2 a usage error; 3 no AI set up; 4 an input failed, was refused or declined, only Forma's draft was written, or its output is already there; 5 stopped at an AI limit; 70 an internal error; 130 interrupted (on Windows, a stop while a file that asks the AI is being made can end the process with 3221226505 instead, its lines still saying 130). With several inputs, the highest in the order 130, 70, 5, 4, 1, 0.",
+    "Exit codes: 0 done; 1 a report written or audited with audit errors; 2 a usage error; 3 no AI set up; 4 an input failed, was refused or declined, only Forma's draft was written, a report was written but not bound under --require-binding, or its output is already there; 5 stopped at an AI limit; 70 an internal error; 130 interrupted (on Windows, a stop while a file that asks the AI is being made can end the process with 3221226505 instead, its lines still saying 130). With several inputs, the highest in the order 130, 70, 5, 4, 1, 0.",
   );
   return `${lines.join('\n')}\n`;
 }
@@ -765,7 +921,7 @@ const EDIT_FIELDS = {
   total: 'string',
 } as const satisfies { [K in Exclude<keyof AgentEdit, 'query'>]-?: 'op' | 'string' | 'number' | 'boolean' | 'align' };
 
-/** The ops edit takes: the chat's, but `data`, which needs a database layout (as the server's repx_edit). */
+/** The ops edit takes: the chat's, but `data`, which needs a database layout: bind is the command that takes one (as the server's repx_edit, until the CLI work's wave 7). */
 export const EDIT_COMMAND_OPS: readonly string[] = EDIT_OPS.filter((op) => op !== 'data');
 
 /** The edits in a JSON text, each an object with its op and fields of the right kinds. Throws a `UsageError` naming what is wrong. */
@@ -855,6 +1011,8 @@ async function layoutCommand(run: Run, input: string): Promise<Row> {
         return repairWork(run, input, outTarget(run, `${stemOf(run, input)}.repaired.repx`, LAYOUT_EXTENSIONS)?.path, policy);
       case 'convert':
         return convertWork(run, input, outTarget(run, `${stemOf(run, input)}.converted.repx`, ['.repx'])?.path, policy);
+      case 'bind':
+        return bindWork(run, input);
       case 'pdf': {
         const done = await pdfLayout(input, outTarget(run, `${stemOf(run, input)}.pdf`, ['.pdf'])?.path, policy, run.layout());
         const d = done.data;
@@ -912,17 +1070,48 @@ const CONVERTED_AS = `with no AI, written as DevExpress ${CONVERTED_VERSION} wri
  * A file that will not convert is a failure, with nothing written.
  */
 async function convertWork(run: Run, input: string, output: string | undefined, policy: Run['policy'], label = input): Promise<Omit<Row, 'input'>> {
-  const done = await convertLayout(input, output, policy, run.layout());
+  const database = databaseOf(run);
+  const done = await convertLayout(input, output, policy, run.layout(), database);
   const d = done.data;
-  const fields = pick(d, ['path', 'from', 'version', 'written', 'notices', ...AUDIT_FIELDS]);
+  const fields = {
+    ...pick(d, ['path', 'from', 'version', 'written', 'notices', ...AUDIT_FIELDS]),
+    // With a database, what it binds and how its query was chosen (GAP1-5).
+    ...(database ? { binding: bindingField(d.bound, done.fromFile.binding), chosenBy: d.chosenBy } : {}),
+  };
   if (!d.written) return { status: 'failed', lines: [], notes: d.notices, message: notConverted(q(label), d.from, 'cli'), fields };
   if (d.written.status === 'exists') return refusedWrite(d.written, fields, d.notices);
-  return {
+  const chosen = d.chosenBy ? [`  chosen as ${CHOSEN_WORDS[d.chosenBy]}`] : [];
+  return requiredBound(run, {
     status: writtenStatus(d.written, d.errors),
-    lines: [`${wrote(d.written)} Converted from ${d.from} ${CONVERTED_AS}. The result has ${done.words ?? 'no audit'}.`],
+    lines: [`${wrote(d.written)} Converted from ${d.from} ${CONVERTED_AS}. The result has ${done.words ?? 'no audit'}.`, ...bindingLines(done.fromFile.binding, d.bound), ...chosen],
     notes: d.notices,
     fields,
-    fromFile: done.fromFile,
+    fromFile: withoutBinding(done.fromFile),
+  });
+}
+
+/**
+ * A binding with no AI (D1-11, OC7): the report bound to the query pinned,
+ * written to `output` (else `<name>.bound.repx` beside it); nothing is
+ * written when nothing could be bound, a declined input, exit 4.
+ */
+async function bindWork(run: Run, input: string): Promise<Omit<Row, 'input'>> {
+  const database = databaseOf(run) as DatabaseInput;
+  const ext = /\.vsrepx$/i.test(input) ? '.vsrepx' : '.repx';
+  const done = await bindLayout(input, database, outTarget(run, `${stemOf(run, input)}.bound${ext}`, LAYOUT_EXTENSIONS)?.path, run.policy, run.layout());
+  const d = done.data;
+  const fields = { ...pick(d, [...READ_FIELDS, 'written', ...AUDIT_FIELDS]), binding: bindingField(d.bound, done.fromFile.binding) };
+  const said = bindingLines(done.fromFile.binding, d.bound);
+  // What was read of the layout first, on stderr, then what binding it did.
+  const notes = [...done.layout.said, ...d.notices];
+  if (!d.written) return { status: 'declined', lines: [`Nothing was written: ${q(d.path)} could not be bound.`, ...said], notes, fields, fromFile: { findings: done.fromFile.findings } };
+  if (d.written.status === 'exists') return refusedWrite(d.written, fields, notes);
+  return {
+    status: writtenStatus(d.written, d.errors),
+    lines: [`${wrote(d.written)} Bound with no AI. The result has ${done.words ?? 'no audit'}.`, ...said],
+    notes,
+    fields,
+    fromFile: { findings: done.fromFile.findings },
   };
 }
 
@@ -968,6 +1157,153 @@ function alreadyThere(run: Run, target: string): Omit<Row, 'input'> | null {
   return { status: 'exists', lines: [], notes: [], message: `${q(target)} is already there, so the AI was not asked and nothing was written; give --force to replace it, or another --out.`, fields: {} };
 }
 
+/* ------------------------------------------------------------ a database (the header's *A database*) */
+
+/**
+ * What a shell reads inside double quotes (PowerShell's `$` and backtick, cmd's `%`, bash's `!`), a quote, or a control
+ * character; two backslashes together, which a POSIX shell reads as one inside quotes; or a backslash at the end, which
+ * would escape the closing quote (in a POSIX shell, and in how Windows programs read their arguments): never put in a
+ * line a person runs (the wave-5 review, BT-8).
+ */
+const SHELL_READS = /["$`%!\u0000-\u001f\u007f]|\\\\|\\$/;
+
+/**
+ * One argument of a command line as a person types it in PowerShell, cmd or a POSIX shell alike: plain, or in double
+ * quotes. A backslash is always quoted (BT-8): unquoted, a POSIX shell (Git Bash, WSL) reads it as an escape, so a named
+ * instance `db01\SQLEXPRESS` arrived as `db01SQLEXPRESS`; inside double quotes it keeps a backslash before anything but
+ * `$`, a backtick, `"`, `\` and a line break, which `SHELL_READS` refuses.
+ */
+function shellArg(value: string): string {
+  return /^[A-Za-z0-9_.:/-]+$/.test(value) ? value : `"${value}"`;
+}
+
+/**
+ * The sqlcmd line that runs Forma's script and keeps every name readable
+ * (D1-4): `-y 0` so the one cell is printed whole, with no heading line (the
+ * wave-5 review measured sqlcmd 16 with ODBC 17 over LocalDB's FormaSample:
+ * it refuses `-h` beside `-y 0`, "The -h and the -y 0 options are mutually
+ * exclusive", exit 1 and no file, in every shell, and without `-h` it writes
+ * the cell alone, a 1.9 MB layout of 1,205 tables whole); `-b`, so a script
+ * SQL Server fails (a sample script naming a table that is not there: "Msg
+ * 208, Invalid object name") ends sqlcmd with 1 rather than 0 with the error
+ * written into the file; `-f 65001` so the file is UTF-8 whatever the
+ * console's code page (without it, sqlcmd writes the computer's code page,
+ * and a name in another script is lost, Arabic's to question marks); and
+ * `-o`, never a shell's `>`, which Windows PowerShell 5.1 writes as UTF-16
+ * after reading the output through the console's code page. Never `-W`,
+ * which sqlcmd refuses beside `-y`. `-E` signs in with Windows, the person's
+ * own sign-in; no password is ever on the line. Null when a value holds what
+ * a shell would read inside quotes.
+ */
+export function sqlcmdLine(server: string, database: string, script: string, out: string): string | null {
+  if ([server, database, script, out].some((v) => !v || SHELL_READS.test(v))) return null;
+  return `sqlcmd -S ${shellArg(server)} -d ${shellArg(database)} -E -y 0 -b -f 65001 -i ${shellArg(script)} -o ${shellArg(out)}`;
+}
+
+/**
+ * sql-script (D1-4, D1-6): Forma's read-only layout script, or with
+ * `--sample` the script that reads a few rows of the tables named (lib's
+ * `sampleScript`, which quotes every name), on stdout as it is, or written
+ * to `--out`'s .sql file; with `--sqlcmd`, the line that runs it into a
+ * .txt beside it, which `--database` (or `--samples`) then reads. Needs no
+ * AI, opens no connection.
+ */
+async function sqlScriptCommand(run: Run): Promise<Row> {
+  const { options, io } = run;
+  const kind = options.sample ? 'sample rows' : 'layout';
+  return attempt(run, options.out ?? 'stdout', async () => {
+    const scripts = await import('../lib/sqlSchemaScript');
+    const text = options.sample ? scripts.sampleScript(options.sample, options.rows) : scripts.SCHEMA_SCRIPT;
+    const fields = { script: kind, ...(options.sample ? { sample: options.sample.map((t) => `${t.schema}.${t.name}`), rows: options.rows ?? scripts.SAMPLE_SCRIPT_ROWS } : {}) };
+    if (options.out === undefined) {
+      // The script itself, Forma's own text and the names the person gave, whole: never through the one-line `shown`.
+      if (options.json) return { status: 'done', lines: [], notes: [], fields: { ...fields, text } };
+      io.out(text);
+      return { status: 'done', lines: [], notes: [], fields };
+    }
+    const target = resolveWritePath(options.out, run.scope, run.sys, { extensions: ['.sql'] });
+    if (!target.ok) throw new ToolRefusal(`${target.reason} sql-script writes a .sql file.`);
+    const output = target.path.replace(/\.sql$/i, '.txt');
+    const line = options.sqlcmd ? sqlcmdLine(options.sqlcmd.server, options.sqlcmd.database, options.out, run.sys.path.join(run.sys.path.dirname(options.out), run.sys.path.basename(output))) : null;
+    if (options.sqlcmd && !line) throw new UsageError('--sqlcmd: the server, the database or a file name holds a quote, a $, `, % or !, a control character, two backslashes together or a backslash at its end, which a shell reads inside quotes; type the sqlcmd line yourself.');
+    const written = writeLayout(target.path, text, run.policy, io.signal);
+    if (written.status === 'exists') return refusedWrite(written, { ...fields, written }, []);
+    const lines = [`${wrote(written)} It reads the ${kind === 'layout' ? "database's layout" : 'rows of the tables named'}, and changes nothing.`];
+    const notes: string[] = [];
+    if (line) {
+      lines.push(`Run it with sqlcmd, which writes ${q(output)}; then give that file to ${kind === 'layout' ? '--database' : '--samples'}:`, line);
+      notes.push('-E signs in with your Windows account; for a SQL Server login, put -U <login> in its place, and sqlcmd asks for the password.');
+    } else {
+      notes.push(`Run it in SSMS and save the one cell it answers, or with sqlcmd: sql-script --sqlcmd <server> <database> --out ${q(options.out)} prints the line.`);
+    }
+    return { status: writtenStatus(written), lines, notes, fields: { ...fields, written, ...(line ? { sqlcmd: line, output } : {}) } };
+  });
+}
+
+/** The database the person gave, as the calls take it; undefined without one. */
+function databaseOf(run: Run): DatabaseInput | undefined {
+  const o = run.options;
+  if (o.database === undefined) return undefined;
+  return { layout: o.database, samples: o.samples, query: o.query, ...(o.connectionName !== undefined ? { connectionName: o.connectionName } : {}) };
+}
+
+/** What a query reads, in words: a stored procedure, a SQL query by its name, or a table or view with what it joins. */
+export function queryWords(q: QueryJson): string {
+  if (q.procedure) return `the stored procedure ${q.procedure}`;
+  if (q.sql) return `the SQL query ${q.name || 'Query'}`;
+  const joins = (q.joins ?? []).map((j) => j.table).filter(Boolean);
+  const details = (q.details ?? []).map((d) => d.table).filter(Boolean);
+  return `${q.table ?? q.object ?? 'a table'}${joins.length ? ` with ${joins.join(', ')}` : ''}${details.length ? `, each with its ${details.join(', ')}` : ''}`;
+}
+
+/**
+ * A binding as lines under an input's result: what the report reads, on which connection, its parameters and what was
+ * left out, or why it is not bound; then what else the binding says (its `notes`: a connection Forma Designer cannot fill,
+ * the wave-5 review's BT-7 and W5-PB-12, said under every command that binds, a connection kept, fields renamed, a
+ * detail report moved or removed).
+ */
+export function bindingLines(binding: BindingText | undefined, bound: boolean | null | undefined): string[] {
+  if (bound === null || bound === undefined || !binding) return [];
+  const notes = (binding.notes ?? []).map((note) => `  ${note}`);
+  if ('reason' in binding) return [`  not bound to ${binding.database || 'the database'}: ${binding.reason}`, ...notes];
+  const n = binding.parameters.length;
+  const parameters = n ? `, the report parameter${n === 1 ? '' : 's'} ${binding.parameters.join(', ')}` : '';
+  return [`  bound to ${queryWords(binding.query)} on connection "${binding.connection}"${parameters}`, ...binding.leftOut.map((part) => `  left out ${part}`), ...notes];
+}
+
+/** A binding as an input's JSON line carries it (D1-9): whether bound, then what it reads or why not; null without a database. */
+const bindingField = (bound: boolean | null | undefined, text: BindingText | undefined) => (bound === null || bound === undefined ? null : { bound, ...(text ?? {}) });
+
+/** Text read from files, without the binding, which a row carries as its own field and lines. */
+const withoutBinding = <T extends object>(fromFile: T): T => Object.fromEntries(Object.entries(fromFile).filter(([k]) => k !== 'binding')) as T;
+
+/**
+ * The layout read before any AI is asked or any report made (D1-3, D1-7), in
+ * the pipeline's bounded thread: what was read said on stderr (the database
+ * and its objects, each file of sample rows by its tables and counts, never a
+ * value: OC6), what was not, and what the report is to read when a query was
+ * pinned. Null when read; else the input's refused row.
+ */
+async function layoutFirst(run: Run, label: string): Promise<Row | null> {
+  const database = databaseOf(run);
+  if (!database) return null;
+  const checked = await attempt(run, label, async () => {
+    const read = await readLayout(database, run.policy, run.layout());
+    for (const line of [...read.said, ...read.notices]) run.err(line);
+    if (read.query) run.err(`The report is to read ${queryWords(read.query)}.`);
+    return { status: 'done', lines: [], notes: [], fields: {} };
+  });
+  return checked.status === 'done' ? null : checked;
+}
+
+/** With --require-binding, a report written but not bound to the database given ends its input with 4 (D1-9). */
+function requiredBound(run: Run, row: Omit<Row, 'input'>): Omit<Row, 'input'> {
+  if (!run.options.requireBinding || (row.status !== 'done' && row.status !== 'errors') || !row.fields.written) return row;
+  const binding = row.fields.binding as { bound?: boolean } | null | undefined;
+  if (binding?.bound) return row;
+  return { ...row, status: 'unbound', message: `The report was written, but it is not bound to the database given (--require-binding).` };
+}
+
 /** What a generate makes, for generate and for each picture and PDF of a batch. */
 interface GenerateSpec {
   label: string;
@@ -989,7 +1325,12 @@ interface GenerateSpec {
 /** A report from files and/or words, by the AI set up: the work of one row, its failures thrown for `attempt`. */
 async function generateWork(run: Run, spec: GenerateSpec, settings: AiSettings, generator: Generator): Promise<Omit<Row, 'input'>> {
   const { options } = run;
-  const plan = await planGenerate({ description: spec.description, files: spec.files, data: spec.data, output: spec.output }, spec.policy, { standIn: options.allowStandIn, ...(spec.draft ? { draft: spec.draft } : {}) });
+  const database = databaseOf(run);
+  const plan = await planGenerate(
+    { description: spec.description, files: spec.files, data: spec.data, output: spec.output, ...(database ? { database } : {}) },
+    spec.policy,
+    { standIn: options.allowStandIn, ...(spec.draft ? { draft: spec.draft } : {}) },
+  );
   const there = spec.lookFirst ? alreadyThere(run, plan.target) : null;
   if (there) return there;
   const tell = stageLines(run, spec.indent);
@@ -1013,16 +1354,17 @@ async function generateWork(run: Run, spec: GenerateSpec, settings: AiSettings, 
     model: d.model,
     fixModel: d.fixModel,
     limit: d.limit,
+    ...(database || options.data.length ? { binding: bindingField(d.bound, made.fromFile.binding) } : {}),
   };
   if (d.written.status === 'exists') return refusedWrite(d.written, fields, notes);
-  return {
+  return requiredBound(run, {
     // Forma's draft standing in is the draft's status, exit 4 whatever its audit: the report asked for was not made (CLI-4).
     status: d.standIn ? 'draft' : writtenStatus(d.written, d.errors),
-    lines: [`${wrote(d.written)} ${how}. The report has ${made.auditWords ?? 'no audit'}${printed}.`, ...(model ? [model] : [])],
+    lines: [`${wrote(d.written)} ${how}. The report has ${made.auditWords ?? 'no audit'}${printed}.`, ...(model ? [model] : []), ...bindingLines(made.fromFile.binding, d.bound)],
     notes,
     fields,
     fromFile: pick(made.fromFile, ['findings', 'printed', 'standInFonts', 'aiError']),
-  };
+  });
 }
 
 /** generate: a report from files and/or words, by the AI set up. */
@@ -1045,17 +1387,23 @@ async function generateCommand(run: Run, settings: AiSettings, generator: Genera
         : besideName(out.path, '.draft.repx', sys)
       : besideName(first, '.draft.repx', sys);
   const spec: GenerateSpec = { label, files: run.inputs, shown: run.inputs, description: options.description, data: options.data, output: out?.path, draft, policy: run.policy, lookFirst: true };
+  // The database read and said first, so a wrong one costs no request (D1-3, D1-7).
+  const refused = await layoutFirst(run, label);
+  if (refused) return refused;
   return attempt(run, label, () => generateWork(run, spec, settings, generator));
 }
 
 /** revise: a change in words to a report, by the AI set up. */
 async function reviseCommand(run: Run, settings: AiSettings, generator: Generator): Promise<Row> {
   const input = run.inputs[0];
+  const refused = await layoutFirst(run, input);
+  if (refused) return refused;
   return attempt(run, input, async () => {
     const output = outTarget(run, `${stemOf(run, input)}.revised.repx`, ['.repx'])?.path;
     // No look for the output before the AI is asked, as generate has: a question is answered with nothing written, so only
     // the write can say whether the name was wanted.
-    const plan = await planRevise({ path: input, request: run.options.words ?? '', output, editsOnly: run.options.editsOnly }, run.policy);
+    const database = databaseOf(run);
+    const plan = await planRevise({ path: input, request: run.options.words ?? '', output, editsOnly: run.options.editsOnly, ...(database ? { database } : {}) }, run.policy);
     return reviseWork(run, plan, settings, generator);
   });
 }
@@ -1089,7 +1437,10 @@ async function reviseWork(run: Run, plan: RevisePlan<'refuse' | 'replace'>, sett
     model: d.model,
     fixModel: d.fixModel,
     limit: d.limit,
+    ...(plan.database ? { binding: bindingField(d.bound, made.fromFile.binding) } : {}),
   };
+  const bindingSaid = bindingLines(made.fromFile.binding, d.bound);
+  const fromFile = withoutBinding(made.fromFile);
   if (d.written?.status === 'exists') return refusedWrite(d.written, fields, notes);
   if (!d.written && keep && (d.action === 'unchanged' || d.action === 'answer')) {
     const kept = await keep.write();
@@ -1098,13 +1449,13 @@ async function reviseWork(run: Run, plan: RevisePlan<'refuse' | 'replace'>, sett
     if (kept.written.status === 'exists') return refusedWrite(kept.written, keptFields, keptNotes);
     const what = keep.converted ? `the report converted from ${q(label ?? d.path)} is written as converted` : `${q(label ?? d.path)} is written as it reads`;
     const why = d.action === 'unchanged' ? 'Nothing needed changing, so' : `The request was answered by ${by} rather than carried out, so`;
-    return {
+    return requiredBound(run, {
       status: writtenStatus(kept.written, kept.audit.data.errors),
-      lines: [`${wrote(kept.written)} ${why} ${what}; the result has ${kept.audit.words}.${d.action === 'answer' ? ' The answer:' : ''}`, ...(model ? [model] : [])],
+      lines: [`${wrote(kept.written)} ${why} ${what}; the result has ${kept.audit.words}.${d.action === 'answer' ? ' The answer:' : ''}`, ...(model ? [model] : []), ...bindingSaid],
       notes: keptNotes,
       fields: keptFields,
-      fromFile: { ...made.fromFile, findings: kept.audit.lines },
-    };
+      fromFile: { ...fromFile, findings: kept.audit.lines },
+    });
   }
   let status: Status;
   let line: string;
@@ -1121,7 +1472,8 @@ async function reviseWork(run: Run, plan: RevisePlan<'refuse' | 'replace'>, sett
     const what = d.action === 'rebuild' ? `The report was redesigned by ${by}` : `${n(d.applied, 'edit')} made${d.declined ? `, ${d.declined} declined` : ''} by ${by}`;
     line = `${wrote(d.written)} ${what}. The result has ${made.auditWords ?? 'no audit'}.`;
   }
-  return { status, lines: [line, ...(model ? [model] : [])], notes, fields, fromFile: made.fromFile };
+  // The binding said under a report written; with nothing written its JSON line still carries the report's as it reads.
+  return requiredBound(run, { status, lines: [line, ...(model ? [model] : []), ...(d.written ? bindingSaid : [])], notes, fields, fromFile });
 }
 
 /**
@@ -1166,8 +1518,12 @@ function batchSummary(run: Run, facts: BatchFacts): { fields: Record<string, unk
     ai: { minutes: Math.round(GEN_LIMITS.deadlineMs / 60_000), heapMb: GEN_LIMITS.heapMb },
     layout: { seconds: PIPELINE_LIMITS.deadlineMs / 1000, heapMb: PIPELINE_LIMITS.heapMb },
   };
-  const fields = { routes: facts.routes, providers, models, seconds: Math.round(ms / 1000), stoppedBy: stopped, resetsAt, limits, leftOut: facts.leftOut };
+  // With a database, how many reports written are bound to it (D1-9), each file's on its own.
+  const bindings = run.rows.map((r) => r.fields.binding as { bound?: boolean } | null | undefined).filter((b) => b !== undefined);
+  const bound = run.options.database !== undefined ? { bound: bindings.filter((b) => b?.bound).length, unbound: bindings.filter((b) => !b?.bound).length } : null;
+  const fields = { routes: facts.routes, providers, models, seconds: Math.round(ms / 1000), stoppedBy: stopped, resetsAt, limits, leftOut: facts.leftOut, ...(bound ? { binding: bound } : {}) };
   const lines: string[] = [];
+  if (bound) lines.push(`Bound to the database: ${bound.bound} of ${bindings.length} report${bindings.length === 1 ? '' : 's'} made.`);
   const files = (count: number) => n(count, 'file');
   const said = Object.entries(providers).map(([p, count]) => `${p === 'mock' ? 'the mock invoice' : (PROVIDER_NAMES[p as keyof typeof PROVIDER_NAMES] ?? p)} (${files(count)})`);
   if (said.length) lines.push(`Answered by: ${said.join(', ')}.`);
@@ -1190,6 +1546,11 @@ function batchSummary(run: Run, facts: BatchFacts): { fields: Record<string, unk
  * not started.
  */
 async function work(run: Run, setGenerator: (g: Generator) => void): Promise<number | 'no AI' | 'planned only'> {
+  // A connection name that cannot be written is the person's slip, said before anything else and never repeated (D1-5).
+  if (run.options.connectionName !== undefined) {
+    const problem = (await import('../lib/databaseAi')).connectionNameProblem(run.options.connectionName);
+    if (problem) throw new UsageError(problem);
+  }
   if (run.command === 'batch') return batchCommand(run, setGenerator);
   if (run.command === 'generate' || run.command === 'revise') {
     // The gate before any file is read, so a run with no AI costs nothing and says what to set (GAP1-2, CLI-7).
@@ -1200,11 +1561,23 @@ async function work(run: Run, setGenerator: (g: Generator) => void): Promise<num
     emit(run, run.command === 'generate' ? await generateCommand(run, settings, generator) : await reviseCommand(run, settings, generator));
     return 1;
   }
+  if (run.command === 'sql-script') {
+    emit(run, await sqlScriptCommand(run));
+    return 1;
+  }
   const planned: string[] = [];
   for (const raw of run.inputs) {
     const found = run.command === 'audit' || run.command === 'convert' ? folderInputs(run, raw, run.command) : [raw];
     if (Array.isArray(found)) planned.push(...found);
     else emit(run, found);
+  }
+  // convert's database read and said once, before its first file; each conversion reads it again in its own thread.
+  if (run.command === 'convert' && planned.length) {
+    const refused = await layoutFirst(run, run.options.database ?? '');
+    if (refused) {
+      emit(run, refused);
+      return run.rows.length + planned.length;
+    }
   }
   if (run.command === 'convert' && planned.length > 1 && run.options.out !== undefined && outTarget(run, 'x', ['.repx'])?.folder === null) {
     throw new UsageError(`--out names one file, but ${planned.length} reports are converted; name a folder, ending it with a separator if it is not there yet.`);
@@ -1309,6 +1682,13 @@ async function batchCommand(run: Run, setGenerator: (g: Generator) => void): Pro
       emit(run, failedRow(given, 'refused', `${error.message} --data names a data file every picture and PDF of the batch is made with.`));
       return 1;
     }
+  }
+  // The database read and said once, before the first file (D1-3, D1-7); each file's job reads it again and builds a step of
+  // its own, so no file's query carries to the next (D1-9), a departure from browser Batch, which shares no database.
+  const refusedDb = await layoutFirst(run, options.database ?? '');
+  if (refusedDb) {
+    emit(run, refusedDb);
+    return 1;
   }
   const generator = settings ? generatorFor(run, settings) : null;
   if (generator) setGenerator(generator);
@@ -1481,6 +1861,7 @@ async function makeItem(run: Run, item: BatchItem, name: string, names: JudgedNa
     return { settings: ctx.settings, generator: ctx.generator };
   };
   const words = options.words ?? '';
+  const database = databaseOf(run);
   return attempt(run, name, async () => {
     const source = sourceOf(item, ctx.inside, run.sys);
     switch (item.route) {
@@ -1490,7 +1871,7 @@ async function makeItem(run: Run, item: BatchItem, name: string, names: JudgedNa
       }
       case 'revise': {
         const { settings, generator } = ai();
-        const plan = await planRevise({ path: source, request: words, output: target, editsOnly: options.editsOnly }, policy);
+        const plan = await planRevise({ path: source, request: words, output: target, editsOnly: options.editsOnly, ...(database ? { database } : {}) }, policy);
         // A report the words leave as it was is written as it reads, so --out holds it and a rerun skips it (U1).
         const keep: Kept = { converted: false, write: () => copyLayout(plan.report, target, policy, run.layout()) };
         return reviseWork(run, plan, settings, generator, indent, [], keep, name);
@@ -1502,14 +1883,22 @@ async function makeItem(run: Run, item: BatchItem, name: string, names: JudgedNa
       case 'convert-revise': {
         const { settings, generator } = ai();
         // Converted with no AI first, then revised: the AI changes the converter's exact report, by control name (GAP1-1, GAP1-3).
-        const c = await convertForeign(source, policy, run.layout());
+        // With a database, the conversion binds it first (GAP1-5), and the revision is shown what it reads.
+        const c = await convertForeign(source, policy, run.layout(), database);
         if (!c.report) {
           if (c.from === 'FastReport') return { status: 'failed', lines: [], notes: [...c.read.notices], message: notConverted(q(name), c.from, 'cli'), fields: { from: c.from } };
           const first = [`${q(name)} could not be converted, so the AI made it from its text and the words given.`];
           return generateWork(run, { label: name, files: [source], shown: [name], description: words, data, output: target, draft, policy, lookFirst: false, indent, first }, settings, generator);
         }
         const converted = c.report;
-        const plan: RevisePlan<'refuse' | 'replace'> = { request: words, report: { path: c.source.path, spelled: c.source.spelled, kind: 'repx', text: converted.xml }, target, policy, editsOnly: options.editsOnly };
+        const plan: RevisePlan<'refuse' | 'replace'> = {
+          request: words,
+          report: { path: c.source.path, spelled: c.source.spelled, kind: 'repx', text: converted.xml },
+          target,
+          policy,
+          editsOnly: options.editsOnly,
+          database: database ? judgeDatabase(database, run.scope, run.sys) : null,
+        };
         // The conversion is kept when the words change nothing in it: written as converted, never lost (U1).
         const keep: Kept = { converted: true, write: async () => ({ written: writeLayout(target, converted.xml, policy, run.io.signal), notices: [], audit: converted.audit }) };
         return reviseWork(run, plan, settings, generator, indent, [...c.read.notices, ...converted.notices, `Converted from ${c.from} ${CONVERTED_AS}, then revised.`], keep, name);

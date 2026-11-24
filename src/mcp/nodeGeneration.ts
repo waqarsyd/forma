@@ -67,7 +67,12 @@
  * - No memory, no kept reports, no report library, no shared database, no
  *   vision model or page reader on a Local AI server, and no learning event:
  *   the server keeps nothing of the person's, and reads no storage at all
- *   (Node 26 defines localStorage and throws on a read, TST-12).
+ *   (Node 26 defines localStorage and throws on a read, TST-12). A database
+ *   layout among a request's files is that request's alone, read by the core
+ *   (lib/layoutFile.ts `stepFromFiles`, since the CLI and Forma Designer
+ *   work's wave 5, D1-1), and kept nowhere; so is one a caller hands in with
+ *   the request (`make`'s `extra.database`, the step genJobs.ts builds from
+ *   the command line's `--database`, the same wave's D1-2).
  *
  * Forma's folder (`formaUserFolder`) is per user and outside any repository
  * and the user's project: the probe's file, the parks' file and the gathered
@@ -83,7 +88,8 @@ import type { PreviewMeta } from '../lib/attachments';
 import { detectInputFrom, detectSettings } from '../lib/autoConfig';
 import { boxReaderFrom } from '../lib/boxReader';
 import { formaModelFrom } from '../lib/formaModel';
-import type { GenerationDeps, IntakeDeps, Made, MakeRequest } from '../lib/generationCore';
+import { withLayoutStep } from '../lib/layoutFile';
+import type { AskDeps, GenerationDeps, IntakeDeps, Made, MakeRequest } from '../lib/generationCore';
 import { designWith, houseBriefWith } from '../lib/learningLoop';
 import { emptyMemory } from '../lib/memory';
 import { keepModelChoiceIn, type ModelStorage } from '../lib/modelCache';
@@ -234,8 +240,11 @@ export interface NodeGeneration {
    * `makeReport` with these parts. `hooks` hears each stage as it starts (the
    * pages read, Forma's draft, the AI asked, the answer checked: the fix the
    * print check sends back is asked again) and the answer's progress.
+   * `extra.database`, the database step a caller built from a layout it was
+   * handed (genJobs.ts, the CLI and Forma Designer work's wave 5, D1-2), as
+   * the workspace hands in its shared database's.
    */
-  make(request: MakeRequest, hooks?: MakeHooks): Promise<Made | null>;
+  make(request: MakeRequest, hooks?: MakeHooks, extra?: Pick<AskDeps, 'database'>): Promise<Made | null>;
   /** The families a report's fonts name that this machine measured in a stand-in (nodeFonts.ts `standInFamilies`): text from the report. */
   standInFonts(xml: string): string[];
   /** Ends OCR's worker; the next reading starts another. */
@@ -287,6 +296,8 @@ export async function nodeGeneration(options: NodeGenerationOptions = {}): Promi
   /** The parts for one request; `unread` is told of each page OCR was asked to read and could not. */
   const partsFor = (asked: ReportConfig, open: string | null | undefined, unread?: (meta: PreviewMeta) => void, hooks?: MakeHooks): GenerationDeps & IntakeDeps => ({
     drawing: nodeDrawing,
+    // A database layout among a request's files becomes its database step (D1-1), handed to the core (the wave-5 review, W5-PB-8).
+    layoutStep: withLayoutStep,
     // The open report laid over the stored settings, as App's detectFor lays it (W7R-2).
     detect: (sources) =>
       detectSettings(detectInputFrom(sources, { withOpenReport: Boolean(open), openReport: open ?? null, locale: options.locale, learned: { version: asked.version, unit: asked.unit } })),
@@ -315,11 +326,12 @@ export async function nodeGeneration(options: NodeGenerationOptions = {}): Promi
     ocr: ocr.english,
     config,
     deps: (asked, open) => partsFor(asked, open),
-    make: async (request, hooks) => {
+    make: async (request, hooks, extra) => {
       const asked = config(request.config);
       const unread: PreviewMeta[] = [];
       const { makeReport } = await import('../lib/generationCore');
-      const made = await makeReport({ ...request, config: asked }, partsFor(asked, request.open?.repxContent, (meta) => unread.push(meta), hooks));
+      const parts = partsFor(asked, request.open?.repxContent, (meta) => unread.push(meta), hooks);
+      const made = await makeReport({ ...request, config: asked }, extra?.database ? { ...parts, database: extra.database } : parts);
       return made && (unread.length ? { ...made, notices: [...made.notices, ...unread.map(unreadNotice)] } : made);
     },
     standInFonts: (xml) => standInFamilies(xml, canvas),

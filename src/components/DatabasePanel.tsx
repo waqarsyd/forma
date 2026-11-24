@@ -406,7 +406,7 @@ function DatabasePanel({ database, recent, onNotice, query, onQuery, selection, 
   const [readByDesigner, setReadByDesigner] = useState<ReadonlySet<string>>(() => new Set());
   const noteRead = (text: string) => {
     const found = readDatabaseText(text);
-    const name = found ? (found.kind === 'schema' ? found.schema.database : found.database) : '';
+    const name = !found || found.kind === 'damaged' ? '' : found.kind === 'schema' ? found.schema.database : found.database;
     if (name) setReadByDesigner((prev) => new Set(prev).add(name.toLowerCase()));
   };
 

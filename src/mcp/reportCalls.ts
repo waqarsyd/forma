@@ -60,6 +60,17 @@
  * person's own file. The server's policy never replaces, so it never meets
  * either.
  *
+ * Since that work's wave 5 (findings D1-2, D1-9 and D1-10, the owner's OC6):
+ * both calls take a database's layout (`DatabaseInput`: the layout file, the
+ * files of sample rows the person passed, the query pinned, the connection's
+ * name), judged with the rest before the call waits and read at its turn,
+ * as the job's `database` (genJobs.ts *A database*); the command line's
+ * `--database`, the server's tools taking none until that work's wave 7. A
+ * result made with one, or with a layout the core found among the data
+ * files (D1-1), says whether the report is bound (`bound`) and, apart under
+ * `fromFile.binding`, what it reads or why not: the names are the layout's
+ * and the report's (D1-10). A result made with none is as it was.
+ *
  * Only a refusal's quoted failure has its keys out here (`failureSaid`).
  * Every string in a returned result is unscrubbed: `fromFile.aiError` is the
  * AI's failure, and `reply`, `brief` and the notices are the AI's words, as
@@ -91,9 +102,11 @@ import type { AiLimit } from '../lib/aiLimit';
 import { reportFileKind } from '../lib/vsReport';
 import { notReadyMessage, type AiSettings } from './aiSettings';
 import { AiFailure, CallStopped, ToolRefusal, quoted, type Voice } from './caller';
+import type { QueryJson } from '../lib/databaseAi';
 import type { Answerer, GenDone, GenEvent, InputFile, Printed, ReviseAction } from './genJobs';
 import type { Generator, JobSource } from './generator';
 import { nodeWriteFs, parsePath, resolveReadPath, resolveWritePath, type IfExists, type PathScope, type PathSystem, type PlacedStatus, type WriteFs, type WriteStatus } from './paths';
+import { LAYOUT_FILE_EXTENSIONS, MAX_LAYOUT_FILE_BYTES, SAMPLE_FILE_EXTENSIONS, type Binding, type DatabaseJob } from './nodeDatabase';
 import type { Audited } from './pipeline';
 import { besideName, codeRefusal, outputPath, overInputRefusal, readReport, sameFile, writeReport, type LayoutKind, type ReportFile, type Written } from './reportFile';
 
@@ -203,12 +216,15 @@ export interface Judged {
   spelled: string;
 }
 
-/** A file a call reads, judged before the call waits: by paths.ts, as one of `extensions`, at most the web app's file size. Throws a `ToolRefusal`. */
-export function judgeInput(raw: string, extensions: readonly string[], scope: PathScope, sys: PathSystem): Judged {
+/**
+ * A file a call reads, judged before the call waits: by paths.ts, as one of `extensions`, at most the web app's file size
+ * (a database's layout, `maxBytes`, at most nodeDatabase.ts's). Throws a `ToolRefusal`.
+ */
+export function judgeInput(raw: string, extensions: readonly string[], scope: PathScope, sys: PathSystem, maxBytes = MAX_FILE_BYTES): Judged {
   const parsed = parsePath(raw, scope, sys);
   if (!parsed.ok) throw new ToolRefusal(parsed.reason);
   if (reportFileKind(parsed.path) === 'code') throw new ToolRefusal(codeRefusal(parsed.path, scope, sys));
-  const found = resolveReadPath(raw, scope, sys, { extensions, maxBytes: MAX_FILE_BYTES });
+  const found = resolveReadPath(raw, scope, sys, { extensions, maxBytes });
   if (!found.ok) throw new ToolRefusal(found.reason);
   return { path: found.path, name: sys.path.basename(found.path), spelled: parsed.path };
 }
@@ -219,7 +235,7 @@ export function judgeInput(raw: string, extensions: readonly string[], scope: Pa
  * bytes, and the read does not stop the thread that answers. Throws a
  * `ToolRefusal` when a file went or grew past the limit meanwhile.
  */
-export async function readJudged(judged: readonly Judged[], voice: Voice): Promise<InputFile[]> {
+export async function readJudged(judged: readonly Judged[], voice: Voice, maxBytes = MAX_FILE_BYTES): Promise<InputFile[]> {
   const files: InputFile[] = [];
   for (const file of judged) {
     let bytes: Uint8Array;
@@ -228,11 +244,78 @@ export async function readJudged(judged: readonly Judged[], voice: Voice): Promi
     } catch {
       throw new ToolRefusal(SAY[voice].gone(quoted(file.spelled, voice)));
     }
-    if (bytes.byteLength > MAX_FILE_BYTES) throw new ToolRefusal(SAY[voice].grew(quoted(file.spelled, voice), bytes.byteLength));
+    if (bytes.byteLength > maxBytes) throw new ToolRefusal(SAY[voice].grew(quoted(file.spelled, voice), bytes.byteLength));
     files.push({ name: file.name, bytes });
   }
   return files;
 }
+
+/**
+ * A database's layout a call is made with (the CLI and Forma Designer work's
+ * wave 5; D1-2, D1-7, OC6): the layout file, the files of sample rows the
+ * person passed (their values go to the AI: passing them is the person's
+ * consent, OC6), the query pinned as JSON (databaseAi.ts `QueryJson`), and
+ * the connection a report names when it names none. The MCP server's tools
+ * take none until that work's wave 7; the command line's `--database`.
+ */
+export interface DatabaseInput {
+  layout: string;
+  samples?: readonly string[];
+  query?: QueryJson | null;
+  connectionName?: string;
+}
+
+/** A database's files judged before the call waits; read only at its turn. */
+export interface JudgedDatabase {
+  layout: Judged;
+  samples: Judged[];
+  query: QueryJson | null;
+  connectionName?: string;
+}
+
+/** Judges a database's files, as the kinds a layout and sample rows are read from, at most nodeDatabase.ts's size. Throws a `ToolRefusal`. */
+export function judgeDatabase(input: DatabaseInput, scope: PathScope, sys: PathSystem): JudgedDatabase {
+  return {
+    layout: judgeInput(input.layout, LAYOUT_FILE_EXTENSIONS, scope, sys, MAX_LAYOUT_FILE_BYTES),
+    samples: (input.samples ?? []).map((raw) => judgeInput(raw, SAMPLE_FILE_EXTENSIONS, scope, sys, MAX_LAYOUT_FILE_BYTES)),
+    query: input.query ?? null,
+    ...(input.connectionName !== undefined ? { connectionName: input.connectionName } : {}),
+  };
+}
+
+/** A database's files read at the call's turn (W8C-6), as the job carries them to the work's thread. Throws a `ToolRefusal`. */
+export async function readDatabaseFiles(db: JudgedDatabase, voice: Voice): Promise<DatabaseJob> {
+  const [layout] = await readJudged([db.layout], voice, MAX_LAYOUT_FILE_BYTES);
+  return {
+    layout,
+    samples: await readJudged(db.samples, voice, MAX_LAYOUT_FILE_BYTES),
+    query: db.query,
+    ...(db.connectionName !== undefined ? { connectionName: db.connectionName } : {}),
+  };
+}
+
+/**
+ * A binding as a result carries it (D1-10): whether the report is bound, as data, and its names, read from the layout
+ * and the report, apart for `fromFile`, with what else it says (`notes`: a connection Forma Designer cannot fill, a
+ * connection kept, fields renamed, a detail report moved or removed; the wave-5 review, BT-7, W5-PB-11, W5-PB-12).
+ */
+export type BindingText =
+  | { database: string; query: QueryJson; connection: string; designerFills: boolean; parameters: string[]; leftOut: string[]; notes: string[] }
+  | { database: string; reason: string; notes: string[] };
+
+/** A binding split for a result: `bound` for its data, the rest for `fromFile`. */
+export function bindingParts(binding: Binding | null): { bound: boolean | null; text: BindingText | null } {
+  if (!binding) return { bound: null, text: null };
+  const { bound, ...text } = binding;
+  return { bound, text };
+}
+
+/** What a host's model is told of a binding, the names apart under fromFile (D1-10); the command line prints the binding itself. */
+const BOUND_SAID = {
+  mcp: (bound: boolean) =>
+    bound ? 'The report is bound to the database layout given; fromFile.binding says what it reads.' : 'The report is not bound to the database layout given; fromFile.binding says why.',
+  cli: () => null,
+} as const satisfies Record<Voice, (bound: boolean) => string | null>;
 
 /** How a call runs: the AI and its generator, the call's signal, where its progress goes, and the caller's scrubber. */
 export interface CallRun {
@@ -267,6 +350,8 @@ export interface GenerateInput {
   files?: readonly string[];
   data?: readonly string[];
   output?: string;
+  /** A database's layout to bind the report to (the CLI and Forma Designer work's wave 5); the command line's `--database`. */
+  database?: DatabaseInput;
 }
 
 /** A generate call judged: its words, its files (sources first, then data), the output, the policy it was judged by, and whether Forma's draft may stand in, and where. */
@@ -278,6 +363,8 @@ export interface GeneratePlan<W extends IfExists = IfExists> {
   standIn: boolean;
   /** Where Forma's draft is written when it stands in, apart from the report's name (`GenerateHow`'s `draft`); null: under `target`, the server's way. */
   draftTarget: string | null;
+  /** The database's files judged, or null. */
+  database: JudgedDatabase | null;
 }
 
 /**
@@ -312,6 +399,7 @@ export async function planGenerate<W extends IfExists>(input: GenerateInput, pol
   const scope = await scopeOf(policy);
   const { sys } = policy;
   const inputs = [...sources.map((raw) => judgeInput(raw, SOURCE_EXTENSIONS, scope, sys)), ...data.map((raw) => judgeInput(raw, DATA_EXTENSIONS, scope, sys))];
+  const database = input.database ? judgeDatabase(input.database, scope, sys) : null;
   const first = inputs[0];
   if (!input.output && !first) throw new ToolRefusal(say.noOutput);
   const target = resolveWritePath(input.output || besideName(first.spelled, '.generated.repx', sys), scope, sys, { extensions: ['.repx'] });
@@ -321,12 +409,13 @@ export async function planGenerate<W extends IfExists>(input: GenerateInput, pol
   // A report made from a file is never written over that file, whatever replaces (the wave-4 review's SEC-W4-2): a
   // report to start from would lose what it was, its login included. Only a policy that replaces can reach it.
   if (policy.ifExists === 'replace') {
+    const read = [...inputs, ...(database ? [database.layout, ...database.samples] : [])];
     for (const written of [target.path, ...(draft?.ok ? [draft.path] : [])]) {
-      const over = inputs.find((i) => sameFile(written, i.path, sys));
+      const over = read.find((i) => sameFile(written, i.path, sys));
       if (over) throw new ToolRefusal(say.overSource(quoted(over.path, policy.voice)));
     }
   }
-  return { words, inputs, target: target.path, policy, standIn: how.standIn !== false, draftTarget: draft ? draft.path : null };
+  return { words, inputs, target: target.path, policy, standIn: how.standIn !== false, draftTarget: draft ? draft.path : null, database };
 }
 
 /** generate_report's output object: the file written, who answered, what stood in, the notices, the audit and what printing found. */
@@ -349,12 +438,14 @@ export interface GenerateData<W extends IfExists = IfExists> {
   fixModel: string | null;
   /** The limit the AI met though a report was written: why Forma's draft stands in, or why the fix was not asked; null when none. */
   limit: AiLimit | null;
+  /** Whether the report written is bound to the database layout given (D1-9), there only with one, so a result made with none is as it was. What it reads is under fromFile.binding (D1-10). */
+  bound?: boolean;
 }
 
 /** What a generate call returns: its data, the text read from files apart, and the audit's words for a summary (null with no audit). */
 export interface GenerateResult<W extends IfExists = IfExists> {
   data: GenerateData<W>;
-  fromFile: { findings: string[]; printed: string[]; aiError?: string; standInFonts?: string[] };
+  fromFile: { findings: string[]; printed: string[]; aiError?: string; standInFonts?: string[]; binding?: BindingText };
   auditWords: string | null;
 }
 
@@ -369,6 +460,7 @@ export async function runGenerate<W extends IfExists>(plan: GeneratePlan<W>, run
     words: plan.words,
     files: await readJudged(plan.inputs, policy.voice),
     ...(plan.standIn ? {} : { standIn: false }),
+    ...(plan.database ? { database: await readDatabaseFiles(plan.database, policy.voice) } : {}),
   }));
   if (done.kind !== 'generate') throw new Error('the generator answered another call');
   if (!done.xml) throw new AiFailure(`No report was made: ${failureSaid(done.failure, run.redact)} Nothing was written.`, done.limit);
@@ -377,6 +469,9 @@ export async function runGenerate<W extends IfExists>(plan: GeneratePlan<W>, run
   const audit = done.audit;
   const notices = [...done.notices, ...(done.note ? [done.note] : [])];
   if (done.standIn) notices.push(SAY[policy.voice].standIn(STAND_IN_WORDS[done.standIn] ?? 'a quicker version'));
+  const binding = bindingParts(done.binding);
+  const boundSaid = binding.bound === null ? null : BOUND_SAID[policy.voice](binding.bound);
+  if (boundSaid) notices.push(boundSaid);
   return {
     data: {
       written,
@@ -391,12 +486,14 @@ export async function runGenerate<W extends IfExists>(plan: GeneratePlan<W>, run
       model: done.model,
       fixModel: done.fixModel,
       limit: done.limit,
+      ...(binding.bound === null ? {} : { bound: binding.bound }),
     },
     fromFile: {
       findings: audit?.lines ?? [],
       printed: done.printed.lines,
       ...(done.failure ? { aiError: done.failure } : {}),
       ...(done.standInFonts.length ? { standInFonts: done.standInFonts } : {}),
+      ...(binding.text ? { binding: binding.text } : {}),
     },
     auditWords: audit?.words ?? null,
   };
@@ -409,6 +506,8 @@ export interface ReviseInput {
   output?: string;
   /** No redesign of the whole report, only edits in place (genJobs.ts `ReviseJob`'s `editsOnly`): the command line's `--edits-only`. */
   editsOnly?: boolean;
+  /** A database's layout the change is made with (the CLI and Forma Designer work's wave 5, D1-2); the command line's `--database`. */
+  database?: DatabaseInput;
 }
 
 /** A revise call judged: the request, the report read (its text not yet opened), the output, the policy, and whether only edits may be made. */
@@ -418,6 +517,8 @@ export interface RevisePlan<W extends IfExists = IfExists> {
   target: string;
   policy: PathPolicy<W>;
   editsOnly: boolean;
+  /** The database's files judged, or null. */
+  database: JudgedDatabase | null;
 }
 
 /** Judges a revise call, its request and then its paths, reading the report before it waits (it is judged by its text). Throws a `ToolRefusal`. */
@@ -427,7 +528,12 @@ export async function planRevise<W extends IfExists>(input: ReviseInput, policy:
   const scope = await scopeOf(policy);
   const report = readReport(input.path, scope, policy.sys);
   const target = outputPath(input.output, report, '.revised.repx', ['.repx'], scope, policy.sys);
-  return { request, report, target, policy, editsOnly: input.editsOnly === true };
+  const database = input.database ? judgeDatabase(input.database, scope, policy.sys) : null;
+  // A layout read from a report's own source is never what a change is written over (SEC-W4-2's rule, for --force).
+  if (database && policy.ifExists === 'replace' && [database.layout, ...database.samples].some((d) => sameFile(target, d.path, policy.sys) && !sameFile(target, report.path, policy.sys))) {
+    throw new ToolRefusal(SAY[policy.voice].overSource(quoted(target, policy.voice)));
+  }
+  return { request, report, target, policy, editsOnly: input.editsOnly === true, database };
 }
 
 /** revise_report's output object: the report read, what was done, the file written (or null), who answered, the notices, and the audit when written. */
@@ -453,19 +559,22 @@ export interface ReviseData<W extends IfExists = IfExists> {
   fixModel: string | null;
   /** The limit an edit's second pass or a redesign's fix met, so the change is the one before it; null when none. */
   limit: AiLimit | null;
+  /** With a database layout given, and only then: whether the report written (or, with nothing written, the report read) is bound to it. */
+  bound?: boolean;
 }
 
 /** What a revise call returns: its data, the text read from the report and the AI's reply apart, and the audit's words (null with nothing written). */
 export interface ReviseResult<W extends IfExists = IfExists> {
   data: ReviseData<W>;
-  fromFile: { reply: string[]; applied?: string[]; declined?: string[]; changes?: string[]; brief?: string[]; findings?: string[]; standInFonts?: string[] };
+  fromFile: { reply: string[]; applied?: string[]; declined?: string[]; changes?: string[]; brief?: string[]; findings?: string[]; standInFonts?: string[]; binding?: BindingText };
   auditWords: string | null;
 }
 
 /** Runs a judged revise call: the AI shown the report, its answer carried out, a change written to a new file. Throws a `ToolRefusal`, or `CallStopped`. */
 export async function runRevise<W extends IfExists>(plan: RevisePlan<W>, run: CallRun): Promise<ReviseResult<W>> {
   const { report, policy } = plan;
-  const done = await asked(run, {
+  // The job made, and its database's files read, only once the call has its turn (W8C-6), as generate's.
+  const done = await asked(run, async () => ({
     kind: 'revise',
     voice: policy.voice,
     config: run.ai.settings.config,
@@ -473,10 +582,14 @@ export async function runRevise<W extends IfExists>(plan: RevisePlan<W>, run: Ca
     name: report.spelled,
     text: report.text,
     ...(plan.editsOnly ? { editsOnly: true } : {}),
-  });
+    ...(plan.database ? { database: await readDatabaseFiles(plan.database, policy.voice) } : {}),
+  }));
   if (done.kind !== 'revise') throw new Error('the generator answered another call');
   if (done.failure && !done.xml) throw new AiFailure(`No change was made: ${failureSaid(done.failure, run.redact)} Nothing was written.`, done.limit);
   const notices = [...done.report.notices, ...done.notices, ...(done.note ? [done.note] : [])];
+  const binding = bindingParts(done.binding);
+  const boundSaid = binding.bound === null ? null : BOUND_SAID[policy.voice](binding.bound);
+  if (boundSaid) notices.push(boundSaid);
   const base = {
     path: report.path,
     kind: report.kind,
@@ -488,9 +601,11 @@ export async function runRevise<W extends IfExists>(plan: RevisePlan<W>, run: Ca
     switched: Boolean(done.note),
     notices,
     translated: done.translated,
+    ...(binding.bound === null ? {} : { bound: binding.bound }),
   };
   const fromFile = {
     reply: done.reply,
+    ...(binding.text ? { binding: binding.text } : {}),
     ...(done.applied.length ? { applied: done.applied } : {}),
     ...(done.declined.length ? { declined: done.declined } : {}),
     ...(done.changes.length ? { changes: done.changes } : {}),

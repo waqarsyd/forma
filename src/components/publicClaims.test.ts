@@ -617,6 +617,20 @@ describe("the Docs page and the README say what Forma's MCP server offers, as to
    * person copies a line that works. It said `v<version>`, a placeholder to
    * fill in from the changelog. A version raised without this line fails here.
    */
+  /*
+   * Since the CLI and Forma Designer work's wave-5 review (2026-11-25,
+   * W5-PB-4): the article's note on what leaves the computer listed what the
+   * AI tools send without the data files, and generate_report now binds to a
+   * database layout passed as data (genJobs.ts hands the core `layoutFiles`),
+   * whose names then go to the AI. Held while the server reads one.
+   */
+  it("says what the AI tools send, a database layout's names among the data files, while the server reads one", () => {
+    const note = article('mcp').slice(article('mcp').indexOf('<Note label="What leaves your computer"'));
+    const said = note.slice(0, note.indexOf('</Note>')).replace(/\s+/g, ' ');
+    expect(said).toContain('the data files you pass as data');
+    if (/\blayoutFiles:/.test(readFileSync('src/mcp/genJobs.ts', 'utf8'))) expect(said).toContain('a database layout among them: its table, view, procedure and column names');
+  });
+
   it("clones the release this page ships in, package.json's version", () => {
     const { version } = JSON.parse(readFileSync('package.json', 'utf8')) as { version: string };
     const clones = [...article('mcp').matchAll(/git clone --branch (\S+) https:\/\/github\.com\/waqarsyd\/forma\.git/g)].map((m) => m[1]);

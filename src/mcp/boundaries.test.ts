@@ -11,7 +11,8 @@
  *   src/server import a Node built-in, so none can reach the browser
  *   bundle, where Vite would replace it with a stub that fails only at run
  *   time. Only test files import testFs.ts and testClient.ts, the tests'
- *   file system and client.
+ *   file system and client, and lib/sqlFixtures.ts, the database captures
+ *   the layout tests share (`TEST_ONLY`).
  * - src/mcp reaches no browser-only module through any import it makes
  *   (a type-only import aside, which is erased and loads nothing),
  *   static or lazy, however deep the walk goes: not the OCR and PDF worker
@@ -244,14 +245,24 @@ describe('the import boundaries', () => {
     expect([...new Set(offenders)].sort()).toEqual([...SHARED_WITH_SCRIPTS].sort());
   });
 
-  it('only test files import testFs.ts and testClient.ts, the in-memory file system and client', () => {
+  /*
+   * Test code that lives beside the code it tests: the in-memory file system
+   * and client, and since 2026-11-24 (the CLI and Forma Designer work's wave
+   * 5, D1-12) lib/sqlFixtures.ts, the FormaSample captures every test that
+   * reads a database layout shares. Coverage leaves all three out
+   * (vitest.config.ts), which is right only while nothing else loads them.
+   */
+  const TEST_ONLY = ['src/mcp/testFs.ts', 'src/mcp/testClient.ts', 'src/lib/sqlFixtures.ts'];
+
+  it('only test files import testFs.ts, testClient.ts and sqlFixtures.ts, the in-memory file system, client and database captures', () => {
+    expect(TEST_ONLY.filter((f) => !existsSync(join(CLONE, f)))).toEqual([]);
     const offenders = [...SRC, ...SCRIPTS]
       .filter((f) => !isTest(f))
       .flatMap((file) =>
         specifiersOf(text(file))
           .filter((spec) => {
             const target = resolveRelative(file, spec);
-            return target !== null && ['src/mcp/testFs.ts', 'src/mcp/testClient.ts'].includes(rel(target));
+            return target !== null && TEST_ONLY.includes(rel(target));
           })
           .map((spec) => `${rel(file)} -> ${spec}`),
       );

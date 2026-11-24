@@ -201,10 +201,10 @@ import { importReports, retrieveHouseStyle } from '../../src/services/library';
 import { embedEntries, embedTexts } from '../../src/services/embeddings';
 import type { LibraryEntry } from '../../src/lib/embedStore';
 import { captionsOfDraft, readCoverage, worthAnotherTry, type ReadCoverage } from '../../src/lib/readCoverage';
-import { readDatabaseText } from '../../src/lib/sqlSchema';
-import { designSection, writeFromAnswer } from '../../src/lib/databaseAi';
+import { layoutFromFile } from '../../src/lib/layoutFile';
+import { databaseStep } from '../../src/lib/databaseAi';
 import { readerAttachments } from '../../src/lib/pageReading';
-import { makeReport, type DatabaseStep, type GenerationDeps, type IntakeDeps } from '../../src/lib/generationCore';
+import { makeReport, type GenerationDeps, type IntakeDeps } from '../../src/lib/generationCore';
 import { nodeGeneration, type NodeGeneration } from '../../src/mcp/nodeGeneration';
 import { fileFrom } from '../../src/mcp/nodeIntake';
 import { capturingConsole, formaDraftOf, settingsOf, watched, type FormaDraft, type Seen } from './formaDraft';
@@ -685,16 +685,17 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
       if (options) sent.push(options);
       return analyzeReportDesign(words, parts, asked, previous, signal, onProgress, options);
     };
-    // The case's database, shared as the app shares an attached one (2026-11-09): App's own step, without the Data tab's query.
-    const schema = c.file.database ? readDatabaseText(readFileSync(join(c.dir, c.file.database), 'utf8'), basename(c.file.database).replace(/\.[^.]+$/, '')) : null;
-    const layout = schema?.kind === 'schema' ? schema.schema : null;
-    const database = layout
-      ? async (words: string): Promise<DatabaseStep> => ({
-          section: designSection(layout, { words }),
-          write: (xml, dataQuery, version) => writeFromAnswer(xml, layout, { dataQuery, version }),
-          chosen: () => undefined,
-        })
-      : undefined;
+    /*
+     * The case's database, shared as the app shares an attached one
+     * (2026-11-09): read as every layout file is (lib/layoutFile.ts), and
+     * App's own step, the one builder, without the Data tab's query
+     * (2026-11-24, D1-8). A case whose database cannot be read fails, where
+     * it ran unbound before with no word.
+     */
+    const layout = c.file.database ? layoutFromFile(new Uint8Array(readFileSync(join(c.dir, c.file.database))), basename(c.file.database)) : null;
+    if (layout && !layout.ok) throw new Error(`The case's database: ${layout.reason}`);
+    for (const line of layout?.ok ? layout.said : []) record.log.push(`[runner] ${line}`);
+    const database = layout?.ok ? databaseStep(layout.schema) : undefined;
     // The page reader's reading of each page beside OCR's, as the app sends it (2026-11-10).
     const reader = opts.pageReader ? { baseUrl: opts.localUrl, model: opts.pageReader } : null;
     const seen: Seen = { read: [], detected: null };

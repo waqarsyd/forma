@@ -20,7 +20,7 @@ import { findObject, findProcedure, queryFields, queryName, type QueryField, typ
 import { escapeXmlAttribute } from './xmlEscape';
 import { liftParameterTypes, parameterReferences } from './repxParameters';
 import { ensureUniqueRefs } from './repxRefs';
-import { encodeBase64, readRepxDataSources, sourceParameters, topLevelItems } from './repxSqlDataSource';
+import { detailRegions, encodeBase64, readRepxDataSources, sourceParameters, topLevelItems } from './repxSqlDataSource';
 // The re-export of connectionStringsSnippet, encodeBase64 and stripStoredCredentials
 // went on 2026-11-11 (full audit RH-06a): every caller imports them from repxSqlDataSource.
 
@@ -280,6 +280,8 @@ export interface WriteResult {
   reason: string;
   /** The report parameters added for the queries. */
   parameters: string[];
+  /** A replaced source's detail reports moved or removed, each a clause as the reason says it (`staleDetails`, BT-2). */
+  details?: string[];
 }
 
 /**
@@ -289,7 +291,9 @@ export interface WriteResult {
  * for a NULL default, multi-value and lookups with cascading), the master-
  * detail relation with a detail band when the report has none for it, and
  * calculated fields. The connection is its name only. An existing SqlDataSource
- * is replaced in place, keeping its Ref.
+ * is replaced in place, keeping its Ref, and a detail report it fed that the
+ * new one does not is moved to the new one's relation to the same detail
+ * query, else removed, and said (`staleDetails`, the wave-5 review, BT-2).
  */
 export function writeSqlDataSource(repx: string, spec: DataSourceSpec, version = '20.1'): WriteResult {
   spec = withDetails(spec);
@@ -396,6 +400,10 @@ export function writeSqlDataSource(repx: string, spec: DataSourceSpec, version =
     else xml = xml.replace(/<XtraReportsLayoutSerializer\b[^>]*>/, (open) => `${open}<CalculatedFields>${entry}</CalculatedFields>`);
   }
 
+  // A replaced source's detail reports the new one does not feed: moved to its detail of the same query, else removed (BT-2).
+  const detailsSaid = existing ? staleDetails(xml, spec, existing, ref) : { xml, said: [] };
+  xml = detailsSaid.xml;
+
   // A detail band for each master-detail relation the report does not print yet.
   for (const d of spec.details ?? []) {
     const path = `${queryName(spec.query)}.${relationName(spec, d)}`;
@@ -409,7 +417,85 @@ export function writeSqlDataSource(repx: string, spec: DataSourceSpec, version =
   xml = ensureUniqueRefs(dropped.xml).xml;
   const what = `${existing ? 'Replaced' : 'Wrote'} the data source: ${queryName(spec.query)} on connection "${connection}"`;
   const withAdded = added.length ? `${what}, with parameter${added.length === 1 ? '' : 's'} ${added.join(', ')}` : what;
-  return { xml, applied: true, reason: dropped.dropped.length ? `${withAdded}; removed ${dropped.dropped.join(', ')}, which only the old one used` : withAdded, parameters: added };
+  const withDropped = dropped.dropped.length ? `${withAdded}; removed ${dropped.dropped.join(', ')}, which only the old one used` : withAdded;
+  return { xml, applied: true, reason: detailsSaid.said.length ? `${withDropped}; ${detailsSaid.said.join('; ')}` : withDropped, parameters: added, details: detailsSaid.said };
+}
+
+/** The tags of an XML text, opening and closing, with where each starts; a processing instruction, comment or declaration is none. */
+const TAG = /<(\/?)([A-Za-z_][\w.:-]*)\b[^>]*?(\/?)>/g;
+
+/**
+ * The text without the item at [start, end), its later siblings numbered one
+ * down (`Item4` to `Item3`): a collection finds its items by that name, as
+ * `renumber` says.
+ */
+function withoutItem(xml: string, start: number, end: number): string {
+  const out = xml.slice(0, start) + xml.slice(end);
+  const edits: { at: number; from: string; to: string }[] = [];
+  const open: (string | null)[] = [];
+  TAG.lastIndex = start;
+  for (let m = TAG.exec(out); m; m = TAG.exec(out)) {
+    const [whole, closing, name, self] = m;
+    if (closing) {
+      // The holder's own close: every sibling after the removed item has been seen.
+      if (!open.length) break;
+      const renamed = open.pop();
+      if (!open.length && renamed) edits.push({ at: m.index + 2, from: name, to: renamed });
+      continue;
+    }
+    const sibling = !open.length && /^Item(\d+)$/.exec(name);
+    const to = sibling ? `Item${Number(sibling[1]) - 1}` : null;
+    if (to) edits.push({ at: m.index + 1, from: name, to });
+    if (!self && !whole.endsWith('/>')) open.push(to);
+  }
+  let text = out;
+  for (const e of edits.sort((a, b) => b.at - a.at)) text = text.slice(0, e.at) + e.to + text.slice(e.at + e.from.length);
+  return text;
+}
+
+/**
+ * A replaced source's detail reports the new source does not feed
+ * (2026-11-25, the CLI and Forma Designer work's wave-5 review, BT-2): a
+ * master-detail report bound to another query kept its DetailReportBand on
+ * `Orders.OrderLinesOfOrders`, which the new source no longer had, so
+ * DevExpress could not print the report at all ("Invalid data member"),
+ * while Forma's audit said nothing and the binding read back said bound. A
+ * band reading this source (its `DataSource` this one's Ref, or none) whose
+ * member the new source lacks is moved to the new source's relation to the
+ * same detail query when it has one and no band prints that yet (the band
+ * the person may have laid out is kept); else removed, and its later
+ * siblings numbered again. Each said, for the write's reason.
+ */
+function staleDetails(xml: string, spec: DataSourceSpec, old: ReturnType<typeof readRepxDataSources>[number], ref: string): { xml: string; said: string[] } {
+  const master = queryName(spec.query);
+  const details = (spec.details ?? []).map((d) => ({ detail: queryName(d.query), path: `${master}.${relationName(spec, d)}` }));
+  const members = new Set([master, ...details.map((d) => d.detail), ...(spec.lookups ?? []).map((l) => lookupName(l.parameter)), ...details.map((d) => d.path)]);
+  const said: string[] = [];
+  const root = /<XtraReportsLayoutSerializer\b[^>]*>/.exec(xml)?.[0] ?? '';
+  const rootReads = /\sDataSource="([^"]*)"/.exec(root)?.[1] ?? '';
+  // One band at a time, the file read again after each change, since a removal moves every later band.
+  for (let pass = 0; pass < 64; pass++) {
+    const band = detailRegions(xml).find((r) => {
+      const open = xml.slice(r.start, xml.indexOf('>', r.start) + 1);
+      const reads = /\sDataSource="([^"]*)"/.exec(open)?.[1] ?? rootReads;
+      return reads === `#Ref-${ref}` && r.member !== '' && !members.has(r.member);
+    });
+    if (!band) break;
+    const open = xml.slice(band.start, xml.indexOf('>', band.start) + 1);
+    const name = /\sName="([^"]*)"/.exec(open)?.[1] ?? 'a detail report';
+    const parts = band.member.split('.');
+    const was = parts.length === 2 ? old.relations.find((r) => r.name === parts[1])?.detail : undefined;
+    const to = was === undefined ? undefined : details.find((d) => d.detail === was && !new RegExp(`DataMember="${attrPattern(d.path)}"`).test(xml));
+    if (to) {
+      const moved = open.replace(/\sDataMember="[^"]*"/, () => ` DataMember="${attrOf(to.path)}"`);
+      xml = xml.slice(0, band.start) + moved + xml.slice(band.start + open.length);
+      said.push(`moved the detail report ${name} from ${band.member} to ${to.path}`);
+    } else {
+      xml = withoutItem(xml, band.start, band.end);
+      said.push(`removed the detail report ${name}, which read ${band.member}, a relation the new source does not have`);
+    }
+  }
+  return { xml, said };
 }
 
 /** `<Item…>` children of a block renumbered from Item1, in order: a collection finds its members by that name. */

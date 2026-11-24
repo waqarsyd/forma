@@ -193,7 +193,11 @@ describe('drift against a newer layout', () => {
 describe('a replaced source', () => {
   it('takes with it the parameters only it used, and their lookups', () => {
     const replaced = writeSqlDataSource(report, { connectionName: 'FormaSample', schema, query: { kind: 'procedure', procedure: 'dbo.usp_SalesByRegion' } });
-    expect(replaced.reason).toBe('Replaced the data source: SalesByRegion on connection "FormaSample", with parameter Region; removed Regions, which only the old one used');
+    // Its detail report on the orders' lines goes too, a relation a procedure's source does not have (the wave-5 review, BT-2).
+    expect(replaced.reason).toBe(
+      'Replaced the data source: SalesByRegion on connection "FormaSample", with parameter Region; removed Regions, which only the old one used; removed the detail report DetailReportOrderLinesOfOrders, which read Orders.OrderLinesOfOrders, a relation the new source does not have',
+    );
+    expect(replaced.xml).not.toContain('DataMember="Orders.OrderLinesOfOrders"');
     expect(replaced.xml).not.toContain('Name="Regions"');
     expect(replaced.xml).not.toContain('DynamicListLookUpSettings');
     expect(auditRepx(replaced.xml, null).findings.map((f) => f.code)).not.toContain('unused-parameter');
@@ -203,7 +207,7 @@ describe('a replaced source', () => {
     const used = report.replace('Expression="[City]"', 'Expression="[City] + ?Regions"');
     const replaced = writeSqlDataSource(used, { connectionName: 'FormaSample', schema, query: { kind: 'procedure', procedure: 'dbo.usp_SalesByRegion' } });
     expect(replaced.xml).toContain('Name="Regions"');
-    expect(replaced.reason).not.toMatch(/removed/);
+    expect(replaced.reason).not.toMatch(/removed Regions|which only the old one used/);
   });
 });
 

@@ -728,6 +728,24 @@ describe("the policy covers Forma's MCP server", () => {
     expect(policy).toMatch(/This website does not run it and it is no part of the site/);
     expect(policy).toMatch(/What a tool returns goes to your assistant, and from there to the AI behind it, under that assistant’s own terms/);
   });
+
+  /*
+   * A database's names over the server and the command line (2026-11-25, the
+   * CLI and Forma Designer work's wave-5 review, W5-PB-4): the policy said a
+   * database's names went only when shared on the website, while the server's
+   * generate_report binds to a layout passed as data (genJobs.ts hands the
+   * core its `layoutFiles`) and the command line to one given with
+   * --database, its sample values with --samples. Held while the code does it.
+   */
+  it('names the routes a database layout leaves by, while the server and the command line take one', () => {
+    const jobs = readFileSync(resolve(CLONE, 'src/mcp/genJobs.ts'), 'utf8');
+    const cli = readFileSync(resolve(CLONE, 'src/mcp/cliCommands.ts'), 'utf8');
+    if (/\blayoutFiles:/.test(jobs) || cli.includes("'--database'")) {
+      expect(policy).toMatch(/from Forma’s MCP server or its command line, by giving it the layout file with a request/);
+      expect(policy).not.toMatch(/by saying yes when Forma asks first\. Otherwise none of it is sent/);
+    }
+    if (cli.includes("'--samples'")) expect(policy).toMatch(/sample values only from the command line, when you pass them with --samples/);
+  });
 });
 
 /**
@@ -906,9 +924,17 @@ describe('the legal copy and its date change together', () => {
      that computer only; where the server's key is kept, readable; the
      website's key paragraph scoped to the website; OpenRouter set up for the
      server. Substantive, and already that day's date.
+
+     Moved again on 2026-11-25 (the CLI and Forma Designer work's wave-5
+     review, W5-PB-4): the paragraph on a SQL Server database said its names
+     and sample values went only when shared on the website, "Otherwise none
+     of it is sent"; the MCP server's generate_report now binds to a layout
+     passed as data, and the command line to one given with --database, so it
+     names that route too, and sample values from the command line only with
+     --samples. What is sent changed, so the date moved.
      */
-  const EXPECTED_COPY_HASH = 'c8a2a63b0d55';
-  const EXPECTED_UPDATED = '24 November 2026';
+  const EXPECTED_COPY_HASH = '00f8fc27eb0f';
+  const EXPECTED_UPDATED = '25 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {
     const actual = createHash('sha256').update(legalCopy()).digest('hex').slice(0, 12);

@@ -60,16 +60,67 @@ export interface QueryField {
 
 const full = (o: { schema: string; name: string }) => `${o.schema}.${o.name}`;
 
-/** The table or view by `schema.name`, or by bare name when it is unique. */
-export function findObject(schema: SqlSchema, name: string) {
-  const exact = schema.objects.find((o) => full(o).toLowerCase() === name.toLowerCase());
-  if (exact) return exact;
-  const bare = schema.objects.filter((o) => o.name.toLowerCase() === name.replace(/^.*\./, '').toLowerCase());
-  return bare.length === 1 ? bare[0] : undefined;
+/**
+ * A name as T-SQL writes it, in its parts (2026-11-25, the CLI and Forma
+ * Designer work's wave-5 review, BT-3): `[dbo].[Order Lines]` as QUOTENAME,
+ * SSMS's scripts and an SSRS DataSet's CommandText write it,
+ * `"dbo"."Orders"`, or `dbo.Orders`; split at the dots outside brackets and
+ * quotes, each part unquoted (`]]` read as `]`, `""` as `"`) and trimmed, a
+ * space inside it kept (`dbo.Order Lines`). A bracketed name was never found
+ * until then: `--procedure "[dbo].[usp_SalesByRegion]"` was refused as
+ * missing, and an SSRS report running `[dbo].[usp_X]` was bound to another
+ * object.
+ */
+export function nameParts(name: string): string[] {
+  const parts: string[] = [];
+  let at = '';
+  let close: string | null = null;
+  for (let i = 0; i < name.length; i++) {
+    const c = name[i];
+    if (close) {
+      if (c !== close) at += c;
+      else if (name[i + 1] === close) {
+        at += c;
+        i++;
+      } else close = null;
+    } else if (c === '[') close = ']';
+    else if (c === '"') close = '"';
+    else if (c === '.') {
+      parts.push(at.trim());
+      at = '';
+    } else at += c;
+  }
+  parts.push(at.trim());
+  return parts;
 }
 
+/**
+ * The items named `name`: by `schema.name` as written (a name whose own part
+ * holds a dot, `dbo.Order.Lines`, included), else by its last two parts
+ * unquoted (`[dbo].[Orders]`, `FormaSample.dbo.Orders`), else by its last
+ * part alone.
+ */
+function named<T extends { schema: string; name: string }>(items: readonly T[], name: string): { exact?: T; bare: T[] } {
+  const lower = name.trim().toLowerCase();
+  const exact = items.find((o) => full(o).toLowerCase() === lower);
+  if (exact) return { exact, bare: [] };
+  const parts = nameParts(name);
+  const own = (parts[parts.length - 1] ?? '').toLowerCase();
+  const owner = parts.length > 1 ? parts[parts.length - 2].toLowerCase() : null;
+  const qualified = owner === null ? undefined : items.find((o) => o.schema.toLowerCase() === owner && o.name.toLowerCase() === own);
+  return qualified ? { exact: qualified, bare: [] } : { bare: items.filter((o) => o.name.toLowerCase() === own) };
+}
+
+/** The table or view by `schema.name` (bracketed or not), or by bare name when it is unique. */
+export function findObject(schema: SqlSchema, name: string) {
+  const { exact, bare } = named(schema.objects, name);
+  return exact ?? (bare.length === 1 ? bare[0] : undefined);
+}
+
+/** The stored procedure by `schema.name` (bracketed or not), or by bare name. */
 export function findProcedure(schema: SqlSchema, name: string) {
-  return schema.procedures.find((p) => full(p).toLowerCase() === name.toLowerCase()) ?? schema.procedures.find((p) => p.name.toLowerCase() === name.replace(/^.*\./, '').toLowerCase());
+  const { exact, bare } = named(schema.procedures, name);
+  return exact ?? bare[0];
 }
 
 /**

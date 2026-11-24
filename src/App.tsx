@@ -2011,9 +2011,13 @@ export default function App() {
   const databaseFromText = async (text: string) => {
     const { readDatabaseText } = await import('./lib/sqlSchema');
     const found = readDatabaseText(text);
+    // Forma's own export cut short is said, never read as anything else (2026-11-24, D1-3).
+    if (found?.kind === 'damaged') return `This ${found.reason}`;
     return found ? takeDatabase({ ...found, file: 'the Data tab', uploadId: 'data-tab' }, false) : null;
   };
   const takeDatabase = useCallback(async (found: DatabaseText & { file: string; uploadId: string }, attach = true): Promise<string> => {
+    // Cut short, damaged or mis-encoded (D1-3, D1-4): said, and nothing kept or shared.
+    if (found.kind === 'damaged') return `"${found.file}" ${found.reason}`;
     const [db, store] = await Promise.all([import('./lib/sqlSchema'), import('./lib/sqlSchemaStore')]);
     const kept = await store.loadDatabases();
     let schema: SqlSchema | null;
@@ -2021,7 +2025,11 @@ export default function App() {
     if (found.kind === 'schema') {
       const previous = kept.find((d) => d.name === store.storedName(found.schema));
       schema = previous?.schema.samples && !found.schema.samples ? db.withSamples(found.schema, previous.schema.samples) : found.schema;
-      line = `Database layout read${attach ? ` from "${found.file}"` : ''}: ${db.summarizeSchema(found.schema)}. It stays in this browser.`;
+      // Sample rows in the same file, in either order, taken as a second file's are (2026-11-25, the wave-5 review, W5-PB-7).
+      const same = found.rows && (found.rows.database || 'Database').toLowerCase() === (found.schema.database || 'Database').toLowerCase();
+      if (found.rows && same) schema = db.withSamples(schema, found.rows.samples);
+      const rows = found.rows ? (same ? ` Sample rows read with it: ${db.summarizeSamples(found.rows.samples)}.` : ' The sample rows in it are of another database, so they were not read.') : '';
+      line = `Database layout read${attach ? ` from "${found.file}"` : ''}: ${db.summarizeSchema(found.schema)}.${rows} It stays in this browser.`;
     } else {
       const name = found.database || 'Database';
       const base = activeDatabaseRef.current && store.storedName(activeDatabaseRef.current) === name
@@ -2040,7 +2048,8 @@ export default function App() {
     if (attach) setDatabaseShared(true);
     else if (found.kind === 'schema') setDatabaseShared(false);
     // The layout itself goes in the request's own section (lib/databaseAi.ts); the attachment names it.
-    const text = schema ? `${db.summarizeSchema(schema)}: the layout and sample values of this SQL Server database are shared with the request.` : db.samplesForAi(found.kind === 'sample' ? found.database : '', found.kind === 'sample' ? found.samples : {});
+    // Its database's name escaped as every name from a layout is (SEC-7; the wave-5 review, W5-PB-1): an attachment reaches the AI as it is.
+    const text = schema ? `${db.aiText(db.summarizeSchema(schema), 512)}: the layout and sample values of this SQL Server database are shared with the request.` : db.samplesForAi(found.kind === 'sample' ? found.database : '', found.kind === 'sample' ? found.samples : {});
     // Attached in the box it goes to the AI with the message; pasted on the Data tab it does not.
     if (attach) setAttachmentTexts((prev) => [...prev.filter((t) => t.uploadId !== found.uploadId), { id: `${Date.now()}-${found.file}`, uploadId: found.uploadId, file: found.file, text }]);
     return line;
@@ -3834,18 +3843,9 @@ export default function App() {
                 },
               }
             : {}),
-          // A shared database's likeliest objects, and its source written from the answer (batch DE).
+          // A shared database's likeliest objects, and its source written from the answer (batch DE), by the one builder every caller uses (D1-8).
           ...(schema
-            ? {
-                database: async (words: string) => {
-                  const db = await import('./lib/databaseAi');
-                  return {
-                    section: db.designSection(schema, { query: activeQuery, words }),
-                    write: (xml: string, dataQuery: unknown, version: string) => db.writeFromAnswer(xml, schema, { query: activeQuery, dataQuery, version }),
-                    chosen: setActiveQuery,
-                  };
-                },
-              }
+            ? { database: async (words: string) => (await import('./lib/databaseAi')).databaseStep(schema, { query: activeQuery, onChosen: setActiveQuery })(words) }
             : {}),
         },
       );

@@ -218,6 +218,67 @@ describe('the audit of a data source', () => {
     expect(auditDataSources(noParam).map((f) => f.code)).toEqual(['query-param-unbound']);
     const wrongMember = written.replace('DataMember="Orders" DataSource=', 'DataMember="Invoices" DataSource=');
     expect(auditDataSources(wrongMember).map((f) => f.code)).toContain('datamember-unknown');
+    // A detail report on a relation the source does not have: DevExpress prints nothing of the report (the wave-5 review, BT-2).
+    const staleDetail = written.replace('DataMember="Orders.OrderLinesOfOrders"', 'DataMember="Orders.GoneOfOrders"');
+    expect(auditDataSources(staleDetail)).toContainEqual({
+      severity: 'error',
+      code: 'datamember-unknown',
+      message: 'The detail report "DetailReportOrderLinesOfOrders" reads "Orders.GoneOfOrders", which the data source "sqlDataSource1" has no query or relation for, so DevExpress cannot print the report.',
+    });
+    expect(auditDataSources(written).map((f) => f.code)).not.toContain('datamember-unknown');
+  });
+});
+
+/*
+ * The wave-5 review (BT-2, 2026-11-25): a master-detail report bound to
+ * another query kept its detail report on the old relation, which DevExpress
+ * then could not print, while the audit and the binding read back said
+ * nothing. Measured with RepxProbe inspect and sql-fill over LocalDB's
+ * FormaSample by the reviewer; the fix's own reports loaded clean
+ * (forma-model-data\work\cd-wave5\fixer-bt2).
+ */
+describe('a source replaced under a detail report', () => {
+  const written = () => writeSqlDataSource(report, { ...spec, lookups: [] }).xml;
+
+  it('removes a detail report the new source does not feed, numbers the bands after it again, and says so', () => {
+    // A footer after the detail report, so its number moves down when the detail report goes.
+    const xml = written();
+    const close = xml.lastIndexOf('</Bands>');
+    const outer = /<Bands>([\s\S]*)<\/Bands>/.exec(xml)![1];
+    const next = (outer.match(/^\s*<Item(\d+)\s/gm) ?? []).length + 1;
+    const withFooter = `${xml.slice(0, close)}<Item${next} Ref="900" ControlType="ReportFooterBand" Name="Footer" HeightF="20" Dpi="100" />${xml.slice(close)}`;
+    const before = /<Item(\d+) Ref="900"/.exec(withFooter)![1];
+    const done = writeSqlDataSource(withFooter, { connectionName: 'ShopDemo', schema, query: { kind: 'table', object: 'dbo.Customers', columns: [], joins: [] } });
+    expect(done.applied).toBe(true);
+    expect(done.xml).not.toContain('DetailReportBand');
+    expect(done.details).toEqual(['removed the detail report DetailReportOrderLinesOfOrders, which read Orders.OrderLinesOfOrders, a relation the new source does not have']);
+    expect(done.reason).toMatch(/; removed the detail report DetailReportOrderLinesOfOrders, which read Orders\.OrderLinesOfOrders, a relation the new source does not have$/);
+    expect(/<Item(\d+) Ref="900"/.exec(done.xml)![1]).toBe(String(Number(before) - 1));
+    expect(auditDataSources(done.xml).map((f) => f.code)).not.toContain('datamember-unknown');
+    expect(auditRefs(done.xml).duplicates).toEqual([]);
+  });
+
+  it('moves it to the new source\'s relation to the same detail query, keeping the band as laid out', () => {
+    const before = written();
+    const band = /<Item\d+ Ref="\d+" ControlType="DetailReportBand"[^>]*>/.exec(before)![0];
+    const customers: DataSourceSpec = {
+      connectionName: 'ShopDemo',
+      schema,
+      query: { kind: 'table', object: 'dbo.Customers', columns: [], joins: [] },
+      details: [{ query: { kind: 'table', object: 'dbo.OrderLines', columns: [], joins: [] }, keys: [{ master: 'CustomerID', detail: 'OrderID' }] }],
+    };
+    const done = writeSqlDataSource(before, customers);
+    expect(done.details).toEqual(['moved the detail report DetailReportOrderLinesOfOrders from Orders.OrderLinesOfOrders to Customers.OrderLinesOfCustomers']);
+    expect(done.xml.match(/ControlType="DetailReportBand"/g)).toHaveLength(1);
+    expect(done.xml).toContain(band.replace('DataMember="Orders.OrderLinesOfOrders"', 'DataMember="Customers.OrderLinesOfCustomers"'));
+    expect(auditDataSources(done.xml).map((f) => f.code)).not.toContain('datamember-unknown');
+  });
+
+  it('leaves a detail report the new source still feeds as it is', () => {
+    const before = written();
+    const done = writeSqlDataSource(before, { ...spec, lookups: [], query: { ...orders, top: 50 } });
+    expect(done.details).toEqual([]);
+    expect(done.xml.match(/DataMember="Orders\.OrderLinesOfOrders"/g)).toHaveLength(1);
   });
 });
 

@@ -22,7 +22,9 @@ node <clone>/src/mcp/cli.mjs pdf    report.repx --out out.pdf   # the pages as F
 That is Forma's command line, run with plain node from any folder after a full `npm ci` in the
 clone (since 2026-11-24; `--help` lists every command, `outline` and `edit` among them, and
 `convert`, which makes an SSRS `.rdl` or a FastReport `.frx` into a repaired `.repx` with no AI;
-`audit` takes a folder too, every report directly in it). It never replaces a file unless `--force`
+`bind`, which writes a report's SQL data source for a table, view or stored procedure of a
+database's layout with no AI, the connection by name only, the layout being what `sql-script`'s
+read-only script answers; `audit` takes a folder too, every report directly in it). It never replaces a file unless `--force`
 is given: a file already at the output with other content is left as it is, and the command exits 4,
 as it does when the file system refuses the write (a read-only folder, a full disk). Even with
 `--force` it never writes over a report whose stored login it took out. A usage error exits 2 and an

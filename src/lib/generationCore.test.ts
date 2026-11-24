@@ -30,19 +30,23 @@ const h = vi.hoisted(() => ({
   translateReportXml: vi.fn(),
   visionDraft: vi.fn(),
   pages: {} as Record<string, number>,
+  /** A file taken in as a database's layout or sample rows, by name, as the intake reads one (D1-1). */
+  databases: {} as Record<string, unknown>,
   drawings: [] as unknown[],
   signals: [] as (AbortSignal | undefined)[],
   onIngest: null as ((name: string) => void) | null,
 }));
 
 vi.mock('./repxIntake', () => ({
-  // A file becomes as many pictures as `h.pages` says (one by default), all of one upload.
-  ingestFile: async (file: File, uploadId: string, _unit: string, drawing: unknown, signal?: AbortSignal) => (h.drawings.push(drawing), h.signals.push(signal), h.onIngest?.(file.name), {
-    images: Array.from({ length: h.pages[file.name] ?? 1 }, () => 'data:image/png;base64,AAAA'),
-    imageMeta: Array.from({ length: h.pages[file.name] ?? 1 }, (_, page) => ({ uploadId, file: file.name, page })),
-    texts: [],
-    notices: file.name.endsWith('.pdf') ? [`"${file.name}" had a page that could not be drawn.`] : [],
-  }),
+  // A file becomes as many pictures as `h.pages` says (one by default), all of one upload; a layout, none.
+  ingestFile: async (file: File, uploadId: string, _unit: string, drawing: unknown, signal?: AbortSignal) => (h.drawings.push(drawing), h.signals.push(signal), h.onIngest?.(file.name), h.databases[file.name]
+    ? { images: [], imageMeta: [], texts: [], notices: [], database: { ...(h.databases[file.name] as object), file: file.name, uploadId } }
+    : {
+        images: Array.from({ length: h.pages[file.name] ?? 1 }, () => 'data:image/png;base64,AAAA'),
+        imageMeta: Array.from({ length: h.pages[file.name] ?? 1 }, (_, page) => ({ uploadId, file: file.name, page })),
+        texts: [],
+        notices: file.name.endsWith('.pdf') ? [`"${file.name}" had a page that could not be drawn.`] : [],
+      }),
   inUnit: <T,>(texts: T[]) => texts,
   templateCorrection: h.templateCorrection,
   pictureKey: () => 'pic-1',
@@ -152,6 +156,7 @@ describe('the generation core: one way a report is made', () => {
   beforeEach(() => {
     for (const fn of [h.analyzeReportDesign, h.askWithChain, h.fixUntilPrints, h.buildWithReader, h.buildFromRead, h.templateCorrection, h.languageToTranslate, h.languageAsked, h.translateReportXml, h.visionDraft]) fn.mockReset();
     for (const k of Object.keys(h.pages)) delete h.pages[k];
+    for (const k of Object.keys(h.databases)) delete h.databases[k];
     h.drawings.length = 0;
     h.signals.length = 0;
     h.onIngest = null;
@@ -572,6 +577,75 @@ describe('the generation core: one way a report is made', () => {
     expect(write).toHaveBeenCalledWith('<AI/>', { procedure: 'dbo.SalesByMonth' }, '23.2');
     expect(chosen).toHaveBeenCalledWith(query);
     expect(made).toMatchObject({ ok: true, dataNote: 'It reads from dbo.SalesByMonth.', repxContent: '<Bound/>', response: { markdown: 'spec of <Bound/>' } });
+  });
+
+  // D1-1 (2026-11-24, a blocker of the CLI and Forma Designer work's design audit): a layout among the files was taken in and dropped with no word.
+  it('makes a layout among the files the request\'s database when none was handed in, and says so', async () => {
+    const { makeReport } = await import('./generationCore');
+    const { readDatabaseText } = await import('./sqlSchema');
+    const { SCHEMA_EXPORT, SAMPLE_EXPORT } = await import('./sqlFixtures');
+    h.databases['forma-schema.txt'] = readDatabaseText(SCHEMA_EXPORT);
+    h.databases['forma-sample.txt'] = readDatabaseText(SAMPLE_EXPORT);
+    const files = [...png(), { file: new File(['x'], 'forma-schema.txt'), uploadId: 'u2' }, { file: new File(['y'], 'forma-sample.txt'), uploadId: 'u3' }];
+    const { withLayoutStep } = await import('./layoutFile');
+    const made = await makeReport({ files, words: 'customers by city', config, signal: new AbortController().signal }, { ...deps(), layoutStep: withLayoutStep });
+    // The layout's section went with the request, names only: the sample rows were not allowed.
+    const database = h.analyzeReportDesign.mock.calls[0][6].database as string;
+    expect(database).toMatch(/^DATABASE: the user shared their SQL Server database's layout, in <database> below\./);
+    expect(database).toContain('\n<database>\nDATABASE "FormaSample" (SQL Server 13.0.4001.0).');
+    expect(database).not.toContain('e.g.');
+    expect(made).toMatchObject({ ok: true, pictures: 1 });
+    expect(made!.notices).toEqual([
+      '"forma-sample.txt" holds sample rows, which go to the AI only when they are attached with the layout, so they were not read.',
+      '"forma-schema.txt" is a database layout, given to the AI with the request so the report can be bound to it.',
+    ]);
+    // Whatever the AI answered, the reply says what the report reads, never nothing.
+    expect(made!.ok && made!.dataNote).toBe('It is not bound to FormaSample yet: no table or procedure has most of the fields it prints. Choose what it reads on the Data tab.');
+
+    // Allowed, the sample rows of the same database go with it, in the caller's words.
+    h.analyzeReportDesign.mockClear();
+    const where = { chose: 'as the user chose', choose: 'with --query', samples: 'when they are passed with --samples' };
+    const allowed = await makeReport({ files, words: '', config, signal: new AbortController().signal, layoutFiles: { samples: true, where } }, { ...deps(), layoutStep: withLayoutStep });
+    expect(h.analyzeReportDesign.mock.calls[0][6].database).toContain('e.g. OrderID=1001|1002|1003');
+    expect(allowed!.ok && allowed!.dataNote).toMatch(/Choose what it reads with --query\.$/);
+
+    // A caller that hands in no layout step (the workspace's Batch, which takes no such file) says each, never drops it (W5-PB-8).
+    h.analyzeReportDesign.mockClear();
+    const unread = await makeReport({ files, words: '', config, signal: new AbortController().signal }, deps());
+    expect(h.analyzeReportDesign.mock.calls[0][6].database).toBeUndefined();
+    expect(unread!.notices).toEqual([
+      '"forma-schema.txt" is a database\'s layout or sample rows, which a report made here is not bound to, so it was not read.',
+      '"forma-sample.txt" is a database\'s layout or sample rows, which a report made here is not bound to, so it was not read.',
+    ]);
+  });
+
+  // The wave-5 review (BT-6): a described report's words are its description, its `words` empty, so the description ranks
+  // the layout; its brief is Forma's house style, which names no object, so it ranks nothing.
+  it('ranks a shared database by what was asked, a description by itself, never the house style', async () => {
+    const { makeReport } = await import('./generationCore');
+    const database = vi.fn(async () => ({ section: 'DATABASE', write: (xml: string) => ({ xml, note: '', query: null }), chosen: vi.fn() }));
+    const houseBrief = vi.fn(async () => 'HOUSE STYLE: order lines, totals in the footer');
+    await makeReport({ description: { description: 'Customer list by city' }, words: '', config, signal: new AbortController().signal }, { ...deps(), houseBrief, database });
+    expect(houseBrief).toHaveBeenCalled();
+    expect(database).toHaveBeenCalledTimes(1);
+    const ranked = (database.mock.calls[0] as unknown as [string])[0];
+    expect(ranked).toContain('Customer list by city');
+    expect(ranked).not.toContain('HOUSE STYLE');
+  });
+
+  it('keeps the database handed in over a layout among the files, and says a layout cut short', async () => {
+    const { makeReport } = await import('./generationCore');
+    const { readDatabaseText } = await import('./sqlSchema');
+    const { SCHEMA_EXPORT } = await import('./sqlFixtures');
+    h.databases['forma-schema.txt'] = readDatabaseText(SCHEMA_EXPORT);
+    h.databases['cut.txt'] = readDatabaseText(SCHEMA_EXPORT.slice(0, -3));
+    const database = vi.fn(async () => ({ section: 'GIVEN', write: (xml: string) => ({ xml, note: '', query: null }), chosen: vi.fn() }));
+    const files = [...png(), { file: new File(['x'], 'forma-schema.txt'), uploadId: 'u2' }, { file: new File(['z'], 'cut.txt'), uploadId: 'u4' }];
+    const { withLayoutStep } = await import('./layoutFile');
+    const made = await makeReport({ files, words: '', config, signal: new AbortController().signal }, { ...deps(), database, layoutStep: withLayoutStep });
+    expect(h.analyzeReportDesign.mock.calls[0][6].database).toBe('GIVEN');
+    expect(made!.notices[0]).toMatch(/^"cut\.txt" holds Forma's database layout cut short or damaged, so none of it was read/);
+    expect(made!.notices[1]).toBe('"forma-schema.txt" is a database layout, and the report is bound to the database given, so it was not read.');
   });
 
   it('stops when told: nothing is asked after a stop, and nothing stands in for a stopped request', async () => {

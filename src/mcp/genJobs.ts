@@ -111,6 +111,36 @@
  * the work says is the same to both, and the server's words are exactly
  * what they were.
  *
+ * ## A database
+ *
+ * Since the CLI and Forma Designer work's wave 5 (2026-11-24; findings D1-2,
+ * D1-7 and D1-9 of its design audit, the owner's OC6) a job can carry a
+ * database's layout (`database`, nodeDatabase.ts `DatabaseJob`): the files'
+ * bytes, the query the caller pinned and the connection's name, read here by
+ * the one reader before anything costs a request, a layout that cannot be
+ * read and a pinned procedure whose result it does not describe refused.
+ * The step the core takes is built here (databaseAi.ts `databaseStep`), as
+ * the workspace builds its shared database's, since a step holds functions:
+ *
+ * - generate: the step handed to the core with the query pinned, if any; a
+ *   layout among the files is still read by the core when none is handed in
+ *   (D1-1), in the caller's words (nodeDatabase.ts `WHERE`), its sample rows
+ *   never.
+ * - revise: the chat is shown the layout (`chatSection`) with what the
+ *   report reads now: the query pinned, else the one read back from the
+ *   report (sqlDrift.ts `queryFromRepx`), so a source Forma wrote is the
+ *   person's choice and never "a source Forma did not write"; shown again,
+ *   read back, for a second pass after a `data` edit, which binds through
+ *   `dataEditHook` at the version worked out; a redesign keeps the query read
+ *   back as the one chosen. A report written with a query pinned reads it,
+ *   bound with no AI when the AI's change left it reading another; nothing
+ *   written binds nothing, and a notice says so.
+ *
+ * Both results carry `binding` (nodeDatabase.ts `bindingOf`): what the report
+ * written binds, read back from it after every repair, or for revise with
+ * nothing written what the report read binds; null with no database. Its
+ * names are the layout's and the report's, for a caller's `fromFile`.
+ *
  * ## The mock, and a test's stand-ins
  *
  * With `mock` (FORMA_MCP_MOCK) the design is the mock invoice and the chat's
@@ -132,6 +162,7 @@ import { nodeGeneration, type MakeHooks, type MakeStage, type NodeGeneration } f
 import { fileFrom } from './nodeIntake';
 import { audited, jobFailure, type Audited, type ReportRead } from './pipeline';
 import { ToolRefusal, type Voice } from './caller';
+import { WHERE, bindReport, readDatabase, recordWrites, sameQuery, type Binding, type DatabaseJob, type DatabaseRead } from './nodeDatabase';
 import { CONNECTION_BY_NAME, fileLines, openReport } from './reportFile';
 
 /** What the runner is made with: plain data, so it crosses to the worker thread as `workerData`. */
@@ -189,6 +220,13 @@ export interface GenerateJob {
    * generate_report has it.
    */
   standIn?: boolean;
+  /**
+   * A database's layout handed in with the request (the header's *A
+   * database*): the files as read, read again here by nodeDatabase.ts's one
+   * reader, the step built here, since a step holds functions. Absent, a
+   * layout among `files` is still read by the core (D1-1).
+   */
+  database?: DatabaseJob;
 }
 
 export interface ReviseJob {
@@ -210,6 +248,8 @@ export interface ReviseJob {
    * why. The server never asks it.
    */
   editsOnly?: boolean;
+  /** A database's layout handed in with the request (the header's *A database*): the chat is shown it, a `data` edit binds to it, a redesign keeps the query read back. */
+  database?: DatabaseJob;
 }
 
 export type GenJob = GenerateJob | ReviseJob;
@@ -252,6 +292,8 @@ export interface GenerateDone {
   model: string | null;
   /** The model that made the print check's fix kept, when another than `model`; null otherwise. */
   fixModel: string | null;
+  /** What the report written binds, read back from it (nodeDatabase.ts `bindingOf`, D1-9); null when no database was handed in or found among the files. */
+  binding: Binding | null;
 }
 
 export type ReviseAction = 'answer' | 'edit' | 'unchanged' | 'rebuild' | 'new';
@@ -285,6 +327,8 @@ export interface ReviseDone {
   model: string | null;
   /** The model whose answer went into the change after the first: an edit's second pass kept, or a redesign's fix; null when none or the same. */
   fixModel: string | null;
+  /** With a database handed in: what the report written binds, or, with nothing written, what the report read binds; null without one (D1-9). */
+  binding: Binding | null;
 }
 
 export type GenDone = GenerateDone | ReviseDone;
@@ -385,6 +429,18 @@ function measuredInStandIns(gen: NodeGeneration, xml: string, notices: string[],
   return families;
 }
 
+/** Why a `data` edit is declined when no database layout came with the request, in the caller's words (the header's *A database*). */
+const NO_DATABASE: Record<Voice, string> = {
+  mcp: 'no database layout came with the request, so what the report reads cannot change here',
+  cli: 'no database layout was given, so what the report reads cannot change: give one with --database, or bind the report with the bind command',
+};
+
+/** Said when a query was pinned and the request wrote nothing, so nothing was bound to it (the header's *A database*). */
+const NOT_WRITTEN_NOT_BOUND: Record<Voice, string> = {
+  mcp: 'Nothing was written, so the report was not bound to the query given.',
+  cli: 'Nothing was written, so the report was not bound to the query given; the bind command binds it with no AI.',
+};
+
 /** What a revise job that may only edit says when the request would take a redesign (the job's `editsOnly`): the command line's alone. */
 const EDITS_ONLY = {
   redesign: 'The request asks for a redesign of the whole report, which --edits-only declines, so nothing was written.',
@@ -451,7 +507,13 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
   async function generate(job: GenerateJob, gen: NodeGeneration, signal: AbortSignal, tell: (event: GenEvent) => void): Promise<GenerateDone | null> {
     // A .vsrepx is the same serializer XML, taken in as a .repx (GAP1-2).
     const files = job.files.map((f, i) => ({ file: fileFrom(f.name.replace(/\.vsrepx$/i, '.repx'), f.bytes), uploadId: `mcp-${i + 1}` }));
-    if (files.length) tell({ stage: 'reading' });
+    if (files.length || job.database) tell({ stage: 'reading' });
+    // The database handed in, read before anything costs a request (a layout that cannot be read is refused here); its step
+    // built in this thread, since a step holds functions (D1-2). What each write of the source did is kept for the binding.
+    const db = job.database ? await readDatabase(job.database, job.voice) : null;
+    const seen = recordWrites();
+    const where = WHERE[job.voice];
+    const step = db && job.database ? (await import('../lib/databaseAi')).databaseStep(db.schema, { query: db.query, connectionName: job.database.connectionName, where, onWritten: seen.onWritten }) : undefined;
     const made = await gen.make(
       {
         files,
@@ -460,12 +522,16 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
         config: job.config,
         signal,
         ...(job.standIn === false ? { standIn: false } : {}),
+        // A layout among the files, when none was handed in, in the caller's words; its sample rows never (OC6).
+        layoutFiles: { where, onWritten: seen.onWritten },
       },
       makeHooks(tell),
+      step ? { database: step } : undefined,
     );
     if (!made || signal.aborted) return null;
     const chosen = effectiveProvider(job.config);
-    const base = { kind: 'generate' as const, notices: [...made.notices], pictures: made.pictures, translated: null, audit: null, printed: printedOf([]), standInFonts: [] as string[], model: null, fixModel: null };
+    const bindingFor = (xml: string) => seen.bindingOf(xml, db?.schema ?? null);
+    const base = { kind: 'generate' as const, notices: [...(db?.notices ?? []), ...made.notices], pictures: made.pictures, translated: null, audit: null, printed: printedOf([]), standInFonts: [] as string[], model: null, fixModel: null, binding: null };
     if (made.ok) {
       const xml = await asWritten(made.repxContent);
       // The translation the words asked for, when it failed, is said, as revise_report says its own (the wave-3 review, W3R-1).
@@ -489,6 +555,7 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
         limit: translateLimit ?? (made.fixFailed === undefined ? null : limitFrom(made.fixFailed, made.by, job.config)),
         model: made.model,
         fixModel: made.fixModel,
+        binding: await bindingFor(xml),
       };
     }
     // With standIn false, a report made whose translation then failed is no report (the core's *Nothing standing in*): said as the translation's failure.
@@ -497,15 +564,38 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
     if (made.standIn?.result.repxContent) {
       const xml = await asWritten(made.standIn.result.repxContent);
       const standInFonts = measuredInStandIns(gen, xml, base.notices, log, job.voice);
-      return { ...base, xml, by: null, note: '', standIn: made.standIn.source, failure, audit: await audited(xml), standInFonts, limit };
+      return { ...base, xml, by: null, note: '', standIn: made.standIn.source, failure, audit: await audited(xml), standInFonts, limit, binding: await bindingFor(xml) };
     }
     return { ...base, xml: '', by: null, note: '', standIn: null, failure, limit };
   }
 
+  /**
+   * revise_report's work with the database handed in (the header's *A
+   * database*): read first, so a layout that cannot be read costs no
+   * request; then the work, and the binding read back from the report
+   * written, or from the report as it is when nothing is.
+   */
   async function revise(job: ReviseJob, gen: NodeGeneration, signal: AbortSignal, tell: (event: GenEvent) => void): Promise<ReviseDone | null> {
     tell({ stage: 'reading' });
-    const w = WORDS[job.voice];
     const opened = openReport(job.text, job.name, job.voice);
+    const db = job.database ? await readDatabase(job.database, job.voice) : null;
+    const seen = recordWrites();
+    const done = await reviseWith(job, gen, signal, tell, opened, db && job.database ? { read: db, job: job.database, seen } : null);
+    if (!done || !db) return done;
+    // A query pinned binds only a report written: said when nothing is.
+    const unpinned = db.query && !done.xml && !done.failure ? [NOT_WRITTEN_NOT_BOUND[job.voice]] : [];
+    return { ...done, notices: [...db.notices, ...done.notices, ...unpinned], binding: await seen.bindingOf(done.xml || opened.xml, db.schema) };
+  }
+
+  async function reviseWith(
+    job: ReviseJob,
+    gen: NodeGeneration,
+    signal: AbortSignal,
+    tell: (event: GenEvent) => void,
+    opened: ReturnType<typeof openReport>,
+    db: { read: DatabaseRead; job: DatabaseJob; seen: ReturnType<typeof recordWrites> } | null,
+  ): Promise<ReviseDone | null> {
+    const w = WORDS[job.voice];
     const open = opened.xml;
     const report: ReportRead = { loginRemoved: opened.loginRemoved, connectionsChanged: opened.connectionsChanged, notices: opened.notices };
     const notices: string[] = [];
@@ -528,6 +618,7 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
       limit: null as AiLimit | null,
       model: null as string | null,
       fixModel: null as string | null,
+      binding: null,
     };
     const chosen = effectiveProvider(job.config);
 
@@ -538,8 +629,24 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
     const known = factsLib.answerFromFacts(job.request, facts);
     if (known) return { ...empty, action: 'answer', reply: fileLines(known.split('\n')), by: null };
 
+    // The database handed in (D1-2): what the report reads now is the query the caller pinned, else the one read back from
+    // the report, so a source Forma wrote is the person's choice and never "a source Forma did not write"; read again from
+    // the report a data edit changed, for the second pass.
+    const [dbAi, drift] = db ? await Promise.all([import('../lib/databaseAi'), import('../lib/sqlDrift')]) : [null, null];
+    const nowOf = (xml: string) => (db && drift ? (xml === open && db.read.query ? db.read.query : drift.queryFromRepx(xml, db.read.schema)) : null);
+    const databaseFor = (xml: string) => (db && dbAi ? { database: dbAi.chatSection(db.read.schema, { query: nowOf(xml), words: job.request, repx: xml }) } : {});
+    /** A report written with a query pinned reads it, bound with no AI when the AI's change left it reading another (nodeDatabase.ts `bindReport`). */
+    const pinnedOn = async (xml: string): Promise<string> => {
+      if (!db?.read.query || !drift || (await sameQuery(drift.queryFromRepx(xml, db.read.schema), db.read.query))) return xml;
+      const bound = await bindReport(xml, db.read.schema, db.read.query, { connectionName: db.job.connectionName, version: asked.version, voice: job.voice });
+      // Kept with the binding read back after, never in the plain notices: its words name the files' names (W5-PB-11).
+      db.seen.onWritten(bound.written, db.read.schema);
+      db.seen.note(...bound.binding.notes, ...(bound.binding.bound ? [] : [bound.note]));
+      return bound.xml;
+    };
+
     const outline = `${agent.reportOutline(open, { findings: auditRepx(open).findings.map((f) => f.message) })}\n${factsLib.factsBlock(facts)}`;
-    const reportFor = (xml: string) => ({ outline: xml === open ? outline : agent.reportOutline(xml), ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS });
+    const reportFor = (xml: string) => ({ outline: xml === open ? outline : agent.reportOutline(xml), ops: agent.EDIT_OPS, tools: agent.TOOL_LISTS, ...databaseFor(xml) });
     const history: ChatTurn[] = [{ role: 'user', text: job.request }];
     const { askWithChain } = await import('../lib/fallbackChain');
     tell({ stage: 'asking' });
@@ -604,13 +711,15 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
 
     /** A redesign through the generation core, with this report open. */
     const redesign = async (): Promise<ReviseDone | null> => {
-      const made = await gen.make({ words: designWords, open: { repxContent: open }, config: job.config, signal }, makeHooks(tell));
+      // With a database, the redesign keeps what the report reads now as the query chosen (D1-2), as the workspace's does.
+      const step = db && dbAi ? dbAi.databaseStep(db.read.schema, { query: nowOf(open), connectionName: db.job.connectionName, where: WHERE[job.voice], onWritten: db.seen.onWritten }) : undefined;
+      const made = await gen.make({ words: designWords, open: { repxContent: open }, config: job.config, signal }, makeHooks(tell), step ? { database: step } : undefined);
       if (!made || signal.aborted) return null;
       notices.push(...made.notices);
       if (!made.ok) return { ...answered, action: 'rebuild', reply: fileLines([reply]), by, note: [...notes].join(' '), failure: failureWords(made.error), limit: limitFrom(made.error, chosen, job.config) };
       if (made.note) notes.add(made.note);
       by = answerer(made.by);
-      const xml = await asWritten(made.repxContent);
+      const xml = await asWritten(await pinnedOn(made.repxContent));
       return {
         ...empty,
         action: 'rebuild',
@@ -641,7 +750,15 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
     }
 
     if (outcome.action === 'edit') {
-      const hooks = { fields: (xml: string) => factsLib.dataFieldsOf(xml) };
+      // A `data` edit binds to the database handed in, at the version worked out, as App's (SD-25); without one it is declined
+      // in the caller's words, never the Data tab's, which agentEdit.ts says when no hook is given (D1-8).
+      const hooks = {
+        fields: (xml: string) => factsLib.dataFieldsOf(xml),
+        data:
+          db && dbAi
+            ? dbAi.dataEditHook(db.read.schema, asked.version, () => undefined, { connectionName: db.job.connectionName })
+            : (xml: string) => ({ xml, applied: false, reason: NO_DATABASE[job.voice] }),
+      };
       let done = agent.applyEdits(open, outcome.edits ?? [], hooks);
       const errorsOf = (xml: string) => auditRepx(xml).findings.filter((f) => f.severity === 'error').map((f) => f.message);
       const errorsBefore = new Set(errorsOf(open));
@@ -680,7 +797,7 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
           const fixed = pass(xml);
           if (fixed.applied) xml = fixed.xml;
         }
-        const after = await translated(xml);
+        const after = await translated(await pinnedOn(xml));
         const written = await asWritten(after.xml);
         return {
           ...answered,
@@ -712,7 +829,7 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
     if (translateTool) {
       const after = await translated(open);
       if (after.translated && after.xml !== open) {
-        const written = await asWritten(after.xml);
+        const written = await asWritten(await pinnedOn(after.xml));
         return { ...answered, action: 'edit', xml: written, reply: fileLines([reply]), changes: fileLines(agent.describeChanges(open, written)), declined: fileLines(declinedTools), by, note: [...notes].join(' '), translated: after.translated, audit: await audited(written) };
       }
     }

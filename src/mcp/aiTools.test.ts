@@ -37,6 +37,7 @@ import { switchNote } from '../lib/fallbackChain';
 import type { GenerationDeps } from '../lib/generationCore';
 import { FORMA_KEYS, redactorFor } from '../lib/keyRedact';
 import { encodeBase64 } from '../lib/repxSqlDataSource';
+import { SAMPLE_EXPORT, SCHEMA_EXPORT } from '../lib/sqlFixtures';
 import { buildMockReportReply, mockAnswer, type ChatOutcome } from '../services/geminiService';
 import { readAiSettings, type AiEnv, type AiSettings } from './aiSettings';
 import { CALLS_AI } from './aiTools';
@@ -286,6 +287,34 @@ describe('generate_report', () => {
     expect(readFileSync(at('from-repx', 'old.generated.repx'), 'utf8')).not.toContain(SECRET);
     // The file it was made from is as it was.
     expect(readFileSync(at('from-repx', 'old.repx'), 'utf8')).toBe(invoice({ login: true }));
+    await c.close();
+    await gen.close();
+  });
+
+  it('binds a report to a database layout passed as data (D1-1), whether bound as data and what it reads only under fromFile (D1-10), its sample rows never sent', { timeout: 60_000 }, async () => {
+    const shown: (string | undefined)[] = [];
+    const ask: Ask = async (_prompt, _parts, _config, previous, _signal, _onProgress, options) => {
+      shown.push(options?.database);
+      return { ...mockAnswer('true', previous, options), dataQuery: { table: 'dbo.Customers' } } as never;
+    };
+    const gen = inThreadGenerator(SETUP, { ask });
+    const c = await serve(readAiSettings(GEMINI), gen);
+    put(at('with-layout', 'formasample.txt'), `${SCHEMA_EXPORT}\r\n`);
+    put(at('with-layout', 'rows.txt'), SAMPLE_EXPORT);
+    const result = await call(c, 'generate_report', { description: 'A list of customers', data: [at('with-layout', 'formasample.txt'), at('with-layout', 'rows.txt')], output: at('with-layout', 'customers.repx') });
+    expect(result.isError, JSON.stringify(result).slice(0, 600)).toBeUndefined();
+    const out = result.structuredContent;
+    expect(out.bound).toBe(true);
+    expect(out.fromFile.binding).toMatchObject({ database: 'FormaSample', query: { table: 'dbo.Customers' }, connection: 'FormaSample' });
+    expect(out.notices).toContain('The report is bound to the database layout given; fromFile.binding says what it reads.');
+    // Words naming no route a host's model could take itself (the wave-5 review, W5-PB-9): never the command line's --samples.
+    expect(out.notices).toContain('"rows.txt" holds sample rows, which go to the AI only when the person turns sample rows on for this server, which this version does not offer, so they were not read.');
+    expect(JSON.stringify(out.notices)).not.toMatch(/--samples|command line/);
+    // The names read from the layout reach the result only under fromFile, never the summary or a plain notice.
+    expect(result.content[0].text.split('\n\n')[0]).not.toMatch(/Customers|FormaSample/);
+    expect(out.notices.join(' ')).not.toMatch(/Customers|FormaSample/);
+    expect(shown[0]).toContain('- dbo.Customers (table)');
+    expect(shown[0]).not.toMatch(/Example Traders/);
     await c.close();
     await gen.close();
   });
