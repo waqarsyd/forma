@@ -7,7 +7,13 @@
  * (NODE-6, PROTO-8) and making no request even to translate (W7R-1), the
  * model pin, the paper never following the operating system's locale, a
  * redesign asked in the open report's settings (W7R-2), and text measured
- * on @napi-rs/canvas (NODE-11). The end-to-end run is nodeMakeReport.test.ts.
+ * on @napi-rs/canvas (NODE-11): the parity rows' widths on every machine,
+ * Courier New's too, each style of Times New Roman in its own face, Calibri
+ * and Cambria in their own widths, the faces registered by assembling for a
+ * family the host lacks, and a canvas that measures nothing refused (the CLI
+ * and Forma Designer work's GAP2-1 to GAP2-3, and its wave-1 review's
+ * FONTS-R3 and FONTS-R4; nodeFonts.test.ts holds the registration itself).
+ * The end-to-end run is nodeMakeReport.test.ts.
  * No key: the probe's requests are answered here.
  */
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -16,6 +22,7 @@ import { join } from 'node:path';
 import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MOCK_INVOICE_RESPONSE, type ReportConfig } from '../services/geminiService';
+import { METRIC_FACES, NOTHING_MEASURES } from './nodeFonts';
 import { CLONE, fileStorage, formaUserFolder, nodeGeneration, unreadNotice } from './nodeGeneration';
 import { fileFrom } from './nodeIntake';
 
@@ -259,19 +266,76 @@ describe('text measured on @napi-rs/canvas, where the browser measures it', () =
     expect(canvasMeasurer()).not.toBeNull();
   });
 
-  // The parity rows' widths (docs/proposals/devexpress-parity.md, rows 51, 53 and 59), where the fonts they were measured in are installed.
-  it.runIf(['Arial', 'Times New Roman', 'Trebuchet MS'].every((f) => GlobalFonts.has(f)))("breaks and fits lines at the widths DevExpress printed, in this machine's fonts", async () => {
-    const measure = (await fresh({ ...quiet, userFolder: folder() })).measuring.canvasMeasurer()!;
-    const pt = (units: number) => (units * 72) / 100;
-    const font = (family: string, sizePt: number) => ({ family, sizePt, bold: false, italic: false });
-    const avatar = 'AVATAR Wave To LT Yo';
+  /*
+   * The parity rows' widths (docs/proposals/devexpress-parity.md, rows 51, 53
+   * and 59) on every machine (GAP2-3): in the installed Arial and Times New
+   * Roman where the host has them, as Windows does, and in the Liberation
+   * faces nodeFonts.ts registers under their names where it does not, as
+   * CI's Linux. Until 2026-11-24 this case ran only where GlobalFonts.has
+   * found the fonts, which it.runIf asked as the file was collected, before
+   * anything was registered: it never ran on CI.
+   */
+  const pt = (units: number) => (units * 72) / 100;
+  const font = (family: string, sizePt: number, bold = false, italic = false) => ({ family, sizePt, bold, italic });
+  const avatar = 'AVATAR Wave To LT Yo';
+
+  it('breaks and fits lines at the widths DevExpress printed, on every machine', async () => {
+    const { measuring } = await fresh({ ...quiet, userFolder: folder() });
+    const measure = measuring.canvasMeasurer()!;
     // Kerned, Arial's line breaks below 293.342 units and keeps whole above it; unkerned it is short from 311.822.
     expect(measure(avatar, font('Arial', 20), pt(293.25))).toHaveLength(2);
     expect(measure(avatar, font('Arial', 20), pt(293.45))).toHaveLength(1);
     expect([measure.fitsUnkerned!(avatar, font('Arial', 20), pt(311.8)), measure.fitsUnkerned!(avatar, font('Arial', 20), pt(311.85))]).toEqual([false, true]);
-    // Times New Roman 307.0 and Trebuchet MS 290.2 unkerned; "ROTATED TEXT" at 9.75pt, 101.2.
+    // Times New Roman 307.0 unkerned; "ROTATED TEXT" at 9.75pt, 101.2.
     expect([measure.fitsUnkerned!(avatar, font('Times New Roman', 20), pt(306.95)), measure.fitsUnkerned!(avatar, font('Times New Roman', 20), pt(307.1))]).toEqual([false, true]);
-    expect([measure.fitsUnkerned!(avatar, font('Trebuchet MS', 20), pt(290.15)), measure.fitsUnkerned!(avatar, font('Trebuchet MS', 20), pt(290.3))]).toEqual([false, true]);
+    // Courier New, which no row measured (the wave-1 review's FONTS-R3): 333.388 units, Windows' Courier New and Liberation Mono alike.
+    expect([measure.fitsUnkerned!(avatar, font('Courier New', 20), pt(333.35)), measure.fitsUnkerned!(avatar, font('Courier New', 20), pt(333.42))]).toEqual([false, true]);
     expect([measure.fitsUnkerned!('ROTATED TEXT', font('Times New Roman', 9.75), pt(101.1)), measure.fitsUnkerned!('ROTATED TEXT', font('Times New Roman', 9.75), pt(101.25))]).toEqual([false, true]);
+    // The same through lineWidthPt's own canvas, which a page's sizes are read through (lib/ocrLayout.ts `canvasFaceWidth`): 311.822 and 101.166 units, unkerned.
+    expect(measuring.lineWidthPt(avatar, font('Arial', 20))).toBeCloseTo(pt(311.822), 2);
+    expect(measuring.lineWidthPt('ROTATED TEXT', font('Times New Roman', 9.75))).toBeCloseTo(pt(101.166), 2);
+    // Kerned, the turned line of row 53 measures 98.3.
+    expect(measuring.turnedWidths(font('Times New Roman', 9.75))!.kerned('ROTATED TEXT')).toBeCloseTo(pt(98.336), 2);
+  });
+
+  it('measures each style of Times New Roman in its own face, never the last one registered', async () => {
+    // GAP2-2: four faces registered bare measured every style in the last; Times New Roman tells all four apart at 2048 units.
+    const { measuring } = await fresh({ ...quiet, userFolder: folder() });
+    const plain = (bold: boolean, italic: boolean) => measuring.turnedWidths(font('Times New Roman', 2048, bold, italic))!.plain('Invoice Number Total');
+    expect([plain(false, false), plain(true, false), plain(false, true), plain(true, true)]).toEqual([18198, 19341, 17974, 18658]);
+  });
+
+  it("measures Calibri and Cambria in their own widths, Carlito's and Caladea's where the host lacks them", async () => {
+    // Windows' Calibri and Carlito alike: 263.685 units unkerned, 248.562 kerned; Cambria 286.743 and 269.097, Caladea 286.749 and 269.055.
+    const measure = (await fresh({ ...quiet, userFolder: folder() })).measuring.canvasMeasurer()!;
+    expect([measure.fitsUnkerned!(avatar, font('Calibri', 20), pt(263.65)), measure.fitsUnkerned!(avatar, font('Calibri', 20), pt(263.72))]).toEqual([false, true]);
+    expect([measure(avatar, font('Calibri', 20), pt(248.5)), measure(avatar, font('Calibri', 20), pt(248.6))].map((lines) => lines.length)).toEqual([2, 1]);
+    expect([measure.fitsUnkerned!(avatar, font('Cambria', 20), pt(286.7)), measure.fitsUnkerned!(avatar, font('Cambria', 20), pt(286.8))]).toEqual([false, true]);
+    expect([measure(avatar, font('Cambria', 20), pt(269.0)), measure(avatar, font('Cambria', 20), pt(269.15))].map((lines) => lines.length)).toEqual([2, 1]);
+  });
+
+  // Trebuchet MS has no face of Forma's: its row (290.2 unkerned) holds where it is installed, and has() may be asked as the file is collected, since nothing registers it.
+  it.runIf(GlobalFonts.has('Trebuchet MS'))('fits Trebuchet MS at the width DevExpress printed, where it is installed', async () => {
+    const measure = (await fresh({ ...quiet, userFolder: folder() })).measuring.canvasMeasurer()!;
+    expect([measure.fitsUnkerned!(avatar, font('Trebuchet MS', 20), pt(290.15)), measure.fitsUnkerned!(avatar, font('Trebuchet MS', 20), pt(290.3))]).toEqual([false, true]);
+  });
+
+  it("registers the table's faces for a family the host lacks before anything is measured, as on a host without the five", async () => {
+    // FONTS-R4: on Windows the five are installed and nothing is registered, and with Liberation installed, as on CI's Linux, the canvas
+    // finds Arial and Times New Roman through its alias, so the rows above pass there with no registration. A family no host has,
+    // given the Arial faces, is found only if assembling registers it: leaving useMetricFonts out fails here on every machine.
+    const family = 'Forma Test Node Sans';
+    const faces = [...METRIC_FACES, ...METRIC_FACES.filter((f) => f.family === 'Arial').map((f) => ({ ...f, family }))];
+    expect(GlobalFonts.has(family)).toBe(false);
+    const { measuring } = await fresh({ ...quiet, userFolder: folder(), metricFaces: faces });
+    expect(GlobalFonts.has(family)).toBe(true);
+    const plain = (bold: boolean, italic: boolean) => measuring.turnedWidths(font(family, 2048, bold, italic))!.plain(avatar);
+    // Arial's own widths at 2048 units, each style in its face: Arial's italics have its uprights' widths.
+    expect([plain(false, false), plain(true, false), plain(false, true), plain(true, true)]).toEqual([22990, 23780, 22990, 23780]);
+  });
+
+  it('refuses a canvas that measures nothing, as a host with no fonts gave before the faces were registered', async () => {
+    const nothing = () => ({ font: '', measureText: () => ({ width: 0 }) }) as unknown as CanvasRenderingContext2D;
+    await expect(nodeGeneration({ ...quiet, userFolder: folder(), canvas: nothing })).rejects.toThrow(NOTHING_MEASURES);
   });
 });

@@ -30,7 +30,12 @@
  * Node nothing measures text, so a print there does not grow, unless a
  * canvas is handed in: the MCP server hands in @napi-rs/canvas's
  * (2026-11-24, lib/textMeasure.ts `measureOn`), whose widths matched the
- * parity rows'.
+ * parity rows', in the machine's own fonts or, for Arial, Times New Roman,
+ * Courier New, Calibri and Cambria where the machine lacks them, in the
+ * metric-compatible faces src/mcp/nodeFonts.ts registers first (the same
+ * widths, Caladea's Cambria's to within its rounding). Before they were
+ * registered, a machine with no fonts measured every width as 0, and nothing
+ * grew.
  *
  * `fixUntilPrints` is the loop that was `runGeneration`'s for a report
  * designed from words (DevExpress's Prompt-to-Report retries a layout the

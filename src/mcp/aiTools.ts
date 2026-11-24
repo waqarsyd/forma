@@ -43,6 +43,10 @@
  *   answered, and when the free chain asked another on a limit, its switch
  *   note is in the notices; when Forma's own draft stood in, the result says
  *   so and which.
+ * - **A font measured in a stand-in is said** (the CLI and Forma Designer
+ *   work's GAP2-4): a report made through the core whose fonts name a family
+ *   this machine lacks carries genJobs.ts's STAND_IN_FONTS notice, and the
+ *   families, the report's own text, under fromFile.standInFonts.
  * - **Written, never replaced**: a new .repx, beside the first file or the
  *   report under the tool's own suffix, or where the call says; an existing
  *   file is never replaced, the same content found there is `unchanged`.
@@ -258,7 +262,12 @@ export function aiTools(sys: PathSystem, options: AiToolsOptions, wfs: WriteFs =
               printFindings: done.printed.data,
               translated: done.translated,
             },
-            fromFile: { findings: audit?.lines ?? [], printed: done.printed.lines, ...(done.failure ? { aiError: done.failure } : {}) },
+            fromFile: {
+              findings: audit?.lines ?? [],
+              printed: done.printed.lines,
+              ...(done.failure ? { aiError: done.failure } : {}),
+              ...(done.standInFonts.length ? { standInFonts: done.standInFonts } : {}),
+            },
           };
         },
       ),
@@ -343,7 +352,7 @@ export function aiTools(sys: PathSystem, options: AiToolsOptions, wfs: WriteFs =
           return {
             summary: `${wroteWords(written)} ${what}. The result has ${done.audit?.words ?? 'no audit'}.`,
             data: { ...base, written, ...(done.audit?.data ?? {}) },
-            fromFile: { ...fromFile, ...(done.audit ? { findings: done.audit.lines } : {}) },
+            fromFile: { ...fromFile, ...(done.audit ? { findings: done.audit.lines } : {}), ...(done.standInFonts.length ? { standInFonts: done.standInFonts } : {}) },
           };
         },
       ),

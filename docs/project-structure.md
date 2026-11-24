@@ -697,9 +697,16 @@ src/
                        rule: PaddleOCR where vendor/paddle holds its pinned
                        models, else Tesseract from the installed language
                        data gathered into Forma's folder, nothing written to
-                       the working folder) and nodePaddle (PaddleOCR through
+                       the working folder), nodePaddle (PaddleOCR through
                        onnxruntime-node, the one Node reader, which
-                       scripts/model/paddleOcr.ts shares).
+                       scripts/model/paddleOcr.ts shares) and, since the CLI
+                       and Forma Designer work's wave 1, nodeFonts (the
+                       metric-compatible faces registered for Arial, Times
+                       New Roman, Courier New, Calibri and Cambria where the
+                       machine lacks them, each with its weight and style,
+                       from one face table; a canvas that measures nothing
+                       refused; the families a report names that were
+                       measured in a stand-in, found by measuring).
                        Since wave 8, the two tools that call an AI:
                        aiSettings (which AI they ask, from the values the
                        entry copies out of its environment: FORMA_GEMINI_KEY,
@@ -727,7 +734,7 @@ src/
                        five report tools on files in a scratch folder, in
                        the test's thread and in the worker, and the
                        worker's bounds), and so do nodeGeneration,
-                       nodeIntake, nodeOcr and nodePaddle; nodeMakeReport
+                       nodeIntake, nodeOcr, nodePaddle and nodeFonts; nodeMakeReport
                        runs makeReport end to end in Node on a picture and
                        two PDFs drawn in the test, the AI stood in;
                        aiSettings, generator and aiTools have one each
@@ -767,7 +774,14 @@ assets/model/          formaModel.json, Forma's own model, learned by
 assets/pdf-fonts/      the twelve Liberation 2.1.5 faces a PDF/A file embeds
                        and their SIL OFL licence, unmodified; served at
                        /pdf-fonts/ and copied into dist/ at build (README
-                       there: provenance and checksums)
+                       there: provenance and checksums); in Node they also
+                       measure Arial, Times New Roman and Courier New where
+                       the machine lacks them (src/mcp/nodeFonts.ts)
+assets/metric-fonts/   Carlito 1.104 (OFL) and Caladea 1.002 (Apache-2.0),
+                       unmodified with their licences, which measure Calibri
+                       and Cambria in Node where the machine lacks them;
+                       never served or embedded (README there: provenance,
+                       checksums, and how close they measure)
 docs/                  PRD.md, project-structure.md (this tree),
                        project-hierarchy.md (every place a change has to
                        reach, written from scripts/check-hierarchy.mjs),

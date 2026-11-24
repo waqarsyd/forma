@@ -325,6 +325,20 @@ describe("the entry's order", () => {
     expect(text(join(CLONE, 'src', 'mcp', 'workerPool.ts'))).toContain("new URL('./worker.mjs', import.meta.url)");
     expect(text(join(CLONE, 'src', 'mcp', 'generator.ts'))).toContain("new URL('./genWorker.mjs', import.meta.url)");
   });
+
+  it("every launcher names the clone's own tsconfig.json for tsx, never the working folder's", () => {
+    // 2026-11-24, finding CLI-8 of the command line's design audit: tsx given no tsconfig applies the one in the folder the
+    // host started in, the user's project. Through import.meta.dirname, so no launcher imports more than the cases above
+    // allow, and never through TSX_TSCONFIG_PATH, which the environment case below would refuse. stdio.test.ts starts
+    // the server from a folder whose tsconfig.json breaks each thread unless its launcher does this.
+    const launchers = SRC.filter((f) => inMcp(f) && !isTest(f) && specifiersOf(text(f)).includes('tsx/esm/api'));
+    expect(launchers.map(rel).sort()).toEqual(['src/mcp/genWorker.mjs', 'src/mcp/run.mjs', 'src/mcp/worker.mjs']);
+    for (const file of launchers) {
+      const calls = [...code(text(file)).matchAll(/\bregister\s*\(([^)]*)\)/g)].map((m) => m[1].trim());
+      expect(calls, rel(file)).toEqual(["{ tsconfig: import.meta.dirname + '/../../tsconfig.json' }"]);
+      expect(resolve(dirname(file), '..', '..', 'tsconfig.json')).toBe(join(CLONE, 'tsconfig.json'));
+    }
+  });
 });
 
 describe('stdio only, no port', () => {

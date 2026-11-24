@@ -1,9 +1,13 @@
 /**
  * What may be handed to DevExpress on the person's PC unasked (2026-11-11,
- * the re-audit's R5-03): the types a report names and the files it reads.
+ * the re-audit's R5-03): the types a report names and the files it reads;
+ * and Forma Designer's own copy of the check, `ReportGuard` in
+ * tools/RepxDesigner/Probe.cs, held to this one's lists (2026-11-24, the
+ * CLI and Forma Designer work's wave-1 review, HIER2-1).
  */
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { inspectionRefusal, outsideReferences, reachesOutside } from './inspectionGuard';
+import { PATH_ATTRIBUTES, inspectionRefusal, outsideReferences, reachesOutside } from './inspectionGuard';
 
 const ROOT = '<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1" Name="R">';
 const report = (inner: string) => `${ROOT}<Bands><Item1 Ref="2" ControlType="DetailBand" Name="Detail"><Controls>${inner}</Controls></Item1></Bands></XtraReportsLayoutSerializer>`;
@@ -55,6 +59,27 @@ describe('outsideReferences', () => {
     expect(outsideReferences(report('<Item1 Ref="3" ControlType="XRPictureBox" Name="logo" ImageUrl="\\\\nas\\logo.png" /><Item2 Ref="4" ControlType="XRPictureBox" Name="web" ImageUrl="https://example.com/a.png" />'))).toEqual([
       { name: 'logo', value: '\\\\nas\\logo.png' },
     ]);
+  });
+});
+
+describe("Forma Designer's own copy of the check", () => {
+  it('names the same value types, the same path attributes and the same report types as this one', () => {
+    // CLAUDE.md: inspectionGuard.ts and ReportGuard in Probe.cs must refuse the same things, so an older Forma Designer, or a page
+    // that skipped this check, is never handed what the other lets through. A C# change cannot run here (CI is Linux, with no
+    // DevExpress), so the lists both read are compared as written: a type or an attribute added to one and not the other fails.
+    const ts = readFileSync('src/lib/inspectionGuard.ts', 'utf8');
+    const cs = readFileSync('tools/RepxDesigner/Probe.cs', 'utf8');
+    const guard = cs.slice(cs.indexOf('internal static class ReportGuard'));
+    const quoted = (list: string) => [...list.matchAll(/["']([^"']+)["']/g)].map((m) => m[1]);
+    const tsValues = quoted(/\[([^\]]*)\]\.map\(\(t\) => `System\.\$\{t\}`\)/.exec(ts)?.[1] ?? '');
+    const csValues = quoted(/new\[\] \{([^}]*)\}\.Select\(t => "System\." \+ t\)/.exec(guard)?.[1] ?? '');
+    expect(tsValues).toContain('String');
+    expect(csValues).toEqual(tsValues);
+    expect(quoted(/PathAttributes = \{([^}]*)\}/.exec(guard)?.[1] ?? '')).toEqual([...PATH_ATTRIBUTES]);
+    for (const literal of ['DevExpress.XtraReports.', 'DevExpress.DataAccess.Sql.SqlDataSource', 'DevExpress.DataAccess.Expression', '#Ref-', 'System.Type', 'file:', 'ControlType', 'ObjectType', 'Base64', 'Content']) {
+      expect(ts, literal).toContain(literal);
+      expect(guard, literal).toContain(literal);
+    }
   });
 });
 

@@ -493,9 +493,15 @@ export function drawnBoldWideningPt(text: string, font: FontSpec): number {
   return widening ? letters(text) * widening.drawn * font.sizePt : 0;
 }
 
-/** The CSS font string a measuring canvas uses: MEASURE_PX pixels. */
-function measureFont(font: FontSpec): { css: string; stretch: string } {
-  return canvasFont(font, `${MEASURE_PX}px`);
+/**
+ * The canvas font a face's widths are measured in, at MEASURE_PX pixels: the
+ * face the browser finds (row 62), a synthesized bold as its regular (row
+ * 60). Exported for a caller that asks whether that face is found at all
+ * (src/mcp/nodeFonts.ts `standInFamilies`), so the question is asked of the
+ * very font the widths come from.
+ */
+export function measuringFont(font: { family: string; bold: boolean; italic: boolean }): { css: string; stretch: string } {
+  return canvasFont(synthesizedBold({ ...font, sizePt: 1 }) ? { ...font, bold: false } : font, `${MEASURE_PX}px`);
 }
 
 /**
@@ -520,8 +526,7 @@ export function canvasMeasurer(): MeasureText | null {
   // The bold's widening is added after: GDI+'s at a large em for a line
   // break, at the drawn size for whether one line is short (row 67).
   const widthPt = (s: string, font: FontSpec, kerned: boolean, widening: (s: string, font: FontSpec) => number) => {
-    const synthesized = synthesizedBold(font);
-    const face = measureFont(synthesized ? { ...font, bold: false } : font);
+    const face = measuringFont(font);
     const key = `${face.css}\u0000${face.stretch}\u0000${kerned ? 'k' : 'u'}\u0000${s}`;
     let width = cache.get(key);
     if (width === undefined) {
@@ -560,8 +565,7 @@ export function turnedWidths(font: FontSpec): TurnedWidths | null {
   if (turnedContext === undefined) turnedContext = canvasContext();
   const context = turnedContext;
   if (!context) return null;
-  const synthesized = synthesizedBold(font);
-  const face = measureFont(synthesized ? { ...font, bold: false } : font);
+  const face = measuringFont(font);
   const kerns = gdiKerns(font);
   const at = (s: string, kerned: boolean) => {
     const text = s.replace(/\s+$/, '');
@@ -663,11 +667,22 @@ export function turnedLines(text: string, w: TurnedWidths, lengthPt: number, acr
  * widths alike. Its widths were held to the parity rows before it was turned
  * on: "AVATAR Wave To LT Yo" at 20pt in Arial printed 311.822 units unkerned
  * and 293.342 kerned (rows 51 and 59), and @napi-rs/canvas measured 311.822
- * and 293.349 on this machine's Arial; Times New Roman 307.020 against
+ * and 293.349 in Windows' own Arial; Times New Roman 307.020 against
  * 307.0, Trebuchet MS 290.229 against 290.2, and "ROTATED TEXT" at 9.75pt in
  * Times New Roman 101.166 and 98.336 against 101.2 and 98.3 (row 53).
- * nodeGeneration.test.ts measures them again where those fonts are
- * installed. Under jsdom, which has a document, nothing changes.
+ *
+ * The canvas measures in the family the host has installed, or, where the
+ * host lacks Arial, Times New Roman, Courier New, Calibri or Cambria, in the
+ * metric-compatible face Forma registers under that name before handing the
+ * canvas in (src/mcp/nodeFonts.ts, 2026-11-24, the CLI and Forma Designer
+ * work's wave 1): Liberation Sans, Serif and Mono, Carlito and Caladea. On a
+ * Linux host with none of the five, the registered faces measured the Arial
+ * and Times New Roman rows above to the same thousandth, with the host's own
+ * fonts and with none. Any other family the host lacks is measured
+ * in its fallback face, and a result made in Node says which
+ * (`standInFamilies`). nodeGeneration.test.ts measures the rows on every
+ * machine, CI's Linux included, and Trebuchet MS's where it is installed.
+ * Under jsdom, which has a document, nothing changes.
  */
 let handedIn: (() => CanvasRenderingContext2D | null) | null = null;
 
@@ -702,6 +717,15 @@ let lineContext: CanvasRenderingContext2D | null | undefined;
  * the length the line prints at. DevExpress draws text unkerned (row 53, s39):
  * s31c's turned line printed 101.2 units long, Edge's unkerned width, and
  * sat 2.2 short of it while this measured it kerned.
+ *
+ * Measured at MEASURE_PX and scaled, as `canvasMeasurer` measures, since
+ * 2026-11-24 (the CLI and Forma Designer work's GAP2-3): it was measured at
+ * the font's own size, which a canvas rounds when it is not a whole number
+ * of pixels, the browser down to a hundredth of a pixel (MEASURE_PX's note)
+ * and @napi-rs/canvas down to a 64th. 20pt is 26.667 pixels, and in Node
+ * "AVATAR Wave To LT Yo" in Arial measured 311.70 units against the 311.822
+ * DevExpress printed; at 2048 pixels it measures 311.822, and the browser
+ * measures within a thousandth of GDI's there (MEASURE_PX's note).
  */
 export function lineWidthPt(text: string, font: FontSpec): number | null {
   if (lineContext === undefined) {
@@ -709,8 +733,8 @@ export function lineWidthPt(text: string, font: FontSpec): number | null {
     if (lineContext && 'fontKerning' in lineContext) lineContext.fontKerning = 'none';
   }
   if (!lineContext) return null;
-  setCanvasFont(lineContext, { css: cssFont(font), stretch: browserFace(font).stretch });
-  return lineContext.measureText(text).width * 0.75;
+  setCanvasFont(lineContext, canvasFont(font, `${MEASURE_PX}px`));
+  return (lineContext.measureText(text).width * font.sizePt) / MEASURE_PX;
 }
 
 let metricsContext: CanvasRenderingContext2D | null | undefined;

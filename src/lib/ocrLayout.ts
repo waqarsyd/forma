@@ -161,7 +161,11 @@ let defaultWidths: FaceWidth = canvasFaceWidth;
  * on the machine's fonts, and null puts the canvas back. scripts/fidelity
  * passed them too until 2026-11-24, when it moved onto the generation core,
  * whose Node parts measure on @napi-rs/canvas as the MCP server does; the
- * move's parity gate found the same reports either way.
+ * move's parity gate found the same reports either way, on Windows, whose
+ * Arial and Times New Roman have Liberation's widths. Since the same day
+ * those parts register the Liberation faces under Arial's and Times New
+ * Roman's names where the machine lacks them (src/mcp/nodeFonts.ts), which
+ * gives every machine the independence from its fonts these files gave.
  */
 export function measureFacesWith(widths: FaceWidth | null): void {
   defaultWidths = widths ?? canvasFaceWidth;

@@ -13,7 +13,11 @@
  * a report made from a description, from a .repx (its stored login gone
  * before the AI sees it, SEC-3) and data files, written to a new file and
  * never over one; paths refused before any request (SEC-5, GAP1-1); the
- * switch note when another AI set up answered on a limit (SEC-11); Forma's
+ * switch note when another AI set up answered on a limit (SEC-11); a font
+ * the report names that this machine measured in a stand-in, said in the
+ * notices and named under fromFile alone, for a report made or redesigned
+ * through the core and never for an edit (GAP2-4), and the report written
+ * though that check cannot be made (the wave-1 review's FONTS-R1); Forma's
  * draft standing in when the AI fails, said so; progress only rising, and
  * none after the result (PROTO-3); one call at a time, the second told it
  * waits (OD7, PROTO-7); a cancellation writing nothing, no partial file left
@@ -37,11 +41,28 @@ import { buildMockReportReply, mockAnswer, type ChatOutcome } from '../services/
 import { readAiSettings, type AiEnv, type AiSettings } from './aiSettings';
 import { CALLS_AI } from './aiTools';
 import { createFormaServer, formaVersion, nodeSystem } from './formaServer';
-import type { ChatFn, GenSetup } from './genJobs';
+import { STAND_IN_FONTS, type ChatFn, type GenSetup } from './genJobs';
 import { oneAtATime, type Generator } from './generator';
 import { readEnvRoots } from './roots';
 import { loadRepxSkill } from './skillResource';
 import { connectInMemory, inThread, inThreadGenerator, openLegacy, textJson } from './testClient';
+
+/**
+ * The font check a job asks after the report is made (nodeFonts.ts
+ * `standInFamilies`), as it is, unless the one case that shows a check that
+ * throws never fails a job turns `fail` on (FONTS-R1).
+ */
+const fontCheck = vi.hoisted(() => ({ fail: false }));
+vi.mock('./nodeFonts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./nodeFonts')>();
+  return {
+    ...real,
+    standInFamilies: (...args: Parameters<typeof real.standInFamilies>) => {
+      if (fontCheck.fail) throw new RangeError('Invalid code point 1114112');
+      return real.standInFamilies(...args);
+    },
+  };
+});
 
 const CLONE = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const OWNER_WORK = resolve(CLONE, '..', 'forma-model-data-kept-not-in-git', 'forma-model-data', 'work');
@@ -308,6 +329,66 @@ describe('generate_report', () => {
     await gen.close();
   });
 
+  it('says when a font the report names was measured in a stand-in here, naming it only under fromFile', { timeout: 60_000 }, async () => {
+    // GAP2-4: the mock invoice with its bold titles in a family no machine has; a family is the report's text, so never in Forma's words.
+    const missing = 'Forma Absent Family';
+    const plain = askWith();
+    const ask: Ask = async (...args) => {
+      const answer = await plain(...args);
+      return { ...answer, repxContent: answer.repxContent.replaceAll('Font="Arial, 12.24pt, style=Bold"', `Font="${missing}, 12.24pt, style=Bold"`) };
+    };
+    const gen = inThreadGenerator(SETUP, { ask });
+    const c = await serve(readAiSettings(GEMINI), gen);
+    const result = await call(c, 'generate_report', { description: 'An invoice with a title.', output: at('stand-in-font', 'invoice.repx') });
+    expect(result.isError, JSON.stringify(result).slice(0, 600)).toBeUndefined();
+    expect(readFileSync(at('stand-in-font', 'invoice.repx'), 'utf8')).toContain(`Font="${missing}, 12.24pt, style=Bold"`);
+    expect(result.structuredContent.notices).toContain(STAND_IN_FONTS);
+    expect(result.structuredContent.fromFile.standInFonts).toEqual([missing]);
+    expect(JSON.stringify(result.structuredContent.notices)).not.toContain(missing);
+    expect(result.content[0].text.split('\n\n')[0]).not.toContain(missing);
+    await c.close();
+    await gen.close();
+
+    // The mock invoice's own Arial is measured in Arial on every machine, so its result says nothing of the kind.
+    const mocked = await serve(readAiSettings({ ...GEMINI, FORMA_MCP_MOCK: '1' }), mockGenerator);
+    const arial = await call(mocked, 'generate_report', { description: 'An invoice with a title.', output: at('stand-in-font', 'arial.repx') });
+    expect(arial.structuredContent.notices).not.toContain(STAND_IN_FONTS);
+    expect(arial.structuredContent.fromFile.standInFonts).toBeUndefined();
+    await mocked.close();
+  });
+
+  it('writes the report though its fonts name a character that is none, or the font check fails: the check is advice, and never ends a job', { timeout: 60_000 }, async () => {
+    // FONTS-R1: nodeFonts' own decoder threw on &#x110000;, nothing guarded the check, and a report its AI had made was lost with
+    // "an internal error". The reference is kept as written, so the family is named as the report spells it.
+    const odd = 'Arial&#x110000;';
+    const plain = askWith();
+    const ask: Ask = async (...args) => {
+      const answer = await plain(...args);
+      return { ...answer, repxContent: answer.repxContent.replaceAll('Font="Arial, 12.24pt, style=Bold"', `Font="${odd}, 12.24pt, style=Bold"`) };
+    };
+    const lines: string[] = [];
+    const gen = inThreadGenerator(SETUP, { ask, log: (line) => lines.push(line) });
+    const c = await serve(readAiSettings(GEMINI), gen);
+    const first = await call(c, 'generate_report', { description: 'An invoice with a title.', output: at('font-check', 'odd.repx') });
+    expect(first.isError, JSON.stringify(first).slice(0, 600)).toBeUndefined();
+    expect(readFileSync(at('font-check', 'odd.repx'), 'utf8')).toContain(`Font="${odd}, 12.24pt, style=Bold"`);
+    expect(first.structuredContent.fromFile.standInFonts).toEqual([odd]);
+    // A check that throws, whatever it threw on: the report written, no notice either way, a line in the log.
+    fontCheck.fail = true;
+    try {
+      const second = await call(c, 'generate_report', { description: 'An invoice with a title.', output: at('font-check', 'unchecked.repx') });
+      expect(second.isError, JSON.stringify(second).slice(0, 600)).toBeUndefined();
+      expect(readFileSync(at('font-check', 'unchecked.repx'), 'utf8')).toContain(`Font="${odd}, 12.24pt, style=Bold"`);
+      expect(second.structuredContent.notices).not.toContain(STAND_IN_FONTS);
+      expect(second.structuredContent.fromFile.standInFonts).toBeUndefined();
+      expect(lines.join('\n')).toContain('The fonts the report names could not be checked for a stand-in');
+    } finally {
+      fontCheck.fail = false;
+    }
+    await c.close();
+    await gen.close();
+  });
+
   it("stands Forma's own draft in when every AI fails, says so, and keeps the key out of everything it returns and logs", { timeout: 60_000 }, async () => {
     const gen = inThreadGenerator(SETUP, { ask: askWith({ fail: () => new Error(`API key not valid. Please pass a valid API key: ${geminiKey}`) }) });
     const c = await serve(readAiSettings(GEMINI), gen);
@@ -464,6 +545,29 @@ describe('revise_report', () => {
     expect(result.structuredContent.notices).toContain(switchNote('gemini', 'openrouter'));
     // The redesign was asked with this report open.
     expect(seen.length).toBeGreaterThan(0);
+    await c.close();
+    await gen.close();
+  });
+
+  it('says when a redesign names a font measured in a stand-in here, under fromFile, and never for an edit, which measures no text', { timeout: 60_000 }, async () => {
+    const missing = 'Forma Absent Family';
+    const plain = askWith();
+    const ask: Ask = async (...args) => {
+      const answer = await plain(...args);
+      return { ...answer, repxContent: answer.repxContent.replaceAll('Font="Arial, 12.24pt, style=Bold"', `Font="${missing}, 12.24pt, style=Bold"`) };
+    };
+    const gen = inThreadGenerator(SETUP, { ask, chat: chatWith() });
+    const c = await serve(readAiSettings(GEMINI), gen);
+    const rebuilt = await call(c, 'revise_report', { path: put(at('stand-in-font', 'inv.repx'), invoice()), request: 'Turn it into a quarterly sales summary' });
+    expect(rebuilt.structuredContent).toMatchObject({ action: 'rebuild', written: { status: 'written' } });
+    expect(rebuilt.structuredContent.notices).toContain(STAND_IN_FONTS);
+    expect(rebuilt.structuredContent.fromFile.standInFonts).toEqual([missing]);
+    // The title already in that family, made bold in place: nothing is measured, so nothing is said.
+    const odd = put(at('stand-in-font', 'odd.repx'), invoice().replace('Font="Arial, 14pt"', `Font="${missing}, 14pt"`));
+    const edited = await call(c, 'revise_report', { path: odd, request: 'Make the title bold' });
+    expect(edited.structuredContent).toMatchObject({ action: 'edit', applied: 1 });
+    expect(edited.structuredContent.notices).not.toContain(STAND_IN_FONTS);
+    expect(edited.structuredContent.fromFile.standInFonts).toBeUndefined();
     await c.close();
     await gen.close();
   });

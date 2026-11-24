@@ -15,6 +15,22 @@ the file (parity row 72; `src/lib/pdfFonts.ts`, `src/lib/trueType.ts`).
 Each Liberation face has the same advance widths as the Windows font it stands
 for, so a line keeps its length.
 
+## They also measure text in Node
+
+The same widths are why Node measures with them (2026-11-24, the CLI and Forma
+Designer work's wave 1). In Node, Forma measures text on @napi-rs/canvas, which
+finds a family among the fonts the machine has, and a Linux host may have no
+Arial, Times New Roman or Courier New: WSL's Ubuntu measured Arial and Times
+New Roman alike in DejaVu, and a host with no fonts measured every width as 0.
+So where the machine lacks one of the three, `src/mcp/nodeFonts.ts`
+(`useMetricFonts`) registers these faces under its name, each with its own
+weight and style, in the process only: no file here is changed. Registered so,
+"AVATAR Wave To LT Yo" at 20pt measured 311.822 units in Arial and 307.020 in
+Times New Roman, as on Windows. Carlito and Caladea do the same for Calibri and
+Cambria from `assets/metric-fonts`, whose README has their provenance and how
+close they measure (Carlito has Calibri's widths; Caladea's are Cambria's
+rounded to its 1000-unit em).
+
 ## Where they come from
 
 These twelve files, unmodified, from the Liberation Fonts 2.1.5 release
@@ -54,8 +70,10 @@ the licence restricts, and is what `subsetTrueType` does to a copy.
 
 ## How they reach the browser
 
-`pdfFontAssets` in `vite.config.ts` serves these faces and `LICENSE` at
-`/pdf-fonts/` in development and copies them into `dist/pdf-fonts/` at build,
-as OCR's engine is served at `/ocr/`. A browser fetches a face only when it
+`servedAssets` in `vite.config.ts` serves the faces `PDF_FONT_ASSETS` names,
+and `LICENSE`, at `/pdf-fonts/` in development and copies them into
+`dist/pdf-fonts/` at build, as OCR's engine is served at `/ocr/`; the list
+names each file, so nothing else in this folder, or in `assets/metric-fonts`,
+is served. A browser fetches a face only when it
 writes a PDF/A file that uses it. `scripts/check-bundle-size.mjs` budgets
 `dist/pdf-fonts/` apart from the rest of the site.

@@ -24,9 +24,10 @@
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createCanvas, GlobalFonts, type Canvas } from '@napi-rs/canvas';
+import { createCanvas, type Canvas } from '@napi-rs/canvas';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MOCK_INVOICE_RESPONSE, type ReportConfig } from '../services/geminiService';
+import { METRIC_FACES, registerFace } from './nodeFonts';
 import { CLONE, nodeGeneration, type NodeGeneration } from './nodeGeneration';
 import { fileFrom } from './nodeIntake';
 import { pinnedModelsIn } from './nodePaddle';
@@ -41,10 +42,11 @@ const ROWS = [
 /*
  * Drawn in Liberation Sans, the font the repository commits for PDF/A
  * (assets/pdf-fonts), so the page is the same on every machine, CI's Linux
- * included, whatever fonts it has.
+ * included, whatever fonts it has. Each face with its weight and style, from
+ * nodeFonts.ts's table (2026-11-24, GAP2-2): registered bare, the bold, the
+ * last one in, drew the body text too.
  */
-GlobalFonts.registerFromPath(join(CLONE, 'assets', 'pdf-fonts', 'LiberationSans-Regular.ttf'), 'Forma Test Sans');
-GlobalFonts.registerFromPath(join(CLONE, 'assets', 'pdf-fonts', 'LiberationSans-Bold.ttf'), 'Forma Test Sans');
+for (const face of METRIC_FACES.filter((f) => f.family === 'Arial')) registerFace(CLONE, face, 'Forma Test Sans');
 
 /** An invoice page drawn at about 150 dpi, A4, as a scan or a screenshot would bring it. */
 function invoicePage(): Canvas {

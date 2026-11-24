@@ -431,7 +431,7 @@ The top level, in brief. The full tree, with a note on every file that needs one
 | `tools/` | Forma Designer (`RepxDesigner/`), the optional Windows companion, and `RepxProbe/`, which asks DevExpress what a `.repx` contains |
 | `tests/` | The Firestore rules suite, run against the emulator |
 | `docs/` | The product spec (`PRD.md`), the architecture notes (`notes/`), proposals, the design source, deploying and screenshots |
-| `assets/` | Forma's own model, the PDF fonts, and the sources generated images are drawn from |
+| `assets/` | Forma's own model, the PDF fonts (which also measure Arial, Times New Roman and Courier New in Node on a machine without them), Carlito and Caladea (which measure Calibri and Cambria there), and the sources generated images are drawn from |
 | `public/` | Vite's static root, copied into `dist/` as it is: icons, logos and the web manifest |
 | `.github/` | CI, CodeQL, the live-site check, Dependabot, the issue forms and the `main` ruleset |
 

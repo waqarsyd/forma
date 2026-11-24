@@ -23,8 +23,11 @@
  * returns: the report, with Visual Studio's working-file mark neutralised
  * (it is written as a .repx) and any login a report could still carry taken
  * out, who answered and the switch note when another AI did (SEC-11), the
- * stand-in, what taking the files in said, the audit, and what printing it
- * found.
+ * stand-in, what taking the files in said, the audit, what printing it
+ * found, and the families the report names that this machine measured in a
+ * stand-in (nodeFonts.ts `standInFamilies`, the CLI and Forma Designer work's
+ * GAP2-4), with a notice when there are any; a redesign in revise_report
+ * carries the same, an edit measures no text.
  *
  * ## revise_report
  *
@@ -160,6 +163,8 @@ export interface GenerateDone {
   translated: { language: string; bilingual: boolean } | null;
   audit: Audited | null;
   printed: Printed;
+  /** The families the report names that this machine measured in a stand-in (nodeFonts.ts): text from the report, for fromFile. */
+  standInFonts: string[];
 }
 
 export type ReviseAction = 'answer' | 'edit' | 'unchanged' | 'rebuild' | 'new';
@@ -185,9 +190,19 @@ export interface ReviseDone {
   failure: string;
   translated: { language: string; bilingual: boolean } | null;
   audit: Audited | null;
+  /** As GenerateDone's, for a report redesigned through the core; an edit measures no text, so it names none. */
+  standInFonts: string[];
 }
 
 export type GenDone = GenerateDone | ReviseDone;
+
+/**
+ * The notice a report made through the core carries when some of its fonts
+ * were measured in a stand-in on this machine (GAP2-4). The families are the
+ * report's text, so the result names them under fromFile, never here.
+ */
+export const STAND_IN_FONTS =
+  'Some fonts the report names were measured in a stand-in on this machine (fromFile.standInFonts names them); line breaks and the print check are approximate for them.';
 
 /** Runs the AI tools' jobs on one set of Node parts, assembled on the first job. */
 export interface GenRunner {
@@ -233,6 +248,26 @@ async function asWritten(xml: string): Promise<string> {
 function printedOf(findings: readonly { severity: 'error' | 'warning'; code: string; message: string }[] | undefined): Printed {
   const all = findings ?? [];
   return { data: all.map(({ severity, code }) => ({ severity, code })), lines: fileLines(all.map((f) => `${f.severity} ${f.code}: ${f.message}`)) };
+}
+
+/**
+ * The families of a report made through the core that were measured in a
+ * stand-in here, with STAND_IN_FONTS added to `notices` when there are any.
+ * Advice, so it never fails the job: the report is made and the AI's quota
+ * spent by now, and asking about text from that report once threw (the
+ * wave-1 review's FONTS-R1), so an error is a line in the log and the report
+ * goes out without the notice.
+ */
+function measuredInStandIns(gen: NodeGeneration, xml: string, notices: string[], log: (line: string) => void): string[] {
+  let families: string[];
+  try {
+    families = gen.standInFonts(xml);
+  } catch (error) {
+    log(`The fonts the report names could not be checked for a stand-in, so the result does not say whether any was measured in one: ${failureWords(error)}`);
+    return [];
+  }
+  if (families.length && !notices.includes(STAND_IN_FONTS)) notices.push(STAND_IN_FONTS);
+  return families;
 }
 
 /** A tool the chat brought that has no equivalent here, said in plain words; '' for one dropped without a word. */
@@ -288,15 +323,17 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
       makeHooks(tell),
     );
     if (!made || signal.aborted) return null;
-    const base = { kind: 'generate' as const, notices: [...made.notices], pictures: made.pictures, translated: null, audit: null, printed: printedOf([]) };
+    const base = { kind: 'generate' as const, notices: [...made.notices], pictures: made.pictures, translated: null, audit: null, printed: printedOf([]), standInFonts: [] as string[] };
     if (made.ok) {
       const xml = await asWritten(made.repxContent);
-      return { ...base, xml, by: answerer(made.by), note: made.note, standIn: null, failure: '', translated: made.translated, audit: await audited(xml), printed: printedOf(made.response.printFindings) };
+      const standInFonts = measuredInStandIns(gen, xml, base.notices, log);
+      return { ...base, xml, by: answerer(made.by), note: made.note, standIn: null, failure: '', translated: made.translated, audit: await audited(xml), printed: printedOf(made.response.printFindings), standInFonts };
     }
     const failure = failureWords(made.error);
     if (made.standIn?.result.repxContent) {
       const xml = await asWritten(made.standIn.result.repxContent);
-      return { ...base, xml, by: null, note: '', standIn: made.standIn.source, failure, audit: await audited(xml) };
+      const standInFonts = measuredInStandIns(gen, xml, base.notices, log);
+      return { ...base, xml, by: null, note: '', standIn: made.standIn.source, failure, audit: await audited(xml), standInFonts };
     }
     return { ...base, xml: '', by: null, note: '', standIn: null, failure };
   }
@@ -308,7 +345,7 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
     const report: ReportRead = { loginRemoved: opened.loginRemoved, connectionsChanged: opened.connectionsChanged, notices: opened.notices };
     const notices: string[] = [];
     const [agent, factsLib, { auditRepx }, { applyDetected }] = await Promise.all([import('../lib/agentEdit'), import('../lib/reportFacts'), import('../lib/repxAudit'), import('../lib/autoConfig')]);
-    const empty = { kind: 'revise' as const, xml: '', reply: [] as string[], applied: [] as string[], declined: [] as string[], changes: [] as string[], report, notices, note: '', brief: [] as string[], failure: '', translated: null, audit: null };
+    const empty = { kind: 'revise' as const, xml: '', reply: [] as string[], applied: [] as string[], declined: [] as string[], changes: [] as string[], report, notices, note: '', brief: [] as string[], failure: '', translated: null, audit: null, standInFonts: [] as string[] };
 
     // The settings worked out with the report laid over the stored ones, as the workspace's are.
     const asked = gen.config(applyDetected(job.config, gen.deps(job.config, open).detect({ words: job.request })));
@@ -394,6 +431,7 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
         note: [...notes].join(' '),
         translated: made.translated,
         audit: await audited(xml),
+        standInFonts: measuredInStandIns(gen, xml, notices, log),
       };
     };
 

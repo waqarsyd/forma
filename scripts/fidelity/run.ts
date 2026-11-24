@@ -140,8 +140,11 @@
  * environment because there is no Settings dialog; text is measured on
  * @napi-rs/canvas (lib/textMeasure.ts `measureOn`) where the browser measures
  * on its own canvas, the two held to DevExpress's widths within 0.04 units in
- * Arial, Times New Roman and Trebuchet MS, and in whatever face the machine
- * has where those fonts are missing; PaddleOCR's picture is enlarged with
+ * Arial, Times New Roman and Trebuchet MS; where the machine lacks Arial,
+ * Times New Roman, Courier New, Calibri or Cambria, in the metric-compatible
+ * faces src/mcp/nodeFonts.ts registers under their names (the same widths,
+ * Caladea's Cambria's to within its rounding), and any other
+ * missing family in a fallback face; PaddleOCR's picture is enlarged with
  * `resizeRgb` where the browser's canvas smooths it; no handwriting is read;
  * the paper follows the page and the words, with no locale behind them, so a
  * page that says nothing is laid on Letter, as in a browser set to en-US; and
@@ -224,7 +227,9 @@ import type { FormaModel } from '../../src/lib/formaModel';
  * hands lib/textMeasure.ts an @napi-rs/canvas (`measureOn`), so a page's sizes
  * read from the letters' widths (lib/ocrLayout.ts, the full audit's CC-08),
  * the box reader's control widths and OCR's copy are measured as the MCP
- * server measures them, on the machine's own Arial and Times New Roman. From
+ * server measures them, in the machine's own Arial and Times New Roman, or in
+ * the Liberation faces nodeGeneration registers under those names where the
+ * machine lacks them (src/mcp/nodeFonts.ts, 2026-11-24). From
  * 2026-11-11 until the move to the core this file measured a page's sizes in
  * the Liberation files the PDF export embeds (`measureFacesWith`), the only
  * widths Node had, and the box reader's widths not at all (the rough 0.6 em a
@@ -232,6 +237,9 @@ import type { FormaModel } from '../../src/lib/formaModel';
  * from the public .repx files, before and after) measured both: the canvas's
  * sizes gave the Liberation files' reports exactly, and the measured widths
  * moved five drafts' controls by a few bytes' worth with no score changed.
+ * That gate ran on Windows, whose Arial and Times New Roman have Liberation's
+ * widths, so it could not see a Linux machine measuring in DejaVu; the
+ * registration gives every machine the widths the Liberation files gave.
  */
 
 /**

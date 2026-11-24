@@ -21,6 +21,17 @@
  * process and listened on a named pipe): the noise says its process id on
  * stderr, and it must be the spawned one.
  *
+ * The folder a host starts it in may hold a tsconfig.json of the user's own,
+ * and tsx, registered with no tsconfig named, applies that one (finding CLI-8
+ * of the command line's design audit, 2026-11-24): its `paths` reach every
+ * package Forma's sources import, each bare specifier, and its compiler
+ * settings reach them when it takes the clone in. So the launcher and both
+ * worker threads name
+ * the clone's own, and one case starts the server from a folder whose
+ * tsconfig.json sends zod, which every thread loads on start, to a stub that
+ * throws; a control case first shows that folder breaks each thread's
+ * modules when tsx is registered as the launchers did before.
+ *
  * Each request waits at most 30 seconds and fails with the server's stderr in
  * its message; every process a case starts is ended after it, pass or fail,
  * before the scratch folder it ran in is removed (finding T8). Each case is
@@ -30,7 +41,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
 import { formaUserFolder } from './nodeGeneration';
 import { TOOL_LIST } from './toolList';
@@ -48,6 +59,21 @@ const fakeKey = ['AI', 'za', 'Sy'].join('') + 'n'.repeat(33);
 const fakeNewerKey = ['A', 'Q.'].join('') + 'n'.repeat(40);
 const MODERN_META = { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {}, 'io.modelcontextprotocol/clientInfo': { name: 'smoke', version: '1' } };
 const REQUEST_MS = 30_000;
+
+/**
+ * A user's project files that would break Forma if tsx applied their
+ * tsconfig.json (CLI-8): its `paths` sends zod, which toolShape.ts imports and
+ * so every thread of the server loads on start, to a stub that throws. tsx
+ * applies `paths` to a bare specifier from every importer outside
+ * node_modules, whatever the tsconfig's `include` says (read in tsx
+ * 4.23.15), so it reaches the clone from any folder; compiler settings would
+ * reach it only from a project whose tsconfig takes the clone in.
+ */
+const STUB_SAYS = 'FORMA-HOSTILE-TSCONFIG';
+const HOSTILE: Record<string, string> = {
+  'tsconfig.json': `${JSON.stringify({ compilerOptions: { paths: { zod: ['./zod-stub.mjs'] } } }, null, 2)}\n`,
+  'zod-stub.mjs': `throw new Error('${STUB_SAYS}: zod was resolved through the tsconfig.json of the working folder');\n`,
+};
 
 /** A server started for one case. */
 interface Started {
@@ -73,10 +99,11 @@ afterEach(async () => {
 /**
  * The server started as a host starts it, and a way to talk to it line by
  * line. `more` adds to its environment, a value left undefined taking that
- * variable out.
+ * variable out; `files` are written into the folder it starts in, first.
  */
-function start(noise: string, more: Record<string, string | undefined> = {}): Started {
+function start(noise: string, more: Record<string, string | undefined> = {}, files: Record<string, string> = {}): Started {
   const cwd = mkdtempSync(join(scratch, 'host-'));
+  for (const [name, content] of Object.entries(files)) writeFileSync(join(cwd, name), content);
   const env: NodeJS.ProcessEnv = { ...process.env, FORMA_MCP_ROOTS: realpathSync.native(cwd), FORMA_MCP_TEST_NOISE: noise, FORMA_GEMINI_KEY: fakeKey, GEMINI_API_KEY: fakeNewerKey };
   delete env.CLAUDE_PROJECT_DIR;
   for (const name of Object.keys(env)) if (name.startsWith('FORMA_') && !['FORMA_MCP_ROOTS', 'FORMA_MCP_TEST_NOISE', 'FORMA_GEMINI_KEY'].includes(name)) delete env[name];
@@ -254,6 +281,67 @@ describe('the stdio server, started as a host starts it', () => {
     expect(s.err()).toContain('the AI tools refuse until an AI is set up');
     expect(s.out() + s.err()).not.toContain(fakeNewerKey);
     expect(readdirSync(s.cwd)).toEqual([]);
+  });
+
+  it("the control: from a folder whose tsconfig.json sends zod to a stub, tsx registered with no tsconfig named breaks every thread's modules", { timeout: 60_000 }, async () => {
+    // As run.mjs, worker.mjs and genWorker.mjs registered it before CLI-8: the modules each thread loads on start fail on the stub,
+    // so the case below cannot pass by the folder's tsconfig.json being ignored for some other reason.
+    const cwd = mkdtempSync(join(scratch, 'control-'));
+    for (const [name, content] of Object.entries(HOSTILE)) writeFileSync(join(cwd, name), content);
+    const tsxPackage = join(CLONE, 'node_modules', 'tsx');
+    const tsxApi = pathToFileURL(join(tsxPackage, JSON.parse(readFileSync(join(tsxPackage, 'package.json'), 'utf8')).exports['./esm/api'].import.default)).href;
+    const modules = ['formaServer.ts', 'pipeline.ts', 'genJobs.ts'];
+    const unpinned = [
+      `import { register } from ${JSON.stringify(tsxApi)};`,
+      'register();',
+      `for (const [name, url] of ${JSON.stringify(modules.map((m) => [m, pathToFileURL(join(CLONE, 'src', 'mcp', m)).href]))}) {`,
+      "  try { await import(url); console.log(name + ' loaded'); } catch (error) { console.log(name + ' failed: ' + error.message); }",
+      '}',
+      '',
+    ].join('\n');
+    writeFileSync(join(cwd, 'unpinned.mjs'), unpinned);
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    delete env.TSX_TSCONFIG_PATH;
+    const child = spawn(process.execPath, [join(cwd, 'unpinned.mjs')], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (d) => (out += d));
+    child.stderr.on('data', (d) => (err += d));
+    const exited = new Promise<number | null>((done) => child.on('exit', done));
+    // Bounded, and ended pass or fail before the scratch folder it runs in is removed (T8; the wave-1 review's LAUNCH-1).
+    try {
+      const code = await Promise.race([exited, new Promise<'still running'>((done) => setTimeout(() => done('still running'), REQUEST_MS).unref())]);
+      expect(code, err.slice(-1000)).toBe(0);
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill();
+        await Promise.race([exited, new Promise((done) => setTimeout(done, 5000).unref())]);
+      }
+    }
+    for (const m of modules) expect(out, `${out}\n${err.slice(-1000)}`).toContain(`${m} failed: ${STUB_SAYS}`);
+  });
+
+  it("ignores the tsconfig.json of the folder it is started in: the thread that answers, the report tools' worker and the AI tools' worker all load Forma's modules", { timeout: 120_000 }, async () => {
+    // CLI-8: each launcher names the clone's tsconfig.json. The AI mocked and Forma's folder in a scratch home, as in the AI tools' case.
+    const home = mkdtempSync(join(scratch, 'home-'));
+    const s = start('', { FORMA_MCP_MOCK: '1', USERPROFILE: home, HOME: home, TSX_TSCONFIG_PATH: undefined }, HOSTILE);
+    const cwd = realpathSync.native(s.cwd);
+    const path = join(cwd, 'r.repx');
+    writeFileSync(path, `<?xml version="1.0" encoding="utf-8"?>\n<XtraReportsLayoutSerializer SerializerVersion="20.1.3.0" Ref="1" ControlType="DevExpress.XtraReports.UI.XtraReport, DevExpress.XtraReports.v20.1" Name="R" PageWidth="850" PageHeight="1100" Version="20.1"><Bands><Item1 Ref="2" ControlType="DetailBand" Name="Detail" HeightF="20"><Controls><Item1 Ref="3" ControlType="XRLabel" Name="title" Text="Orders" SizeF="200,20" /></Controls></Item1></Bands></XtraReportsLayoutSerializer>\n`);
+    const init = await s.request(1, 'initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'smoke', version: '1' } });
+    expect(init.result?.serverInfo?.name).toBe('forma');
+    s.notify('notifications/initialized');
+    const status = await s.request(2, 'tools/call', { name: 'forma_status', arguments: {} });
+    expect(status.result.isError, JSON.stringify(status).slice(0, 400)).toBeUndefined();
+    const audit = await s.request(3, 'tools/call', { name: 'repx_audit', arguments: { path } });
+    expect(audit.result.isError, `${JSON.stringify(audit).slice(0, 400)}\n${s.err().slice(-1000)}`).toBeUndefined();
+    const revised = await s.request(4, 'tools/call', { name: 'revise_report', arguments: { path, request: 'Make the title red' } }, 90_000);
+    expect(revised.result.isError, `${JSON.stringify(revised).slice(0, 400)}\n${s.err().slice(-1000)}`).toBeUndefined();
+    expect(revised.result.structuredContent).toMatchObject({ action: 'edit', ai: 'mock', written: { path: join(cwd, 'r.revised.repx') } });
+    expect(await leaves(s)).toBe(0);
+    expect(expectOnlyJsonRpc(s.out())).toBe(4);
+    expect(s.err()).not.toContain(STUB_SAYS);
+    expect(readdirSync(s.cwd).sort()).toEqual(['r.repx', 'r.revised.repx', 'tsconfig.json', 'zod-stub.mjs']);
   });
 
   it('exits non-zero after an uncaught exception, saying why on stderr and nothing on stdout', { timeout: 60_000 }, async () => {

@@ -93,6 +93,47 @@ describe('project hierarchy', () => {
     expect(rule(check([edit('src/mcp/tools.test.ts')]), 'mcp')).toBeUndefined();
   });
 
+  it('the command line, a second entry in src/mcp with its own launcher, is seen by the same rule before any of it lands, and its tests are not', () => {
+    // 2026-11-24, finding SURF-1 of the command line's design audit: every file the command line is to have, as the audit's
+    // defaults placed it (CLI-1, TEST-2), with scripts/repx.ts kept as a forwarder; mcp.md must be asked for by name, never
+    // hidden behind the notes folder that testing.md, staged with every new test, would tick.
+    const cli = check([add('src/mcp/cli.mjs'), add('src/mcp/cliEntry.ts'), add('src/mcp/cli.ts'), add('src/mcp/cliBatch.ts'), edit('scripts/repx.ts'), add('src/mcp/cli.test.ts'), edit('docs/notes/testing.md')]);
+    expect(rule(cli, 'mcp')?.triggers).toEqual(['src/mcp/cli.mjs (added)', 'src/mcp/cliEntry.ts (added)', 'src/mcp/cli.ts (added)', 'src/mcp/cliBatch.ts (added)', 'scripts/repx.ts']);
+    expect(rule(cli, 'mcp')?.rule.title).toMatch(/^Forma's MCP server and command line/);
+    expect(open(cli, 'mcp')).toEqual(expect.arrayContaining(['docs/notes/mcp.md', 'docs/skills/devexpress-repx/SKILL.md', 'SECURITY.md', 'README.md', 'src/components/DocsPage.tsx', 'src/components/publicClaims.test.ts', '.env.example']));
+    expect(rule(cli, 'feature')).toBeUndefined();
+    expect(open(cli, 'layout')).toEqual(['docs/project-structure.md']);
+    expect(SURFACES.mcpNote.what).toMatch(/^Forma's MCP server and command line/);
+    // The launchers that pin Forma's tsconfig (CLI-8) are files of it too.
+    expect(rule(check([edit('src/mcp/run.mjs'), edit('src/mcp/genWorker.mjs')]), 'mcp')?.triggers).toEqual(['src/mcp/run.mjs', 'src/mcp/genWorker.mjs']);
+    expect(rule(check([add('src/mcp/cli.test.ts'), edit('docs/notes/testing.md')]), 'mcp')).toBeUndefined();
+  });
+
+  it("Forma Designer's C# lists every page that describes it; RepxProbe's lists what cites it, and neither lists the other's pages", () => {
+    // 2026-11-24, SURF-1: the database verbs of wave 6 change tools/RepxDesigner, and what they read reaches the Docs page's
+    // designer and data articles, the terms and the privacy policy, the PRD, SECURITY.md and mcp.md, which the tools rule never asked for;
+    // and, from the wave-1 review (HIER2-1), CLAUDE.md, whose session rule for starting it the verbs change, the home page and the
+    // download page's description in seo.ts.
+    const designer = check([edit('tools/RepxDesigner/Sql.cs'), add('tools/RepxDesigner/Verbs.cs')]);
+    expect(rule(designer, 'designer')?.triggers).toEqual(['tools/RepxDesigner/Sql.cs', 'tools/RepxDesigner/Verbs.cs (added)']);
+    expect(open(designer, 'designer')).toEqual(expect.arrayContaining([
+      'tools/RepxDesigner/README.md', 'src/lib/designerRelease.ts', 'src/components/infoPages.tsx', 'src/components/DocsPage.tsx',
+      'src/components/LegalPage.tsx', 'docs/notes/mcp.md', 'docs/PRD.md', 'SECURITY.md', 'docs/notes/gemini.md', 'docs/notes/app-shell.md',
+      'CLAUDE.md', 'src/components/LandingPage.tsx', 'src/lib/seo.ts',
+    ]));
+    expect(rule(designer, 'designer')?.rule.why).toContain('src/lib/inspectionGuard.ts');
+    expect(open(designer, 'designer')).not.toContain('tools/RepxProbe/README.md');
+    expect(rule(designer, 'tools')).toBeUndefined();
+    expect(rule(designer, 'feature')).toBeUndefined();
+    // Its README is the surface itself, so editing it alone asks nothing.
+    expect(rule(check([edit('tools/RepxDesigner/README.md')]), 'designer')).toBeUndefined();
+    const probe = check([edit('tools/RepxProbe/Sql.cs')]);
+    expect(rule(probe, 'designer')).toBeUndefined();
+    // Every page that cites a RepxProbe command (HIER2-2): the PRD and app-shell.md name render, inspect, emit-gauge and emit-localize.
+    expect(open(probe, 'tools')).toEqual(['tools/RepxProbe/README.md', 'docs/notes/gemini.md', 'docs/proposals/devexpress-parity.md', 'docs/PRD.md', 'docs/notes/app-shell.md', 'docs/skills/devexpress-repx/SKILL.md', 'tools/RepxDesigner/README.md', 'CLAUDE.md']);
+    expect(open(probe, 'tools')).not.toContain('src/lib/designerRelease.ts');
+  });
+
   it('an edit to a page on its own is not a feature change', () => {
     const out = check([edit('src/components/FeaturesPage.tsx'), edit('src/lib/releases.ts')]);
     expect(rule(out, 'feature')).toBeUndefined();

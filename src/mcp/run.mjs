@@ -19,6 +19,21 @@
  * no listener; its loader only tries to reach a parent tsx CLI's pipe,
  * finds none, and goes on.
  *
+ * The loader is given the clone's own tsconfig.json (2026-11-24, finding
+ * CLI-8 of the command line's design audit). Given none, tsx applies the
+ * tsconfig.json of the working folder, which is the user's project: its
+ * `paths` reach every package Forma's sources import, each bare specifier
+ * (zod and the SDKs among them), whatever its `include` says (one sending
+ * zod to a stub that throws kept the server from starting, measured on
+ * 2026-11-24, and stdio.test.ts starts it from such a folder), and its
+ * compiler settings reach Forma's sources when that project's tsconfig
+ * takes the clone in, as a CI job's checkout inside it can (tsx 4.23.15
+ * applies them only to the files a tsconfig includes, and `paths` to no
+ * relative import). The path is built from
+ * import.meta.dirname, so this file still imports nothing but tsx's
+ * loader, and never from TSX_TSCONFIG_PATH, which would have a launcher
+ * touch the environment. worker.mjs and genWorker.mjs do the same.
+ *
  * Nothing else belongs here: whatever is imported before the guard could
  * write to stdout before anything stops it.
  *
@@ -26,5 +41,5 @@
  */
 import { register } from 'tsx/esm/api';
 
-register();
+register({ tsconfig: import.meta.dirname + '/../../tsconfig.json' });
 await import('./stdio.ts');

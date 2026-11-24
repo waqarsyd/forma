@@ -40,7 +40,15 @@
  *   ones, as the workspace's are (App's `detectFor`), so a redesign is asked
  *   in the report's own version, unit and paper (the wave-7 review's W7R-2).
  * - Text is measured on @napi-rs/canvas (lib/textMeasure.ts `measureOn`),
- *   for the print check, the fit to the page and the box reader's widths.
+ *   for the print check, the fit to the page and the box reader's widths,
+ *   in the family the host has installed or, where it lacks Arial, Times
+ *   New Roman, Courier New, Calibri or Cambria, in the metric-compatible
+ *   face Forma registers under that name first (the same widths, Caladea's
+ *   Cambria's to within its rounding; nodeFonts.ts
+ *   `useMetricFonts`, 2026-11-24: on a Linux host without them every width
+ *   was another family's, or 0 with no fonts at all). A canvas that measures
+ *   nothing is an error here. A family the host lacks and Forma has no face
+ *   for is measured in a stand-in, which `standInFonts` names for the result.
  * - The paper follows a locale the server is given (`locale`), never the
  *   operating system's: with none, Letter, DevExpress's own default.
  * - The model Gemini answers with is probed once a day for a key and kept in
@@ -80,6 +88,7 @@ import { emptyMemory } from '../lib/memory';
 import { keepModelChoiceIn, type ModelStorage } from '../lib/modelCache';
 import { measureOn } from '../lib/textMeasure';
 import type { ReportConfig, StreamProgress } from '../services/geminiService';
+import { checkMeasuring, METRIC_FACES, standInFamilies, useMetricFonts, type MetricFace } from './nodeFonts';
 import { nodeDrawing } from './nodeIntake';
 import { nodeOcr } from './nodeOcr';
 
@@ -193,6 +202,10 @@ export interface NodeGenerationOptions {
   locale?: string;
   /** Where a line about the work goes: the server's log on stderr. */
   log?: (line: string) => void;
+  /** The canvas text is measured on: @napi-rs/canvas's by default, a test's own to see one that measures nothing refused. */
+  canvas?: () => CanvasRenderingContext2D | null;
+  /** The faces registered for the families the host lacks: nodeFonts.ts's table by default, a test's own to see them registered on a host that has the five. */
+  metricFaces?: readonly MetricFace[];
 }
 
 /** Where a request has got to, for the MCP tools' progress (2026-11-24, wave 8, PROTO-3). */
@@ -218,14 +231,17 @@ export interface NodeGeneration {
    * print check sends back is asked again) and the answer's progress.
    */
   make(request: MakeRequest, hooks?: MakeHooks): Promise<Made | null>;
+  /** The families a report's fonts name that this machine measured in a stand-in (nodeFonts.ts `standInFamilies`): text from the report. */
+  standInFonts(xml: string): string[];
   /** Ends OCR's worker; the next reading starts another. */
   close(): Promise<void>;
 }
 
 /**
  * Node's parts for the generation core, assembled once (the header). Rejects
- * when one of Forma's models will not load, or OCR's language data cannot be
- * gathered into Forma's folder.
+ * when one of Forma's models will not load, OCR's language data cannot be
+ * gathered into Forma's folder, a font a missing family needs is not in the
+ * clone, or the canvas measures nothing.
  */
 export async function nodeGeneration(options: NodeGenerationOptions = {}): Promise<NodeGeneration> {
   const clone = options.clone ?? CLONE;
@@ -238,7 +254,11 @@ export async function nodeGeneration(options: NodeGenerationOptions = {}): Promi
   // OCR's language data too, needed in PaddleOCR's mode as well (another language, and Tesseract's turn): NODE7-OCR-QUIET.
   ocr.ready();
   keepModelChoiceIn({ session: null, day: fileStorage(join(folder, 'model-choice.json')) });
-  measureOn(() => createCanvas(1, 1).getContext('2d') as unknown as CanvasRenderingContext2D);
+  // The five families' own widths on any host, then a canvas that measures something (GAP2-1).
+  useMetricFonts(clone, options.metricFaces ?? METRIC_FACES);
+  const canvas =options.canvas ?? (() => createCanvas(1, 1).getContext('2d') as unknown as CanvasRenderingContext2D);
+  checkMeasuring(canvas);
+  measureOn(canvas);
   const ask = options.ask ?? (options.mock ? mockAsk : undefined);
   const translateTexts = options.mock ? mockTranslate : undefined;
   const pinned = options.model?.trim();
@@ -296,6 +316,7 @@ export async function nodeGeneration(options: NodeGenerationOptions = {}): Promi
       const made = await makeReport({ ...request, config: asked }, partsFor(asked, request.open?.repxContent, (meta) => unread.push(meta), hooks));
       return made && (unread.length ? { ...made, notices: [...made.notices, ...unread.map(unreadNotice)] } : made);
     },
+    standInFonts: (xml) => standInFamilies(xml, canvas),
     close: () => ocr.close(),
   };
 }

@@ -3,8 +3,9 @@
  * work's wave 8; generator.ts starts it and says why). Plain JavaScript, as
  * worker.mjs is, because a new thread starts with none of its parent's
  * loaders: it registers tsx's loader in this thread, resolved from this file
- * and so from the clone's node_modules, then loads genJobs.ts, makes one
- * runner from the setup it was started with (`workerData`: the mock switch,
+ * and so from the clone's node_modules, with the clone's own tsconfig.json
+ * named, as run.mjs does and says why (CLI-8), then loads genJobs.ts, makes
+ * one runner from the setup it was started with (`workerData`: the mock switch,
  * the model pin, the locale) and answers each job the generator posts, by
  * its id: the work's events as it goes, then the result or how it failed. A
  * cancellation ends the thread from outside, so nothing here listens for
@@ -22,7 +23,7 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { register } from 'tsx/esm/api';
 
-register();
+register({ tsconfig: import.meta.dirname + '/../../tsconfig.json' });
 const { makeRunner, genFailure } = await import('./genJobs.ts');
 const runner = makeRunner(workerData);
 const never = new AbortController().signal;
