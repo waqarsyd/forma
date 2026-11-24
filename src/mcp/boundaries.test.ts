@@ -30,8 +30,11 @@
  *   walk below reads both as files of src/mcp.
  * - The entry's order (stdio.ts): the stdout guard is its only static
  *   import and is installed before its first lazy import; the guard imports
- *   only Node built-ins and problemReport, which imports nothing; the
- *   launcher, run.mjs, loads only tsx's loader and the entry.
+ *   only Node built-ins and the key scrubber the web app shares
+ *   (lib/keyRedact.ts since wave 8), which imports nothing; the launcher,
+ *   run.mjs, loads only tsx's loader and the entry. The AI tools' worker
+ *   thread (genWorker.mjs, wave 8) is a Node one of worker.mjs's shape,
+ *   started only by generator.ts.
  * - Never the v1 SDK, @modelcontextprotocol/sdk: it is in the tree (through
  *   firebase-tools and @google/genai) and would resolve silently, speaking
  *   only the 2025 protocol.
@@ -250,7 +253,7 @@ describe('the import boundaries', () => {
     }
     expect(problems).toEqual([]);
     // The walk really happened: the launcher's and the entry's lazy imports were followed.
-    expect([...seen].map(rel)).toEqual(expect.arrayContaining(['src/mcp/run.mjs', 'src/mcp/stdio.ts', 'src/mcp/formaServer.ts', 'src/mcp/roots.ts', 'src/lib/problemReport.ts']));
+    expect([...seen].map(rel)).toEqual(expect.arrayContaining(['src/mcp/run.mjs', 'src/mcp/stdio.ts', 'src/mcp/formaServer.ts', 'src/mcp/roots.ts', 'src/lib/keyRedact.ts', 'src/mcp/genWorker.mjs', 'src/mcp/genJobs.ts']));
   });
 
   it('finds every shape of write to stdout that the guard cannot catch', () => {
@@ -288,9 +291,10 @@ describe("the entry's order", () => {
     expect(firstLazy).toBeGreaterThan(installed);
   });
 
-  it('the guard imports only Node built-ins and problemReport, and problemReport imports nothing', () => {
-    expect(specifiersOf(text(join(CLONE, 'src', 'mcp', 'stdoutGuard.ts'))).filter((s) => !isBuiltin(s))).toEqual(['../lib/problemReport']);
-    expect(specifiersOf(text(join(CLONE, 'src', 'lib', 'problemReport.ts')))).toEqual([]);
+  it('the guard imports only Node built-ins and the shared key scrubber, and the scrubber imports nothing', () => {
+    // Since wave 8 (2026-11-24, SEC-7) the scrubber the web app's error reports share, lib/keyRedact.ts.
+    expect(specifiersOf(text(join(CLONE, 'src', 'mcp', 'stdoutGuard.ts'))).filter((s) => !isBuiltin(s))).toEqual(['../lib/keyRedact']);
+    expect(specifiersOf(text(join(CLONE, 'src', 'lib', 'keyRedact.ts')))).toEqual([]);
   });
 
   it("the launcher loads only tsx's loader and then the entry", () => {
@@ -299,13 +303,17 @@ describe("the entry's order", () => {
     expect(specifiersOf(launcher)).toEqual(['tsx/esm/api', './stdio.ts']);
   });
 
-  it("the report tools' worker thread loads only Node's worker module, tsx's loader and the pipeline, and only workerPool.ts starts it", () => {
+  it("the tools' worker threads load only Node's worker module, tsx's loader and their work, and only workerPool.ts and generator.ts start them", () => {
     // The wave-4 review's REV4-3: a Node worker thread, not a browser worker, with its stdout its own (the bypass list above).
     const worker = text(join(CLONE, 'src', 'mcp', 'worker.mjs'));
     expect(specifiersOf(worker)).toEqual(['node:worker_threads', 'tsx/esm/api', './pipeline.ts']);
+    // Wave 8 (2026-11-24): the AI tools' thread, the same shape, running genJobs.ts.
+    const genWorker = text(join(CLONE, 'src', 'mcp', 'genWorker.mjs'));
+    expect(specifiersOf(genWorker)).toEqual(['node:worker_threads', 'tsx/esm/api', './genJobs.ts']);
     const starters = SRC.filter((f) => inMcp(f) && !isTest(f) && /\bnew\s+Worker\s*\(/.test(code(text(f)))).map(rel);
-    expect(starters).toEqual(['src/mcp/workerPool.ts']);
+    expect(starters.sort()).toEqual(['src/mcp/generator.ts', 'src/mcp/workerPool.ts']);
     expect(text(join(CLONE, 'src', 'mcp', 'workerPool.ts'))).toContain("new URL('./worker.mjs', import.meta.url)");
+    expect(text(join(CLONE, 'src', 'mcp', 'generator.ts'))).toContain("new URL('./genWorker.mjs', import.meta.url)");
   });
 });
 

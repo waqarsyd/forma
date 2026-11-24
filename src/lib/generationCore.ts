@@ -1,10 +1,11 @@
 /**
  * One way a report is made (2026-11-24, the MCP work's wave 6; the design
- * audit's NODE-4 and NODE-8): the workspace and Batch call this, and the MCP
- * server's generation tools and a later command line are to call it, so a
- * report is made the same way everywhere. The Node versions of the parts
+ * audit's NODE-4 and NODE-8): the workspace and Batch call this, the MCP
+ * server's AI tools call it, and a later command line is to, so a report is
+ * made the same way everywhere. The Node versions of the parts
  * handed in are src/mcp/nodeGeneration.ts's (2026-11-24, wave 7), which
- * runs `makeReport` in Node; no MCP tool calls it yet (wave 8).
+ * runs `makeReport` in Node for the MCP server's generate_report and
+ * revise_report (src/mcp/genJobs.ts, wave 8).
  *
  * It starts where a turn with pictures, files or a description starts (the
  * pages and texts staged, the words), not where the request goes out:
@@ -23,7 +24,7 @@
  *   turned right to left where its source is. When every AI fails, Forma's own
  *   draft stands in, except over a report the person brought.
  * - `makeReport`: both, from files taken in here, for a caller with no
- *   workspace (Batch today, the MCP server's tools once they exist).
+ *   workspace (Batch, and the MCP server's AI tools since wave 8).
  *
  * The workspace runs the two halves apart because its chat decides between
  * them, after the pages are read, whether a message is a design at all.

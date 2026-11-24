@@ -461,6 +461,11 @@ src/
                        OffscreenCanvas and the DOM, pdf.js through pdf), buildInfo (which build runs,
                        for Settings and a problem report), problemReport (a
                        GitHub issue prefilled when an area fails),
+                       keyRedact (the one key scrubber the error reports,
+                       the problem report and the MCP server share: both
+                       Gemini key forms and OpenRouter's, for the reports
+                       other sk- keys and a bearer token too, and the values
+                       a process was given),
                        errorSink (where an error caught on the page goes:
                        nowhere unless error reports are on; a few lines the
                        error boundaries import) and errorReport (the opt-in
@@ -590,7 +595,7 @@ src/
                        on the person's own PC without a click).
                        Since 2026-11-24: generationCore (the one way a report
                        is made, which the workspace and batchRun call and the
-                       MCP server's generation tools are to call: the pages
+                       MCP server's AI tools call in Node: the pages
                        read, Forma's team, the request through the free
                        chain, the fix, the translation and the stand-in,
                        with what the browser owns handed in; the MCP server
@@ -632,7 +637,8 @@ src/
                        coverage, running only in a spawned process),
                        stdoutGuard (only the protocol reaches stdout; console,
                        stray writes and stdout's end go to stderr, keys taken
-                       out),
+                       out, by their shape and, once the entry hands them
+                       over, by the values the server was given),
                        formaServer (the factory: name, version from
                        package.json, instructions, the tools registered
                        from toolList, the REPX skill attached),
@@ -681,9 +687,8 @@ src/
                        loudly, a page OCR could not read said in the
                        result, the model probe kept in Forma's own per-user
                        folder, the mock, its translation too, and the model
-                       pin, text measured on @napi-rs/canvas; no tool calls
-                       it yet, and the one that does is to run it off the
-                       protocol thread), nodeIntake (files drawn on
+                       pin, text measured on @napi-rs/canvas, each stage
+                       told to the AI tools' progress), nodeIntake (files drawn on
                        @napi-rs/canvas, a picture decoded only within a size
                        its header states, PDFs opened with pdf.js's legacy
                        build and stopped between pages, a File typed by its
@@ -694,6 +699,26 @@ src/
                        the working folder) and nodePaddle (PaddleOCR through
                        onnxruntime-node, the one Node reader, which
                        scripts/model/paddleOcr.ts shares).
+                       Since wave 8, the two tools that call an AI:
+                       aiSettings (which AI they ask, from the values the
+                       entry copies out of its environment: FORMA_GEMINI_KEY,
+                       FORMA_PROVIDER, OpenRouter's and Local AI's, the model
+                       pin, the locale and the mock switch; the web app's
+                       gate, Local AI on this computer only, and the
+                       refusal that names what to set), aiTools
+                       (generate_report and revise_report on the thread that
+                       answers the host: the gate, the paths judged and the
+                       files read, the result written to a new file and
+                       said in the log, who answered and the switch note),
+                       genJobs (their work: makeReport through
+                       nodeGeneration, and revise_report as the chat's own
+                       path, stateless; the mock and a test's stand-ins
+                       handed in), genWorker.mjs (that work's thread:
+                       registers tsx, runs genJobs; outside coverage, as
+                       worker.mjs is) and generator (starts it with a
+                       generation's memory bound and deadline, ends it on a
+                       cancellation, a queue of one for the whole process,
+                       and progress that only goes up).
                        Tests beside them: stdoutGuard, toolShape, paths,
                        roots, formaServer and reportTools each have one
                        (formaServer's drives forma_status in both eras and
@@ -704,6 +729,10 @@ src/
                        nodeIntake, nodeOcr and nodePaddle; nodeMakeReport
                        runs makeReport end to end in Node on a picture and
                        two PDFs drawn in the test, the AI stood in;
+                       aiSettings, generator and aiTools have one each
+                       (aiTools' drives both AI tools in both eras, the AI
+                       stood in: the refusal, the queue, progress, a
+                       cancellation, the switch note, no key in any result);
                        stdio.test.ts spawns the exact command a host runs;
                        boundaries.test.ts holds src/mcp and src/server
                        apart from the browser code

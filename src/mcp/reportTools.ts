@@ -54,8 +54,10 @@ const REPORT_READ = {
   loginRemoved: z.boolean(),
   notices: z.array(z.string()),
 };
-const WRITTEN = z.looseObject({ path: z.string(), status: z.enum(['written', 'unchanged', 'replaced', 'beside']), bytes: z.number() });
-const FINDING = z.looseObject({ severity: z.enum(['error', 'warning']), code: z.string() });
+/** A file written, as every result that writes says it; the AI tools' too (aiTools.ts). */
+export const WRITTEN = z.looseObject({ path: z.string(), status: z.enum(['written', 'unchanged', 'replaced', 'beside']), bytes: z.number() });
+/** A finding's severity and code, its message under fromFile. */
+export const FINDING = z.looseObject({ severity: z.enum(['error', 'warning']), code: z.string() });
 
 /** What every result says of the report read: the file's own path and kind, and what opening it found. */
 const read = (report: ReportFile, found: ReportRead) => ({ path: report.path, kind: report.kind, loginRemoved: found.loginRemoved, notices: [...found.notices] });
@@ -66,8 +68,9 @@ const stillWanted = (tc: ToolContext) => {
 };
 
 const WROTE: Record<string, string> = { written: 'Wrote', unchanged: 'Found the same file already at', replaced: 'Replaced', beside: 'Another file held the name, so wrote' };
-const wroteWords = (w: { path: string; status: string }) => `${WROTE[w.status] ?? 'Wrote'} ${JSON.stringify(w.path)}.`;
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+/** What a result's summary says of a file written. */
+export const wroteWords = (w: { path: string; status: string }) => `${WROTE[w.status] ?? 'Wrote'} ${JSON.stringify(w.path)}.`;
+export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** What a result says when a written `.vsrepx` lost names its Designer file looks up (GAP1-3). */
 const droppedNotice = (d: Dropped) =>
@@ -123,7 +126,7 @@ export const EDIT_TOOL_OPS: readonly string[] = EDIT_OP.options;
 type Registrar = (server: McpServer, deps: ToolDeps, entry: ToolEntry) => void;
 
 /** The report tools, by name, for formaServer.ts to register in toolList.ts's order; their work runs on `pipeline`. */
-export function reportTools(sys: PathSystem, pipeline: Pipeline, wfs: WriteFs = nodeWriteFs): Record<Exclude<ToolName, 'forma_status'>, Registrar> {
+export function reportTools(sys: PathSystem, pipeline: Pipeline, wfs: WriteFs = nodeWriteFs): Record<Exclude<ToolName, 'forma_status' | 'generate_report' | 'revise_report'>, Registrar> {
   const pathArg = z.string().describe(describePath(sys.path, 'The report: a DevExpress report layout, a .repx or .vsrepx file.'));
   const readOnly = (entry: ToolEntry): ToolHints => ({ readOnlyHint: entry.readOnly, destructiveHint: false, idempotentHint: true, openWorldHint: false });
   const open = async (raw: string, tc: ToolContext) => {

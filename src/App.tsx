@@ -224,7 +224,7 @@ const loadLoop = () => import('./lib/learningLoop');
  * The one way a report is made (2026-11-24, lib/generationCore.ts): the
  * reading of a turn's pages, Forma's team, the request, the fix, the
  * translation and the stand-in, which Batch calls too (its `makeReport`) and
- * the MCP server's generation tools are to call. Off this chunk, and warmed
+ * the MCP server's AI tools call (src/mcp/genJobs.ts). Off this chunk, and warmed
  * when the workspace is idle, as its panes are, since every turn reads
  * through it.
  */

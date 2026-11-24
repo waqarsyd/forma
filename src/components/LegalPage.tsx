@@ -87,6 +87,19 @@ import { APP_CHECK_SITE_KEY } from '../lib/appCheck';
  * database login is taken out before a tool reads a report.
  * legalDisclosure.test.ts holds "send nothing" to src/mcp/toolList.ts and
  * reads every file under src/mcp for a host this policy does not name.
+ *
+ * The same day (the MCP work's waves 8 and 9; the design audit's SEC-8,
+ * SEC-11 and DOC-6): the server's two AI tools, generate_report and
+ * revise_report, send the files' pages, their OCR text, data files, the
+ * person's words and the report to the AI set up for the server, Gemini or
+ * OpenRouter straight from the person's computer with their own key, or a
+ * local AI on that computer only; the free chain's switch, said in the result;
+ * where the server's key is kept (readable, in the assistant's settings file
+ * or the person's environment), and that it is scrubbed from what the server
+ * returns and logs; the website's key paragraph scoped to the website; and
+ * OpenRouter set up for the server. legalDisclosure.test.ts now follows every
+ * import src/mcp makes for a host, and holds the AI tools' paragraph to
+ * toolList.ts.
  */
 const UPDATED = '24 November 2026';
 
@@ -201,7 +214,7 @@ const PRIVACY: Section[] = [
   {
     heading: 'Your API keys',
     paragraphs: [
-      'Your Gemini key, and an OpenRouter key if you use one, are held in the Forma tabs you have open and erased when the last of them closes: a Forma tab you open while another is open gets them from it, inside this browser, unless you turn that off in Settings. Neither is written to disk in readable form or sent to any server belonging to Forma; each goes only to its own provider.',
+      'On this website, your Gemini key, and an OpenRouter key if you use one, are held in the Forma tabs you have open and erased when the last of them closes: a Forma tab you open while another is open gets them from it, inside this browser, unless you turn that off in Settings. Neither is written to disk in readable form or sent to any server belonging to Forma; each goes only to its own provider. Forma’s MCP server, a program you run yourself, keeps no key of its own: it reads yours from the settings your assistant starts it with, as “Forma from an AI assistant” below says.',
     ],
   },
   {
@@ -219,7 +232,7 @@ const PRIVACY: Section[] = [
     heading: 'Who else is involved',
     paragraphs: [
       'Google Firebase hosts the site, runs sign-in and holds the database. Google Gemini answers the requests you make with your key. Signed out, the database is reached only through a link to a shared report. Once you are signed in, your browser does talk to Google on every load, first to check your session is still valid and then to fetch your saved projects, and it holds a connection open so changes to them arrive as they happen.',
-      'OpenRouter answers your requests only if you chose it under Settings → AI, with your own key.',
+      'OpenRouter answers your requests only if you chose it under Settings → AI, or set it up for Forma’s MCP server, with your own key.',
       // Said only once App Check is on (lib/appCheck.ts, site audit item 56).
       ...(APP_CHECK_SITE_KEY
         ? ['Google reCAPTCHA checks that requests to the database come from this site, through Firebase App Check. It runs only when the database is used — once you are signed in, or when you open a shared report — and Google sees your browser and the page while it does, and may set its own cookies on google.com.']
@@ -233,8 +246,9 @@ const PRIVACY: Section[] = [
   {
     heading: 'Forma from an AI assistant',
     paragraphs: [
-      'Forma’s source code includes an MCP server: a program you can run on your own computer, from a copy of the code, so that an AI assistant such as Claude Code can check, outline, repair and edit your report files. This website does not run it and it is no part of the site; you start it through your assistant, and it works only with files in the folders you or your assistant give it.',
-      'In this version its tools send nothing to any AI, to Forma or to anyone else, and it sends no learning events and no error reports. What a tool returns goes to your assistant, and from there to the AI behind it, under that assistant’s own terms, which decide what happens to it next. A database login stored in a report is taken out before any tool reads the report, so it is never part of what goes back.',
+      'Forma’s source code includes an MCP server: a program you can run on your own computer, from a copy of the code, so that an AI assistant such as Claude Code can check, outline, repair and edit your report files, and make or change a report with an AI of your own. This website does not run it and it is no part of the site; you start it through your assistant, and it works only with files in the folders you or your assistant give it.',
+      'Its two tools that make and change a report, and only those, send what the report needs to the AI you set up for the server, with your own key: the pages of the files you give them, the text read from those pages on your computer, the data files you pass as data, your words and the report. Your computer sends them straight to Google Gemini or OpenRouter, never through Forma, or to a local AI, which the server reaches only on your own computer. That provider’s terms decide what happens to them next, as “What the AI providers do with your requests” above describes. If the AI you chose reaches its limit and you set up another, the other answers, never after a local AI, and the tool says so. The server reads your key from the settings your assistant starts it with, which keep it in readable form on your computer, in your assistant’s settings file or in your own environment; it sends the key only to its own provider and takes it out of everything it returns and logs.',
+      'Its other tools send nothing to any AI, to Forma or to anyone else, and the server sends no learning events and no error reports. What a tool returns goes to your assistant, and from there to the AI behind it, under that assistant’s own terms, which decide what happens to it next. A database login stored in a report is taken out before any tool reads the report, so it is never part of what goes back or of what goes to an AI.',
     ],
   },
   {

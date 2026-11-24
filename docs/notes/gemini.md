@@ -6,17 +6,17 @@ Split out of `CLAUDE.md` on 2026-08-13, carried across unchanged at the time apa
 
 `src/App.tsx` imports `analyzeReportDesign` from `src/services/geminiService.ts` **directly**, so it is bundled into the client and the request goes from the user's browser straight to Google.
 
-**Forma is bring-your-own-key, and the application owns no key at all.** The only key in play is the one the user types into the config modal, which reaches `analyzeReportDesign` as `config.customApiKey`. There is no environment fallback, no `readEnv()` helper, and no server-side key. If `config.customApiKey` is empty the service throws `MissingApiKeyError`, which `App.tsx` catches to open Settings. Since 2026-11-23 that error means the AI chosen is not set up, whichever it is (`withProvider` hands a ready Local AI or OpenRouter its own key, or none, in that field), and it says so in `SET_UP_AI`'s words (`src/lib/aiProvider.ts`): a Gemini key is one of three ways to open the workspace, not the way, as *An AI set up gates the entire workspace* below records.
+**Forma is bring-your-own-key, and the application owns no key at all.** The only key in play is the one the user types into the config modal, which reaches `analyzeReportDesign` as `config.customApiKey`. There is no environment fallback, no `readEnv()` helper, and no server-side key. **The one program a user runs that takes their key from an environment is Forma's MCP server** (2026-11-24, the MCP design audit's SEC-8 and DOC-4; the owner's own fidelity benchmark reads `FORMA_BENCH_KEY`, *The fidelity benchmark* below), a Node program the user runs, not a server of Forma's: its own environment, under `FORMA_GEMINI_KEY`, read in `src/mcp/stdio.ts` alone and handed in as `config.customApiKey` exactly as the browser hands in the pasted one, so `geminiService.ts` still reads no environment ([mcp.md](mcp.md) — *The AI tools make and revise a report with the user's own AI*). If `config.customApiKey` is empty the service throws `MissingApiKeyError`, which `App.tsx` catches to open Settings. Since 2026-11-23 that error means the AI chosen is not set up, whichever it is (`withProvider` hands a ready Local AI or OpenRouter its own key, or none, in that field), and it says so in `SET_UP_AI`'s words (`src/lib/aiProvider.ts`): a Gemini key is one of three ways to open the workspace, not the way, as *An AI set up gates the entire workspace* below records.
 
 **Every Gemini client is built from `geminiClientOptions` (`src/lib/genai.ts`, 2026-11-23), so where a request goes is fixed in code.** The SDK's Node build reads `GOOGLE_GEMINI_BASE_URL`, `GOOGLE_VERTEX_BASE_URL`, `GOOGLE_GENAI_USE_VERTEXAI`, `GOOGLE_GENAI_USE_ENTERPRISE` and `GOOGLE_GENAI_API_VERSION` from the environment even when a key is passed: with two of them set, a client built from the key alone went to Vertex AI's address, key and report included. In the browser the CSP's `connect-src` stands behind every request; in Node (the MCP server, the scripts) nothing does. The options are the SDK's own defaults for the Gemini API, the `v1` API and Gemini's base URL, so the browser's requests did not move (a pinned `v1beta` in the first draft would have moved all of them; only the plain-fetch model probes use `v1beta`). `keyNotInUrl.test.ts` holds both, and that no file in `src` or `scripts` builds a client any other way.
 
 This is the correction to a real incident, so do not undo it: `vite.config.ts` used to set `envPrefix: ['VITE_', 'GEMINI_']`, which inlined `GEMINI_API_KEY` into the shipped JS. Google's secret scanner found the key and revoked it — `403 PERMISSION_DENIED`, *"Your API key was reported as leaked."* The prefix list is now `['VITE_']` only. **Never re-add `'GEMINI_'` to `envPrefix`, and never reintroduce an env read on the key path in `geminiService.ts`.** To confirm what the browser actually receives, fetch the transformed module from the dev server (`curl localhost:3000/src/services/geminiService.ts`) — the injected `import.meta.env = {...}` prelude is the ground truth, and it must contain no key.
 
-Because the key belongs to the user rather than to Forma, proxying generation through the server would be a step **backwards**: the server would become custodian of every user's third-party credential. `POST /api/generate-report` and `GET /api/debug-key` have both been deleted from `server.ts` for that reason, along with the `analyzeReportDesign` import. The server is now key-free and must stay that way; `GET /api/health` is all that remains.
+Because the key belongs to the user rather than to Forma, proxying generation through the server would be a step **backwards**: the server would become custodian of every user's third-party credential. `POST /api/generate-report` and `GET /api/debug-key` have both been deleted from `server.ts` for that reason, along with the `analyzeReportDesign` import. The server is now key-free and must stay that way; `GET /api/health` is all that remains. Forma's MCP server does not change that: it is no server of Forma's but the user's own program on the user's own computer, holding that user's key alone, with no port ([mcp.md](mcp.md) — *What the server is, and why it is not generation server-side*).
 
 **`app.use("/api", …)` returns a JSON 404 for anything else, and its position matters.** It sits after every real API route and before the dev/prod branch, so it covers both. Without it the production catch-all (`app.get('*')`) answered *any* `/api/*` probe with **200 and `index.html`** — so the deleted `/api/generate-report` and `/api/debug-key` looked like live endpoints to any client checking the status code rather than the body. Register new API routes **above** this guard or they will 404.
 
-**`.env` does not contain a Gemini key and must not.** A `GEMINI_API_KEY` left in that file is inert — nothing reads it, and `envPrefix: ['VITE_']` will not carry it to the browser, so nothing is inlined into the client bundle either. `API_KEY` is gone entirely.
+**`.env` does not contain a Gemini key and must not.** A `GEMINI_API_KEY` left in that file is inert — nothing reads it, and `envPrefix: ['VITE_']` will not carry it to the browser, so nothing is inlined into the client bundle either. The MCP server loads no `.env` at all, and deletes a `GEMINI_API_KEY` or `GOOGLE_API_KEY` from its own environment before the Gemini SDK, which would fall back on either by itself, is loaded; its key is `FORMA_GEMINI_KEY`, set in the host's entry. `API_KEY` is gone entirely.
 
 `.env.example` documents **three** optional variables — `VITE_FORMA_MOCK`, `HOST` and `HTTPS` — and `server.ts` loads them via `import "dotenv/config"`. `.env*` is gitignored except `.env.example`, whose comments say the same thing this paragraph does.
 
@@ -24,7 +24,7 @@ Because the key belongs to the user rather than to Forma, proxying generation th
 
 ## Where the user's key lives
 
-`src/services/keyVault.ts` holds the whole storage story. Three tiers, and the key is never persisted in plaintext anywhere:
+`src/services/keyVault.ts` holds the whole storage story of the web app. Three tiers, and the key is never persisted in plaintext anywhere the web app keeps it. Forma's MCP server is outside these tiers, and the pages say so rather than stretching this sentence to it: its key is in the server's entry wherever the user's AI host keeps it, readable, in the host's configuration file or, through a `${FORMA_GEMINI_KEY}` reference, the user's environment ([mcp.md](mcp.md) — *The AI tools make and revise a report with the user's own AI*).
 
 | Tier | Store | Lifetime |
 |---|---|---|
@@ -1166,6 +1166,29 @@ kept every control. It says nothing about how the report *looks* — band height
 against their content, whether those full-width blocks land where the design had
 them, whether the overflow is visible. Only opening it in the real designer shows
 that, and that is a thing only someone at the machine can do.
+
+**The label holds in one direction only (2026-11-24, GAP1-4 of the MCP design
+audit).** It holds for Forma's output read by a newer DevExpress, not for a newer
+file read by 20.1. Some reports saved by DevExpress 22.2 or later write their fonts
+as `DXFont="Arial, 20.64"`, a different attribute with no unit, where Forma wrote and
+read only `Font="Arial, 20.64pt"`: DevExpress's own Blazor sample (`TestReport.repx`,
+`SerializerVersion="22.2.1.0"`) does, while its 22.2.0 `.vsrepx` samples still write
+`Font`, so which files get `DXFont` is not known. Forma read such a label as Times
+New Roman 9.75pt, in the Preview, the chat's outline and the accessibility check,
+and the audit passed it clean. And `RepxProbe inspect` on 20.1.3 said "nothing lost"
+of that file while its re-save carried no font attribute on the label or the root:
+**20.1 drops `DXFont` silently, and the probe's "nothing lost" counts tables and
+cells, not fonts.** Since the MCP work's wave 8 Forma reads `DXFont` where the Preview, the
+chat's outline, the accessibility check and the report library read `Font`
+(the Preview's controls, styles, watermark, table of contents and font
+bindings, the accessibility check, the report library's captions), a size with no
+unit read as points (`new DXFont("Arial", 9.75F)`'s default unit), and a font edit on
+a control that carries `DXFont` rewrites that attribute, so a control never ends up
+with two fonts (`dxFont.test.ts`). Not done, each to be measured with `RepxProbe`
+first: a repair that rewrites `DXFont` as `Font` for a target below 22.2, so a 20.1
+target keeps its fonts; how 22.2 writes a style (bold, italic) inside `DXFont`; and
+`repxStyles.ts` and `repxTranslate.ts`, which still read `Font` alone (a `DXFont`
+stays on its control and still applies).
 
 ## An AI set up gates the entire workspace
 

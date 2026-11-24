@@ -11,7 +11,7 @@ import * as z from 'zod';
 import { describe, expect, it } from 'vitest';
 import { InMemoryTransport, McpServer, inputRequired, type JSONRPCMessage } from '@modelcontextprotocol/server';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
-import { withoutKeys } from '../lib/problemReport';
+import { redactorFor, withoutKeys } from '../lib/keyRedact';
 import type { RootsOutcome } from './roots';
 import { AskClient, FROM_FILE_NOTE, MAX_ERROR_CHARS, MAX_FILE_TEXT, MAX_RESULT_CHARS, ToolRefusal, defineTool, errorResult, shapeResult, type ToolDeps, type ToolHints } from './toolShape';
 
@@ -68,6 +68,19 @@ describe('shapeResult', () => {
     expect(JSON.stringify(result)).not.toContain(key);
     expect(JSON.stringify(result)).not.toContain(newer);
     expect(JSON.stringify(result)).toContain('(a key)');
+  });
+
+  it('takes a key out of file text before clipping it, so a key across the clip leaves no part of itself (W8C-1)', () => {
+    // A key with no shape of its own, known only by its value, and one of AI Studio's, each starting before the clip and ending after it.
+    const shapeless = ['gq', '00'].join('') + 'f4aba7fbd7a9'.repeat(3);
+    const key = fakeKey();
+    const redact = redactorFor([shapeless, key]);
+    for (const secret of [shapeless, key]) {
+      const result = shapeResult({ summary: 'Read it.', data: {}, fromFile: { aiError: `${'x'.repeat(MAX_FILE_TEXT - 20)} key ${secret} rejected` } }, redact);
+      const said = (result.structuredContent as Record<string, any>).fromFile.aiError as string;
+      expect(said.length).toBeLessThanOrEqual(MAX_FILE_TEXT + 3);
+      expect(JSON.stringify(result)).not.toContain(secret.slice(0, 8));
+    }
   });
 
   it('drops the file text before the result outgrows what a host keeps inline, and refuses a result still too large', () => {

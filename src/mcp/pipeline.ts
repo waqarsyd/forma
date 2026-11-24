@@ -78,7 +78,8 @@ export type Done<T extends JobName> = { report: ReportRead } & Results[T];
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-async function audited(xml: string): Promise<Audited> {
+/** The audit of a report as a result says it; the AI tools' work (genJobs.ts) says its report's the same way. */
+export async function audited(xml: string): Promise<Audited> {
   const { auditRepx } = await import('../lib/repxAudit');
   const audit = auditRepx(xml);
   return {

@@ -35,6 +35,7 @@
 import { BUILD, type BuildInfo } from './buildInfo';
 import { isStaleChunkError } from './staleChunks';
 import { setErrorSink } from './errorSink';
+import { KEYS } from './keyRedact';
 
 /** The parts of Forma an error is filed under; firestore.rules lists the same. */
 export const ERROR_AREAS = ['page', 'mockup', 'preview', 'data', 'spec', 'repx', 'conversation', 'uncaught', 'rejection', 'other'] as const;
@@ -71,9 +72,11 @@ export function areaKey(area: string): ErrorArea {
  * text, which is where an error repeats its input ("…" is not valid JSON).
  * A Gemini key in either of AI Studio's formats (2026-11-12): the classic
  * AIza… and the newer AQ.…, about 53 characters, which this knew nothing of,
- * so a new-format key in a message went out in the report unscrubbed.
+ * so a new-format key in a message went out in the report unscrubbed. The
+ * key pattern is the one the problem report and the MCP server share
+ * (keyRedact.ts, since 2026-11-24, SEC-7 of the MCP design audit), which
+ * takes a bearer token out as well.
  */
-const KEYS = /AIza[0-9A-Za-z_-]{35}|\bAQ\.[A-Za-z0-9._-]{20,}|sk-or-v1-[0-9a-f]+|\b(?:sk|pk|rk)-[A-Za-z0-9_-]{16,}/g;
 const LINKS = /\b(?:https?|wss?|ftp|file|blob:https?|chrome-extension|moz-extension):\/\/[^\s'"<>()]+/gi;
 const EMAILS = /[^\s@<>()"'`,;:]+@[^\s@<>()"'`,;:]+\.[A-Za-z]{2,}/g;
 const QUOTED = /"[^"\n]*"|“[^”\n]*”|‘[^’\n]*’|«[^»\n]*»|`[^`\n]*`/g;

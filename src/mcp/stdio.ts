@@ -24,16 +24,31 @@
  *      before anything else is loaded (static imports are evaluated before
  *      the body, so everything else is imported dynamically after it).
  *   2. The environment is read here and nowhere else in src/mcp: the roots'
- *      two variables. No dotenv: a .env in the host's working folder is
- *      never this server's business (SEC-9).
+ *      two variables, and since wave 8 the AI's (aiSettings.ts names them:
+ *      FORMA_GEMINI_KEY, FORMA_PROVIDER, OpenRouter's and Local AI's, the
+ *      model pin, the locale and the mock switch), copied out by name and
+ *      handed to readAiSettings, which reads nothing itself. The keys'
+ *      values go to the guard first (`addSecrets`), so from then on each is
+ *      taken out of every line on stderr and every result by its value, a
+ *      key in a format the patterns do not know included (SEC-7; no Local
+ *      AI token is read, so none is handed over); GEMINI_API_KEY's and
+ *      GOOGLE_API_KEY's too, which are then deleted from the environment
+ *      with Google's Vertex AI switches before anything loads the Gemini
+ *      SDK, which would fall back on them by itself (SEC-9, DOC-4); Forma's
+ *      two key variables are deleted too once copied, so no worker thread
+ *      inherits them (each job carries its settings). No
+ *      dotenv: a .env in the host's working folder is never this server's
+ *      business (SEC-9).
  *   3. serveStdio serves both eras from one factory: a 2026-07-28 client
  *      opens with server/discover, a 2025-era client with initialize. Its
  *      transport writes through the guard's `protocolOut`, the one Writable
  *      that reaches the real stdout.
  *   4. When stdin ends the transport closes and the process exits by itself;
- *      a timer that does not hold the process open makes sure of it a second
- *      later, whatever still holds a handle (the spec: a server SHOULD exit
- *      promptly when its stdin closes).
+ *      the AI tools' worker thread is ended at once (a report in progress is
+ *      not written: its call was aborted with the connection, PROTO-4), and
+ *      a timer that does not hold the process open makes sure of the exit a
+ *      second later, whatever still holds a handle (the spec: a server
+ *      SHOULD exit promptly when its stdin closes).
  *
  * A test-only switch, FORMA_MCP_TEST_NOISE, used by stdio.test.ts and by
  * nothing else: `1` writes to console.log, console.info, console.debug and
@@ -55,6 +70,24 @@ import { installStdoutGuard } from './stdoutGuard';
 
 const guard = installStdoutGuard();
 
+// The AI's settings, copied out by name; the keys' values to the guard before anything can print them.
+const aiEnv = {
+  FORMA_PROVIDER: process.env.FORMA_PROVIDER,
+  FORMA_GEMINI_KEY: process.env.FORMA_GEMINI_KEY,
+  FORMA_OPENROUTER_KEY: process.env.FORMA_OPENROUTER_KEY,
+  FORMA_OPENROUTER_MODEL: process.env.FORMA_OPENROUTER_MODEL,
+  FORMA_LOCAL_URL: process.env.FORMA_LOCAL_URL,
+  FORMA_LOCAL_MODEL: process.env.FORMA_LOCAL_MODEL,
+  FORMA_MODEL: process.env.FORMA_MODEL,
+  FORMA_LOCALE: process.env.FORMA_LOCALE,
+  FORMA_MCP_MOCK: process.env.FORMA_MCP_MOCK,
+};
+guard.addSecrets([aiEnv.FORMA_GEMINI_KEY, aiEnv.FORMA_OPENROUTER_KEY, process.env.GEMINI_API_KEY, process.env.GOOGLE_API_KEY]);
+// Never this server's: the Gemini SDK would take a key or a Vertex AI endpoint from these by itself (SEC-9, DOC-4).
+for (const name of ['GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GOOGLE_GENAI_USE_VERTEXAI', 'GOOGLE_CLOUD_PROJECT', 'GOOGLE_CLOUD_LOCATION']) delete process.env[name];
+// The keys live in the settings from here on, never in an environment a worker thread copies.
+for (const name of ['FORMA_GEMINI_KEY', 'FORMA_OPENROUTER_KEY']) delete process.env[name];
+
 const noise = process.env.FORMA_MCP_TEST_NOISE;
 if (noise) makeTestNoise(noise);
 
@@ -63,6 +96,8 @@ const { createFormaServer, formaVersion, nodeSystem } = await import('./formaSer
 const { readEnvRoots } = await import('./roots');
 const { loadRepxSkill } = await import('./skillResource');
 const { workerPipeline } = await import('./workerPool');
+const { readAiSettings } = await import('./aiSettings');
+const { oneAtATime, workerGenerator } = await import('./generator');
 
 const system = nodeSystem();
 const envRoots = readEnvRoots({ FORMA_MCP_ROOTS: process.env.FORMA_MCP_ROOTS, CLAUDE_PROJECT_DIR: process.env.CLAUDE_PROJECT_DIR }, system);
@@ -72,13 +107,22 @@ const version = formaVersion();
 const skills = await loadRepxSkill((line) => guard.log(line));
 // The report tools' work, in worker threads with a memory bound and a deadline; one pipeline for every connection.
 const pipeline = workerPipeline({ log: (line) => guard.log(line) });
+// The AI tools' AI, said on stderr when it is not ready (never a key), and their one generator for the process: one call at a time.
+const settings = readAiSettings(aiEnv);
+if (!settings.ready) guard.log(`the AI tools refuse until an AI is set up: ${settings.problems.join(' ')}`);
+const generator = settings.ready
+  ? oneAtATime(workerGenerator({ setup: { mock: settings.mock, ...(settings.model ? { model: settings.model } : {}), ...(settings.locale ? { locale: settings.locale } : {}) }, log: (line) => guard.log(line) }))
+  : null;
 
-serveStdio(() => createFormaServer({ envRoots, system, version, skills, pipeline, log: (line) => guard.log(line) }), {
+serveStdio(() => createFormaServer({ envRoots, system, version, skills, pipeline, log: (line) => guard.log(line), redact: guard.redact, ai: { settings, generator } }), {
   transport: new StdioServerTransport(process.stdin, guard.protocolOut),
   onerror: (error) => guard.log('a protocol error:', error),
 });
 
-const leave = () => setTimeout(() => process.exit(0), 1000).unref();
+const leave = () => {
+  void generator?.close();
+  setTimeout(() => process.exit(0), 1000).unref();
+};
 process.stdin.once('end', leave);
 process.stdin.once('close', leave);
 

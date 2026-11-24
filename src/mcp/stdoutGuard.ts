@@ -21,7 +21,14 @@
  * - replaces the global console with one whose every method writes to
  *   stderr;
  * - passes all of it, and its own lines, through `redact`, so a key never
- *   reaches a host's log of the server's stderr;
+ *   reaches a host's log of the server's stderr: the one scrubber the web
+ *   app's error reports share (lib/keyRedact.ts), with the formats of the
+ *   keys Forma is given (`FORMA_KEYS`: the generic `sk-` and bearer forms
+ *   would take apart a file's name, W8C-2), and from wave 8 the literal
+ *   values of the keys the server was given too, which the entry hands over
+ *   with `addSecrets` once it has read its environment, so a key in a format
+ *   the patterns do not know is taken out by its value (finding SEC-7);
+ *   `redact` is that same scrubber, for the tools' results and errors;
  * - logs an unhandled rejection and keeps serving (Node 24 would otherwise
  *   end the process, and Claude Code marks a stdio server that exits as
  *   failed until someone presses Reconnect);
@@ -48,7 +55,7 @@
 import { Console } from 'node:console';
 import { Writable } from 'node:stream';
 import { format } from 'node:util';
-import { withoutKeys } from '../lib/problemReport';
+import { FORMA_KEYS, redactorFor } from '../lib/keyRedact';
 
 type WriteFn = (...args: unknown[]) => boolean;
 
@@ -67,6 +74,10 @@ export interface StdoutGuard {
   log(...parts: unknown[]): void;
   /** Something to do before the process exits on an uncaught exception, such as deleting a partial file. */
   atFatalExit(fn: () => void): void;
+  /** Keys and tokens taken out by their values from now on, wherever the guard and `redact` write. */
+  addSecrets(values: readonly (string | null | undefined)[]): void;
+  /** The scrubber every line goes through: the key patterns, and the values `addSecrets` was given. */
+  redact(text: string): string;
 }
 
 const asText = (chunk: unknown) => (typeof chunk === 'string' ? chunk : chunk instanceof Uint8Array ? Buffer.from(chunk).toString('utf8') : String(chunk));
@@ -78,7 +89,9 @@ const asText = (chunk: unknown) => (typeof chunk === 'string' ? chunk : chunk in
 export function installStdoutGuard(options: { target?: GuardTarget; holder?: { console: unknown }; redact?: (text: string) => string } = {}): StdoutGuard {
   const target = options.target ?? (process as unknown as GuardTarget);
   const holder = options.holder ?? (globalThis as unknown as { console: unknown });
-  const redact = options.redact ?? withoutKeys;
+  const secrets: (string | null | undefined)[] = [];
+  let scrub = options.redact ?? redactorFor(secrets, FORMA_KEYS);
+  const redact = (text: string) => scrub(text);
   const realWrite = target.stdout.write.bind(target.stdout) as WriteFn;
   const errWrite = target.stderr.write.bind(target.stderr) as WriteFn;
 
@@ -125,5 +138,12 @@ export function installStdoutGuard(options: { target?: GuardTarget; holder?: { c
     target.exit(1);
   });
 
-  return { protocolOut, log, atFatalExit: (fn) => fatal.push(fn) };
+  const addSecrets = (values: readonly (string | null | undefined)[]) => {
+    secrets.push(...values);
+    const given = options.redact;
+    const byValue = redactorFor(secrets, FORMA_KEYS);
+    scrub = given ? (text) => given(byValue(text)) : byValue;
+  };
+
+  return { protocolOut, log, atFatalExit: (fn) => fatal.push(fn), addSecrets, redact };
 }

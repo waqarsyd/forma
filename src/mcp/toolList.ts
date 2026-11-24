@@ -9,8 +9,9 @@
  *
  * - `readOnly`: the tool reads and writes no file but the one it reads, so
  *   Claude Code may run it beside other read-only calls.
- * - `needsAi`: the tool calls an AI and spends the user's own quota. None
- *   does yet; the generation tools come later.
+ * - `needsAi`: the tool calls an AI and spends the user's own quota: since
+ *   wave 8 (2026-11-24), generate_report and revise_report (aiTools.ts),
+ *   which refuse with what to set while no AI is set up for the server.
  *
  * Pure ASCII.
  */
@@ -27,6 +28,8 @@ export const TOOL_LIST = [
   { name: 'repx_repair', readOnly: false, needsAi: false },
   { name: 'repx_edit', readOnly: false, needsAi: false },
   { name: 'repx_pdf', readOnly: false, needsAi: false },
+  { name: 'generate_report', readOnly: false, needsAi: true },
+  { name: 'revise_report', readOnly: false, needsAi: true },
 ] as const satisfies readonly ToolEntry[];
 
 export type ToolName = (typeof TOOL_LIST)[number]['name'];

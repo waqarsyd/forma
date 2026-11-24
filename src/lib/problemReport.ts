@@ -20,8 +20,13 @@
  * Two things may not reach a public issue even though the error boundary
  * passes them on: a shared report's id, which is the link itself (the path
  * says `/s/(a shared report)`), and an API key an error message happened to
- * quote (Gemini's or OpenRouter's, said as "(a key)").
+ * quote (Gemini's or OpenRouter's, said as "(a key)"), taken out by the one
+ * scrubber the error reports and the MCP server share (keyRedact.ts, since
+ * 2026-11-24, finding SEC-7 of the MCP design audit: this file kept a pattern
+ * of its own, and it had drifted from errorReport.ts's).
  */
+import { withoutKeys } from './keyRedact';
+
 const ISSUES_URL = 'https://github.com/waqarsyd/forma/issues/new';
 /** The issue form it opens, and the ids of the fields it fills. */
 export const BUG_TEMPLATE = 'bug-report.yml';
@@ -33,15 +38,6 @@ export interface ProblemReport {
   version: string;
   path?: string;
   browser?: string;
-}
-
-// Both of AI Studio's Gemini key formats (2026-11-12): AIza… and the newer AQ.…
-// (about 53 characters), which this missed until then.
-const KEYS = /AIza[0-9A-Za-z_-]{35}|\bAQ\.[A-Za-z0-9._-]{20,}|sk-or-v1-[0-9a-f]+/g;
-
-/** Text with any Gemini or OpenRouter key in it said as "(a key)". */
-export function withoutKeys(text: string): string {
-  return text.replace(KEYS, () => '(a key)');
 }
 
 /** A page's path for a public issue: no query or fragment, and a shared report's id not named. */

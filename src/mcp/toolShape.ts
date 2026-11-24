@@ -38,7 +38,9 @@
  *   by someone else controls its strings, and the host's model may have a
  *   shell. Such text goes only under `fromFile`, each string clipped and
  *   whitespace folded, with `FROM_FILE_NOTE` beside it; never in a summary,
- *   a description or an error.
+ *   a description or an error. Keys are taken out of it before it is
+ *   clipped, never after (the wave-8 review's W8C-1): a key cut in two is
+ *   neither its value nor a whole key's shape, and part of one went out.
  *
  * Pure ASCII.
  */
@@ -114,6 +116,13 @@ export interface ToolContext {
   roots(): Promise<RootsOutcome>;
   /** The folders, or a throw that the wrapper turns into the question or the refusal. */
   requireRoots(): Promise<Root[]>;
+  /**
+   * Sends one progress notification for this request (2026-11-24, wave 8,
+   * PROTO-3), or null when the request carried no progressToken, in which
+   * case the spec allows none. The caller keeps the values rising
+   * (generator.ts `progressReporter`).
+   */
+  progress: ((p: { progress: number; total: number; message: string }) => void) | null;
 }
 
 /** What a handler returns: a summary in plain words (never text from a file), the data, and text read from files apart. */
@@ -183,7 +192,8 @@ const render = (summary: string, data: Record<string, unknown>) =>
 /** The result a host receives, from what a handler returned. Exported for its tests. */
 export function shapeResult(outcome: ToolOutcome<Record<string, unknown>>, redact: (s: string) => string): CallToolResult {
   let data = { ...outcome.data } as Record<string, unknown>;
-  if (outcome.fromFile) data = { ...data, fromFile: clipDeep(outcome.fromFile), fromFileNote: FROM_FILE_NOTE };
+  // Keys out before the clip (W8C-1): a key cut in two is no longer its value, nor a whole key's shape.
+  if (outcome.fromFile) data = { ...data, fromFile: clipDeep(redactDeep(outcome.fromFile, redact)), fromFileNote: FROM_FILE_NOTE };
   data = redactDeep(data, redact) as Record<string, unknown>;
   const summary = redact(outcome.summary);
   let text = render(summary, data);
@@ -239,9 +249,17 @@ export function defineTool<I extends z.ZodRawShape, O extends z.ZodRawShape>(
     },
     async (args: z.output<z.ZodObject<I>>, ctx: ServerContext): Promise<CallToolResult | InputRequiredResult> => {
       const era = eraOf(server);
+      const token = ctx.mcpReq._meta?.progressToken;
       const tc: ToolContext = {
         era,
         signal: ctx.mcpReq.signal,
+        progress:
+          token === undefined || token === null
+            ? null
+            : (p) => {
+                if (ctx.mcpReq.signal.aborted) return;
+                ctx.mcpReq.notify({ method: 'notifications/progress', params: { progressToken: token, ...p } }).catch((error: unknown) => deps.log(deps.redact(`a progress notification failed: ${String(error)}`)));
+              },
         roots: () => deps.roots(ctx, era.era),
         requireRoots: async () => {
           const found = await deps.roots(ctx, era.era);

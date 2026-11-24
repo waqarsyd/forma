@@ -55,25 +55,34 @@ export const FAQS: Array<{ q: string; a: ReactNode }> = [
     ),
   },
   {
+    // Rewritten on 2026-11-24 (GAP1-5 of the MCP design audit): DevExpress's
+    // breaking change T1168500 says the Visual Studio report designer no
+    // longer opens a .repx file, and its own route into a report class is the
+    // smart tag's Open/Import (its blog, 2021-12-12), both read on 2026-11-23.
     q: 'Can I open the generated file in Visual Studio?',
     a: (
       <p>
-        Yes. The output is standard <code className="doc-code">XtraReportsLayoutSerializer</code> XML and
-        opens in the Visual Studio report designer or an end-user designer from DevExpress 20.1 up. The version
-        written in it is a label, not a gate: the designer opens the file and rewrites it when it saves.
+        Yes, into a report of your project. The output is standard{' '}
+        <code className="doc-code">XtraReportsLayoutSerializer</code> XML: an end-user designer from DevExpress
+        20.1 up opens it, and an application loads it at run time with LoadLayoutFromXml. In Visual Studio, bring
+        it into a report class with the report&apos;s smart tag, Open/Import; DevExpress says its newer Visual
+        Studio designer no longer opens a .repx file by itself (its note T1168500, read in November 2026). The
+        version written in it is a label, not a gate: an end-user designer opens the file and rewrites it when it
+        saves.
       </p>
     ),
   },
   {
-    // 2026-11-24 (the MCP work's wave 5, DOC-10): Forma's MCP server, src/mcp. Generation through it is not built.
+    // 2026-11-24 (the MCP work's waves 5 and 9, DOC-10, DOC-3): Forma's MCP server, src/mcp, and its two AI tools.
     q: 'Can I use Forma from Claude Code or another AI assistant?',
     a: (
       <p>
         Yes, from a copy of Forma&apos;s source code on your own computer. Its MCP server lets Claude Code, Visual
         Studio&apos;s Copilot, VS Code or Claude Desktop audit, outline, repair and edit the .repx files in your
-        projects and draw one as a draft PDF, and none of those tools calls an AI or needs a key. Making a report
-        from a picture or a description through it is not built yet. The{' '}
-        <a href="/docs#mcp" className="font-semibold text-secondary hover:underline">Docs</a> say how to set it up.
+        projects and draw one as a draft PDF, with no AI; and, with your own AI set up in your assistant&apos;s
+        settings for it, make a report from a picture, a PDF or a description, or change one as you ask. The{' '}
+        <a href="/docs#mcp" className="font-semibold text-secondary hover:underline">Docs</a> say how to set it up,
+        and where your key is then kept.
       </p>
     ),
   },
@@ -122,15 +131,19 @@ export const FAQS: Array<{ q: string; a: ReactNode }> = [
     // operator can read, which the privacy policy says. The key's sentence
     // carries encrypted sync's condition, as the policy and /security do: with
     // it on, an encrypted copy is in the account, so "never" alone was false.
+    // Scoped to the website since 2026-11-24 (the MCP design audit's DOC-3 and SEC-8): Forma's MCP server reads
+    // its key from the assistant's settings, which keep it readable, and the last sentence says so.
     a: (
       <p>
-        Your key, never in a form anyone can read: it goes only to the AI it belongs to, and only if you turn on
-        encrypted sync is a copy kept in your account, encrypted in your browser with your passphrase. Your design
-        goes from your browser to the AI you
+        On this website, your key is never in a form anyone can read: it goes only to the AI it belongs to, and only
+        if you turn on encrypted sync is a copy kept in your account, encrypted in your browser with your
+        passphrase. Your design goes from your browser to the AI you
         chose, not through a Forma server. Signed in, your projects, with the files you attached, are saved in
         Forma&apos;s database under your account, and so is the shape of each report you make (no text and no
         pictures, unless you choose to share whole reports), which trains Forma&apos;s own model; Settings → Learning
-        turns that off or deletes it. Signed out, Forma keeps nothing of yours anywhere but this browser.
+        turns that off or deletes it. Signed out, Forma keeps nothing of yours anywhere but this browser. Forma&apos;s
+        MCP server, which you run yourself, sends to your AI from your computer, never through Forma, and reads
+        your key from your assistant&apos;s settings, which keep it readable on your computer.
       </p>
     ),
   },

@@ -2,9 +2,10 @@
  * Everything the generation core is handed, in Node (2026-11-24, the MCP
  * work's wave 7): lib/generationCore.ts `makeReport` runs here as the
  * workspace and Batch run it in the browser, with Node's version of each
- * part the browser owns. The MCP server's generation tool, when it is
- * written (wave 8), is to call `nodeGeneration` once and `make` for each
- * request; this file registers no tool.
+ * part the browser owns. The MCP server's AI tools (aiTools.ts, wave 8)
+ * call `nodeGeneration` once in their worker thread (genJobs.ts) and `make`
+ * for each request, its hooks hearing each stage for their progress; this
+ * file registers no tool.
  *
  * `make` must never run on the thread that answers the protocol. pdf.js
  * parses and draws a PDF on the thread that calls it, and the wave-7 review
@@ -12,9 +13,9 @@
  * V8's heap out of memory in 67 seconds, beyond any handler, and a 1 MB one
  * stalling the event loop for up to 13.8 seconds at a time: on that thread,
  * one attachment would stop the server answering anyone, cancellation
- * included, or end it. The tool is to run `make` in a worker thread with
- * `resourceLimits` and a deadline sized for a generation; a worker so bounded
- * contained the 611 KB PDF (nodeIntake.ts's header has the measurements). A stop
+ * included, or end it. The AI tools run `make` in a worker thread with
+ * `resourceLimits` and a deadline sized for a generation (generator.ts
+ * `GEN_LIMITS`: 2 GB, 15 minutes); a worker so bounded contained the 611 KB PDF (nodeIntake.ts's header has the measurements). A stop
  * reaches the intake between files and pages; it cannot interrupt pdf.js
  * inside a step.
  *
@@ -47,9 +48,10 @@
  * - The AI's design is handed in (`ask`): geminiService's by default, the
  *   mock invoice with `mock`, and a test's own stand-in. The mock hands in
  *   mock mode's translation too, so a request that names a language makes no
- *   request either (the wave-7 review's W7R-1). No entry sets `mock`, `model`
- *   or `locale` yet: the entry is to read them from the server's environment
- *   with the generation tool (wave 8).
+ *   request either (the wave-7 review's W7R-1). Since wave 8 the entry reads
+ *   `mock`, `model` and `locale` from the server's environment
+ *   (FORMA_MCP_MOCK, FORMA_MODEL, FORMA_LOCALE: aiSettings.ts) and hands
+ *   them to the AI tools' worker, which passes them here.
  * - No memory, no kept reports, no report library, no shared database, no
  *   vision model or page reader on a Local AI server, and no learning event:
  *   the server keeps nothing of the person's, and reads no storage at all
@@ -75,7 +77,7 @@ import { designWith, houseBriefWith } from '../lib/learningLoop';
 import { emptyMemory } from '../lib/memory';
 import { keepModelChoiceIn, type ModelStorage } from '../lib/modelCache';
 import { measureOn } from '../lib/textMeasure';
-import type { ReportConfig } from '../services/geminiService';
+import type { ReportConfig, StreamProgress } from '../services/geminiService';
 import { nodeDrawing } from './nodeIntake';
 import { nodeOcr } from './nodeOcr';
 
@@ -191,6 +193,15 @@ export interface NodeGenerationOptions {
   log?: (line: string) => void;
 }
 
+/** Where a request has got to, for the MCP tools' progress (2026-11-24, wave 8, PROTO-3). */
+export type MakeStage = 'reading' | 'drafting' | 'asking' | 'checking';
+
+/** What `make` tells of its work as it goes: each stage as it starts, and the answer's progress as it streams. */
+export interface MakeHooks {
+  onStage?(stage: MakeStage): void;
+  onProgress?(progress: StreamProgress): void;
+}
+
 export interface NodeGeneration {
   /** Which engine reads an English page: PaddleOCR when its pinned models are there, else Tesseract. */
   readonly ocr: 'paddle' | 'tesseract';
@@ -198,8 +209,13 @@ export interface NodeGeneration {
   config(base: ReportConfig): ReportConfig;
   /** What `makeReport` is handed for a request made with `config`, on `open` (the report it redesigns) when there is one. */
   deps(config: ReportConfig, open?: string | null): GenerationDeps & IntakeDeps;
-  /** A report from files and words, or from a description: lib/generationCore.ts `makeReport` with these parts. */
-  make(request: MakeRequest): Promise<Made | null>;
+  /**
+   * A report from files and words, or from a description: lib/generationCore.ts
+   * `makeReport` with these parts. `hooks` hears each stage as it starts (the
+   * pages read, Forma's draft, the AI asked, the answer checked: the fix the
+   * print check sends back is asked again) and the answer's progress.
+   */
+  make(request: MakeRequest, hooks?: MakeHooks): Promise<Made | null>;
   /** Ends OCR's worker; the next reading starts another. */
   close(): Promise<void>;
 }
@@ -226,23 +242,44 @@ export async function nodeGeneration(options: NodeGenerationOptions = {}): Promi
   const pinned = options.model?.trim();
 
   const config = (base: ReportConfig): ReportConfig => (pinned ? { ...base, modelName: pinned } : base);
+  /**
+   * The AI's design, telling `hooks` when it is asked and when its answer is
+   * back to be checked: geminiService's own when none is handed in, loaded
+   * as the core would load it.
+   */
+  const askTelling = (hooks: MakeHooks): NonNullable<GenerationDeps['ask']> => async (...args) => {
+    hooks.onStage?.('asking');
+    const design = ask ?? (await import('../services/geminiService')).analyzeReportDesign;
+    try {
+      return await design(...args);
+    } finally {
+      hooks.onStage?.('checking');
+    }
+  };
   /** The parts for one request; `unread` is told of each page OCR was asked to read and could not. */
-  const partsFor = (asked: ReportConfig, open: string | null | undefined, unread?: (meta: PreviewMeta) => void): GenerationDeps & IntakeDeps => ({
+  const partsFor = (asked: ReportConfig, open: string | null | undefined, unread?: (meta: PreviewMeta) => void, hooks?: MakeHooks): GenerationDeps & IntakeDeps => ({
     drawing: nodeDrawing,
     // The open report laid over the stored settings, as App's detectFor lays it (W7R-2).
     detect: (sources) =>
       detectSettings(detectInputFrom(sources, { withOpenReport: Boolean(open), openReport: open ?? null, locale: options.locale, learned: { version: asked.version, unit: asked.unit } })),
     readPages: async (pages, signal, settings, now) => {
+      if (pages.length) hooks?.onStage?.('reading');
       const read = await ocr.readPages(pages, signal, settings, now);
       if (unread && !signal.aborted) for (const { meta } of now ?? pages) if (!read.some((r) => r.meta === meta)) unread(meta);
       return read;
     },
-    loadReader: async () => reader,
-    houseBrief: (unit) => houseBriefWith(async () => model, emptyMemory(), unit),
+    loadReader: async () => {
+      hooks?.onStage?.('drafting');
+      return reader;
+    },
+    houseBrief: (unit) => {
+      hooks?.onStage?.('drafting');
+      return houseBriefWith(async () => model, emptyMemory(), unit);
+    },
     designFromWords: (request, message) => designWith(async () => model, emptyMemory, request, message),
     recordLearning: () => undefined,
     beforeGeneration: async () => ({ remembered: '', kept: null }),
-    ...(ask ? { ask } : {}),
+    ...(hooks ? { ask: askTelling(hooks), ...(hooks.onProgress ? { onProgress: hooks.onProgress } : {}) } : ask ? { ask } : {}),
     ...(translateTexts ? { translateTexts } : {}),
   });
 
@@ -250,11 +287,11 @@ export async function nodeGeneration(options: NodeGenerationOptions = {}): Promi
     ocr: ocr.english,
     config,
     deps: (asked, open) => partsFor(asked, open),
-    make: async (request) => {
+    make: async (request, hooks) => {
       const asked = config(request.config);
       const unread: PreviewMeta[] = [];
       const { makeReport } = await import('../lib/generationCore');
-      const made = await makeReport({ ...request, config: asked }, partsFor(asked, request.open?.repxContent, (meta) => unread.push(meta)));
+      const made = await makeReport({ ...request, config: asked }, partsFor(asked, request.open?.repxContent, (meta) => unread.push(meta), hooks));
       return made && (unread.length ? { ...made, notices: [...made.notices, ...unread.map(unreadNotice)] } : made);
     },
     close: () => ocr.close(),

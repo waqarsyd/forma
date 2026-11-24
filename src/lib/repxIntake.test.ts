@@ -20,6 +20,7 @@ import {
   templateCorrection,
   tiffNotice,
   transform,
+  withoutPasswords,
   type Drawing,
 } from './repxIntake';
 
@@ -220,6 +221,13 @@ describe('Crystal Reports and SSRS (CP-01a)', () => {
     expect(text).toContain('<DataSource  Name="db"/>');
     expect(text).not.toContain('iVBORw0KGgo');
     expect(text).toContain('<ImageData>(an embedded picture)</ImageData>');
+  });
+
+  // The MCP work's wave-8 review (W8C-5): a data file's text went to the AI with its login.
+  it("takes a password out of a data file's text, an unquoted one up to its line's end, and leaves the rest", () => {
+    const text = withoutPasswords('Server=db02;User Id=sa;Password=Secret12388;Database=Sales\n-- pwd=hunter22\nSELECT * FROM Orders;\n"pwd": "x", password = \'two words\' ok');
+    expect(text).not.toMatch(/Secret12388|hunter22|two words/);
+    expect(text).toBe('Server=db02;User Id=sa;Database=Sales\n-- \nSELECT * FROM Orders;\n"pwd": "x",  ok');
   });
 
   // CP-08: converted and repaired, then read as an uploaded .repx is.

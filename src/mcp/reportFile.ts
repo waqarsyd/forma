@@ -210,8 +210,8 @@ export function openReport(text: string, name: string): OpenedReport {
   return { xml: clean.xml, loginRemoved: clean.hadLogin, connectionsChanged: clean.xml !== text, notices: clean.hadLogin ? [LOGIN_REMOVED] : [] };
 }
 
-/** Why a C# or VB file is refused, naming the `.vsrepx` beside it when there is one (a stat through the path rules, no read). */
-function codeRefusal(spelled: string, roots: readonly Root[], sys: PathSystem): string {
+/** Why a C# or VB file is refused, naming the `.vsrepx` beside it when there is one (a stat through the path rules, no read); generate_report's too. */
+export function codeRefusal(spelled: string, roots: readonly Root[], sys: PathSystem): string {
   const { path } = sys;
   const dir = path.dirname(spelled);
   const cls = codeReportClass(spelled);

@@ -126,4 +126,24 @@ describe('installStdoutGuard', () => {
     s.fire('stdout error', new Error('EPIPE'));
     expect((await failed).message).toBe('EPIPE');
   });
+
+  it('takes out, from then on and on every path, the values of the keys the entry hands it, a token with no shape included, and redacts results the same way', () => {
+    // Wave 8 (2026-11-24, SEC-7): the server's own keys, read from its environment after the guard is installed.
+    const s = standIn();
+    const guard = installStdoutGuard({ target: s.target, holder: s.holder });
+    const token = ['local', 'token'].join('-') + '-' + 'z7'.repeat(10);
+    guard.log(`before: ${token}`);
+    guard.addSecrets([token, undefined, '']);
+    s.holder.console.log(`console: ${token}`);
+    s.target.stdout.write(`stray: ${token}\n`);
+    guard.log(`guard: ${token} and ${fakeKey()}`);
+    const after = s.err.slice(1).join('');
+    expect(after).not.toContain(token);
+    expect(after).toContain('console: (a key)');
+    expect(after).toContain('stray: (a key)');
+    expect(after).toContain('guard: (a key) and (a key)');
+    expect(guard.redact(`a result naming ${token}`)).toBe('a result naming (a key)');
+    // Before it was handed over, a token with no shape was not known.
+    expect(s.err[0]).toContain(token);
+  });
 });

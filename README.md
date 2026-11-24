@@ -25,7 +25,7 @@ The AI writes only the `.repx`; Forma reads the mockup and the specification out
 
 Rebuilding an existing report in the DevExpress designer is mechanical work: read the layout, place the bands, set the units, repeat. Forma does the transcription pass so you start from a `.repx` that already has the right control types and geometry, and spend your time on the parts that need judgement.
 
-It is built around one constraint that shaped everything else: **the application owns no API key.** An earlier build inlined a build-time Gemini key into the shipped JavaScript, and Google's secret scanner found and revoked it. What replaced it is not a patch but an architecture — the browser calls the AI directly, Google or OpenRouter with a key the user supplies or a model on the user's own computer, and no server is ever in the loop.
+It is built around one constraint that shaped everything else: **the application owns no API key.** An earlier build inlined a build-time Gemini key into the shipped JavaScript, and Google's secret scanner found and revoked it. What replaced it is not a patch but an architecture — the browser calls the AI directly, Google or OpenRouter with a key the user supplies or a model on the user's own computer, and no server of Forma's is ever in the loop. (Forma's [MCP server](#forma-from-an-ai-assistant) is no exception: it is a program you run on your own computer, calling your AI just as directly.)
 
 ---
 
@@ -72,7 +72,7 @@ Both are real captures of the app at `localhost:3000`, not mockups, but from Sep
 
 ## Bring your own AI
 
-**Forma ships no API key and no AI of its own, and it never will.** To start, it needs an AI of yours, any one of three: a Gemini key (the default), an OpenRouter key and model, or a model on your own computer through Ollama or LM Studio. Until the AI you chose is set up, the message box is locked, and there is no mode without an AI (the owner's rule; from 2026-11-05 until 2026-11-23 it had to be the Gemini key, whichever AI designed). A key goes from your browser straight to Google or OpenRouter — the server is never in the loop and never sees a credential — and a local model needs no key and keeps every request on your computer.
+**Forma ships no API key and no AI of its own, and it never will.** To start, it needs an AI of yours, any one of three: a Gemini key (the default), an OpenRouter key and model, or a model on your own computer through Ollama or LM Studio. Until the AI you chose is set up, the message box is locked, and there is no mode without an AI (the owner's rule; from 2026-11-05 until 2026-11-23 it had to be the Gemini key, whichever AI designed). A key goes from your browser straight to Google or OpenRouter — Forma's server is never in the loop and never sees a credential — and a local model needs no key and keeps every request on your computer. The table below is the website's; Forma's MCP server reads your key from your AI assistant's settings instead, and [its section](#your-ai-and-where-its-key-is-kept) says where that keeps it.
 
 This is not an accident of design. An earlier build inlined a build-time key into the shipped JavaScript; Google's secret scanner found it and revoked it. The architecture that replaced it is deliberate:
 
@@ -145,7 +145,7 @@ There is no ESLint config, no state-management library, no date library, no HTTP
 ### Prerequisites
 
 - **Node 24.15.0 or later on 24, or 26+** (`^24.15.0 || >=26`; `node -v; npm -v` prints what you have). Node 22 is out since 2026-11-21: Firebase 13's own packages ask for Node 24.12 or later, and jsdom, which the tests run on, then needs 24.15.0 on that line. Node 20 reached end of life on 2026-04-30. The odd-numbered **25 is outside the range too**, even though it is newer: jsdom and Vitest both skip it.
-- **An AI of your own**: a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey), an OpenRouter key, or Ollama or LM Studio on your own computer — set up in the app at runtime, never in a file.
+- **An AI of your own**: a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey), an OpenRouter key, or Ollama or LM Studio on your own computer — set up in the app at runtime, never in a file. (The MCP server is the one exception: its settings are its entry in your AI assistant, [below](#your-ai-and-where-its-key-is-kept).)
 - **A JRE** — only for `npm run test:rules`, which starts the Firestore emulator (a JVM process). A runtime is enough; no JDK.
 - **A Firebase project** — only if you want sign-in and cloud sync. Everything else works without one.
 
@@ -174,7 +174,7 @@ Contributors should use `npm ci` instead — it installs exactly what the lockfi
 | `HOST` | No | loopback in dev, all interfaces in production | Which interface the server binds. Set to `0.0.0.0` only to reach the dev server from another device — that publishes Vite's module graph to anything that can reach the machine. |
 | `HTTPS` | No | unset | Set to `"true"` **only where TLS actually terminates**, so the server sends HSTS. Never set it locally: a browser that receives HSTS on `http://localhost` refuses plain-HTTP localhost for a year afterwards, breaking every other project on the machine. |
 
-> **A `GEMINI_API_KEY` in `.env` does nothing.** `vite.config.ts` allowlists `VITE_*` only, so it reaches neither the server nor the browser. It just sits in your working tree waiting to be committed. The key belongs in the app's Settings dialog.
+> **A `GEMINI_API_KEY` in `.env` does nothing.** `vite.config.ts` allowlists `VITE_*` only, so it reaches neither the server nor the browser. It just sits in your working tree waiting to be committed. The key belongs in the app's Settings dialog. The MCP server reads no `.env` either, and ignores a `GEMINI_API_KEY` wherever it is set: its key is `FORMA_GEMINI_KEY`, in its entry in your AI assistant.
 
 ### Running locally
 
@@ -226,13 +226,15 @@ npm run dev:log    # same server; output tee'd to dev-server.log (gitignored)
 
 ## Forma from an AI assistant
 
-Forma has an MCP server ([`src/mcp`](src/mcp), since 2026-11-24): a program you run on your own computer so an AI assistant — Claude Code, Visual Studio 2022's Copilot, VS Code, Claude Desktop or any other MCP client — can audit, outline, repair and edit the `.repx` files in your own projects, and draw one as a draft PDF. Your assistant starts it and talks to it over stdin and stdout; it opens no port, and the website does not run it. **None of its tools calls an AI or needs a key.** Making a report from a picture or a description through it is not built yet. The reasoning is [`docs/notes/mcp.md`](docs/notes/mcp.md).
+Forma has an MCP server ([`src/mcp`](src/mcp), since 2026-11-24): a program you run on your own computer so an AI assistant — Claude Code, Visual Studio 2022's Copilot, VS Code, Claude Desktop or any other MCP client — can audit, outline, repair and edit the `.repx` files in your own projects and draw one as a draft PDF, and, with an AI of your own set up for it, make a report from a picture, a PDF, a template or a description, or revise one as you ask. Your assistant starts it and talks to it over stdin and stdout; it opens no port, and the website does not run it. **Six of its tools need no AI and no key; `generate_report` and `revise_report` need your own AI, as the workspace does.** The reasoning is [`docs/notes/mcp.md`](docs/notes/mcp.md).
 
 ### What it needs
 
 - **Node in the range [Prerequisites](#prerequisites) gives.**
 - **A clone with a full `npm ci`.** The server runs from the clone through tsx, which is a devDependency, so `npm ci --omit=dev` leaves one that cannot start. There is no npm package and no bundle.
 - **A folder for it to work in.** It reads and writes only inside the folders in effect, the first of these that answers: `FORMA_MCP_ROOTS` in its entry in your host (full paths, separated by `;` on Windows and `:` elsewhere); the folders your host hands it; `CLAUDE_PROJECT_DIR`, which Claude Code sets. With none, every tool refuses and `forma_status` says how to set one.
+- **Your own AI, for the two tools that need one**: a Gemini key, an OpenRouter key and model, or a model on your own computer through Ollama or LM Studio ([below](#your-ai-and-where-its-key-is-kept)).
+- **For OCR as good as the website's**, `npm run fetch:paddle` once in the clone: a picture's or scan's words are then read by PaddleOCR, as the website reads an English page, and otherwise by Tesseract from the language files `npm ci` installed. Nothing is downloaded while the server runs.
 
 ```bash
 git clone https://github.com/waqarsyd/forma.git
@@ -305,6 +307,38 @@ Then, in Copilot Chat, switch to **Agent** and turn Forma's tools on in the tool
 
 In JSON, write a Windows path with `/` or with each `\` doubled. None of these three can be counted on to hand a server its folders, so set `FORMA_MCP_ROOTS` in each.
 
+### Your AI, and where its key is kept
+
+`generate_report` and `revise_report` need what the workspace needs: your own AI, set up. The server reads it when it starts, from the `env` of its entry in your host:
+
+| Variable | What it sets |
+|---|---|
+| `FORMA_GEMINI_KEY` | A Gemini key |
+| `FORMA_OPENROUTER_KEY`, `FORMA_OPENROUTER_MODEL` | An OpenRouter key and the model it answers with |
+| `FORMA_LOCAL_MODEL`, `FORMA_LOCAL_URL` | A model on your own computer, through Ollama or LM Studio; the address only when it is not Ollama's `http://localhost:11434/v1`. It must be this computer's (`localhost`, `127.0.0.1` or `[::1]`, any port), or the server refuses it |
+| `FORMA_PROVIDER` | `gemini`, `openrouter` or `local`: which one designs, when you set up more than one. Left out with two set up, the two tools refuse rather than guess |
+| `FORMA_MODEL`, `FORMA_LOCALE` | Optional: a Gemini model to answer with, and the locale whose paper a report goes on when nothing else says |
+| `FORMA_MCP_MOCK` | `true` for the mock invoice in place of the AI's answer, for a test; an AI must still be set up |
+
+With none set up, both tools refuse and say what to set; the other six need none. A `GEMINI_API_KEY` or `GOOGLE_API_KEY` set for another tool is never used, and the server reads no `.env`. Another AI you set up beside the one chosen answers when it reaches a limit, never after a local model, and the result says so.
+
+**Where the key then lives is your host's, not the website's.** Your host keeps the server's entry readable on your computer: the key is in its settings file, or, written as `${FORMA_GEMINI_KEY}` where the host expands such a reference, in your own environment. Choose the reference where you can; keep the entry in a file of your own, never one your project commits (a solution's or workspace's `.mcp.json`, Claude Code's `--scope project`), since all three hosts that read one document it for source control; and do not type the key into a command line, which your shell's history and an assistant's transcript keep. The server sends the key only to its own AI, and takes it out of every result and every line it logs. These recipes follow each host's documentation and have not yet been run in it.
+
+- **Claude Code**: set `FORMA_GEMINI_KEY` once in your user environment (on Windows, *Edit environment variables for your account*; elsewhere, your shell's profile), open a new terminal, then, in PowerShell or a POSIX shell, whose single quotes keep the reference as written:
+
+  ```bash
+  claude mcp add --scope user --env 'FORMA_GEMINI_KEY=${FORMA_GEMINI_KEY}' --transport stdio forma -- node <clone>/src/mcp/run.mjs
+  ```
+
+  Claude Code expands the reference each time it starts the server, in local and user scope alike. Where the variable is not set in the environment Claude Code started from, it passes the reference on as written, `${FORMA_GEMINI_KEY}`, and both tools refuse, saying the reference arrived unexpanded.
+- **VS Code**: in `~/.copilot/mcp-config.json` above, add `"FORMA_GEMINI_KEY": "${FORMA_GEMINI_KEY}"` to `env`, with the variable set in your user environment, then restart VS Code. That file takes `${NAME}`; the editor-only `${input:...}` and `envFile` are not read there.
+- **Visual Studio 2022**: add `"FORMA_GEMINI_KEY": "<your key>"` to `env` in `<solution folder>\.vs\mcp.json` above. That file is kept out of source control only where the solution's `.gitignore` ignores `.vs/`, as Visual Studio's standard one does, so run `git check-ignore .vs/mcp.json` in the solution folder first: it prints the path when the file is ignored, and nothing when it is not. Or put the entry in `%USERPROFILE%\.mcp.json`, Visual Studio's file for every solution, which is in no repository. Whether its `inputs` prompt keeps a key out of the file is not yet tried.
+- **Claude Desktop**: add `"FORMA_GEMINI_KEY": "<your key>"` to `env` in `claude_desktop_config.json` above. The file is yours alone and in no project, and Claude Desktop is reported not to expand `${...}`, so the key is written there as it is.
+
+For OpenRouter or a local model, set its variables the same way in place of the key; a local model needs no key at all.
+
+**How long a report takes, and one at a time.** A report can take minutes and several requests to your AI. One runs at a time in the server: a second call waits for the first, and says so to a host that asks for progress; the wait counts against a host's own limit on a call. The server reports its progress to a host that asks for it, and stopping the call stops the work at once and writes nothing. The server itself stops a report after 15 minutes. Claude Code waits for as long as the report takes; Claude Desktop on Windows reportedly ends any call after about four minutes, with no setting for it, which a report from several pages can pass, and then nothing is written. A host that stops waiting without cancelling still gets the file written, named in the server's log on stderr.
+
 ### The tools
 
 | Tool | What it does | Writes |
@@ -315,6 +349,8 @@ In JSON, write a Windows path with `/` or with each `\` doubled. None of these t
 | `repx_repair` | Every repair Forma makes on the reports it generates, in the same order, then the audit of the result | `<name>.repaired.repx` beside the report, or where you say |
 | `repx_edit` | The edits Forma's chat makes, by control name: text, place, size, font, colour, alignment, borders, lines, page numbers, formats, bindings, band heights, paper, margins, and a group with its total | `<name>.edited.repx` (or `.edited.vsrepx` for a `.vsrepx`) beside the report, or where you say; it replaces a file only when asked |
 | `repx_pdf` | A draft PDF, laid out by the engine of Forma's Preview with no data, in the standard PDF fonts: for checking where things fall | `<name>.pdf` beside the report, or where you say |
+| `generate_report` | **Needs an AI.** A report from a description, files, or both, made as the workspace makes one: pictures, scans and PDFs read with OCR, a `.repx` or `.vsrepx` to start from, a Word or Excel template, an SSRS or FastReport report, and data files passed apart, under `data`, their columns the report's fields. The result names the AI that answered, the audit and what printing it found; when every AI fails on a first report, Forma's own draft stands in and the result says so | `<first file>.generated.repx` beside the first file, or where you say (needed when there is no file) |
+| `revise_report` | **Needs an AI.** A `.repx` or `.vsrepx` changed as you ask in words, as Forma's chat changes the report open in it: edits by control name, or a redesign. A question about the report is answered, from its own facts with no AI where they answer it, and nothing is written | `<name>.revised.repx` beside the report, or where you say; the file you sent is never changed |
 
 `src/mcp/toolList.ts` is the list; a test holds this table and the Docs page to it. The server also offers what Forma measured about the REPX format, [`docs/skills/devexpress-repx/SKILL.md`](docs/skills/devexpress-repx/SKILL.md), as the resource `skill://devexpress-repx/SKILL.md`.
 
@@ -323,18 +359,18 @@ In JSON, write a Windows path with `/` or with each `\` doubled. None of these t
 - **Full paths only**, such as `G:\Reports\invoice.repx` or `/home/you/reports/invoice.repx`, inside the folders in effect. A relative name, `~` or a Git Bash `/g/...` path is refused, with the full path where it can be worked out; nothing is resolved against a folder the server cannot see you working in. A network path (`\\server\share`) is refused before the disk is touched.
 - **Never a dot-folder or a file named as credentials, never a write into `node_modules`**, and at most 20 MB a file. A link that leads outside the folders is refused.
 - **A report that is not well-formed XML is refused**, with the line where it breaks, and so is one that needs more than 30 seconds or 512 MB to work through: a report someone else made can be built to be slow, and it costs that one call, never the server.
-- **A file is never replaced unless you ask**, and only `repx_edit` can be asked. A repeat finds the same file and says so; other content in the way gets the new file beside it as `<name> (2)`.
+- **A file is never replaced unless you ask**, and only `repx_edit` can be asked; the two AI tools always write a new `.repx`. A repeat finds the same file and says so; other content in the way gets the new file beside it as `<name> (2)`.
 - **A stored database login is removed before any tool reads a report**, and the result says so: it never reaches your assistant or a file the server writes, and the report you named is left as it is.
 - **Text read from a report comes back as data**, under `fromFile`, never as instructions: a report made by someone else controls its own words.
 - **A Visual Studio report**: a `.vsrepx` is read as the `.repx` it is. A repair or an edit written as a `.repx` has Visual Studio's working-file mark neutralised; a `.vsrepx` is written only from a `.vsrepx`; and an edit is not written into a `.vsrepx` whose Designer file looks up a control the edits removed (a repair writes, and names it). A report written as C# or VB code is refused, with how to save it as a `.repx`.
-- **Nothing leaves your computer through it.** No tool calls an AI or makes a request to Forma or anyone else, and it keeps no telemetry and sends no learning events or error reports. What a tool returns goes to your assistant, and from there to the AI behind it, under that assistant's own terms.
+- **What leaves your computer, and where to.** Only `generate_report` and `revise_report` send anything: the pages of the files you give them, the text OCR read from them on your computer, data files passed as data, your words and the report, from your computer straight to the AI you set up (Google's Gemini API or OpenRouter, with your own key, or a local model on this computer), never through Forma. The other tools make no request at all, and the server keeps no telemetry and sends no learning events or error reports. What a tool returns goes to your assistant, and from there to the AI behind it, under that assistant's own terms.
 - **It reads no `.env`.** Its settings are its entry in your host.
 
 ### Limitations
 
-- **No generation yet.** A report from a picture, a PDF or a description, or a revision of one with your own AI, is the next phase ([Roadmap](#roadmap)).
+- **Less than the workspace knows.** The server keeps nothing of you: no memory or house style, no kept reports, no report library, no SQL Server database from the Data view, and no learning. It has no vision model or page reader on a local server, and reads no handwriting. `revise_report` does no exports, opens no designer and has no Undo: the file you sent is the undo.
 - **A clone, not a package.** It needs the clone, a full `npm ci` and Node in the range above, and it runs the code you cloned: pull to update.
-- **Tested in process and as a host runs it, not yet in any host.** Its tests drive it in process in both protocol generations and spawn it with the exact command above; no host has run it yet, Claude Code included, and every recipe above, Claude Code's too, follows that host's own documentation.
+- **Tested in process and as a host runs it, not yet in any host.** Its tests drive it in process in both protocol generations and spawn it with the exact command above, with the AI stood in for the two tools that need one; no host has run it yet, Claude Code included, and every recipe above, Claude Code's too, follows that host's own documentation.
 - **The PDF is a draft**: no data, the standard PDF fonts and the first line of each text. The Preview's export is the real one.
 - **`repx_edit` has no data edit**, which needs a database's layout the server does not hold.
 
@@ -485,7 +521,7 @@ The roadmap is section 6 of [`docs/PRD.md`](docs/PRD.md), which is kept current 
 - **A password-strength indicator** at sign-up. The minimum of eight characters, the verification email and the verified address sharing needs are done.
 - **The report library, moved into the notes.** It was evaluated on a real report on 2026-11-09 ([`docs/proposals/rag.md`](docs/proposals/rag.md): a restyle with the house style matched the house font where none did without it), and since 2026-11-11 the reports you keep join it on their own; graduating its reasoning from the proposal into `docs/notes/` is the step left.
 
-- **Making reports from your AI assistant.** Forma's MCP server is in ([Forma from an AI assistant](#forma-from-an-ai-assistant)) with tools that need no AI; making and revising a report through it with your own AI is next, on the same generation path as the workspace, then the command line's `generate`.
+- **Making reports from your AI assistant.** Forma's MCP server is in ([Forma from an AI assistant](#forma-from-an-ai-assistant)), with tools that need no AI and, since 2026-11-24, two that make and revise a report with your own AI on the workspace's own generation path; the command line's `generate` on that path is next, then a database's schema through Forma Designer.
 
 Deliberately out of scope, each with its reasons in [`docs/PRD.md`](docs/PRD.md) §6: a server or a browser holding a customer's database credential, moving generation server-side (the MCP server is not that: it is your own program on your own computer, with no port), and replacing the direct Gemini call with MCP.
 

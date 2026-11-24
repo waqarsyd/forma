@@ -110,9 +110,11 @@ Forma's audit, its repair chain or a draft PDF from the command line, with no br
 no key; `audit` exits 1 on an error. It is a tool for working on a report, not one of the
 checks, and [`docs/skills/devexpress-repx/SKILL.md`](docs/skills/devexpress-repx/SKILL.md)
 says what each finding and repair means. Forma's MCP server offers the same to an AI
-assistant, with an outline and edits ([`README.md`](README.md), *Forma from an AI assistant*); a change to
+assistant, with an outline and edits, and two tools that make and revise a report with the
+user's own AI ([`README.md`](README.md), *Forma from an AI assistant*); a change to
 `src/mcp` or `scripts/repx.ts` is a change to what [`docs/notes/mcp.md`](docs/notes/mcp.md)
-and the pages that describe it say.
+and the pages that describe it say. Their tests stand the AI in (`FORMA_MCP_MOCK`, or a
+test's own stand-in), since a real one spends the key's quota.
 
 This table deliberately does not say how many tests there are.
 [`docs/notes/testing.md`](docs/notes/testing.md) is the only place that number is

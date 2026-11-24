@@ -143,10 +143,15 @@ export function contrastRatio(a: Rgb, b: Rgb): number {
 
 export interface FontSpec { size: number | null; bold: boolean }
 
-/** `Arial, 9.75pt, style=Bold` as DevExpress writes it. Size is null when absent. */
+/**
+ * `Arial, 9.75pt, style=Bold` as DevExpress writes it, or `Arial, 20.64` as
+ * 22.2 and later may write a `DXFont`, its size in points with no unit
+ * (2026-11-24, GAP1-4 of the MCP design audit: until then such a size was
+ * not declared, so a small one was never flagged). Size is null when absent.
+ */
 export function parseFont(value: string | null | undefined): FontSpec | null {
   if (!value) return null;
-  const size = /,\s*(\d+(?:\.\d+)?)pt/.exec(value);
+  const size = /,\s*(\d+(?:\.\d+)?)(?:pt)?\s*(?:,|$)/.exec(value);
   return { size: size ? Number(size[1]) : null, bold: /style=[^,]*Bold/i.test(value) };
 }
 
@@ -166,7 +171,8 @@ function appearanceOf(attrs: string): Appearance {
   const out: Appearance = {};
   const fore = attrOf(attrs, 'ForeColor');
   const back = attrOf(attrs, 'BackColor');
-  const font = attrOf(attrs, 'Font');
+  // The DXFont DevExpress 22.2 and later may write in Font's place (GAP1-4).
+  const font = attrOf(attrs, 'Font') ?? attrOf(attrs, 'DXFont');
   if (fore !== null) out.fore = parseColor(fore);
   if (back !== null) out.back = parseColor(back);
   if (font !== null) out.font = parseFont(font);

@@ -1532,6 +1532,21 @@ so a request to it is never sent on, and a local server has no allowance to
 spend in any case. The repair loop and the chat's second pass ask the AI that
 answered, not the one chosen.
 
+**From an AI assistant, the same rule and the same chain** (2026-11-24, the
+MCP work's wave 8; owner decision OD6). Forma's MCP server's two AI tools,
+`generate_report` and `revise_report`, need the AI chosen set up as the
+workspace does, from the server's environment instead of Settings
+(`FORMA_GEMINI_KEY`, `FORMA_OPENROUTER_KEY` and `FORMA_OPENROUTER_MODEL`,
+`FORMA_LOCAL_MODEL` and `FORMA_LOCAL_URL`, `FORMA_PROVIDER`), and refuse
+without it: there is no mode without an AI there either, and the six tools
+that need none are scripts' work, as `scripts/repx.ts` is. Another AI set up
+beside the one chosen is the chain's next on a limit, never after Local AI,
+and the result carries the switch note. Two differences, both for the same
+reason, that nothing leaves a Local AI: with more than one set up and none
+chosen the tools refuse rather than guess, and a Local AI address must be on
+the computer itself, since a Node process has no CSP to keep it there
+([mcp.md](../notes/mcp.md) — *The AI tools make and revise a report with the user's own AI*).
+
 ## What comes next
 
 Each is its own milestone, with tests, docs and the checks, and is recorded

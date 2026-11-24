@@ -132,8 +132,28 @@ const shown = (raw: string) => JSON.stringify(raw.length > 200 ? `${raw.slice(0,
 const DEVICE = /^(con|prn|aux|nul|com[0-9]|lpt[0-9]|conin\$|conout\$)$/i;
 /** Characters Windows refuses in a file name (':' is judged on its own). */
 const WIN_BAD = /[<>"|?*]/;
-/** Names that hold credentials, from .gitignore's patterns, never read or written by a tool. */
-const CREDENTIAL = [/^key\.txt$/i, /\.key$/i, /apikey/i, /api-key/i, /^secrets\.json$/i, /firebase-adminsdk.*\.json$/i, /^service-account.*\.json$/i, /^firebase-applet-config\.json$/i, /^\.env/i, /^\.mcp\.json$/i];
+/**
+ * Names that hold credentials, never read or written by a tool: .gitignore's
+ * patterns, and since the wave-8 review (W8C-5) the files a .NET project
+ * keeps its connection strings in (appsettings*.json, local.settings.json)
+ * and a connections*.txt, which generate_report would otherwise send to the
+ * AI as data.
+ */
+const CREDENTIAL = [
+  /^key\.txt$/i,
+  /\.key$/i,
+  /apikey/i,
+  /api-key/i,
+  /^secrets\.json$/i,
+  /firebase-adminsdk.*\.json$/i,
+  /^service-account.*\.json$/i,
+  /^firebase-applet-config\.json$/i,
+  /^\.env/i,
+  /^\.mcp\.json$/i,
+  /^appsettings.*\.json$/i,
+  /^local\.settings\.json$/i,
+  /^connections.*\.txt$/i,
+];
 
 /**
  * The tool argument's description, written for the platform the server runs

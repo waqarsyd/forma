@@ -29,6 +29,7 @@ import { DESIGNER_REQUIREMENTS, DEVEXPRESS_TRIAL_URL, designerDownloadUrl } from
 import { DESIGNER_ORIGIN } from '../lib/designerBridge';
 import { SET_UP_AI } from '../lib/aiProvider';
 import { TOOL_LIST } from '../mcp/toolList';
+import { AI_ENV_NAMES } from '../mcp/aiSettings';
 
 const page = (name: string) => readFileSync(`src/components/${name}.tsx`, 'utf8');
 const landing = page('LandingPage');
@@ -118,6 +119,13 @@ describe('the public pages do not claim what Forma no longer does', () => {
     ['SSRS reports converted elsewhere before Forma opens them', /convert with Reporting\.Import, then bring the \.repx/i],
     // 2026-11-23, the owner's rule: any AI of the person's own opens the workspace, not the Gemini key alone.
     ['a Gemini key as the only way in', /Gemini key is still the way in|needs your (own )?(Google )?Gemini (API )?key to (open|start)|Bring (a design and )?your own Gemini key|ADD YOUR KEY|Paste a Gemini API key/i],
+    /*
+     * 2026-11-24 (the MCP design audit's SEC-8 and DOC-3): Forma's MCP server
+     * reads its key from the assistant's settings, which keep it readable on
+     * the person's computer, so what the website does with a key is said of
+     * the website, "On this website", and the server's case where it is told.
+     */
+    ['the key never on disk anywhere, unscoped, as if the MCP server kept it as the website does', /(?<!On this website, )\b(?:(?:the|a|your) key is (?:held in your open Forma tabs, )?never (?:written to disk|in a form anyone can read)|your key, never in a form anyone can read)/i],
   ])('no longer claims %s', (_what, pattern) => {
     // On one line, so a sentence the source wraps between two words is still found (2026-11-11).
     expect(all.replace(/\s+/g, ' ')).not.toMatch(pattern);
@@ -552,6 +560,37 @@ describe("the Docs page and the README say what Forma's MCP server offers, as to
       const said = src.replace(/\s+/g, ' ');
       if (asksAi.length) expect(said, name).not.toContain(words);
       else expect(said, name).toContain(words);
+    }
+  });
+
+  /*
+   * Since the AI tools (2026-11-24, the MCP work's waves 8 and 9): each row
+   * and each definition says whether that tool needs an AI, as toolList.ts
+   * does, and the settings a person sets for one are named as aiSettings.ts
+   * reads them, with no FORMA_ name the server does not read.
+   */
+  it('marks the tools that need an AI, and names the settings the server reads for one, as src/mcp has them', () => {
+    const readme = section();
+    const docsMcp = article('mcp');
+    for (const { name, needsAi } of TOOL_LIST) {
+      const row = readme.split('\n').find((l) => l.startsWith(`| \`${name}\` |`)) ?? '';
+      const at = docsMcp.indexOf(`<Def t="${name}">`);
+      const def = docsMcp.slice(at, docsMcp.indexOf('</Def>', at));
+      expect(row.includes('Needs an AI'), `README's row for ${name}`).toBe(needsAi);
+      expect(def.includes('Needs an AI'), `the Docs definition of ${name}`).toBe(needsAi);
+    }
+    const asksAi = TOOL_LIST.some((t) => t.needsAi);
+    const reads = new Set<string>([...AI_ENV_NAMES, 'FORMA_MCP_ROOTS']);
+    // The optional three (a model pin, a locale, the mock) need not be on the Docs page; the README lists all.
+    const toSetUp = AI_ENV_NAMES.filter((n) => !['FORMA_MODEL', 'FORMA_LOCALE', 'FORMA_MCP_MOCK'].includes(n));
+    for (const [where, src] of [['README', readme], ['Docs', docsMcp]] as const) {
+      if (asksAi) for (const name of toSetUp) expect(src, `${where} names ${name}`).toContain(name);
+      for (const m of src.matchAll(/\bFORMA_[A-Z_]+\b/g)) expect(reads.has(m[0]), `${where} names ${m[0]}, which the server does not read`).toBe(true);
+    }
+    if (asksAi) for (const name of ['FORMA_MODEL', 'FORMA_LOCALE', 'FORMA_MCP_MOCK']) expect(readme, `README names ${name}`).toContain(name);
+    // Generation through the server is said as built, everywhere the server is described, while it is.
+    for (const [where, src] of [['README', readme], ['the public pages', all]] as const) {
+      if (asksAi) expect(src.replace(/\s+/g, ' '), where).not.toMatch(/through it is not built/i);
     }
   });
 

@@ -386,18 +386,28 @@ export function crystalNotice(name: string): string {
 }
 
 /**
+ * A text with every `password=` or `pwd=` of a connection string taken out,
+ * for the reason SE-01 gives: a quoted value whole (the PIPE1 review:
+ * `password="x"` lost its name and kept `"x"`, which broke the XML), an
+ * unquoted one up to its `;`, a tag or the end of its line. An SSRS
+ * definition is read through it, and since 2026-11-24 a data file's text too
+ * (the review of the MCP work's wave 8, W8C-5): a `conn.txt` or a `.sql`
+ * script holding a login went to the AI as it was read, while a `.repx` and
+ * an `.rdl` lost theirs.
+ */
+export function withoutPasswords(text: string): string {
+  return text.replace(/\b(?:password|pwd)\s*=\s*(?:"[^"]*"|'[^']*'|&quot;[\s\S]*?&quot;|[^;<"'\r\n]*);?/gi, () => '');
+}
+
+/**
  * An SSRS report definition (.rdl, .rdlc) as it is read (CP-01a, PL-26): XML,
  * like a .repx, its layout for the AI to reproduce. A password in a
- * connection string is taken out, for the reason SE-01 gives, quoted values
- * whole (the PIPE1 review: `password="x"` lost its name and kept `"x"`,
- * which broke the XML). An embedded picture's bytes are left out too: they
- * do not survive into a DevExpress report, and an RDL with a logo sent its
- * whole base64 with every request.
+ * connection string is taken out (`withoutPasswords`). An embedded picture's
+ * bytes are left out too: they do not survive into a DevExpress report, and
+ * an RDL with a logo sent its whole base64 with every request.
  */
 export function rdlAttachment(name: string, xml: string): string {
-  const clean = xml
-    .replace(/\b(?:password|pwd)\s*=\s*(?:"[^"]*"|'[^']*'|&quot;[\s\S]*?&quot;|[^;<"']*);?/gi, () => '')
-    .replace(/(<ImageData>)[\s\S]*?(<\/ImageData>)/gi, (_, open: string, close: string) => `${open}(an embedded picture)${close}`);
+  const clean = withoutPasswords(xml).replace(/(<ImageData>)[\s\S]*?(<\/ImageData>)/gi, (_, open: string, close: string) => `${open}(an embedded picture)${close}`);
   return `An SSRS report definition (${name}); reproduce its layout as a DevExpress report:\n\n${clean}`;
 }
 
@@ -608,7 +618,8 @@ export async function ingestFile(file: File, uploadId: string, reportUnit: strin
     const layout = /\.docx$/i.test(name)
       ? await import('./docxLayout').then((m) => m.docxDraft(bytes))
       : /\.xlsx$/i.test(name) ? await import('./xlsxLayout').then((m) => m.xlsxDraft(bytes)) : null;
-    if (read.text) out.texts.push({ id: `${Date.now()}-${name}`, uploadId, file: name, text: read.text, ...(layout ? { layout } : {}) });
+    // A login in it never goes to the AI (W8C-5), as a report's and an SSRS definition's never do.
+    if (read.text) out.texts.push({ id: `${Date.now()}-${name}`, uploadId, file: name, text: withoutPasswords(read.text), ...(layout ? { layout } : {}) });
     return out;
   }
 

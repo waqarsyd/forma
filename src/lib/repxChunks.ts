@@ -197,7 +197,8 @@ function controlCaption(type: string, band: string, attrs: Record<string, string
   const where = band ? `in the ${readable(band)}` : 'in the report';
   const looks: string[] = [];
   for (const name of DESCRIBED) {
-    const value = attrs[name];
+    // A font DevExpress 22.2 and later wrote as DXFont reads as one (GAP1-4).
+    const value = attrs[name] || (name === 'Font' ? attrs.DXFont : undefined);
     if (!value) continue;
     if (name === 'Font') looks.push(describeFont(value));
     else if (name === 'TextAlignment') looks.push(`${readable(value)} aligned`);

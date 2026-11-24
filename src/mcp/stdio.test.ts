@@ -48,7 +48,7 @@ const REQUEST_MS = 30_000;
 interface Started {
   cwd: string;
   child: ChildProcessWithoutNullStreams;
-  request(id: number, method: string, params?: Record<string, unknown>): Promise<Record<string, any>>;
+  request(id: number, method: string, params?: Record<string, unknown>, waitMs?: number): Promise<Record<string, any>>;
   notify(method: string): void;
   exited: Promise<number | null>;
   out(): string;
@@ -65,11 +65,20 @@ afterEach(async () => {
   }
 });
 
-/** The server started as a host starts it, and a way to talk to it line by line. */
-function start(noise: string): Started {
+/**
+ * The server started as a host starts it, and a way to talk to it line by
+ * line. `more` adds to its environment, a value left undefined taking that
+ * variable out.
+ */
+function start(noise: string, more: Record<string, string | undefined> = {}): Started {
   const cwd = mkdtempSync(join(scratch, 'host-'));
   const env: NodeJS.ProcessEnv = { ...process.env, FORMA_MCP_ROOTS: realpathSync.native(cwd), FORMA_MCP_TEST_NOISE: noise, FORMA_GEMINI_KEY: fakeKey, GEMINI_API_KEY: fakeNewerKey };
   delete env.CLAUDE_PROJECT_DIR;
+  for (const name of Object.keys(env)) if (name.startsWith('FORMA_') && !['FORMA_MCP_ROOTS', 'FORMA_MCP_TEST_NOISE', 'FORMA_GEMINI_KEY'].includes(name)) delete env[name];
+  for (const [name, value] of Object.entries(more)) {
+    if (value === undefined) delete env[name];
+    else env[name] = value;
+  }
   const child: ChildProcessWithoutNullStreams = spawn(process.execPath, HOST_ARGS, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
   let out = '';
   let err = '';
@@ -89,9 +98,9 @@ function start(noise: string): Started {
     err += d;
   });
   const exited = new Promise<number | null>((done) => child.on('exit', (code) => done(code)));
-  const request = (id: number, method: string, params?: Record<string, unknown>) =>
+  const request = (id: number, method: string, params?: Record<string, unknown>, waitMs = REQUEST_MS) =>
     new Promise<Record<string, any>>((done, fail) => {
-      const timer = setTimeout(() => fail(new Error(`no answer to ${method} (id ${id}) within ${REQUEST_MS / 1000} s; the server's stderr:\n${err.slice(-2000)}`)), REQUEST_MS);
+      const timer = setTimeout(() => fail(new Error(`no answer to ${method} (id ${id}) within ${waitMs / 1000} s; the server's stderr:\n${err.slice(-2000)}`)), waitMs);
       pending.set(id, (m) => {
         clearTimeout(timer);
         done(m);
@@ -185,6 +194,48 @@ describe('the stdio server, started as a host starts it', () => {
     expect(s.out() + s.err()).not.toMatch(/Secret123|userid|db01/);
     expect(readdirSync(s.cwd).sort()).toEqual(['r.edited.repx', 'r.repaired.repx', 'r.repx']);
     for (const f of ['r.edited.repx', 'r.repaired.repx']) expect(decoded(readFileSync(join(s.cwd, f), 'utf8')), f).not.toMatch(/Secret123|userid|db01/);
+  });
+
+  it("runs the AI tools in their own worker thread, the AI mocked: only JSON-RPC on stdout, rising progress, no key's value on either stream, and the reports written", { timeout: 240_000 }, async () => {
+    // Wave 8 (2026-11-24): FORMA_MCP_MOCK, with a stand-in key (an AI must still be set up, OD6), and Forma's own folder in a scratch home.
+    const home = mkdtempSync(join(scratch, 'home-'));
+    const s = start('', { FORMA_MCP_MOCK: '1', USERPROFILE: home, HOME: home });
+    await s.request(1, 'initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'smoke', version: '1' } });
+    s.notify('notifications/initialized');
+    const cwd = realpathSync.native(s.cwd);
+    const made = await s.request(2, 'tools/call', { name: 'generate_report', arguments: { description: 'An invoice with a title and a table of items.', output: join(cwd, 'invoice.repx') }, _meta: { progressToken: 'smoke' } }, 180_000);
+    expect(made.result.isError, JSON.stringify(made).slice(0, 600)).toBeUndefined();
+    expect(made.result.structuredContent).toMatchObject({ ai: 'mock', written: { path: join(cwd, 'invoice.repx'), status: 'written' } });
+    const revised = await s.request(3, 'tools/call', { name: 'revise_report', arguments: { path: join(cwd, 'invoice.repx'), request: 'Make it red' } }, 120_000);
+    expect(revised.result.isError, JSON.stringify(revised).slice(0, 600)).toBeUndefined();
+    expect(revised.result.structuredContent).toMatchObject({ action: 'edit', ai: 'mock', written: { path: join(cwd, 'invoice.revised.repx') } });
+    expect(await leaves(s)).toBe(0);
+    const lines = expectOnlyJsonRpc(s.out());
+    const progress = s.out().split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((m) => m.method === 'notifications/progress');
+    expect(lines).toBe(3 + progress.length);
+    expect(progress.length).toBeGreaterThan(0);
+    const values = progress.map((m) => m.params.progress as number);
+    for (let i = 1; i < values.length; i++) expect(values[i]).toBeGreaterThan(values[i - 1]);
+    expect(s.out() + s.err()).not.toContain(fakeKey);
+    expect(s.out() + s.err()).not.toContain(fakeNewerKey);
+    expect(s.err()).toContain(`generate_report wrote ${JSON.stringify(join(cwd, 'invoice.repx'))}`);
+    expect(readdirSync(s.cwd).sort()).toEqual(['invoice.repx', 'invoice.revised.repx']);
+    // Forma's folder is the scratch home's, never the user's own.
+    expect(readdirSync(home)).not.toEqual([]);
+  });
+
+  it('refuses the AI tools in plain words with no AI set up, and still serves the rest', { timeout: 60_000 }, async () => {
+    const s = start('', { FORMA_GEMINI_KEY: undefined });
+    await s.request(1, 'initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'smoke', version: '1' } });
+    s.notify('notifications/initialized');
+    const refused = await s.request(2, 'tools/call', { name: 'generate_report', arguments: { description: 'An invoice', output: join(realpathSync.native(s.cwd), 'x.repx') } });
+    expect(refused.result.isError).toBe(true);
+    expect(refused.result.content[0].text).toMatch(/^Set up your AI in Settings to start: .*FORMA_GEMINI_KEY/);
+    expect((await s.request(3, 'tools/call', { name: 'forma_status', arguments: {} })).result.isError).toBeUndefined();
+    expect(await leaves(s)).toBe(0);
+    expect(s.err()).toContain('the AI tools refuse until an AI is set up');
+    expect(s.out() + s.err()).not.toContain(fakeNewerKey);
+    expect(readdirSync(s.cwd)).toEqual([]);
   });
 
   it('exits non-zero after an uncaught exception, saying why on stderr and nothing on stdout', { timeout: 60_000 }, async () => {

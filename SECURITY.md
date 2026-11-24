@@ -17,13 +17,15 @@ acknowledgement within a few days.
 Forma has **no backend of its own**. There is no Forma server holding user data, so
 there is no server to breach. That shapes what is and is not worth reporting.
 
-**Your Gemini API key never reaches a server belonging to this project.** The browser
-calls Google directly with it. The key lives in `sessionStorage` and the browser erases
-it when the tab closes. If you opt into cross-device sync, it is encrypted **in your
+**Your Gemini API key never reaches a server belonging to this project.** On the website
+the browser calls Google directly with it. The key lives in `sessionStorage` and the browser
+erases it when the tab closes. If you opt into cross-device sync, it is encrypted **in your
 browser** under a passphrase you choose (PBKDF2-SHA256, 310,000 iterations, per-record
 salt and IV, then AES-GCM) and only the ciphertext is uploaded. The passphrase never
 leaves your machine, so a forgotten passphrase cannot be recovered — by anyone,
-including whoever runs a deployment. That is the design, not an oversight.
+including whoever runs a deployment. That is the design, not an oversight. Forma's MCP
+server, below, is a program you run yourself and keeps its key differently; its section says
+how.
 
 The interesting reports are therefore things like:
 
@@ -66,8 +68,29 @@ runs it, and nothing of it is deployed. What it is built to hold:
 - **What a file says is data.** Text read from a report is returned only under `fromFile`,
   never in a summary, a description or an error, because a report made by someone else
   controls its own words and the assistant may have a shell.
-- **No network, in this version.** No tool calls an AI, holds a key or makes a request to
-  anyone. It reads no `.env`, and only its entry reads the environment.
+- **A request only from the two AI tools, and only to the AI you set up.** `generate_report`
+  and `revise_report` send the files' pages, the text OCR read from them on your computer,
+  your words and the report to Google's Gemini API, OpenRouter, or a Local AI server, with
+  your own key, never through Forma; the other tools make no request at all. No Content
+  Security Policy stands behind a Node process, so the code is the bound: every Gemini client
+  is built pinned to Gemini's address, so no `GOOGLE_*` variable can move it to another
+  endpoint; a Local AI address is accepted only on this computer (`localhost`, `127.0.0.1` or
+  `[::1]`, with no user name or password), and anything else refuses the AI tools; and
+  `legalDisclosure.test.ts` fails on any host the server's imports reach that the privacy
+  policy does not name. OCR reads only the language files and models in the clone, never a
+  CDN.
+- **The key is yours, read once, and scrubbed.** It reads no `.env`, and only its entry reads
+  the environment: your key under Forma's own names (`FORMA_GEMINI_KEY`,
+  `FORMA_OPENROUTER_KEY`), never a `GEMINI_API_KEY` or `GOOGLE_API_KEY` set for something
+  else, which it deletes from its environment, with Google's Vertex AI switches, before the
+  Gemini SDK loads; its own two key variables are deleted once read, so no worker thread
+  inherits them. Every result, error and line on stderr has keys taken out, by their shapes
+  and by the exact values it was given. Where the key is stored is your host's: readable, in
+  its configuration file or, through a `${FORMA_GEMINI_KEY}` reference, your environment.
+  Keep it in a file of your own, never one a project commits.
+- **One AI call at a time, and a stop that stops.** A second call waits for the first; a
+  cancellation ends the work's thread at once, so nothing is sent after it and nothing is
+  written.
 
 Worth reporting about it, then:
 
@@ -79,10 +102,18 @@ Worth reporting about it, then:
 - a report whose text reaches the assistant outside `fromFile`, or steers what the server does;
 - a stored database login that reaches a result or a written file;
 - a report that stops the server, or keeps it from answering other calls;
-- a network request made by a tool.
+- a network request made by a tool that needs no AI, or one an AI tool makes to anything but
+  the AI set up, a Local AI server off this computer included;
+- a key in a result, on stderr or in a file the server writes, or a key taken from a `.env`,
+  a `GEMINI_API_KEY` or a `GOOGLE_API_KEY`;
+- a request sent, or a file written, after the call was cancelled.
 
 Known and deliberate there: what a tool returns goes to the assistant and the AI behind it,
-under that assistant's own terms; a hard link inside a folder is read as the file it is, since
+under that assistant's own terms; what the AI tools send goes to the AI you set up, under that
+provider's terms (on Gemini's free tier Google may use it to improve its products); when the AI
+you chose reaches a limit, another AI you also set up answers, never after a Local AI, and the
+result says so; the key is stored wherever your host keeps the server's entry, readable, and the
+server only reads it; a hard link inside a folder is read as the file it is, since
 making one takes access to that file already; the host's own permission prompts, not the
 server, decide which calls run without asking you; and a JSON data source's stored credentials
 are not taken out yet, since whether DevExpress 20.1 writes them into a `.repx` is still to be
@@ -94,10 +125,11 @@ measured.
   public Firebase project identifier, shipped in every Firebase web app by design.
   Access is controlled by `firestore.rules`, not by hiding that value. Please do not
   report it; do report a rule that fails to constrain it.
-- **Generation runs in the browser and is staying there.** Moving it server-side is
-  explicitly out of scope (`docs/PRD.md` §6) — a server would mean Forma holding keys,
-  which is the thing this design exists to avoid. Forma's MCP server is not that: it is your
-  own program on your own computer, with no port, holding only your files.
+- **Generation runs in the browser, or in Forma's MCP server on your own computer, never on
+  a server of this project's.** Moving it server-side is explicitly out of scope
+  (`docs/PRD.md` §6) — a server would mean Forma holding keys, which is the thing this design
+  exists to avoid. Forma's MCP server is not that: it is your own program on your own
+  computer, with no port, holding only your files and your own key.
 - If you self-host, the Firebase project is yours. Restrict your own API key and deploy
   your own rules; see the setup walkthrough in `README.md`.
 

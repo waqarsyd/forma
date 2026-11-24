@@ -241,7 +241,12 @@ const BUDGETS = [
   // what it does with files), and the wave-4 review's fixes said a malformed or slow report is refused and
   // when Claude Code's folder is not enough. Copy a visitor reads, not code: the chunk was 82,662 B before
   // the article. 94.1%.
-  { prefix: 'DocsPage-', ext: '.js', max: 94_000, note: 'the Docs page, lazy (88,433 B at 94.1%, the MCP article)' },
+  // Raised to 97,500 the same day, at 91,761 B (97.6%, under but past the band): the MCP work's wave 9
+  // grew it +3,328 B with the server's two AI tools, generate_report and revise_report (the AI they
+  // need and its FORMA_* settings, where the key is then kept, one at a time and a stop, their two
+  // definitions), reports that live in C# or VB code, and the key article's at-rest sentence scoped to
+  // the website. Copy a visitor reads, not code. 94.1%.
+  { prefix: 'DocsPage-', ext: '.js', max: 97_500, note: 'the Docs page, lazy (91,761 B at 94.1%, the MCP article with its AI tools)' },
   { prefix: 'reportPreview-', ext: '.js', max: 66_000, note: 'the Preview engine, lazy (61,825 B at 93.7%, Vite 8)' },
   // Raised to 55,500 on 2026-11-12, at 51,921 B (102.8%): the 1.6.0 entry, the full audit's release note, in a visitor's words (DOCS, dc85c04). 93.6%.
   // Raised to 58,700 the same day, at 55,155 B (99.4%): the 1.6.1 entry, +1,096 B, the releases' own words. 94.0%.

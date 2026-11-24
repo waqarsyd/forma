@@ -61,8 +61,8 @@ const WORKER_FILE = new URL('./worker.mjs', import.meta.url);
 
 type Reply = { id: number; ok: true; value: unknown } | { id: number; ok: false; refusal?: string; error?: string };
 
-/** A worker's output, a line at a time, to the server's log. */
-function toLog(stream: Readable | null, log: (line: string) => void): void {
+/** A worker's output, a line at a time, to the server's log; generator.ts's worker's too. */
+export function toLog(stream: Readable | null, log: (line: string) => void): void {
   if (!stream) return;
   let rest = '';
   stream.setEncoding('utf8');
@@ -75,7 +75,7 @@ function toLog(stream: Readable | null, log: (line: string) => void): void {
 }
 
 /** An error from inside the worker, its first line as the message and its whole stack kept for the log. */
-function workerError(stack = 'the worker failed'): Error {
+export function workerError(stack = 'the worker failed'): Error {
   const error = new Error(stack.split('\n')[0]);
   error.stack = stack;
   return error;

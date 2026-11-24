@@ -46,7 +46,7 @@ export const DOCS_SECTIONS: ReadonlyArray<{ id: string; n: string; title: string
   { id: 'repx', n: '11', title: 'The .repx file', keys: 'repx xml schema serializer band detail bands units grid coordinates export download audit warnings errors checks accessibility' },
   { id: 'designer', n: '12', title: 'Open in the DevExpress designer', keys: 'designer devexpress open in designer forma designer download windows install tray trial apps on device blocked local network smartscreen uninstall' },
   // Forma's MCP server, from an AI assistant (2026-11-24, the MCP work's wave 5, DOC-10).
-  { id: 'mcp', n: '13', title: 'Forma from your AI assistant', keys: 'mcp claude code claude desktop visual studio vs code copilot assistant agent tools stdio command line audit repair outline edit pdf vsrepx' },
+  { id: 'mcp', n: '13', title: 'Forma from your AI assistant', keys: 'mcp claude code claude desktop visual studio vs code copilot assistant agent tools stdio command line audit repair outline edit pdf vsrepx generate revise make report key environment' },
   { id: 'config', n: '14', title: 'Settings and what is worked out', keys: 'config configure settings worked out version paper size letter a4 legal tabloid landscape rtl right to left stored procedure data model picker auto fast balanced local ai ollama lm studio openrouter unit units scale hundredths inch millimetre millimeter pixels locationfloat sizef' },
   { id: 'saving', n: '15', title: 'Saving your work', keys: 'save saved projects account cloud browser storage sign out history limit how many' },
   { id: 'share', n: '16', title: 'Sharing a report', keys: 'share sharing link restricted anyone people invite email verified stop sharing collaborate' },

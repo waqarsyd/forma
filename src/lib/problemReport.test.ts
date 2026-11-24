@@ -4,7 +4,8 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { versionLabel, versionUrl } from './buildInfo';
-import { BUG_TEMPLATE, problemReportUrl, publicPath, stackHead, withoutKeys } from './problemReport';
+import { withoutKeys } from './keyRedact';
+import { BUG_TEMPLATE, problemReportUrl, publicPath, stackHead } from './problemReport';
 
 describe('versionLabel and problemReportUrl', () => {
   it('names the build by its short commit and day, and links the commit', () => {

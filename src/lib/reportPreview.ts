@@ -872,7 +872,7 @@ function parseWatermark(text: string): PreviewWatermark | null {
   const attrs = tag[1];
   const caption = decodeXmlText(attrOf(attrs, 'Text') ?? '');
   if (!caption) return null;
-  const font = parseFont(attrOf(attrs, 'Font'));
+  const font = parseFont(fontAttr(attrs));
   return {
     text: caption,
     fontSize: font.size,
@@ -943,6 +943,9 @@ const attrOf = (attrs: string, name: string): string | null => {
   const m = new RegExp(`\\s${name}\\s*=\\s*"([^"]*)"`).exec(attrs);
   return m ? m[1] : null;
 };
+
+/** An element's font: its `Font`, else the `DXFont` DevExpress 22.2 and later may write instead (GAP1-4, `parseFont`). */
+const fontAttr = (attrs: string): string | null => attrOf(attrs, 'Font') ?? attrOf(attrs, 'DXFont');
 
 const numAttr = (attrs: string, name: string, fallback = 0): number => {
   const raw = attrOf(attrs, name);
@@ -1034,12 +1037,19 @@ export function safeLink(url: string | null | undefined): string | null {
 /**
  * `Font="Arial, 9.75pt, style=Bold, Italic"`, or the same as a child element.
  * Size is in POINTS here and in nothing else in the file; see reportGeometry.
+ *
+ * DevExpress 22.2 and later may write the same as `DXFont="Arial, 20.64"`
+ * (2026-11-24, finding GAP1-4 of the MCP design audit: DevExpress's own
+ * Blazor sample, saved by 22.2.1, writes it on the root and on a label, and
+ * its Designer.cs makes that label `new DXFont("Arial", 25.64F)`, whose unit
+ * is points by default). A size with no unit is read as points; another unit
+ * was never measured and is read as no size. `fontAttr` reads either name.
  */
 function parseFont(value: string | null) {
   if (!value) return { family: null, size: null, bold: false, italic: false };
   const parts = value.split(',').map((p) => p.trim());
   const family = parts[0] || null;
-  const sizePart = parts.find((p) => /^[\d.]+pt$/i.test(p));
+  const sizePart = parts.slice(1).find((p) => /^\d+(\.\d+)?(pt)?$/i.test(p));
   const size = sizePart ? Number.parseFloat(sizePart) : null;
   const styles = value.toLowerCase();
   return {
@@ -1064,7 +1074,7 @@ function parseToc(attrs: string, own: string, dpiScale: number, targetDpi: numbe
     const h = numAttr(a, 'Height', Number.NaN);
     return Number.isFinite(h) && h > 0 ? h * dpiScale : (23 * targetDpi) / 100;
   };
-  const fontOf = (a: string) => (attrOf(a, 'Font') ? parseFont(attrOf(a, 'Font')) : font);
+  const fontOf = (a: string) => (fontAttr(a) ? parseFont(fontAttr(a)) : font);
   return {
     title: decodeXmlText(attrOf(title, 'Text') ?? ''),
     titleHeight: height(title),
@@ -1154,7 +1164,7 @@ function parseStyleSheet(text: string): Map<string, Appearance> {
     const style: Appearance = {};
     for (const property of APPEARANCE) {
       const inStyle = STYLE_NAME[property];
-      const value = inStyle ? attrOf(item.attrs, inStyle) : null;
+      const value = property === 'Font' ? fontAttr(item.attrs) : inStyle ? attrOf(item.attrs, inStyle) : null;
       if (value !== null) style[property] = value;
     }
     styles.set(name, style);
@@ -1212,7 +1222,8 @@ function resolveAppearance(
     }
     const fromStyle = style[property];
     const styleWins = fromStyle !== undefined && attrOf(priority, `Use${property}`) !== 'false';
-    const value = styleWins ? fromStyle : attrOf(attrs, property) ?? parent[property];
+    const own = property === 'Font' ? fontAttr(attrs) : attrOf(attrs, property);
+    const value = styleWins ? fromStyle : own ?? parent[property];
     if (value !== undefined) out[property] = value;
   }
   return out;
@@ -2295,13 +2306,15 @@ const FONT_STYLES = ['Bold', 'Italic', 'Underline', 'Strikeout'];
 function fontWith(font: string | undefined, part: string, value: Value): string {
   const tokens = (font ?? DEFAULT_APPEARANCE.Font!).split(',').map((t) => t.trim()).filter(Boolean);
   let family = tokens[0] ?? 'Times New Roman';
-  let size = tokens.find((t) => /^[\d.]+pt$/i.test(t)) ?? '9.75pt';
+  // A DXFont's size has no unit, and is points (GAP1-4, `parseFont`).
+  const sizeToken = tokens.slice(1).find((t) => /^\d+(\.\d+)?(pt)?$/i.test(t));
+  let size = sizeToken ? (/pt$/i.test(sizeToken) ? sizeToken : `${sizeToken}pt`) : '9.75pt';
   const styles = new Set<string>();
   const rest: string[] = [];
   for (const token of tokens.slice(1)) {
     const name = token.replace(/^style=/i, '');
     if (FONT_STYLES.includes(name)) styles.add(name);
-    else if (token !== size) rest.push(token);
+    else if (token !== sizeToken) rest.push(token);
   }
   if (part === 'Font.Name') family = String(value);
   else if (part === 'Font.Size') size = `${Number(value)}pt`;

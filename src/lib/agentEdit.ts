@@ -442,8 +442,11 @@ export function repxColor(value: string): string | null {
   return COLOR_BY_LOWER.get(v.toLowerCase().replace(/[\s_-]+/g, '').replace(/grey/g, 'gray')) ?? null;
 }
 
-/** A `Font` value with the asked-for parts changed and the rest kept. */
-function fontValue(current: string | null, resolved: { fontFamily: string | null; fontSize: number | null; bold: boolean; italic: boolean }, e: AgentEdit): string {
+/**
+ * A `Font` value with the asked-for parts changed and the rest kept. With
+ * `unitless`, the size is written with no unit, as a `DXFont` writes it.
+ */
+function fontValue(current: string | null, resolved: { fontFamily: string | null; fontSize: number | null; bold: boolean; italic: boolean }, e: AgentEdit, unitless = false): string {
   const parts = (current ?? '').split(',').map((p) => p.trim());
   const family = e.family?.trim() || (current ? parts[0] : resolved.fontFamily) || 'Arial';
   const size = e.size && e.size > 0 ? e.size : Number.parseFloat((current ? parts[1] : '') || '') || resolved.fontSize || 9.75;
@@ -458,7 +461,7 @@ function fontValue(current: string | null, resolved: { fontFamily: string | null
   // Arabic report's "charSet=178" chose its glyphs, and a bold made by the
   // chat dropped it.
   const kept = parts.filter((p) => /^(charSet|gdiCharSet|gdiVerticalFont|unit)=/i.test(p));
-  return `${family}, ${round(size)}pt${styles.length ? `, style=${styles.join(', ')}` : ''}${kept.length ? `, ${kept.join(', ')}` : ''}`;
+  return `${family}, ${round(size)}${unitless ? '' : 'pt'}${styles.length ? `, style=${styles.join(', ')}` : ''}${kept.length ? `, ${kept.join(', ')}` : ''}`;
 }
 
 /** A style the control names would otherwise win over what is set on it. */
@@ -492,6 +495,16 @@ function alignment(openTag: string, vAlign: 'top' | 'middle' | 'bottom', align: 
 function styleAttrs(e: AgentEdit, openTag: string, resolved: { fontFamily: string | null; fontSize: number | null; bold: boolean; italic: boolean; vAlign: 'top' | 'middle' | 'bottom' }): Record<string, string> | string {
   if (e.op === 'font') {
     const current = /\sFont\s*=\s*"([^"]*)"/.exec(openTag)?.[1] ?? null;
+    /*
+     * A control DevExpress 22.2 or later wrote with a DXFont and no Font
+     * (2026-11-24, GAP1-4 of the MCP design audit): the edit rewrites that
+     * attribute, in its own form, the size with no unit, so the control
+     * never carries two fonts; which one 22.2 would take when both are there
+     * was never measured. A style named in it follows Font's form, also
+     * unmeasured for DXFont.
+     */
+    const dx = current === null ? /\sDXFont\s*=\s*"([^"]*)"/.exec(openTag)?.[1] ?? null : null;
+    if (dx !== null) return { DXFont: fontValue(dx, resolved, e, true), ...priority(openTag, 'UseFont') };
     return { Font: fontValue(current, resolved, e), ...priority(openTag, 'UseFont') };
   }
   if (e.op === 'color') {

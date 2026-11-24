@@ -472,7 +472,13 @@ export default function DocsPage({
               <h3 className="mt-6 font-display-lg text-[17px] font-bold leading-[1.3] tracking-[-0.018em] text-on-surface">
                 Where it is kept
               </h3>
-              <p className={`mt-2 ${PROSE}`}>The key is never written to disk in plaintext, on any tier.</p>
+              {/* Scoped to the website since 2026-11-24 (the MCP design audit's SEC-8 and DOC-3): Forma's MCP
+                  server reads its key from the assistant's settings, which keep it readable, and says so in #mcp. */}
+              <p className={`mt-2 ${PROSE}`}>
+                On this website, the key is never written to disk in plaintext, on any tier. Forma&apos;s MCP server,
+                which you run yourself, keeps it elsewhere: <a href="#mcp" className={LINK}>Forma from your AI assistant</a>{' '}
+                says where.
+              </p>
               <dl className="mt-4 border-t border-outline-variant">
                 <Def t="Working copy">
                   <strong className="font-semibold text-on-surface">Session storage.</strong> The browser
@@ -1273,21 +1279,23 @@ report.ExportToPdf("report.pdf");`}
               </p>
             </Article>
 
-            {/* Since 2026-11-24 (the MCP work's wave 5; findings DOC-10, SEC-11
-                and GAP3-4 of the 2026-11-23 design audit): Forma's MCP server,
-                src/mcp. The tool names are held to src/mcp/toolList.ts, and
-                "calls no AI" to its needsAi, by publicClaims.test.ts; no page
-                may import src/mcp, so they are written out here. The chat
-                answers from this article, so it says only what the server
-                does today: generation through it is not built. */}
+            {/* Since 2026-11-24 (the MCP work's waves 5 and 9; findings DOC-10,
+                SEC-8, SEC-11, GAP1-5 and GAP3-4 of the 2026-11-23 design audit):
+                Forma's MCP server, src/mcp. The tool names, and which need an
+                AI, are held to src/mcp/toolList.ts, and the FORMA_* names to
+                src/mcp/aiSettings.ts, by publicClaims.test.ts; no page may
+                import src/mcp, so they are written out here. The chat answers
+                from this article, so it says only what the server does. */}
             <Article id="mcp" kicker="Output" title="Forma from your AI assistant" hidden={!matches('mcp')}>
               <p className={PROSE}>
                 Forma has an MCP server: a program you run on your own computer so an AI assistant, such as Claude
                 Code, Visual Studio&apos;s Copilot, VS Code or Claude Desktop, can audit, outline, repair and edit the
-                .repx files in your own projects, and draw one as a draft PDF. Your assistant starts it and talks to it
-                directly; it opens no network port, and this site does not run it.{' '}
-                <strong className="font-semibold text-on-surface">None of its tools calls an AI or needs a key.</strong>{' '}
-                Making a report from a picture or a description through it is not built yet.
+                .repx files in your own projects and draw one as a draft PDF, and, with an AI of your own set up for
+                it, make a report from a picture, a PDF or a description, or change one as you ask. Your assistant
+                starts it and talks to it directly; it opens no network port, and this site does not run it.{' '}
+                <strong className="font-semibold text-on-surface">
+                  Two of its tools need your own AI, as the workspace does; the rest need none.
+                </strong>
               </p>
 
               <h3 className={H3}>Setting it up</h3>
@@ -1324,6 +1332,29 @@ npm ci`}
                 Agent mode.
               </p>
 
+              <h3 className={H3}>Your AI, for the two tools that need one</h3>
+              <p className={`mt-2 ${PROSE}`}>
+                The server reads your AI from the settings your assistant starts it with, the{' '}
+                <code className="doc-code">env</code> of its entry: <code className="doc-code">FORMA_GEMINI_KEY</code>{' '}
+                for Gemini; <code className="doc-code">FORMA_OPENROUTER_KEY</code> and{' '}
+                <code className="doc-code">FORMA_OPENROUTER_MODEL</code> for OpenRouter;{' '}
+                <code className="doc-code">FORMA_LOCAL_MODEL</code>, with <code className="doc-code">FORMA_LOCAL_URL</code>{' '}
+                when your server is not at Ollama&apos;s usual address, for a model on your own computer, which the
+                server reaches only there; and <code className="doc-code">FORMA_PROVIDER</code> (gemini, openrouter or
+                local) when you set up more than one. With none, those two tools say what to set and do nothing else.
+                One report runs at a time and a second call waits; a report can take minutes, its progress goes to an
+                assistant that asks, and stopping the call stops it and writes nothing. Claude Desktop on Windows
+                reportedly gives up on a call after about four minutes; Claude Code waits.
+              </p>
+              <Note label="Where your key is then kept">
+                Not as on this website: your assistant keeps the server&apos;s settings readable on your computer, in
+                its settings file, or in your own environment if you write the key as{' '}
+                <code className="doc-code">{'${FORMA_GEMINI_KEY}'}</code> where your assistant takes such a reference
+                (Claude Code and VS Code do), which is the way to choose. Keep it in a settings file of your own, never
+                one your project commits, and never type it into a command an assistant can see. The server sends it
+                only to its own AI and takes it out of everything it returns and logs.
+              </Note>
+
               <h3 className={H3}>The tools</h3>
               <dl className="mt-4 border-t border-outline-variant">
                 <Def t="forma_status">
@@ -1352,6 +1383,16 @@ npm ci`}
                   A draft PDF: the report laid out by the Preview&apos;s engine with no data, for checking where things
                   fall. Export from the Preview for the real one.
                 </Def>
+                <Def t="generate_report">
+                  Needs an AI. A report from a description, files, or both, made as the workspace makes one: pictures,
+                  scans and PDFs read with OCR on your computer, a .repx to start from, a Word or Excel template, an
+                  SSRS or FastReport report, and data files passed apart. Written to a new .repx; the result names the
+                  AI that answered.
+                </Def>
+                <Def t="revise_report">
+                  Needs an AI. A .repx changed as you ask in words, as Forma&apos;s chat changes the report open in it,
+                  written to a new file, the one you sent left as it is. A question about the report is answered.
+                </Def>
               </dl>
 
               <h3 className={H3}>What it does with your files</h3>
@@ -1362,14 +1403,21 @@ npm ci`}
                 or node_modules, and never replaces a file unless you ask repx_edit to. A database login stored in a
                 report is taken out before any tool reads the report, wherever the report keeps it. A file that is
                 not well-formed XML is refused, with the line where it breaks, and a report that takes more than 30
-                seconds to work through is stopped, costing that call and nothing else. A report written as C# or VB
-                code is refused, with how to save it as a .repx; a .vsrepx is read as the .repx it is.
+                seconds to work through is stopped, costing that call and nothing else. A .vsrepx is read as the .repx
+                it is.
+              </p>
+              <p className={`mt-3 ${PROSE}`}>
+                A report class written in C# or VB keeps its layout in code, which the tools refuse, with how to save
+                it as a .repx: the report&apos;s smart tag in Visual Studio has Save, and an application can call
+                SaveLayoutToXml. To bring a .repx back, use the smart tag&apos;s Open/Import, which rewrites the class
+                from the file by its controls&apos; names, or load it at run time with LoadLayoutFromXml.
               </p>
               <Note label="What leaves your computer" tone="safe">
-                Nothing, through these tools: none calls an AI or sends anything to Forma or anyone else, and the
-                server sends no learning events or error reports. What a tool returns goes to your assistant and to the
-                AI behind it, under that assistant&apos;s own terms, and what it read from a report goes as data,
-                never as instructions.
+                Only through the two tools that need an AI: the pages of the files you give them, the text OCR read
+                from them on your computer, your words and the report go from your computer to the AI you set up, with
+                your own key, never through Forma. The other tools send nothing, and the server sends no learning
+                events or error reports. What a tool returns goes to your assistant and to the AI behind it, under that
+                assistant&apos;s own terms, and what it read from a report goes as data, never as instructions.
               </Note>
             </Article>
 

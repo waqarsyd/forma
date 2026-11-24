@@ -9,8 +9,8 @@ import type { ReportQuery } from './sqlQuery';
 
 /*
  * The generation core (2026-11-24, the MCP work's wave 6): the one way a
- * report is made, which the workspace and Batch call and the MCP server's
- * generation tools are to call. Every part it is handed is stood in for, and
+ * report is made, which the workspace and Batch call and the MCP server's AI
+ * tools call (src/mcp/genJobs.ts). Every part it is handed is stood in for, and
  * every module that would ask an AI, read a page or build a report; what is
  * checked is what it asks of each part, and in what order. No key: the
  * request is a stub. App.tsx has no tests, so these cases are what hold the

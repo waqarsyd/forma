@@ -30,8 +30,12 @@ it removed them and exited 0 before).
 With Forma's MCP server connected to your assistant ([README.md](../../../README.md), *Forma from an AI assistant*),
 the same three are tools, with two more: `repx_audit`, `repx_repair` and `repx_pdf`, and
 `repx_outline` (the report as Forma's chat sees it, every control by the name `repx_edit` takes) and
-`repx_edit` (the chat's edits, by control name). None calls an AI. Every path is a full path,
-never a relative name, `~` or a Git Bash `/g/...` path, which the tools refuse:
+`repx_edit` (the chat's edits, by control name). None of those calls an AI. Two more do, with
+the AI the user set up in the server's entry (README.md, *Your AI, and where its key is kept*):
+`generate_report` makes a report from a description and files as Forma's workspace makes one,
+and `revise_report` changes a report as a request in words asks, as Forma's chat does; each
+writes a new `.repx` and never replaces one. Every path is a full path, never a relative name,
+`~` or a Git Bash `/g/...` path, which the tools refuse:
 
 ```json
 { "path": "G:\\Reports\\invoice.repx" }

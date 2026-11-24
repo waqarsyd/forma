@@ -43,9 +43,9 @@
  * between files and pages and destroys the document (`withNodePdf`'s
  * `signal`), but cannot interrupt pdf.js inside a step. So the intake, and
  * `make` in nodeGeneration.ts around it, must never run on the thread that
- * answers the protocol: the generation tool, when it is written (wave 8), is
- * to run them in a worker thread with `resourceLimits` and a deadline sized
- * for a generation (not workerPool.ts's 30 seconds), which the review measured
+ * answers the protocol: the AI tools (wave 8) run them in a worker thread
+ * with `resourceLimits` and a deadline sized for a generation
+ * (generator.ts's, not workerPool.ts's 30 seconds), which the review measured
  * containing the 611 KB PDF (the worker ended out of memory after 31 seconds,
  * the host alive at 484 MB). `resourceLimits` bounds V8's heap only, not a
  * decoded picture or an ArrayBuffer, which is why the budget above and the

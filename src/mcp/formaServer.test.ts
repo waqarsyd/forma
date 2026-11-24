@@ -13,7 +13,8 @@
  */
 import { posix } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FORMA_INSTRUCTIONS, NO_AI_TOOLS, createFormaServer, formaVersion, nodeSystem, type FormaServerOptions } from './formaServer';
+import { AI_TOOLS, FORMA_INSTRUCTIONS, NO_AI_TOOLS, createFormaServer, formaVersion, nodeSystem, type FormaServerOptions } from './formaServer';
+import { CALLS_AI } from './aiTools';
 import { NO_AI } from './reportTools';
 import { noRootMessage, readEnvRoots, type EnvRoots } from './roots';
 import { SKILL_PREFACE, SKILL_URI, loadRepxSkill, skillText } from './skillResource';
@@ -215,10 +216,17 @@ describe('the tool list', () => {
       expect(tools[i].annotations.readOnlyHint, entry.name).toBe(entry.readOnly);
       expect(tools[i].description.includes('calls no AI'), entry.name).toBe(!entry.needsAi);
       if (entry.name !== 'forma_status') expect(tools[i].description.includes(NO_AI), entry.name).toBe(!entry.needsAi);
+      // A tool that calls an AI says so, and that it spends the user's own quota (wave 8).
+      expect(tools[i].description.includes(CALLS_AI), entry.name).toBe(entry.needsAi);
+      expect(tools[i].annotations.openWorldHint, entry.name).toBe(entry.needsAi);
     }
-    // The instructions every host's model reads say no tool calls an AI exactly while none does (R11 of the wave-4 review).
-    expect(FORMA_INSTRUCTIONS.includes(NO_AI_TOOLS)).toBe(TOOL_LIST.every((t) => !t.needsAi));
-    expect(FORMA_INSTRUCTIONS).not.toMatch(/\bmakes? (DevExpress )?reports\b/);
+    // The instructions every host's model reads say no tool calls an AI exactly while none does (R11 of the wave-4 review),
+    // and name each tool that does, once one does (wave 8).
+    const asksAi = TOOL_LIST.filter((t) => t.needsAi);
+    expect(FORMA_INSTRUCTIONS.includes(NO_AI_TOOLS)).toBe(asksAi.length === 0);
+    expect(FORMA_INSTRUCTIONS.includes(AI_TOOLS)).toBe(asksAi.length > 0);
+    for (const { name } of asksAi) expect(AI_TOOLS, name).toContain(name);
+    if (!asksAi.length) expect(FORMA_INSTRUCTIONS).not.toMatch(/\bmakes? (DevExpress )?reports?\b/);
     await c.close();
   });
 

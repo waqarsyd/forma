@@ -22,12 +22,13 @@
  * this test fight every future rewording.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { FIRESTORE_CACHE_PREFIX, SIGNED_OUT_DATABASES, SIGNED_OUT_LOCAL_KEYS, SIGNED_OUT_LOCAL_PREFIXES } from '../lib/signOut';
 import { DEFAULT_LEARNING_SETTINGS, MAX_LOCAL } from '../lib/learning';
 import { TOOL_LIST } from '../mcp/toolList';
+import { localUrlProblem } from '../mcp/aiSettings';
 
 /** Vitest runs with the repo root as cwd — see the same note in routes.test.ts. */
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
@@ -611,33 +612,111 @@ describe('the policy says what kept reports and Forma Designer are used for', ()
  * doc comment may cite a page without reaching it), and the policy's "send
  * nothing" is held to the tool list and to the code making no request.
  * One-directional like the rest: what the code does obliges the sentence.
+ *
+ * Since the AI tools (2026-11-24, the MCP work's waves 8 and 9) the scan
+ * follows every import src/mcp makes when it runs, into src/lib and
+ * src/services: the tools reach Gemini and OpenRouter through modules the web
+ * app shares, which spell those hosts, so a scan of src/mcp's own files would
+ * have passed a new host unseen. A type-only import loads nothing and is not
+ * followed, as boundaries.test.ts does not follow it.
  */
 describe("the policy covers Forma's MCP server", () => {
+  const CLONE = process.cwd();
   const code = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-  const files = (readdirSync(resolve(process.cwd(), 'src/mcp')) as string[])
-    .filter((f) => /\.(ts|mjs)$/.test(f) && !/\.test\.ts$/.test(f))
-    .map((f) => ({ path: `src/mcp/${f}`, text: code(read(`src/mcp/${f}`)) }));
+  const own = (readdirSync(resolve(CLONE, 'src/mcp')) as string[]).filter((f) => /\.(ts|mjs)$/.test(f) && !/\.test\.ts$/.test(f)).map((f) => resolve(CLONE, 'src/mcp', f));
+  const rel = (abs: string) => relative(CLONE, abs).split(sep).join('/');
+  /** The specifiers a module loads when it runs: every import but a whole `import type` or `export type`. */
+  const loads = (source: string) => {
+    const kept = source.replace(/\b(?:import|export)\s+type\s+(?:[\w*{}\s,$]+?|\*(?:\s+as\s+\w+)?|\{[^}]*\})\s+from\s*['"][^'"]+['"]/g, '');
+    return [
+      ...kept.matchAll(/\b(?:import|export)\s+(?:[\w*{}\s,$]+?\s+from\s*)?['"]([^'"]+)['"]/g),
+      ...kept.matchAll(/\bimport\(\s*(?:\/\*[\s\S]*?\*\/\s*)*['"`]([^'"`]+)['"`]\s*\)/g),
+    ].map((m) => m[1]);
+  };
+  /** The source file a relative specifier lands on, a `.js` one finding its `.ts`, or null for a package. */
+  const landsOn = (from: string, spec: string) => {
+    if (!spec.startsWith('.')) return null;
+    const base = resolve(dirname(from), spec.split('?')[0]);
+    for (const c of [base, base.replace(/\.js$/, '.ts'), `${base}.ts`, `${base}.tsx`, `${base}.mjs`, `${base}.js`, join(base, 'index.ts')]) {
+      if (/\.(ts|tsx|mjs|js)$/.test(c) && existsSync(c)) return c;
+    }
+    return null;
+  };
+  const files = (() => {
+    const seen = new Set(own);
+    const queue = [...own];
+    while (queue.length) {
+      const file = queue.shift() as string;
+      for (const spec of loads(readFileSync(file, 'utf8'))) {
+        const target = landsOn(file, spec);
+        if (target && !seen.has(target)) {
+          seen.add(target);
+          queue.push(target);
+        }
+      }
+    }
+    return [...seen].map((abs) => ({ path: rel(abs), text: code(readFileSync(abs, 'utf8')) }));
+  })();
   /** This computer, which the policy's "your own computer" covers. */
   const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
+  /**
+   * Hosts a module the server loads spells without the server ever asking
+   * them anything, each with why. A new host anywhere in the walk fails until
+   * it is a row of DISCLOSURES or one of these.
+   */
+  const NEVER_ASKED: Record<string, string> = {
+    'ns.adobe.com': "an XML namespace in a PDF/A file's metadata (lib/pdfA.ts), a name, never fetched",
+    'purl.org': "an XML namespace in a PDF/A file's metadata (lib/pdfA.ts)",
+    'www.aiim.org': "an XML namespace in a PDF/A file's metadata (lib/pdfA.ts)",
+    'www.w3.org': "an XML namespace in a PDF/A file's metadata (lib/pdfA.ts)",
+    'github.com': "Forma Designer's download link, which a page shows (lib/designerRelease.ts)",
+    'www.devexpress.com': "DevExpress's trial link, which a page shows (lib/designerRelease.ts)",
+    'openforma.web.app': "this site's own address, which Forma Designer is told the browser's page comes from (lib/designerBridge.ts); the server opens no designer",
+    'forma-201ba.web.app': "this site's other address, as above (lib/designerBridge.ts)",
+  };
 
-  it('reads the server and its tools, so a scan that stopped finding them cannot pass empty', () => {
+  it('reads the server, its tools and what they load, so a scan that stopped finding them cannot pass empty', () => {
     const paths = files.map((f) => f.path);
-    for (const p of ['src/mcp/run.mjs', 'src/mcp/stdio.ts', 'src/mcp/formaServer.ts', 'src/mcp/reportTools.ts', 'src/mcp/toolList.ts']) expect(paths).toContain(p);
+    for (const p of ['src/mcp/run.mjs', 'src/mcp/stdio.ts', 'src/mcp/formaServer.ts', 'src/mcp/reportTools.ts', 'src/mcp/toolList.ts', 'src/mcp/aiTools.ts', 'src/mcp/genJobs.ts']) expect(paths).toContain(p);
+    // The AI tools' path to the AI is followed into the web app's own modules.
+    if (TOOL_LIST.some((t) => t.needsAi)) for (const p of ['src/lib/generationCore.ts', 'src/services/geminiService.ts', 'src/lib/genai.ts', 'src/lib/aiProvider.ts']) expect(paths).toContain(p);
   });
 
-  it('names the recipient behind every host a file under src/mcp spells', () => {
+  it('names the recipient behind every host the server and what it loads spell', () => {
     const named = new Map(DISCLOSURES.map((d) => [d.host, d.mustName]));
     const unnamed: string[] = [];
+    const found = new Set<string>();
     for (const { path, text } of files) {
-      for (const m of text.matchAll(/\b(?:https?|wss?):\/\/([^/\s'"`)]+)/gi)) {
-        const host = m[1].toLowerCase().replace(/:\d+$/, '');
-        if (LOOPBACK.has(host)) continue;
+      for (const m of text.matchAll(/\b(?:https?|wss?):\/\/([^/\s'"`)$]+)/gi)) {
+        // A port, or the colon before a placeholder (`http://localhost:${port}`), is not part of the host.
+        const host = m[1].toLowerCase().replace(/:\d*$/, '');
+        found.add(host);
+        if (LOOPBACK.has(host) || NEVER_ASKED[host]) continue;
         const must = named.get(host);
         if (!must) unnamed.push(`${host} (${path})`);
         else expect(must.test(legal), `${path} reaches ${host}, so LegalPage.tsx must name the recipient`).toBe(true);
       }
     }
-    expect(unnamed, 'src/mcp names a host the policy has no row for: add it to DISCLOSURES and name the recipient in LegalPage.tsx').toEqual([]);
+    expect(unnamed, 'the MCP server loads code naming a host the policy has no row for: add it to DISCLOSURES and name the recipient in LegalPage.tsx, or to NEVER_ASKED with why').toEqual([]);
+    // While a tool calls an AI, the walk sees the AIs it can reach.
+    if (TOOL_LIST.some((t) => t.needsAi)) for (const host of ['generativelanguage.googleapis.com', 'openrouter.ai']) expect([...found], host).toContain(host);
+  });
+
+  it('says where its AI tools send, with whose key and never through Forma, exactly while a tool calls an AI', () => {
+    const asksAi = TOOL_LIST.some((t) => t.needsAi);
+    const where = /send what the report needs to the AI you set up for the server, with your own key/;
+    if (!asksAi) {
+      expect(policy).not.toMatch(where);
+      return;
+    }
+    expect(policy).toMatch(where);
+    expect(policy).toMatch(/straight to Google Gemini or OpenRouter, never through Forma, or to a local AI, which the server reaches only on your own computer/);
+    // "Only on your own computer" is the code's: an address elsewhere is refused (SEC-11).
+    expect(localUrlProblem('http://localhost:1234/v1')).toBeNull();
+    expect(localUrlProblem('http://192.168.1.20:11434/v1')).not.toBeNull();
+    // Where its key is kept is said as it is (SEC-8), not stretched from the website's.
+    expect(policy).toMatch(/keep it in readable form on your computer, in your assistant’s settings file or in your own environment/);
+    expect(policy).toMatch(/On this website, your Gemini key/);
   });
 
   it('says its tools send nothing while none calls an AI and nothing under src/mcp makes a request', () => {
@@ -819,8 +898,16 @@ describe('the legal copy and its date change together', () => {
      else, what a tool returns goes to the person's assistant and the AI
      behind it under that assistant's terms, and a stored database login is
      taken out first. A new recipient is described, so the date moved.
+
+     Moved again the same day (the MCP work's waves 8 and 9): the server's two
+     AI tools send the files' pages, their OCR text, data files, the person's
+     words and the report to the AI set up for it, Gemini or OpenRouter
+     straight from the person's computer with their own key or a local AI on
+     that computer only; where the server's key is kept, readable; the
+     website's key paragraph scoped to the website; OpenRouter set up for the
+     server. Substantive, and already that day's date.
      */
-  const EXPECTED_COPY_HASH = '4784b3e313ce';
+  const EXPECTED_COPY_HASH = 'c8a2a63b0d55';
   const EXPECTED_UPDATED = '24 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {

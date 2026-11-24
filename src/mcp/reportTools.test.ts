@@ -492,7 +492,8 @@ describe('the hints say which tools write (REV4-6)', () => {
       repx_edit: { path, edits: [{ op: 'text', control: 'title', text: 'Statement' }] },
       repx_pdf: { path },
     };
-    expect(Object.keys(calls)).toEqual(TOOL_LIST.map((t) => t.name));
+    // Every tool that needs no AI; the two that call one (wave 8) are held to their hints in aiTools.test.ts.
+    expect(Object.keys(calls)).toEqual(TOOL_LIST.filter((t) => !t.needsAi).map((t) => t.name));
     for (const [name, args] of Object.entries(calls)) {
       const before = listing();
       expect((await call(name, args)).isError, name).toBeUndefined();

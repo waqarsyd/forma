@@ -51,8 +51,9 @@ export const SECURITY: InfoDoc = {
   lede: (
     <p>
       Forma has no server of its own in the path of your work: your browser talks to the AI you chose, and, if you
-      sign in, to Google’s database. What follows is how the code is built to keep it that way, and how to tell us if
-      it does not.
+      sign in, to Google’s database; from an AI assistant, Forma’s MCP server, a program on your own computer, talks to
+      the AI you set up for it. What follows is how the code is built to keep it that way, and how to tell us if it
+      does not.
     </p>
   ),
   sections: [
@@ -64,8 +65,8 @@ export const SECURITY: InfoDoc = {
           <p className={P}>
             Forma ships with no API key and has no quota of its own. You bring your own AI: a Gemini or OpenRouter
             key, which your browser sends straight to Google or OpenRouter, or a model on your own computer, which
-            needs no key and keeps every request there. A key is held in your open Forma tabs, never written to disk
-            in readable form, and gone when the last tab closes. An encrypted copy of your Gemini key is kept in your
+            needs no key and keeps every request there. On this website, a key is held in your open Forma tabs, never
+            written to disk in readable form, and gone when the last tab closes. An encrypted copy of your Gemini key is kept in your
             account only if you ask, encrypted in your browser under a passphrase that never leaves it, so it is
             unreadable without your passphrase, the operator’s view included; choose one nobody could guess.
           </p>
@@ -121,7 +122,7 @@ export const SECURITY: InfoDoc = {
       ),
     },
     {
-      // Forma's MCP server (2026-11-24, the MCP design audit's DOC-6 and SEC-11): a program, not this site.
+      // Forma's MCP server (2026-11-24, the MCP design audit's DOC-6, SEC-8 and SEC-11): a program, not this site.
       heading: 'Forma from an AI assistant',
       body: (
         <>
@@ -131,10 +132,18 @@ export const SECURITY: InfoDoc = {
             that started it, over its standard input and output, and opens no network port. Its tools read and write
             only in the folders they are given and only by full path, never replace a file unless asked, take a
             database login stored in a report out before reading it, and hand back what they read from a file as data,
-            never as instructions. In this version none of them calls an AI or sends anything anywhere; what a tool
-            returns goes to your assistant and the AI behind it, under that assistant&apos;s terms.{' '}
-            <a href={`${REPO}/blob/main/SECURITY.md`} className={A} {...ext}>SECURITY.md</a> says what is worth reporting
-            about it.
+            never as instructions. What a tool returns goes to your assistant and the AI behind it, under that
+            assistant&apos;s terms.
+          </p>
+          <p className={P}>
+            Only its two tools that make and change a report send anything: what the report needs, from your computer
+            to the AI you set up for the server, with your own key, never through Forma. No Content Security Policy
+            stands behind a program, so the code is the bound: its Gemini client is fixed to Google&apos;s Gemini
+            address, a model on your own computer is reached only there, and every result and log line has keys taken
+            out. It reads your key from the settings your assistant starts it with, which keep it readable on your
+            computer, in its settings file or your own environment: keep it in a file of your own, never one a project
+            commits. <a href={`${REPO}/blob/main/SECURITY.md`} className={A} {...ext}>SECURITY.md</a> says what is
+            worth reporting about it.
           </p>
         </>
       ),
@@ -517,7 +526,7 @@ npm run dev`}</pre>
       ),
     },
     {
-      // Forma's MCP server (2026-11-24, the MCP work's wave 5, DOC-10). The command is held by stdio.test.ts.
+      // Forma's MCP server (2026-11-24, the MCP work's waves 5 and 9, DOC-10, DOC-7). The command is held by stdio.test.ts.
       heading: 'From an AI assistant',
       body: (
         <>
@@ -527,9 +536,12 @@ npm run dev`}</pre>
           </p>
           <pre className={CODE}>{`node <clone>/src/mcp/run.mjs`}</pre>
           <p className={P}>
-            with the full path of the copy, and its tools audit, outline, repair and edit your .repx files and draw a
-            draft PDF, calling no AI. The <a href="/docs#mcp" className={A}>Docs</a> and the README say how to add it to
-            each assistant.
+            with the full path of the copy. Its tools audit, outline, repair and edit your .repx files and draw a draft
+            PDF with no AI, and two of them make and revise a report with the AI you set up in the assistant&apos;s
+            settings for it, a Gemini or OpenRouter key or a model on your own computer. Pictures are read there too:
+            an English page by PaddleOCR once <code className="doc-code">fetch:paddle</code> has run, anything else by
+            Tesseract, with nothing downloaded while it works. The <a href="/docs#mcp" className={A}>Docs</a> and the README say how to add it
+            to each assistant, and where your key is then kept.
           </p>
         </>
       ),
