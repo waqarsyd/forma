@@ -2,8 +2,9 @@
  * One way a report is made (2026-11-24, the MCP work's wave 6; the design
  * audit's NODE-4 and NODE-8): the workspace and Batch call this, and the MCP
  * server's generation tools and a later command line are to call it, so a
- * report is made the same way everywhere. Nothing under src/mcp calls it
- * yet: its Node versions of the parts handed in come first (wave 7).
+ * report is made the same way everywhere. The Node versions of the parts
+ * handed in are src/mcp/nodeGeneration.ts's (2026-11-24, wave 7), which
+ * runs `makeReport` in Node; no MCP tool calls it yet (wave 8).
  *
  * It starts where a turn with pictures, files or a description starts (the
  * pages and texts staged, the words), not where the request goes out:
@@ -33,10 +34,14 @@
  * the page reader, the settings worked out (App's also keeps them for the
  * rest of the turn), the box reader's model file, Forma's own model and the
  * memory (both read storage), the vision model's set-up, the house-style
- * library, a shared database, the learning events, and the progress. The
- * module imports nothing at its top that needs a document, a worker or
- * storage, so a Node caller (wave 7) can pass Node versions of those parts.
- * The rest it loads when needed, as App's generation code did.
+ * library, a shared database, the learning events, and the progress; and,
+ * since wave 7, what a file is drawn on as it is taken in (`IntakeDeps`) and,
+ * optionally, the AI's design itself (`ask`). The module imports nothing at
+ * its top that needs a document, a worker or storage, and nothing it loads
+ * reaches one, so the Node caller passes Node versions of those parts
+ * (src/mcp/boundaries.test.ts walks every import from src/mcp, this
+ * module's lazy ones included). The rest it loads when needed, as App's
+ * generation code did.
  *
  * ## Batch, which still differs
  *
@@ -80,10 +85,10 @@ import type { PageReading } from './readerPairs';
 import type { ReportSkeleton } from './reportSkeleton';
 import type { ReportLayout } from './reportTypes';
 import type { RepxFinding } from './repxAudit';
-import type { TextAttachment } from './repxIntake';
+import type { Drawing, TextAttachment } from './repxIntake';
 import type { ReportQuery } from './sqlQuery';
 import type { TokenUsage } from './tokenUsage';
-import type { DraftRequest, GenerationResult, ReportConfig, StreamProgress } from '../services/geminiService';
+import type { DraftRequest, GenerationResult, ReportConfig, StreamProgress, analyzeReportDesign, translateTexts } from '../services/geminiService';
 
 /** A page sent: its picture, and which upload and page it is. */
 export type SentPage = { src: string; meta: PreviewMeta };
@@ -197,6 +202,23 @@ export interface DatabaseStep {
 
 /** What the request is told besides its words, and what it reports while it runs. */
 export interface AskDeps {
+  /**
+   * The AI's design of the report: geminiService's `analyzeReportDesign`
+   * when absent, as the workspace and Batch have it. Handed in by a caller with
+   * its own (2026-11-24, the MCP work's wave 7, NODE-6 and PROTO-8): the MCP
+   * server's mock, read only in src/mcp, since geminiService reads its mock
+   * switch from Vite's environment alone and no environment read may be added
+   * to it. The fix the print check sends back goes through the same one.
+   */
+  ask?: typeof analyzeReportDesign;
+  /**
+   * The texts translated, when the words name a language: geminiService's
+   * `translateTexts` when absent. Handed in by the MCP server's mock beside
+   * its `ask` (2026-11-24, the wave-7 review's W7R-1): that function's mock
+   * switch is Vite's environment too, so in Node the mock's report went to a
+   * real AI to be translated, with whatever key the settings held.
+   */
+  translateTexts?: typeof translateTexts;
   /** The remembered preferences, and on a first report the nearest kept report (lib/learningLoop.ts `beforeGeneration`). */
   beforeGeneration: (about: { first: boolean; drafting: boolean; shape?: ReportSkeleton; words: string; description?: string }) => Promise<{ remembered: string; kept: KeptChoice | null }>;
   /** House style from the report library, on a refinement (lib/houseStyle.ts); absent when the switch is off or nothing is ticked. */
@@ -208,6 +230,11 @@ export interface AskDeps {
 }
 
 export type GenerationDeps = ReadDeps & TeamDeps & AskDeps;
+
+/** What a file is drawn on as it is taken in (lib/repxIntake.ts `Drawing`): the browser's, or the MCP server's in Node. */
+export interface IntakeDeps {
+  drawing: Drawing;
+}
 
 /* ------------------------------------------------------------------ the parts */
 
@@ -566,7 +593,9 @@ export async function generateReport(request: GenerateRequest, deps: TeamDeps & 
     // Text before images, and malformed previews dropped rather than thrown
     // on — see src/lib/attachmentParts.ts.
     const attachmentParts = toAttachmentParts(images, texts);
-    const { analyzeReportDesign, REQUEST_BUDGET } = await loadGemini();
+    const gemini = await loadGemini();
+    const { REQUEST_BUDGET } = gemini;
+    const analyzeReportDesign = deps.ask ?? gemini.analyzeReportDesign;
     /*
      * What else the user attached, for the AI that corrects Forma's draft
      * (2026-11-11, the full audit's PL-02b): a data file's columns, a
@@ -707,8 +736,8 @@ export async function generateReport(request: GenerateRequest, deps: TeamDeps & 
         // With the settings the answer came from (R2-01), a limit's switch
         // included; a Batch file's own, translated whole, so with no words.
         const done = batch
-          ? await import('./repxTranslate').then((m) => m.translateReportXml(response.repxContent, language, signal, '', settings))
-          : await tr!.translateReportXml(response.repxContent, language, signal, words, chained.config);
+          ? await import('./repxTranslate').then((m) => m.translateReportXml(response.repxContent, language, signal, '', settings, deps.translateTexts))
+          : await tr!.translateReportXml(response.repxContent, language, signal, words, chained.config, deps.translateTexts);
         if (!batch && signal.aborted) return null;
         translated = { xml: done.xml, language, bilingual: done.bilingual };
       } catch (translateError) {
@@ -813,7 +842,7 @@ export type Made = Generated & {
  * A report from files and words, or from a description, in one call: the
  * files taken in, the pages read, the request made. Null when stopped.
  */
-export async function makeReport(request: MakeRequest, deps: GenerationDeps): Promise<Made | null> {
+export async function makeReport(request: MakeRequest, deps: GenerationDeps & IntakeDeps): Promise<Made | null> {
   const { signal, config } = request;
   const images: string[] = [];
   const imageMeta: PreviewMeta[] = [];
@@ -822,7 +851,9 @@ export async function makeReport(request: MakeRequest, deps: GenerationDeps): Pr
   if (request.files?.length) {
     const { ingestFile } = await import('./repxIntake');
     for (const { file, uploadId } of request.files) {
-      const taken = await ingestFile(file, uploadId, config.unit);
+      // Stopped, no file more is taken in, and a PDF stops between its pages (the wave-7 review's NODE7-PDF-HEAP).
+      if (signal.aborted) return null;
+      const taken = await ingestFile(file, uploadId, config.unit, deps.drawing, signal);
       images.push(...taken.images);
       imageMeta.push(...taken.imageMeta);
       texts.push(...taken.texts);

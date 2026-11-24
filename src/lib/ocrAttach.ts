@@ -4,13 +4,15 @@
  * layer does. The owner asked for one chat box that handles every input the
  * way other chat apps do, so the separate OCR button became this.
  *
- * Loaded on demand by `App.tsx`, like the engine it drives: the workspace's
- * entry chunk carries none of it.
+ * Loaded on demand by `App.tsx`: the workspace's entry chunk carries none of
+ * it. The engine itself is lib/ocr.ts's, with the reading of a page
+ * (`readPage`) since 2026-11-24; what is here needs no engine, so the
+ * generation core runs it in Node too (src/mcp/nodeGeneration.ts).
  */
 import type { PreviewMeta } from './attachments';
 import { READER_MAX_LOST, readDetectedPage, type BoxReaderModel } from './boxReader';
 import { pageReadingOf, type PageReading } from './readerPairs';
-import { recognizePage, type OcrPage } from './ocr';
+import type { OcrPage } from './ocr';
 import { detectLayout, layoutText } from './ocrLayout';
 import { layoutToRepx, layoutToReport, ocrSummary, reportNameFor, validateOcrRepx } from './ocrRepx';
 import { imageDpi, pageForImage } from './reportGeometry';
@@ -26,25 +28,14 @@ export interface ReadPage {
 }
 
 /**
- * OCR one attached page, at its resolution when it is a rendered PDF page.
- * `signal` stops it (2026-11-11, the full audit's PL-01): the reading ends,
- * and this rejects, as soon as it aborts.
+ * What OCR's reading of one attached page becomes: at its resolution when it
+ * is a rendered PDF page, with how many of its texts hold a word read without
+ * confidence. Whoever read it: the browser's engines (lib/ocr.ts `readPage`,
+ * which was this module's until 2026-11-24) or the MCP server's Node reader
+ * (src/mcp/nodeOcr.ts). Taking the engines out is what lets the generation
+ * core, which uses this module, run in Node.
  */
-export async function readPage(
-  src: string,
-  meta: PreviewMeta,
-  unit: string,
-  paper: string,
-  onProgress?: (progress: number) => void,
-  signal?: AbortSignal,
-): Promise<ReadPage> {
-  const read = await recognizePage(src, null, {
-    signal,
-    onProgress: (stage, progress) => {
-      // The engine's loading stages say nothing a reader needs; the reading does.
-      if (/recogniz/i.test(stage)) onProgress?.(progress);
-    },
-  });
+export function pageRead(read: OcrPage, meta: PreviewMeta, unit: string, paper: string): ReadPage {
   const ocr = { ...read, dpi: meta.pagePoints ? imageDpi(read.width, meta.pagePoints.width) : null };
   const layout = detectLayout([{ ocr, page: pageForImage(ocr, unit, paper) }], { unit });
   return { ocr, flagged: layout.flagged, lines: ocr.lines.length };

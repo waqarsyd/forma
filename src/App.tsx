@@ -47,7 +47,7 @@ import {
   IconWarn,
   IconAlert,
 } from './components/landing/icons';
-import { applyDetected, detectSettings, repxFacts, type DetectInput, type DetectedSettings } from './lib/autoConfig';
+import { applyDetected, detectInputFrom, detectSettings, repxFacts, type DetectInput, type DetectedSettings } from './lib/autoConfig';
 import {
   SIDEBAR_CLOSED_WIDTH,
   SIDEBAR_OPEN_WIDTH,
@@ -394,7 +394,9 @@ type ChatMessage = ChatSessionMessage<DesignResult, PreviewMeta> & { learning?: 
  *
  * One path for the picker and for drag-and-drop, `ingestFile`, in
  * lib/repxIntake.ts since 2026-11-11 (the full audit's PIPE1), loaded when a
- * file arrives. MAX_ATTACHMENTS and the other limits live in
+ * file arrives, and drawn on the browser's canvases by lib/browserIntake.ts
+ * since 2026-11-24 (the drawing is a seam the MCP server hands its own to).
+ * MAX_ATTACHMENTS and the other limits live in
  * lib/attachmentBudget.ts, where the public pages' tests read them.
  * ------------------------------------------------------------------ */
 const loadIntake = () => import('./lib/repxIntake');
@@ -2087,7 +2089,7 @@ export default function App() {
 
     setIsIngesting(true);
     try {
-      const { ingestFile } = await loadIntake();
+      const { ingestFile } = await import('./lib/browserIntake');
       for (const [i, file] of accepted.entries()) {
         // Identifies this drop for the life of the staged attachment. Two files
         // can share a name, so the name cannot be the key — see attachments.ts.
@@ -2429,18 +2431,9 @@ export default function App() {
    * laid over it; every path that makes a report reads that, not `config`.
    */
   const detectedRef = useRef<DetectedSettings | null>(null);
-  // An SSRS or FastReport file arrives converted to a .repx (CP-08): one test with Batch's (lib/reportFile.ts, R3-08).
-  const detectionInput = (sources: DetectionSources, withOpenReport: boolean): DetectInput => ({
-    // An uploaded report first, then the one open, which a request refines.
-    repx: [...(sources.texts ?? []).filter(isReportFile).map((t) => t.text), ...(withOpenReport ? [result?.repxContent] : [])],
-    pages: [
-      ...(sources.metas ?? []).flatMap((m) => (m.pagePoints ? [{ ...m.pagePoints, pagePoints: m.pagePoints }] : [])),
-      ...(sources.pages ?? []),
-    ],
-    text: [sources.words, ...(sources.texts ?? []).filter((t) => !isReportFile(t)).map((t) => t.text)].filter(Boolean).join('\n'),
-    locale: navigator.language,
-    learned: { version: config.version, unit: config.unit },
-  });
+  // What they are worked out from: lib/autoConfig.ts `detectInputFrom` since 2026-11-24, shared with the MCP server.
+  const detectionInput = (sources: DetectionSources, withOpenReport: boolean): DetectInput =>
+    detectInputFrom(sources, { withOpenReport, openReport: result?.repxContent, locale: navigator.language, learned: { version: config.version, unit: config.unit } });
   /** Work the settings out for the request in hand, and keep them for every path that makes its report. */
   const detectFor = (sources: DetectionSources): DetectedSettings => {
     const detected = detectSettings(detectionInput(sources, true));
@@ -2583,7 +2576,7 @@ export default function App() {
       let read = ocrRead.current[key];
       if (read === undefined) {
         try {
-          const { readPage } = await import('./lib/ocrAttach');
+          const { readPage } = await import('./lib/ocr');
           const settings = effectiveConfig();
           read = await readPage(src, meta, settings.unit, settings.pageSize, (progress) => onProgress?.(i, pages.length, progress), signal);
         } catch (err) {

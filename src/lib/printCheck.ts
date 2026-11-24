@@ -26,8 +26,11 @@
  * - `value-unformatted` (a warning): a date or number the page prints in a
  *   form `formatFromText.ts` reproduces, printed in .NET's default instead.
  *
- * In Node nothing measures text, so a print there does not grow; the browser
- * passes `canvasMeasurer`, which the Preview matched to GDI.
+ * The browser passes `canvasMeasurer`, which the Preview matched to GDI. In
+ * Node nothing measures text, so a print there does not grow, unless a
+ * canvas is handed in: the MCP server hands in @napi-rs/canvas's
+ * (2026-11-24, lib/textMeasure.ts `measureOn`), whose widths matched the
+ * parity rows'.
  *
  * `fixUntilPrints` is the loop that was `runGeneration`'s for a report
  * designed from words (DevExpress's Prompt-to-Report retries a layout the

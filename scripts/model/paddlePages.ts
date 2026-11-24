@@ -25,8 +25,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 import type { OcrPage } from '../../src/lib/ocr';
-import { inItsScript, scaled } from '../../src/lib/paddle';
-import { DETECT_LONG_SIDE, RECOGNIZE_MIN_WIDTH, resizeRgb, rgbFromRgba } from '../../src/lib/paddleOcr';
+import { DETECT_LONG_SIDE, inItsScript, RECOGNIZE_MIN_WIDTH, resizeRgb, rgbFromRgba, scaled } from '../../src/lib/paddleOcr';
 import { paddleReader } from './paddleOcr';
 
 const argv = process.argv.slice(2);

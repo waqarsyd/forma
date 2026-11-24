@@ -229,9 +229,12 @@ src/
                        in the browser, by PaddleOCR or Tesseract.js: every word with its
                        box and confidence, aligned rows as an XRTable and the
                        rest as XRLabels, low-confidence text flagged),
-                       ocrAttach (a picture read once it is attached, its
-                       text going with the message as a PDF's text layer
-                       does),
+                       ocrRead (which engine reads a page and in which
+                       language, with the engines handed in: the browser's
+                       rule, which the MCP server's Node reader follows too),
+                       ocrAttach (what a picture's reading becomes once it is
+                       attached, its text going with the message as a PDF's
+                       text layer does; the reading itself is ocr's readPage),
                        ocrScript (the language of a picture worked out from its
                        reading: Arabic, Hindi, Urdu, French, German or Spanish
                        beside English, and when to try handwriting),
@@ -453,7 +456,9 @@ src/
                        the tab over a reload), boxTools (what the box's "/"
                        Tools menu offers, each a sentence to finish and
                        send), repxIntake (what a dropped or picked file
-                       brings in, loaded only when one arrives), buildInfo (which build runs,
+                       brings in, loaded only when one arrives, drawn on the
+                       canvases it is handed), browserIntake (the browser's:
+                       OffscreenCanvas and the DOM, pdf.js through pdf), buildInfo (which build runs,
                        for Settings and a problem report), problemReport (a
                        GitHub issue prefilled when an area fails),
                        errorSink (where an error caught on the page goes:
@@ -588,7 +593,8 @@ src/
                        MCP server's generation tools are to call: the pages
                        read, Forma's team, the request through the free
                        chain, the fix, the translation and the stand-in,
-                       with what the browser owns handed in).
+                       with what the browser owns handed in; the MCP server
+                       hands in Node's, src/mcp/nodeGeneration).
                        Plus motion tokens, and pdf + genai + firebaseClient —
                        three loaders that exist so their dependencies stay out of
                        the eager bundle, and are the only files here that are not
@@ -668,13 +674,36 @@ src/
                        full paths), testFs and testClient (a file system and
                        a client in memory, and a pipeline in the test's own
                        thread, for the tests only, and outside coverage).
+                       Since wave 7, Node's versions of what the generation
+                       core is handed: nodeGeneration (assembles them for
+                       makeReport, Forma's models from assets/model and
+                       OCR's language data read as it starts and failing
+                       loudly, a page OCR could not read said in the
+                       result, the model probe kept in Forma's own per-user
+                       folder, the mock, its translation too, and the model
+                       pin, text measured on @napi-rs/canvas; no tool calls
+                       it yet, and the one that does is to run it off the
+                       protocol thread), nodeIntake (files drawn on
+                       @napi-rs/canvas, a picture decoded only within a size
+                       its header states, PDFs opened with pdf.js's legacy
+                       build and stopped between pages, a File typed by its
+                       extension), nodeOcr (a page read by the browser's
+                       rule: PaddleOCR where vendor/paddle holds its pinned
+                       models, else Tesseract from the installed language
+                       data gathered into Forma's folder, nothing written to
+                       the working folder) and nodePaddle (PaddleOCR through
+                       onnxruntime-node, the one Node reader, which
+                       scripts/model/paddleOcr.ts shares).
                        Tests beside them: stdoutGuard, toolShape, paths,
                        roots, formaServer and reportTools each have one
                        (formaServer's drives forma_status in both eras and
                        holds the list to toolList; reportTools' drives the
                        five report tools on files in a scratch folder, in
                        the test's thread and in the worker, and the
-                       worker's bounds);
+                       worker's bounds), and so do nodeGeneration,
+                       nodeIntake, nodeOcr and nodePaddle; nodeMakeReport
+                       runs makeReport end to end in Node on a picture and
+                       two PDFs drawn in the test, the AI stood in;
                        stdio.test.ts spawns the exact command a host runs;
                        boundaries.test.ts holds src/mcp and src/server
                        apart from the browser code

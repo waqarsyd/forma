@@ -11,11 +11,21 @@
  * (`pdfPageText`), which pictures go as they are (`pictureNeed`), what an
  * uploaded `.repx` keeps (`repxAttachment`) and the key a page's reading is
  * kept under (`pictureKey`).
+ *
+ * ## What it draws on, handed in
+ *
+ * Since 2026-11-24 (the MCP work's wave 7, NODE-2) the drawing is a seam,
+ * `Drawing`: where a canvas comes from, how a picture is decoded and a
+ * canvas encoded, how a file becomes a data URL, and how a PDF is opened.
+ * The browser hands in lib/browserIntake.ts's, OffscreenCanvas and the DOM
+ * exactly as this module used them, and pdf.js through lib/pdf.ts; the MCP
+ * server hands in src/mcp/nodeIntake.ts's, @napi-rs/canvas and pdf.js's
+ * legacy build. So straightening, the downscale and the redraw run the same
+ * in both, and nothing here reaches a document, a worker or pdf.js itself.
  */
 import type { PreviewMeta } from './attachments';
 import { MAX_FILE_BYTES, MAX_PDF_PAGES } from './attachmentBudget';
 import { inkPoints, pageShaped, pageTurn } from './deskew';
-import { withPdfDocument } from './pdf';
 import { checkRepx } from './repx';
 import { pointsToUnits } from './reportGeometry';
 import { withoutStoredLogin } from './repxSqlDataSource';
@@ -411,26 +421,23 @@ export async function importedReport(name: string, xml: string): Promise<{ xml: 
  * no text layer) is drawn straight (CP-05); a digital one never is, its text
  * layer's places being the page's as it is.
  */
-async function renderPdfPage(page: any, straighten: boolean): Promise<{ src: string; sideways: boolean } | null> {
+async function renderPdfPage(page: any, straighten: boolean, drawing: Drawing): Promise<{ src: string; sideways: boolean } | null> {
   const viewport = page.getViewport({ scale: PDF_RENDER_SCALE });
-  const canvas = document.createElement('canvas');
+  const canvas = drawing.pageCanvas(viewport.width, viewport.height);
   const context = canvas.getContext('2d');
   if (!context) return null;
-
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
 
   // pdf.js draws onto transparency; JPEG has no alpha, so an unpainted page
   // would come out black.
   context.fillStyle = '#ffffff';
   context.fillRect(0, 0, canvas.width, canvas.height);
 
-  await page.render({ canvasContext: context, viewport, canvas: canvas as any }).promise;
+  await page.render({ canvasContext: context, viewport, canvas }).promise;
 
-  const turn = straighten ? await turnOf(canvas, canvas.width, canvas.height) : 0;
-  const drawn = drawTurned(canvas, canvas.width, canvas.height, turn);
+  const turn = straighten ? await turnOf(canvas, canvas.width, canvas.height, drawing) : 0;
+  const drawn = drawTurned(canvas, canvas.width, canvas.height, turn, drawing);
   if (!drawn) return null;
-  return { src: await encode(drawn.canvas, 'image/jpeg', JPEG_QUALITY), sideways: drawn.sideways };
+  return { src: await drawing.encode(drawn.canvas, 'image/jpeg', JPEG_QUALITY), sideways: drawn.sideways };
 }
 
 /** A page's text layer, or null when it has none or it will not read. */
@@ -451,9 +458,16 @@ async function readPdfPageText(page: any, pageNumber: number): Promise<PdfPageTe
  * previously dropping a .docx did nothing at all, with no feedback.
  *
  * `reportUnit` writes a PDF's text for now; the send writes it again in the
- * unit worked out for the request (`inUnit`).
+ * unit worked out for the request (`inUnit`). `drawing` is what pictures and
+ * PDF pages are drawn on (the header): lib/browserIntake.ts's in the
+ * browser, which also has an `ingestFile` that hands it in.
+ *
+ * `signal`, when given (the generation core's, since the wave-7 review's
+ * NODE7-PDF-HEAP), stops a PDF between its pages and is handed to the
+ * drawing's `openPdf`; stopped, what was taken in so far comes back with no
+ * notice, and the caller drops it. The workspace's own intake passes none.
  */
-export async function ingestFile(file: File, uploadId: string, reportUnit?: string): Promise<IngestResult> {
+export async function ingestFile(file: File, uploadId: string, reportUnit: string | undefined, drawing: Drawing, signal?: AbortSignal): Promise<IngestResult> {
   const out: IngestResult = { images: [], imageMeta: [], texts: [], notices: [] };
   const name = file.name || 'file';
 
@@ -463,8 +477,8 @@ export async function ingestFile(file: File, uploadId: string, reportUnit?: stri
   }
 
   if (file.type.startsWith('image/') || isTiff(file.type, name)) {
-    const original = await readAsDataUrl(file);
-    const picture = await preparePicture(file, original);
+    const original = await drawing.dataUrl(file);
+    const picture = await preparePicture(file, original, drawing);
     if (!picture) {
       out.notices.push(isTiff(file.type, name) ? tiffNotice(name) : `"${name}" could not be read as a picture. Save it as PNG or JPEG and attach that.`);
       return out;
@@ -478,16 +492,17 @@ export async function ingestFile(file: File, uploadId: string, reportUnit?: stri
     try {
       // Loaded here rather than imported at the top: pdf.js is the largest
       // dependency in the project, so it comes only with a PDF. See src/lib/pdf.ts.
-      await withPdfDocument(await file.arrayBuffer(), async (pdf) => {
+      await drawing.openPdf(await file.arrayBuffer(), async (pdf) => {
         const pageCount = pdf.numPages;
         const numbers = pdfPagesToRead(pageCount);
         for (const n of numbers) {
+          if (signal?.aborted) return;
           const page = await pdf.getPage(n);
           try {
             // The text layer first: a page without one is a scan, and only a
             // scan is straightened as it is drawn (CP-05).
             const pdfText = await readPdfPageText(page, n);
-            const image = await renderPdfPage(page, !pdfText);
+            const image = await renderPdfPage(page, !pdfText, drawing);
             if (image) {
               out.images.push(image.src);
               // Same uploadId for every page, so the composer shows one attachment
@@ -511,8 +526,9 @@ export async function ingestFile(file: File, uploadId: string, reportUnit?: stri
           }
         }
         if (numbers.length < pageCount) out.notices.push(pdfPagesNotice(name, pageCount));
-      });
+      }, signal);
     } catch (err) {
+      if (signal?.aborted) return out;
       console.error('Error reading PDF:', err);
       out.notices.push(`"${name}" could not be read as a PDF.`);
     }
@@ -637,13 +653,52 @@ const JPEG_QUALITY = 0.92;
 /** Below this, re-encoding is not worth the quality risk. */
 const REENCODE_THRESHOLD_BYTES = 1_200_000;
 
-function readAsDataUrl(file: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target?.result as string);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
+/** A 2D context, in the parts the intake draws with: the browser's, or @napi-rs/canvas's in Node. */
+export type IntakeContext = Pick<CanvasRenderingContext2D, 'imageSmoothingEnabled' | 'imageSmoothingQuality' | 'fillStyle' | 'fillRect' | 'translate' | 'rotate' | 'getImageData'> & {
+  drawImage(image: IntakeImage, dx: number, dy: number, dw?: number, dh?: number): void;
+};
+
+/** A canvas, in the parts the intake uses. */
+export interface IntakeSurface {
+  width: number;
+  height: number;
+  getContext(contextId: '2d'): IntakeContext | null;
+}
+
+/** A picture to draw: a decoded image or another canvas, of whichever kind the drawing makes. */
+export type IntakeImage = CanvasImageSource | IntakeSurface | object;
+
+/** A picture decoded: its image, its size, and how to free it. */
+export interface Decoded {
+  image: IntakeImage;
+  w: number;
+  h: number;
+  close: () => void;
+}
+
+/** The parts of a pdf.js document the intake reads. */
+export interface PdfDocumentLike {
+  numPages: number;
+  getPage(n: number): Promise<any>;
+}
+
+/**
+ * What the intake draws on (the header): the browser's (lib/browserIntake.ts)
+ * or Node's (src/mcp/nodeIntake.ts).
+ */
+export interface Drawing {
+  /** A sheet `w` by `h` for a picture: an OffscreenCanvas where the browser has one. */
+  canvas(w: number, h: number): IntakeSurface;
+  /** A sheet `w` by `h` that pdf.js renders a page onto: a canvas in the page, in the browser. */
+  pageCanvas(w: number, h: number): IntakeSurface;
+  /** A picture decoded, or null when it cannot be drawn (a TIFF in Chrome). */
+  decode(file: Blob, dataUrl: string): Promise<Decoded | null>;
+  /** A sheet as a data URL of `type`. */
+  encode(canvas: IntakeSurface, type: string, quality?: number): Promise<string>;
+  /** A file as a data URL, as the browser's FileReader writes one. */
+  dataUrl(file: Blob): Promise<string>;
+  /** A PDF opened, handed to `use`, and released however `use` ends (lib/pdf.ts `withPdfDocument`); Node's also destroys it when `signal` stops. */
+  openPdf<T>(data: ArrayBuffer | Uint8Array, use: (pdf: PdfDocumentLike) => Promise<T>, signal?: AbortSignal): Promise<T>;
 }
 
 /*
@@ -652,15 +707,13 @@ function readAsDataUrl(file: Blob): Promise<string> {
  * `OffscreenCanvas` where the browser has them, so a large photo does not
  * stall the page while it is read. An `<img>` and a canvas in the page are
  * the way where it has not, and the way for a picture `createImageBitmap`
- * refuses.
+ * refuses. Those are lib/browserIntake.ts's since 2026-11-24 (the header).
  */
-type Surface = HTMLCanvasElement | OffscreenCanvas;
-type Context2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
 /** A white sheet to draw on, `w` by `h`. */
-function surface(w: number, h: number): { canvas: Surface; ctx: Context2D } | null {
-  const canvas: Surface = typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
-  const ctx = canvas.getContext('2d') as Context2D | null;
+function surface(drawing: Drawing, w: number, h: number): { canvas: IntakeSurface; ctx: IntakeContext } | null {
+  const canvas = drawing.canvas(w, h);
+  const ctx = canvas.getContext('2d');
   if (!ctx) return null;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
@@ -671,42 +724,16 @@ function surface(w: number, h: number): { canvas: Surface; ctx: Context2D } | nu
   return { canvas, ctx };
 }
 
-/** A sheet as a data URL. */
-async function encode(canvas: Surface, type: string, quality?: number): Promise<string> {
-  if ('toDataURL' in canvas) return canvas.toDataURL(type, quality);
-  return readAsDataUrl(await canvas.convertToBlob({ type, quality }));
-}
-
-/** A picture decoded, or null when the browser cannot draw it (a TIFF in Chrome). */
-async function decode(file: Blob, dataUrl: string): Promise<{ image: CanvasImageSource; w: number; h: number; close: () => void } | null> {
-  if (typeof createImageBitmap === 'function') {
-    try {
-      const bitmap = await createImageBitmap(file);
-      if (bitmap.width && bitmap.height) return { image: bitmap, w: bitmap.width, h: bitmap.height, close: () => bitmap.close() };
-    } catch {
-      // An <img> below, which decodes some pictures a bitmap will not.
-    }
-  }
-  try {
-    const img = new Image();
-    img.src = dataUrl;
-    await img.decode();
-    return img.naturalWidth && img.naturalHeight ? { image: img, w: img.naturalWidth, h: img.naturalHeight, close: () => undefined } : null;
-  } catch {
-    return null;
-  }
-}
-
 /** The longest side the turn is measured on: enough for lines of text, cheap to read. */
 const TURN_SAMPLE_EDGE = 700;
 
 /** How far a page is turned clockwise, in degrees (lib/deskew.ts); 0 when it is straight or cannot be read. */
-async function turnOf(image: CanvasImageSource, w: number, h: number): Promise<number> {
+async function turnOf(image: IntakeImage, w: number, h: number, drawing: Drawing): Promise<number> {
   try {
     const scale = Math.min(1, TURN_SAMPLE_EDGE / Math.max(w, h));
     const sw = Math.max(1, Math.round(w * scale));
     const sh = Math.max(1, Math.round(h * scale));
-    const small = surface(sw, sh);
+    const small = surface(drawing, sw, sh);
     if (!small) return 0;
     small.ctx.drawImage(image, 0, 0, sw, sh);
     // On its side only when it is shaped like a page, not a logo or a barcode.
@@ -721,12 +748,12 @@ async function turnOf(image: CanvasImageSource, w: number, h: number): Promise<n
  * and at most MAX_IMAGE_EDGE on its longest side: a page on its side is
  * drawn upright, its width and height exchanged (`sideways`).
  */
-function drawTurned(image: CanvasImageSource, w: number, h: number, turn: number): { canvas: Surface; sideways: boolean } | null {
+function drawTurned(image: IntakeImage, w: number, h: number, turn: number, drawing: Drawing): { canvas: IntakeSurface; sideways: boolean } | null {
   const sideways = Math.round(turn / 90) % 2 !== 0;
   const ow = sideways ? h : w;
   const oh = sideways ? w : h;
   const ratio = Math.min(1, MAX_IMAGE_EDGE / Math.max(ow, oh));
-  const sheet = surface(Math.round(ow * ratio), Math.round(oh * ratio));
+  const sheet = surface(drawing, Math.round(ow * ratio), Math.round(oh * ratio));
   if (!sheet) return null;
   const { ctx } = sheet;
   if (turn) {
@@ -751,23 +778,23 @@ function drawTurned(image: CanvasImageSource, w: number, h: number, turn: number
  * re-encoding threshold. Shrunk, a straight picture is never sent larger
  * than it came; a straightened one is worth its bytes.
  */
-async function preparePicture(file: File, original: string): Promise<string | null> {
+async function preparePicture(file: File, original: string, drawing: Drawing): Promise<string | null> {
   const redraw = pictureNeed(file.type, file.name) === 'redraw';
-  const decoded = await decode(file, original);
+  const decoded = await drawing.decode(file, original);
   if (!decoded) return redraw ? null : original;
   try {
     const { image, w, h } = decoded;
-    const turn = await turnOf(image, w, h);
+    const turn = await turnOf(image, w, h, drawing);
     if (!redraw && !turn && Math.max(w, h) <= MAX_IMAGE_EDGE && original.length < REENCODE_THRESHOLD_BYTES) return original;
-    const page = drawTurned(image, w, h, turn);
+    const page = drawTurned(image, w, h, turn, drawing);
     if (!page) return redraw ? null : original;
     if (redraw) {
-      const png = await encode(page.canvas, 'image/png');
+      const png = await drawing.encode(page.canvas, 'image/png');
       if (png.length < REENCODE_THRESHOLD_BYTES) return png;
-      const jpeg = await encode(page.canvas, 'image/jpeg', JPEG_QUALITY);
+      const jpeg = await drawing.encode(page.canvas, 'image/jpeg', JPEG_QUALITY);
       return jpeg.length < png.length ? jpeg : png;
     }
-    const out = await encode(page.canvas, 'image/jpeg', JPEG_QUALITY);
+    const out = await drawing.encode(page.canvas, 'image/jpeg', JPEG_QUALITY);
     return !turn && out.length >= original.length ? original : out;
   } catch {
     // Never let the drawing block an upload that can go as it came.

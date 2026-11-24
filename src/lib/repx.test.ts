@@ -157,6 +157,64 @@ describe('checkRepx geometry', () => {
   });
 });
 
+/**
+ * Where there is no DOM (Node, the MCP server's generation, 2026-11-24, the
+ * MCP work's wave 7), checkRepx reads the file itself (`readXml`). This file
+ * runs in jsdom, so each document is read both ways and the verdicts must be
+ * the same: every fixture above, and the shapes a strict XML parser refuses.
+ */
+describe('checkRepx without a DOM', () => {
+  const label = (name: string, at: string, size: string) => `<Item1 ControlType="XRLabel" Name="${name}" LocationFloat="${at}" SizeF="${size}" />`;
+  const wellFormed = [
+    VALID,
+    '<Report><Bands /></Report>',
+    '<XtraReportsLayoutSerializer Name="Report1" />',
+    page(detail(label('label1', '40,30', '300,40'))),
+    page(detail(label('total', '700,30', '120,20'), 900), 'PageWidth="850" PageHeight="1100" Margins="100, 100, 100, 100"'),
+    page(detail(label('tall', '0,90', '100,60'), 100)),
+    page(detail(label('stray', '-20,10', '100,20'))),
+    page('<Item1 ControlType="DetailBand" Name="Detail" HeightF="900" /><Item2 ControlType="ReportFooterBand" Name="Footer" HeightF="400" />'),
+    page(detail(Array.from({ length: 12 }, (_, i) => label(`l${i}`, `900,${i * 10}`, '100,20')).join(''))),
+    page(detail(''), 'PageWidth="850" PageHeight="1100" Margins="500, 500, 100, 100"'),
+    // References, a comment, CDATA, single quotes and a declaration: read as the DOM reads them.
+    page(detail(`<!-- a note --><Item1 ControlType='XRLabel' Name="a&amp;b &#x263A;" Text="&lt;x&gt; &quot;q&quot;" LocationFloat="900,0" SizeF="10,10"><![CDATA[ <raw> ]]></Item1>`)),
+    `<?xml version="1.0"?>\n<!-- before -->\n${page(detail(label('n\nm', '900,0', '10,10')))}\n<?after it?>\n`,
+  ];
+  const malformed = [
+    '<XtraReportsLayoutSerializer><Bands></XtraReportsLayoutSerializer>',
+    '<XtraReportsLayoutSerializer><Bands/>',
+    '<XtraReportsLayoutSerializer Name="a" Name="b"><Bands/></XtraReportsLayoutSerializer>',
+    '<XtraReportsLayoutSerializer Name=a><Bands/></XtraReportsLayoutSerializer>',
+    '<XtraReportsLayoutSerializer Name="a"Ref="0"><Bands/></XtraReportsLayoutSerializer>',
+    '<XtraReportsLayoutSerializer Name="a & b"><Bands/></XtraReportsLayoutSerializer>',
+    '<XtraReportsLayoutSerializer Name="&nbsp;"><Bands/></XtraReportsLayoutSerializer>',
+    '<XtraReportsLayoutSerializer Name="&#1;"><Bands/></XtraReportsLayoutSerializer>',
+    '<XtraReportsLayoutSerializer Name="a<b"><Bands/></XtraReportsLayoutSerializer>',
+    '<XtraReportsLayoutSerializer><Bands/></XtraReportsLayoutSerializer><Second/>',
+    '<XtraReportsLayoutSerializer><Bands/></XtraReportsLayoutSerializer> trailing',
+    ' <?xml version="1.0"?><XtraReportsLayoutSerializer><Bands/></XtraReportsLayoutSerializer>',
+    '<XtraReportsLayoutSerializer><!-- a -- b --><Bands/></XtraReportsLayoutSerializer>',
+    `<XtraReportsLayoutSerializer Name="${String.fromCharCode(1)}"><Bands/></XtraReportsLayoutSerializer>`,
+    '<XtraReportsLayoutSerializer><Bands/></XtraReportsLayoutSerializer x="1">',
+    '<XtraReportsLayoutSerializer><Bands>]]></Bands></XtraReportsLayoutSerializer>',
+    '<XtraReportsLayoutSerializer><Bands/><</XtraReportsLayoutSerializer>',
+    '<XtraReportsLayoutSerializer SerializerVersion="23.2.3.0" Name="Report1"><Bands><Item1 Name=',
+  ];
+
+  it('gives every well-formed document the verdict the DOM gives it', () => {
+    for (const xml of wellFormed) expect(checkRepx(xml, 'text'), xml).toEqual(checkRepx(xml, 'dom'));
+    // Not every one passes: the wrong root and the missing Bands are told as the DOM tells them.
+    expect(wellFormed.map((xml) => checkRepx(xml, 'text').ok)).toEqual([true, false, false, true, true, true, true, true, true, true, true, true]);
+  });
+
+  it('refuses what a strict parser refuses, as not parsing', () => {
+    for (const xml of malformed) {
+      expect(checkRepx(xml, 'dom').message, xml).toMatch(/does not parse/);
+      expect(checkRepx(xml, 'text'), xml).toEqual(checkRepx(xml, 'dom'));
+    }
+  });
+});
+
 describe('formatXml', () => {
   it('puts each element on its own line', () => {
     const out = formatXml('<a><b/><c/></a>');

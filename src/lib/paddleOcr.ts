@@ -404,3 +404,20 @@ export const MIN_READ_SHARE = 0.6;
 export function readShare(page: PaddlePage): number {
   return page.detected ? page.lines.length / page.detected : 1;
 }
+
+/** A page read at `scale` times the picture's size, at the picture's own size. */
+export function scaled(page: PaddlePage, image: { width: number; height: number }, scale: number): PaddlePage {
+  if (scale === 1) return page;
+  const box = (b: { x0: number; y0: number; x1: number; y1: number }) => ({ x0: b.x0 / scale, y0: b.y0 / scale, x1: b.x1 / scale, y1: b.y1 / scale });
+  return {
+    ...page,
+    width: image.width,
+    height: image.height,
+    lines: page.lines.map((l) => ({ ...l, box: box(l.box), words: l.words.map((w) => ({ ...w, box: box(w.box) })) })),
+  };
+}
+
+/** Whether PaddleOCR read enough of the page's text regions for the page to be in its recogniser's script (`MIN_READ_SHARE`). */
+export function inItsScript(page: PaddlePage): boolean {
+  return readShare(page) >= MIN_READ_SHARE;
+}

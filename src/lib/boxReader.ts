@@ -1099,16 +1099,28 @@ export function readsTheseFeatures(model: BoxReaderModel): boolean {
   );
 }
 
+/**
+ * The reader from `source`, checked to read the features this version
+ * computes (2026-11-24, the MCP work's wave 7, NODE-3): the browser fetches
+ * it from this site (`loadBoxReader`); the MCP server reads it from
+ * assets/model in the clone (src/mcp/nodeGeneration.ts), where a relative
+ * URL cannot be fetched and the draft the AI corrects was silently lost.
+ */
+export async function boxReaderFrom(source: () => Promise<unknown>): Promise<BoxReaderModel> {
+  const model = (await source()) as BoxReaderModel;
+  if (!readsTheseFeatures(model)) throw new Error("Forma's box reader is not one this version can read.");
+  return model;
+}
+
 let loading: Promise<BoxReaderModel> | null = null;
 
 /** The shipped reader, fetched once per session; a failed fetch is tried again next time. */
 export function loadBoxReader(): Promise<BoxReaderModel> {
   if (!loading) {
-    loading = fetch(BOX_READER_URL).then(async (r) => {
+    loading = boxReaderFrom(async () => {
+      const r = await fetch(BOX_READER_URL);
       if (!r.ok) throw new Error(`Forma's box reader could not be loaded (HTTP ${r.status}).`);
-      const model = (await r.json()) as BoxReaderModel;
-      if (!readsTheseFeatures(model)) throw new Error("Forma's box reader is not one this version can read.");
-      return model;
+      return r.json();
     });
     loading.catch(() => {
       loading = null;

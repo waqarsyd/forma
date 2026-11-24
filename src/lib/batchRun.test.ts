@@ -24,7 +24,10 @@ vi.mock('./repxIntake', () => ({
   }),
   inUnit: <T,>(texts: T[]) => texts,
 }));
-vi.mock('./ocrAttach', () => ({ readPage, ocrTexts, sourceLayoutOf: () => null, buildWithReader: () => null }));
+vi.mock('./ocrAttach', () => ({ ocrTexts, sourceLayoutOf: () => null, buildWithReader: () => null }));
+// A page is read by lib/ocr.ts's `readPage` since 2026-11-24, and drawn on the browser's canvases (lib/browserIntake.ts).
+vi.mock('./ocr', () => ({ readPage }));
+vi.mock('./browserIntake', () => ({ browserDrawing: { stand: 'in' } }));
 vi.mock('./geminiClient', () => ({ loadGemini: async () => ({ analyzeReportDesign, REQUEST_BUDGET: 6 }), isMissingApiKey: () => false }));
 vi.mock('./fallbackChain', () => ({
   askWithChain: async (config: ReportConfig, ask: (c: ReportConfig) => Promise<unknown>) => ({ value: await ask(config), config, by: 'gemini', note: '' }),

@@ -249,13 +249,29 @@ export async function designFromWords(
   owner: string | null,
   projectId?: string | null,
 ): Promise<{ design: OfflineDesign }> {
+  return designWith(loadFormaModel, () => memory.readMemory(owner), request, message, projectId);
+}
+
+/**
+ * `designFromWords` over a model and a memory handed in (2026-11-24, the MCP
+ * work's wave 7, NODE-3): the browser's from this site and this device, the
+ * MCP server's from the clone's assets/model and an empty memory, since it
+ * keeps none (src/mcp/nodeGeneration.ts).
+ */
+export async function designWith(
+  model: () => Promise<FormaModel>,
+  state: () => memory.MemoryState,
+  request: { description?: string; dataSchema?: string },
+  message: string,
+  projectId?: string | null,
+): Promise<{ design: OfflineDesign }> {
   const fields = request.dataSchema
     ? parseDataSource(request.dataSchema).fields.map((f) => ({ name: f.name, type: f.type === 'string' ? ('text' as const) : f.type }))
     : undefined;
-  const design = generateOffline(await loadFormaModel(), {
+  const design = generateOffline(await model(), {
     description: request.description || message,
     fields,
-    preferences: memory.preferencesOf(memory.readMemory(owner), projectId),
+    preferences: memory.preferencesOf(state(), projectId),
   });
   return { design };
 }
@@ -266,7 +282,11 @@ export async function designFromWords(
  * their changes taught written into it (D4).
  */
 export async function houseBrief(owner: string | null, unit: string): Promise<string> {
-  const state = memory.readMemory(owner);
-  const model = memory.personalStyle(state) ?? (await loadFormaModel());
-  return houseStyleBrief(withLearned(model.style, state.memories), model.reports, unit);
+  return houseBriefWith(loadFormaModel, memory.readMemory(owner), unit);
+}
+
+/** `houseBrief` over a model and a memory handed in, as `designWith` (the MCP server's, with none). */
+export async function houseBriefWith(model: () => Promise<FormaModel>, state: memory.MemoryState, unit: string): Promise<string> {
+  const style = memory.personalStyle(state) ?? (await model());
+  return houseStyleBrief(withLearned(style.style, state.memories), style.reports, unit);
 }

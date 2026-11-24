@@ -2201,6 +2201,12 @@ Answer with the expression and one sentence saying what it computes.`,
   };
 }
 
+/** Mock mode's translation: each text marked with the language's first two letters, `[fr] Total`. */
+export function mockTranslations(texts: readonly string[], language: string): Map<string, string> {
+  const mark = `[${language.trim().slice(0, 2).toLowerCase()}]`;
+  return new Map(texts.map((t) => [t, `${mark} ${t}`]));
+}
+
 /**
  * A report's typed texts translated into a language (2026-11-10, the first of
  * the gaps docs/proposals/ai-designers.md found beside DevExpress's "Localize
@@ -2208,14 +2214,15 @@ Answer with the expression and one sentence saying what it computes.`,
  * answer a list pairing each with its translation; lib/repxTranslate.ts
  * collects the texts and puts the answers back. A text the model leaves out
  * or returns unchanged stays as it was. Mock mode marks each text with the
- * language's first two letters, so the path runs offline.
+ * language's first two letters, so the path runs offline (`mockTranslations`,
+ * which the MCP server's mock hands the generation core too).
  */
 export async function translateTexts(texts: readonly string[], language: string, config?: ReportConfig, signal?: AbortSignal): Promise<Map<string, string>> {
   if (signal?.aborted) throw abortError();
   const target = language.trim();
   if (!target) throw new Error('Name the language to translate into.');
   if (!texts.length) return new Map();
-  if (isMockMode(viteEnv.VITE_FORMA_MOCK)) return new Map(texts.map((t) => [t, `[${target.slice(0, 2).toLowerCase()}] ${t}`]));
+  if (isMockMode(viteEnv.VITE_FORMA_MOCK)) return mockTranslations(texts, target);
 
   config = withProvider(config);
   const currentApiKey = config?.customApiKey?.trim();
@@ -2591,6 +2598,42 @@ const CUT_OFF_THINKING_SHARE = 0.5;
 /** The cap on that repeat: a quarter of the limit, leaving the rest to the answer. */
 export const CAPPED_THINKING_BUDGET = 16384;
 
+/**
+ * The mock invoice as mock mode answers (`value`, VITE_FORMA_MOCK's), with
+ * what it keeps of an open report's data source, of a shared database's
+ * likeliest object and of what Forma read on the page. Its own function since
+ * 2026-11-24 (the MCP work's wave 7, NODE-6 and PROTO-8), for the MCP
+ * server's mock too: that one is switched on in src/mcp alone, and handed to
+ * the generation core as its `ask`, because this module reads its switch from
+ * Vite's environment and must never read Node's.
+ */
+export function mockAnswer(
+  value: string | undefined,
+  previousState?: { repxContent?: string; houseStyle?: string },
+  options?: GenerationOptions,
+): GenerationResult {
+  if (value === MOCK_MISORDERED) {
+    console.warn(
+      `VITE_FORMA_MOCK="${MOCK_MISORDERED}" — the two header bands are swapped ON PURPOSE. ` +
+        'The "1 REPX warning" in the REPX pane is the fixture, not the app.',
+    );
+    return {
+      ...MOCK_INVOICE_RESPONSE,
+      repxContent: misorderMockHeaders(MOCK_INVOICE_RESPONSE.repxContent),
+    };
+  }
+  // With a database shared, the mock names the likeliest object listed, as a
+  // real answer's <?forma-query?> would, so writing the source runs offline (2026-11-09).
+  const mockTable = options?.database ? /^- (\S+) \((?:table|view)\)/m.exec(options.database)?.[1] : undefined;
+  // A redesign keeps the report's data source here too, so it can be seen offline (2026-11-09).
+  const carried = previousState?.repxContent ? carryDataSource(previousState.repxContent, MOCK_INVOICE_RESPONSE.repxContent) : null;
+  const carriedMock = carried?.applied ? { ...MOCK_INVOICE_RESPONSE, repxContent: carried.xml } : MOCK_INVOICE_RESPONSE;
+  // And what the mock invoice kept of what Forma read on the page, so the REPX
+  // pane's account of it can be seen offline (2026-11-10). It never asks again.
+  const mock = options?.draft?.text.trim() ? { ...carriedMock, coverage: readCoverage(captionsOfDraft(options.draft.text), carriedMock.repxContent) } : carriedMock;
+  return mockTable ? { ...mock, dataQuery: { table: mockTable } } : mock;
+}
+
 export async function analyzeReportDesign(
   prompt: string,
   imageParts: AttachmentPart[],
@@ -2617,26 +2660,7 @@ export async function analyzeReportDesign(
     console.warn("VITE_FORMA_MOCK is set — returning the mock invoice layout without calling Gemini.");
     // Simulate a 3-second network delay to allow testing the working dots and Stop
     await sleep(3000, signal);
-    if (viteEnv.VITE_FORMA_MOCK === MOCK_MISORDERED) {
-      console.warn(
-        `VITE_FORMA_MOCK="${MOCK_MISORDERED}" — the two header bands are swapped ON PURPOSE. ` +
-          'The "1 REPX warning" in the REPX pane is the fixture, not the app.',
-      );
-      return {
-        ...MOCK_INVOICE_RESPONSE,
-        repxContent: misorderMockHeaders(MOCK_INVOICE_RESPONSE.repxContent),
-      };
-    }
-    // With a database shared, the mock names the likeliest object listed, as a
-    // real answer's <?forma-query?> would, so writing the source runs offline (2026-11-09).
-    const mockTable = options?.database ? /^- (\S+) \((?:table|view)\)/m.exec(options.database)?.[1] : undefined;
-    // A redesign keeps the report's data source here too, so it can be seen offline (2026-11-09).
-    const carried = previousState?.repxContent ? carryDataSource(previousState.repxContent, MOCK_INVOICE_RESPONSE.repxContent) : null;
-    const carriedMock = carried?.applied ? { ...MOCK_INVOICE_RESPONSE, repxContent: carried.xml } : MOCK_INVOICE_RESPONSE;
-    // And what the mock invoice kept of what Forma read on the page, so the REPX
-    // pane's account of it can be seen offline (2026-11-10). It never asks again.
-    const mock = options?.draft?.text.trim() ? { ...carriedMock, coverage: readCoverage(captionsOfDraft(options.draft.text), carriedMock.repxContent) } : carriedMock;
-    return mockTable ? { ...mock, dataQuery: { table: mockTable } } : mock;
+    return mockAnswer(viteEnv.VITE_FORMA_MOCK, previousState, options);
   }
 
   // No AI set up means no request. Surfaced as a distinct type so the caller can
@@ -3533,7 +3557,8 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       try {
         const [{ fitGeometry }, measure] = await Promise.all([
           import("../lib/sourceAgreement"),
-          typeof document === "undefined" ? undefined : import("../lib/textMeasure").then((m) => m.canvasMeasurer()).catch(() => null),
+          // Measured where a canvas is (lib/textMeasure.ts `measuresHere`): a document, or the MCP server's canvas in Node; elsewhere the faces' own widths.
+          import("../lib/textMeasure").then((m) => (m.measuresHere() ? m.canvasMeasurer() : undefined)).catch(() => null),
         ]);
         const scale = unitsPerInch(reportUnit) / 100;
         const texts = pageTexts.map((t) => ({ ...t, x: t.x * scale, y: t.y * scale, w: t.w * scale, h: t.h * scale }));
@@ -3630,7 +3655,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
         const [{ printCheck }, { sumOfRatio, checkTotals }, measure] = await Promise.all([
           import("../lib/printCheck"),
           import("../lib/totalsCheck"),
-          typeof document === "undefined" ? null : import("../lib/textMeasure").then((m) => m.canvasMeasurer()).catch(() => null),
+          import("../lib/textMeasure").then((m) => (m.measuresHere() ? m.canvasMeasurer() : null)).catch(() => null),
         ]);
         printFindings.push(
           ...printCheck(parsed.repxContent, page.rows, { pagesShown: page.pages, groupsShown: page.groups.length, samples: page.samples, measure }),

@@ -23,6 +23,7 @@
  *
  * Pure, and tested in autoConfig.test.ts.
  */
+import { isReportFile } from './reportFile';
 import { SUPPORTED_PAGE_SIZES, isSupportedPageSize, paperInches, paperOfImage } from './reportGeometry';
 
 /** What was worked out for one request, with why, for the console. */
@@ -175,6 +176,41 @@ export interface DetectInput {
   locale?: string;
   /** The version and unit learned from the last report the user brought. */
   learned?: { version?: string; unit?: string };
+}
+
+/**
+ * What a request's settings are worked out from (`detectSettings`): an
+ * uploaded report first, then the open one when the request refines it; the
+ * pages' sizes, a PDF page's in points; the words and every text that is not
+ * a report; the locale; and the version and unit learned from the last report
+ * the person brought. An SSRS or FastReport file arrives converted to a
+ * `.repx` and counts as one (lib/reportFile.ts, R3-08).
+ *
+ * App.tsx's own until 2026-11-24, moved here in the MCP work's wave 7 so the
+ * MCP server works its settings out the same way. There the locale is one the
+ * server is given, never the operating system's (NODE-11): the browser's
+ * language is the person's, and a server's OS locale is no one's.
+ */
+export function detectInputFrom(
+  sources: {
+    texts?: readonly { file?: string; text: string }[];
+    metas?: readonly { pagePoints?: { width: number; height: number } }[];
+    pages?: readonly SourcePage[];
+    words?: string;
+  },
+  about: { withOpenReport: boolean; openReport?: string | null; locale?: string; learned?: { version?: string; unit?: string } },
+): DetectInput {
+  return {
+    // An uploaded report first, then the one open, which a request refines.
+    repx: [...(sources.texts ?? []).filter(isReportFile).map((t) => t.text), ...(about.withOpenReport ? [about.openReport] : [])],
+    pages: [
+      ...(sources.metas ?? []).flatMap((m) => (m.pagePoints ? [{ ...m.pagePoints, pagePoints: m.pagePoints }] : [])),
+      ...(sources.pages ?? []),
+    ],
+    text: [sources.words, ...(sources.texts ?? []).filter((t) => !isReportFile(t)).map((t) => t.text)].filter(Boolean).join('\n'),
+    locale: about.locale,
+    learned: about.learned,
+  };
 }
 
 /**

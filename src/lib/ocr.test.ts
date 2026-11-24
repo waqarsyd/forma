@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ocrPageFrom } from './ocr';
+import { ocrPageFrom } from './ocrRead';
 
 /*
  * The engine itself, as a fake worker (2026-11-11, the full audit's TC-08a and

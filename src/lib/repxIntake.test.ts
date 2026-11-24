@@ -20,6 +20,7 @@ import {
   templateCorrection,
   tiffNotice,
   transform,
+  type Drawing,
 } from './repxIntake';
 
 // CP-11: a Word or Excel file's layout is corrected by the AI only when the words ask for a report from it.
@@ -244,10 +245,12 @@ describe('Crystal Reports and SSRS (CP-01a)', () => {
     const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       const { ingestFile } = await import('./repxIntake');
-      const frx = await ingestFile(new File(['<Report/>'], 'Orders.frx'), 'u1');
+      // A report file draws nothing, so the drawing handed in is never asked.
+      const drawing = {} as Drawing;
+      const frx = await ingestFile(new File(['<Report/>'], 'Orders.frx'), 'u1', undefined, drawing);
       expect(frx.notices).toEqual(['"Orders.frx" could not be read as a FastReport report.']);
       expect(frx.texts).toEqual([]);
-      const rdl = await ingestFile(new File(['<Report/>'], 'Orders.rdl'), 'u2');
+      const rdl = await ingestFile(new File(['<Report/>'], 'Orders.rdl'), 'u2', undefined, drawing);
       expect(rdl.notices).toEqual([]);
       expect(rdl.texts[0].text).toMatch(/^An SSRS report definition \(Orders\.rdl\)/);
     } finally {

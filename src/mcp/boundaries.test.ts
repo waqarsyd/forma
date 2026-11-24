@@ -5,7 +5,8 @@
  * src/server apart before this one, so it covers that folder's half of the
  * rule too.
  *
- * - src/mcp is Node only: nothing outside it imports it (tests aside), as
+ * - src/mcp is Node only: nothing outside it imports it (tests aside, and
+ *   one script, which shares PaddleOCR's Node reader, nodePaddle.ts), as
  *   nothing but server.ts imports src/server, and only src/mcp and
  *   src/server import a Node built-in, so none can reach the browser
  *   bundle, where Vite would replace it with a stub that fails only at run
@@ -141,6 +142,15 @@ const STDOUT_BYPASSES: [RegExp, string][] = [
 ];
 const stdoutBypassesOf = (source: string) => STDOUT_BYPASSES.filter(([re]) => re.test(source)).map(([, why]) => why);
 
+/**
+ * The one import of src/mcp from outside it (2026-11-24, the MCP work's wave
+ * 7, finding NODE-5): PaddleOCR's Node reader, which the measuring scripts
+ * and the MCP server share so neither keeps a copy (nodePaddle.ts says so).
+ * A script is Node too, so nothing reaches the browser through it; anything
+ * else that imports src/mcp still fails here.
+ */
+const SHARED_WITH_SCRIPTS = ['scripts/model/paddleOcr.ts -> ../../src/mcp/nodePaddle'];
+
 describe('the import boundaries', () => {
   it('reads every shape of import it is meant to', () => {
     const sample = [
@@ -171,13 +181,13 @@ describe('the import boundaries', () => {
     expect(resolveRelative(join(CLONE, 'src', 'mcp', 'run.mjs'), './stdio.ts')).toBe(join(CLONE, 'src', 'mcp', 'stdio.ts'));
   });
 
-  it('nothing outside src/mcp imports it, tests aside, and nothing outside it imports the MCP SDK', () => {
+  it('nothing outside src/mcp imports it, tests aside and the one Node reader a script shares, and nothing outside it imports the MCP SDK', () => {
     const offenders = [...SRC.filter((f) => !inMcp(f) && !isTest(f)), ...SCRIPTS.filter((f) => !isTest(f)), ...ROOT].flatMap((file) =>
       specifiersOf(text(file))
         .filter((spec) => spec.startsWith('@modelcontextprotocol/') || (resolveRelative(file, spec) !== null && inMcp(resolveRelative(file, spec) as string)))
         .map((spec) => `${rel(file)} -> ${spec}`),
     );
-    expect(offenders).toEqual([]);
+    expect([...new Set(offenders)]).toEqual(SHARED_WITH_SCRIPTS);
   });
 
   it('only test files import testFs.ts and testClient.ts, the in-memory file system and client', () => {

@@ -655,9 +655,39 @@ export function turnedLines(text: string, w: TurnedWidths, lengthPt: number, acr
   return kept.map((l) => t.slice(l.start, l.end).replace(/\s+$/, ''));
 }
 
+/*
+ * Where there is no document, a canvas a caller hands in (2026-11-24, the
+ * MCP work's wave 7, NODE-11): the MCP server's @napi-rs/canvas
+ * (src/mcp/nodeGeneration.ts), so text is measured in Node where the browser
+ * measures it, for the print check, the fit to the page and the box reader's
+ * widths alike. Its widths were held to the parity rows before it was turned
+ * on: "AVATAR Wave To LT Yo" at 20pt in Arial printed 311.822 units unkerned
+ * and 293.342 kerned (rows 51 and 59), and @napi-rs/canvas measured 311.822
+ * and 293.349 on this machine's Arial; Times New Roman 307.020 against
+ * 307.0, Trebuchet MS 290.229 against 290.2, and "ROTATED TEXT" at 9.75pt in
+ * Times New Roman 101.166 and 98.336 against 101.2 and 98.3 (row 53).
+ * nodeGeneration.test.ts measures them again where those fonts are
+ * installed. Under jsdom, which has a document, nothing changes.
+ */
+let handedIn: (() => CanvasRenderingContext2D | null) | null = null;
+
+/** Measure on canvases `make` gives where there is no document (Node); null stops it. */
+export function measureOn(make: (() => CanvasRenderingContext2D | null) | null): void {
+  handedIn = make;
+  turnedContext = lineContext = metricsContext = undefined;
+}
+
+/** Whether anything here can measure: a document, or a canvas handed in. */
+export function measuresHere(): boolean {
+  return typeof document !== 'undefined' || handedIn !== null;
+}
+
 /** A canvas to measure on, or null under Node and jsdom, as for `canvasMeasurer`. */
 function canvasContext(): CanvasRenderingContext2D | null {
-  if (typeof document === 'undefined') return null;
+  if (typeof document === 'undefined') {
+    const context = handedIn?.() ?? null;
+    return context && typeof context.measureText === 'function' ? context : null;
+  }
   if (typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent)) return null;
   const context = document.createElement('canvas').getContext('2d');
   return context && typeof context.measureText === 'function' ? context : null;
@@ -702,7 +732,8 @@ function browserLineMetrics(family: string, bold: boolean, italic: boolean): Lin
   if (metricsCache.has(key)) return metricsCache.get(key)!;
   if (metricsContext === undefined) metricsContext = canvasContext();
   let metrics: LineMetrics | null = null;
-  if (metricsContext && document.body) {
+  // A line's spacing is read off an element in the page, so a canvas handed in with no document (Node) gives none.
+  if (metricsContext && typeof document !== 'undefined' && document.body) {
     setCanvasFont(metricsContext, face);
     const box = metricsContext.measureText('Hg');
     const line = document.createElement('div');

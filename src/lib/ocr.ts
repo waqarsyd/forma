@@ -14,10 +14,20 @@
  * language's data is fetched only when a page turns out to need it: since
  * 2026-11-04 OCR works out the language itself (lib/ocrScript.ts), where
  * before the user ticked languages in Settings.
+ *
+ * Which engine reads, and in which language, is lib/ocrRead.ts's since
+ * 2026-11-24 (the MCP work's wave 7), shared with the MCP server's Node
+ * reader; this module keeps the browser's engines, their queue and their
+ * lifecycle, and handwriting. `readPage`, a page read for the chat box,
+ * moved here from lib/ocrAttach.ts the same day, so that module, which the
+ * generation core uses, no longer reaches the engines.
  */
+import type { PreviewMeta } from './attachments';
+import type { ReadPage } from './ocrAttach';
 import type { PixelBox } from './reportGeometry';
 import { OCR_BASE, OCR_WORKER } from './assetPaths';
-import { CONFIDENT, OTHER_SCRIPTS, bestScript, latinLanguageOf, looksHandwritten, meanConfidence, probeLines, readsAsLatin } from './ocrScript';
+import { ENLARGE_BELOW, ocrPageFrom, readWithEngines, type TesseractBlocks } from './ocrRead';
+import { looksHandwritten } from './ocrScript';
 
 /** One recognized word: its text, its box in the image's pixels, and Tesseract's confidence, 0 to 100. */
 export interface OcrWord {
@@ -49,46 +59,6 @@ export interface OcrPage {
    * (`UNSURE_BELOW` in lib/paddleOcr.ts), whose confidence runs higher.
    */
   unsureBelow?: number;
-}
-
-interface TesseractBlocks {
-  paragraphs?: { lines?: { text: string; confidence: number; bbox: PixelBox; words?: { text: string; confidence: number; bbox: PixelBox }[] }[] }[];
-}
-
-const scaleBox = (b: PixelBox, s: number): PixelBox => ({ x0: b.x0 / s, y0: b.y0 / s, x1: b.x1 / s, y1: b.y1 / s });
-
-/*
- * Direction marks Tesseract wraps right-to-left words in (2026-11-04, read in
- * the owner's Chrome with Arabic chosen: U+200F before a word, U+200E after).
- * They print as nothing, so a report's text keeps none of them, and they would
- * stop a word matching itself anywhere downstream.
- */
-const DIRECTION_MARKS = /[‎‏‪-‮⁦-⁩]/g;
-
-/**
- * Tesseract's blocks as an `OcrPage`, its boxes divided by `scale` when the
- * image was enlarged for recognition. Pure; empty words and lines are left
- * out, and a line's text is its words', so the two never disagree.
- */
-export function ocrPageFrom(blocks: readonly TesseractBlocks[] | null | undefined, image: { width: number; height: number; dpi: number | null }, scale = 1): OcrPage {
-  const lines: OcrLine[] = [];
-  for (const block of blocks ?? []) {
-    for (const paragraph of block.paragraphs ?? []) {
-      for (const line of paragraph.lines ?? []) {
-        const words = (line.words ?? [])
-          .map((w) => ({ text: w.text.replace(DIRECTION_MARKS, '').trim(), box: scaleBox(w.bbox, scale), confidence: w.confidence }))
-          .filter((w) => w.text);
-        if (!words.length) continue;
-        lines.push({
-          text: words.map((w) => w.text).join(' '),
-          box: scaleBox(line.bbox, scale),
-          confidence: line.confidence,
-          words,
-        });
-      }
-    }
-  }
-  return { ...image, lines };
 }
 
 /** Whether the build carries handwriting (vite.config.ts); absent under the tests, which read none. */
@@ -263,12 +233,6 @@ function idleLater(): void {
 }
 
 /**
- * Small text reads better enlarged: a screenshot narrower than this is drawn
- * at twice its size before recognition, and its boxes divided back.
- */
-const ENLARGE_BELOW = 1600;
-
-/**
  * OCR one page image, given as a data URL or a canvas; `dpi` when it is a
  * rendered PDF page. A signal that aborts rejects at once with an AbortError
  * and, when this reading is the one under way, ends the engines, since a
@@ -341,58 +305,19 @@ async function readOne(
     stopped();
     listener = mine;
     const image = { width: source.width, height: source.height, dpi };
-    const started = performance.now();
-    const took: string[] = [];
-    const lap = (what: string, from: number) => took.push(`${what} ${((performance.now() - from) / 1000).toFixed(1)}s`);
-    // English first, as every page always was, by PaddleOCR where this site
-    // serves it (since 2026-11-10) and Tesseract otherwise; then the page's own
-    // language, worked out from that reading (lib/ocrScript.ts).
-    const byPaddle = await readByPaddle(input, image, scale, options.signal);
-    // Stopped while PaddleOCR was waited for, a reading must not go on to
-    // Tesseract: by then the engine may be the next reading's (the PIPE1 review).
-    if (!byPaddle) stopped();
-    let page = byPaddle ?? (await readWith('eng', input, image, scale));
-    lap(byPaddle ? 'PaddleOCR' : 'English', started);
-    stopped();
-    let language = 'eng';
-    if (readsAsLatin(page)) {
-      const latin = latinLanguageOf(page.lines.map((l) => l.text).join(' '));
-      if (latin) {
-        const from = performance.now();
-        const again = await readWith(`${latin}+eng`, input, image, scale);
-        lap(latin, from);
-        // Over PaddleOCR's reading, only when Tesseract is sure of its own: the
-        // two engines' confidences are not on one scale.
-        const better = byPaddle ? meanConfidence(again.lines) >= CONFIDENT : meanConfidence(again.lines) >= meanConfidence(page.lines) - 2;
-        if (better) [page, language] = [again, latin];
-      }
-    } else {
-      const boxes = probeLines(page);
-      if (boxes.length) {
-        // The probes read the picture at its own size, where the boxes already
-        // are: they only compare scripts, and an enlarged page costs four
-        // times as much to send each time (Arabic still led English 57 to 29).
-        const from = performance.now();
-        listener?.('working out the language', 0);
+    // Which engine reads, and in which language: lib/ocrRead.ts, the rule the
+    // MCP server's Node reader follows too. The probes read the picture at its
+    // own size, encoded once.
+    const { page, language } = await readWithEngines({
+      paddle: () => readByPaddle(input, image, scale, options.signal),
+      tesseract: (languages) => readWith(languages, input, image, scale),
+      probes: async () => {
         const png = await pngOf(source);
-        stopped();
-        const english = await probeWith('eng', png, boxes);
-        const scores: Record<string, number[]> = {};
-        for (const script of OTHER_SCRIPTS) {
-          stopped();
-          scores[script] = await probeWith(script, png, boxes);
-        }
-        lap('probes', from);
-        const script = bestScript(english, scores);
-        if (script) {
-          const again = performance.now();
-          [page, language] = [await readWith(`${script}+eng`, input, image, scale), script];
-          lap(script, again);
-        }
-      }
-    }
-    stopped();
-    console.debug(`OCR read the page as ${language === 'eng' ? 'English' : language}${byPaddle && page === byPaddle ? ' with PaddleOCR' : ''} (${took.join(', ')}).`);
+        return (languages, boxes) => probeWith(languages, png, boxes);
+      },
+      stopped,
+      stage: (stage) => listener?.(stage, 0),
+    });
     // The lines still unsure, read again as handwriting (2026-11-04,
     // lib/handwriting.ts): only on a Latin page where enough of them are
     // unsure, and only where this site serves the model. One that will not
@@ -439,4 +364,29 @@ function enlarge(source: HTMLCanvasElement, scale: number): HTMLCanvasElement {
   c.imageSmoothingQuality = 'high';
   c.drawImage(source, 0, 0, canvas.width, canvas.height);
   return canvas;
+}
+
+/**
+ * OCR one attached page, at its resolution when it is a rendered PDF page.
+ * `signal` stops it (2026-11-11, the full audit's PL-01): the reading ends,
+ * and this rejects, as soon as it aborts. In lib/ocrAttach.ts until
+ * 2026-11-24 (the header); what a reading becomes is still that module's
+ * (`pageRead`), shared with the MCP server's Node reader.
+ */
+export async function readPage(
+  src: string,
+  meta: PreviewMeta,
+  unit: string,
+  paper: string,
+  onProgress?: (progress: number) => void,
+  signal?: AbortSignal,
+): Promise<ReadPage> {
+  const read = await recognizePage(src, null, {
+    signal,
+    onProgress: (stage, progress) => {
+      // The engine's loading stages say nothing a reader needs; the reading does.
+      if (/recogniz/i.test(stage)) onProgress?.(progress);
+    },
+  });
+  return (await import('./ocrAttach')).pageRead(read, meta, unit, paper);
 }

@@ -24,7 +24,7 @@
  */
 import { escapeXmlAttribute, unescapeXml } from './xmlEscape';
 import { makeRightToLeft } from './repxRtl';
-import type { ReportConfig } from '../services/geminiService';
+import type { ReportConfig, translateTexts as TranslateTexts } from '../services/geminiService';
 
 const TEXT_CONTROLS = /<(Item\d+)\b([^>]*\bControlType="(?:XRLabel|XRTableCell|XRCheckBox|XRRichText)"[^>]*)>/g;
 const TEXT_ATTR = /\sText="([^"]*)"/;
@@ -637,12 +637,15 @@ export function languageToTranslate(xml: string, words: string): string | null {
  * when the chosen AI is at a limit. App's until 2026-11-11 (the re-audit's
  * FIX2A), moved here so the workspace's chunk does not carry it. `config` is
  * the settings worked out for the request: a first report's own, or a Batch
- * file's (R2-01 asked for `answering` to reach it).
+ * file's (R2-01 asked for `answering` to reach it). `translate`, when given,
+ * stands in for geminiService's `translateTexts` (the MCP server's mock,
+ * lib/generationCore.ts `AskDeps`).
  */
-export async function translateReportXml(xml: string, language: string, signal: AbortSignal, words: string, config: ReportConfig) {
+export async function translateReportXml(xml: string, language: string, signal: AbortSignal, words: string, config: ReportConfig, translate?: typeof TranslateTexts) {
   const texts = collectTexts(xml);
   if (!texts.length) return { xml, changed: 0, any: false, note: '', by: null, bilingual: false };
   const [{ translateTexts }, { askWithChain }] = await Promise.all([import('../services/geminiService'), import('./fallbackChain')]);
-  const answered = await askWithChain(config, (asked) => translateTexts(texts.map((t) => t.text), language, asked, signal), signal);
+  const translateWith = translate ?? translateTexts;
+  const answered = await askWithChain(config, (asked) => translateWith(texts.map((t) => t.text), language, asked, signal), signal);
   return { ...placeTranslations(xml, answered.value, language, words), any: true, note: answered.note, by: answered.by };
 }

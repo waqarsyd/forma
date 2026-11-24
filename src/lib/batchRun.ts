@@ -64,7 +64,7 @@ export interface BatchRunDeps extends TeamDeps {
 async function readFilePages(pages: readonly SentPage[], settings: ReportConfig, signal: AbortSignal): Promise<PageRead[]> {
   const out: PageRead[] = [];
   if (!pages.length) return out;
-  const { readPage } = await import('./ocrAttach');
+  const { readPage } = await import('./ocr');
   for (const { src, meta } of pages) {
     if (signal.aborted) break;
     try {
@@ -81,11 +81,13 @@ async function readFilePages(pages: readonly SentPage[], settings: ReportConfig,
 export async function runBatchFile(file: File, signal: AbortSignal, id: string, words: string, deps: BatchRunDeps): Promise<BatchOutcome> {
   const startedAt = Date.now();
   const { fields } = deps;
-  const { makeReport } = await import('./generationCore');
+  const [{ makeReport }, { browserDrawing }] = await Promise.all([import('./generationCore'), import('./browserIntake')]);
   const made = await makeReport(
     { files: [{ file, uploadId: `batch-${id}` }], words, config: deps.config, fields, signal, batchFile: true },
     {
       ...deps,
+      // The file drawn on the browser's canvases, as a single report's is (lib/browserIntake.ts).
+      drawing: browserDrawing,
       detect: (sources) => detectSettings(deps.detectInput(sources)),
       readPages: (pages, s, settings) => readFilePages(pages, settings, s),
       // The memory's instructions alone: no kept report as an example (the core's header).

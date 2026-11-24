@@ -3,7 +3,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReportConfig } from '../services/geminiService';
-import type { GenerationDeps, PageRead, SentPage } from './generationCore';
+import type { GenerationDeps, IntakeDeps, PageRead, SentPage } from './generationCore';
 import type { KeptChoice } from './learningLoop';
 import type { ReportQuery } from './sqlQuery';
 
@@ -30,11 +30,14 @@ const h = vi.hoisted(() => ({
   translateReportXml: vi.fn(),
   visionDraft: vi.fn(),
   pages: {} as Record<string, number>,
+  drawings: [] as unknown[],
+  signals: [] as (AbortSignal | undefined)[],
+  onIngest: null as ((name: string) => void) | null,
 }));
 
 vi.mock('./repxIntake', () => ({
   // A file becomes as many pictures as `h.pages` says (one by default), all of one upload.
-  ingestFile: async (file: File, uploadId: string) => ({
+  ingestFile: async (file: File, uploadId: string, _unit: string, drawing: unknown, signal?: AbortSignal) => (h.drawings.push(drawing), h.signals.push(signal), h.onIngest?.(file.name), {
     images: Array.from({ length: h.pages[file.name] ?? 1 }, () => 'data:image/png;base64,AAAA'),
     imageMeta: Array.from({ length: h.pages[file.name] ?? 1 }, (_, page) => ({ uploadId, file: file.name, page })),
     texts: [],
@@ -81,8 +84,9 @@ const LIMIT = () => new Error('Gemini\'s free limit is used up.');
 const readAll = (pages: readonly SentPage[]): PageRead[] =>
   pages.map((p) => ({ meta: p.meta, read: { ocr: { width: 850, height: 1100, lines: [{ text: `${p.meta.file} p${p.meta.page}` }] } } as unknown as PageRead['read'] }));
 
-function deps(): GenerationDeps {
+function deps(): GenerationDeps & IntakeDeps {
   return {
+    drawing: { what: 'the drawing handed in' } as unknown as IntakeDeps['drawing'],
     detect: vi.fn(() => ({ version: '23.2', unit: 'HundredthsOfAnInch', pageSize: 'Letter', rtl: false, reasons: [] })),
     readPages: vi.fn(async (pages: readonly SentPage[], _s: AbortSignal, _c: ReportConfig, now?: readonly SentPage[]) => readAll(now ?? pages)),
     readLater: vi.fn(async (pages: readonly SentPage[]) => readAll(pages)),
@@ -148,6 +152,9 @@ describe('the generation core: one way a report is made', () => {
   beforeEach(() => {
     for (const fn of [h.analyzeReportDesign, h.askWithChain, h.fixUntilPrints, h.buildWithReader, h.buildFromRead, h.templateCorrection, h.languageToTranslate, h.languageAsked, h.translateReportXml, h.visionDraft]) fn.mockReset();
     for (const k of Object.keys(h.pages)) delete h.pages[k];
+    h.drawings.length = 0;
+    h.signals.length = 0;
+    h.onIngest = null;
     h.analyzeReportDesign.mockResolvedValue(ANSWER);
     h.askWithChain.mockImplementation(async (c: ReportConfig, ask: (c: ReportConfig) => Promise<unknown>) => ({ value: await ask(c), config: c, by: 'gemini', note: '' }));
     h.fixUntilPrints.mockImplementation(async (first: { usage?: unknown }) => ({ answer: first, spent: first.usage ?? null, findings: [] }));
@@ -203,6 +210,21 @@ describe('the generation core: one way a report is made', () => {
     const [, , , , , fixProgress, fixOptions] = h.analyzeReportDesign.mock.calls[1];
     expect(fixProgress).toBe(d.onProgress);
     expect(fixOptions).toMatchObject({ evidence: { title: 'as read' } });
+  });
+
+  it('asks the AI it is handed, the fix as well, and hands the intake the drawing it is given', async () => {
+    // The MCP server's mock and Node's drawing come in this way (2026-11-24, wave 7): never an environment read in the service.
+    const { makeReport } = await import('./generationCore');
+    h.buildWithReader.mockReturnValue(BUILT);
+    const ask = vi.fn(async (..._args: unknown[]) => ANSWER);
+    const d = { ...deps(), ask: ask as unknown as GenerationDeps['ask'] };
+    const made = await makeReport({ files: png(), words: 'an invoice', config, signal: new AbortController().signal }, d);
+    expect(made).toMatchObject({ ok: true, repxContent: '<AI/>' });
+    expect(h.drawings).toEqual([d.drawing]);
+    expect(ask.mock.calls[0][6]).toMatchObject({ draft: { text: 'DRAFT' }, formaBrief: 'BRIEF' });
+    await h.fixUntilPrints.mock.calls[0][1].ask('Fix this.', '<AI/>');
+    expect(ask).toHaveBeenCalledTimes(2);
+    expect(h.analyzeReportDesign).not.toHaveBeenCalled();
   });
 
   it('reads only the first and last page of a long upload first, and the pages between when the AI designs it instead', async () => {
@@ -449,8 +471,24 @@ describe('the generation core: one way a report is made', () => {
     h.translateReportXml.mockResolvedValue({ xml: '<AI lang="de"/>', bilingual: false });
     const made = await makeReport({ files: png(), words: 'make it in German', config, signal: new AbortController().signal }, deps());
     expect(h.languageToTranslate).toHaveBeenCalledWith('<AI/>', 'make it in German');
-    expect(h.translateReportXml).toHaveBeenCalledWith('<AI/>', 'German', expect.anything(), 'make it in German', switched);
+    // geminiService's translation, unless one is handed in: the MCP server's mock hands in its own (the wave-7 review's W7R-1).
+    expect(h.translateReportXml).toHaveBeenCalledWith('<AI/>', 'German', expect.anything(), 'make it in German', switched, undefined);
     expect(made).toMatchObject({ ok: true, repxContent: '<AI lang="de"/>', translated: { language: 'German', bilingual: false } });
+    const translateTexts = vi.fn() as unknown as GenerationDeps['translateTexts'];
+    await makeReport({ files: png(), words: 'make it in German', config, signal: new AbortController().signal }, { ...deps(), translateTexts });
+    expect(h.translateReportXml.mock.calls[1][5]).toBe(translateTexts);
+  });
+
+  it("hands the intake the request's signal, and takes no file in once stopped", async () => {
+    // A PDF stops between its pages with it (lib/repxIntake.ts), and no file after the stop is opened (the wave-7 review's NODE7-PDF-HEAP).
+    const { makeReport } = await import('./generationCore');
+    const stopping = new AbortController();
+    h.onIngest = () => stopping.abort();
+    const files = [{ file: new File(['a'], 'first.png'), uploadId: 'u1' }, { file: new File(['b'], 'second.png'), uploadId: 'u2' }];
+    const d = deps();
+    expect(await makeReport({ files, words: '', config, signal: stopping.signal }, d)).toBeNull();
+    expect(h.signals).toEqual([stopping.signal]);
+    expect(d.readPages).not.toHaveBeenCalled();
   });
 
   it('writes a shared database\'s source from the answer, and asks the fix with its section', async () => {
@@ -530,7 +568,7 @@ describe('the generation core: one way a report is made', () => {
     // Translated whole, with no words and the file's own settings, whatever the report already reads in.
     expect(h.languageToTranslate).not.toHaveBeenCalled();
     expect(h.languageAsked).toHaveBeenCalledWith('in German');
-    expect(h.translateReportXml).toHaveBeenCalledWith('<AI/>', 'German', signal, '', settings);
+    expect(h.translateReportXml).toHaveBeenCalledWith('<AI/>', 'German', signal, '', settings, undefined);
     // The row counts what Forma's reading found; the REPX pane's key is a single report's.
     expect(made).toMatchObject({ ok: true, repxContent: '<AI lang="de"/>', evidence: null });
 

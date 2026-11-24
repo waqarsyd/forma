@@ -6,7 +6,7 @@
  */
 import { PADDLE_ASSET_BASE } from './assetPaths';
 import type { OcrLine } from './ocr';
-import { MIN_READ_SHARE, pageFromRegions, readShare, readingOrder, type PaddlePage } from './paddleOcr';
+import { pageFromRegions, readingOrder, scaled, type PaddlePage } from './paddleOcr';
 import type { PaddleReply, PaddleRequest } from './paddleWorker';
 import type { PixelBox } from './reportGeometry';
 
@@ -217,19 +217,10 @@ export async function readWithPaddle(
   return scaled(pageFromRegions(picture, image.dpi, boxes, lines), image, scale);
 }
 
-/** A page read at `scale` times the picture's size, at the picture's own size. */
-export function scaled(page: PaddlePage, image: { width: number; height: number }, scale: number): PaddlePage {
-  if (scale === 1) return page;
-  const box = (b: { x0: number; y0: number; x1: number; y1: number }) => ({ x0: b.x0 / scale, y0: b.y0 / scale, x1: b.x1 / scale, y1: b.y1 / scale });
-  return {
-    ...page,
-    width: image.width,
-    height: image.height,
-    lines: page.lines.map((l) => ({ ...l, box: box(l.box), words: l.words.map((w) => ({ ...w, box: box(w.box) })) })),
-  };
-}
-
-/** Whether PaddleOCR read enough of the page's text regions for the page to be in its recogniser's script (`MIN_READ_SHARE`). */
-export function inItsScript(page: PaddlePage): boolean {
-  return readShare(page) >= MIN_READ_SHARE;
-}
+/*
+ * `scaled` and `inItsScript` are lib/paddleOcr.ts's since 2026-11-24 (the
+ * MCP work's wave 7), beside the other steps that need no worker, so the MCP
+ * server's Node reader reaches them without this module, which starts
+ * workers. lib/ocr.ts and this module's tests still name them here.
+ */
+export { inItsScript, scaled } from './paddleOcr';

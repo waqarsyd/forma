@@ -37,11 +37,14 @@ function read(storage: Pick<Storage, 'getItem'>, now: Date): Record<string, numb
  * The browser's localStorage, or null where there is none: a test under
  * node, a worker. The service counts on every request, so this must never
  * throw (the first draft defaulted to `localStorage` itself, and 41 of the
- * service's node tests failed on the ReferenceError).
+ * service's node tests failed on the ReferenceError). Nor read where there
+ * is no window (2026-11-24, the MCP work's wave 7, TST-12): Node 26 defines
+ * a `localStorage` that throws on a read without a file, and the MCP server
+ * counts nothing on the device, having none of the browser's.
  */
 function browserStorage(): Storage | null {
   try {
-    return typeof localStorage === 'undefined' ? null : localStorage;
+    return typeof window === 'undefined' || typeof localStorage === 'undefined' ? null : localStorage;
   } catch {
     return null;
   }

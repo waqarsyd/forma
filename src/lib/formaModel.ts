@@ -43,16 +43,27 @@ export const CATEGORY_WORDS: Record<string, string[]> = {
 /** Where the browser fetches the shipped model from (see MODEL_ASSETS in vite.config.ts). */
 export const MODEL_URL = `${MODEL_BASE}formaModel.json`;
 
+/**
+ * The model from `source`, checked to be one this version reads (2026-11-24,
+ * the MCP work's wave 7, NODE-3): fetched from this site in the browser
+ * (`loadFormaModel`), read from assets/model in the clone by the MCP server
+ * (src/mcp/nodeGeneration.ts).
+ */
+export async function formaModelFrom(source: () => Promise<unknown>): Promise<FormaModel> {
+  const model = (await source()) as FormaModel;
+  if (model.version !== 1 || !model.archetypes?.length) throw new Error("Forma's own model is not one this version can read.");
+  return model;
+}
+
 let loading: Promise<FormaModel> | null = null;
 
 /** The shipped model, fetched once per session; a failed fetch is tried again next time. */
 export function loadFormaModel(): Promise<FormaModel> {
   if (!loading) {
-    loading = fetch(MODEL_URL).then(async (r) => {
+    loading = formaModelFrom(async () => {
+      const r = await fetch(MODEL_URL);
       if (!r.ok) throw new Error(`Forma's own model could not be loaded (HTTP ${r.status}).`);
-      const model = (await r.json()) as FormaModel;
-      if (model.version !== 1 || !model.archetypes?.length) throw new Error("Forma's own model is not one this version can read.");
-      return model;
+      return r.json();
     });
     loading.catch(() => {
       loading = null;

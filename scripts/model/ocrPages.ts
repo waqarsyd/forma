@@ -11,10 +11,8 @@
 import { existsSync, mkdirSync, openSync, readSync, closeSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
-import { ocrPageFrom, type OcrPage } from '../../src/lib/ocr';
-
-/** The app's threshold: a page narrower than this is read at twice its size (lib/ocr.ts). */
-const ENLARGE_BELOW = 1600;
+import type { OcrPage } from '../../src/lib/ocr';
+import { ENLARGE_BELOW, ocrPageFrom } from '../../src/lib/ocrRead';
 
 /** A PNG's width and height, from its header. */
 function pngSize(path: string): [number, number] {

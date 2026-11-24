@@ -32,6 +32,13 @@ import type { PixelBox } from './reportGeometry';
 export const OTHER_SCRIPTS = ['ara', 'urd', 'hin'] as const;
 /** Latin-script languages besides English. */
 const LATIN_LANGUAGES = ['fra', 'deu', 'spa'] as const;
+/**
+ * Every language OCR reads, English first (2026-11-24, the MCP work's wave
+ * 7): the data vite.config.ts copies into dist/ocr for the browser, and the
+ * MCP server gathers into one folder for Tesseract in Node
+ * (src/mcp/nodeOcr.ts). nodeOcr.test.ts holds vite.config.ts's list to it.
+ */
+export const OCR_LANGUAGES = ['eng', ...LATIN_LANGUAGES, ...OTHER_SCRIPTS] as const;
 
 /** A page read this confidently in English is a Latin-script page. */
 export const CONFIDENT = 70;

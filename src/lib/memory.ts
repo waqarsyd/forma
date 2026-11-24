@@ -135,6 +135,11 @@ const MAX_KEPT_SKELETON_CHARS = 20_000;
 
 const EMPTY: MemoryState = { memories: [], kept: [], learnFromKept: true, ledger: [] };
 
+/** A memory with nothing in it, read from nowhere: the MCP server's, which keeps none (2026-11-24, src/mcp/nodeGeneration.ts). */
+export function emptyMemory(): MemoryState {
+  return { ...EMPTY, memories: [], kept: [], ledger: [] };
+}
+
 /** Who is signed in, whose memory a read or write without one reaches; null signed out. */
 let account: string | null = null;
 

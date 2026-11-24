@@ -41,6 +41,29 @@ const MODEL_SET_CACHE_KEY = 'geminiModels:session';
 let resolvedModel: string | null = null;
 let resolvedModelSet: string[] | null = null;
 
+/** Storage, in the parts this module uses. */
+export type ModelStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+
+/*
+ * Where the choice is kept beyond the module's own copy (2026-11-24, the MCP
+ * work's wave 7, findings NODE-7 and TST-12): the browser's sessionStorage
+ * and localStorage, reached only when a reader or writer below runs, as
+ * always. A Node process has neither, and Node 26 defines both and throws on
+ * a read without a file, so every new MCP server probed five models again,
+ * out of the per-model daily allowances a free key lives on. The MCP server
+ * keeps the day's choice in a file of Forma's own instead, outside the
+ * repository and the user's project, and the session's in memory alone
+ * (src/mcp/nodeGeneration.ts).
+ */
+let sessionStore: () => ModelStorage | null = () => sessionStorage;
+let dayStore: () => ModelStorage | null = () => localStorage;
+
+/** Keep the choice in these, never the browser's storage: the session's (null: memory only) and the day's. */
+export function keepModelChoiceIn(stores: { session: ModelStorage | null; day: ModelStorage | null }): void {
+  sessionStore = () => stores.session;
+  dayStore = () => stores.day;
+}
+
 /*
  * Who is told when the cache moves (2026-11-09). The chat box's model menu is
  * read from this cache, and the key check fills it after the key was typed, so
@@ -72,7 +95,7 @@ function announce(): void {
 export function readCachedModel(): string | null {
   if (resolvedModel) return resolvedModel;
   try {
-    return sessionStorage.getItem(MODEL_CACHE_KEY);
+    return sessionStore()?.getItem(MODEL_CACHE_KEY) ?? null;
   } catch {
     return null; // Node, or storage disabled
   }
@@ -81,14 +104,14 @@ export function readCachedModel(): string | null {
 export function cacheModel(model: string, usable?: string[]): void {
   resolvedModel = model;
   try {
-    sessionStorage.setItem(MODEL_CACHE_KEY, model);
+    sessionStore()?.setItem(MODEL_CACHE_KEY, model);
   } catch {
     /* in-memory copy still applies for this page */
   }
   if (usable) {
     resolvedModelSet = usable;
     try {
-      sessionStorage.setItem(MODEL_SET_CACHE_KEY, JSON.stringify(usable));
+      sessionStore()?.setItem(MODEL_SET_CACHE_KEY, JSON.stringify(usable));
     } catch {
       /* in-memory copy still applies for this page */
     }
@@ -104,7 +127,7 @@ export function cacheModel(model: string, usable?: string[]): void {
 export function readCachedModelSet(): string[] | null {
   if (resolvedModelSet) return resolvedModelSet;
   try {
-    const raw = sessionStorage.getItem(MODEL_SET_CACHE_KEY);
+    const raw = sessionStore()?.getItem(MODEL_SET_CACHE_KEY);
     const parsed = raw ? JSON.parse(raw) : null;
     return Array.isArray(parsed) && parsed.every((m) => typeof m === 'string') ? parsed : null;
   } catch {
@@ -118,9 +141,10 @@ export function clearCachedModel(): void {
   resolvedModelSet = null;
   coolingUntil.clear();
   try {
-    sessionStorage.removeItem(MODEL_CACHE_KEY);
-    sessionStorage.removeItem(MODEL_SET_CACHE_KEY);
-    localStorage.removeItem(DAILY_KEY);
+    const session = sessionStore();
+    session?.removeItem(MODEL_CACHE_KEY);
+    session?.removeItem(MODEL_SET_CACHE_KEY);
+    dayStore()?.removeItem(DAILY_KEY);
   } catch {
     /* nothing to clear */
   }
@@ -152,7 +176,7 @@ export function keyTag(apiKey: string): string {
 
 export function cacheDailyModel(apiKey: string, model: string, usable: string[], now: number = Date.now()): void {
   try {
-    localStorage.setItem(DAILY_KEY, JSON.stringify({ tag: keyTag(apiKey.trim()), model, usable, at: now }));
+    dayStore()?.setItem(DAILY_KEY, JSON.stringify({ tag: keyTag(apiKey.trim()), model, usable, at: now }));
   } catch {
     /* storage disabled: the session cache still applies */
   }
@@ -161,7 +185,7 @@ export function cacheDailyModel(apiKey: string, model: string, usable: string[],
 /** The model chosen for this key in the last day, made this page's choice too; null otherwise. */
 export function readDailyModel(apiKey: string, now: number = Date.now()): string | null {
   try {
-    const saved = JSON.parse(localStorage.getItem(DAILY_KEY) || 'null') as { tag?: string; model?: string; usable?: unknown; at?: number } | null;
+    const saved = JSON.parse(dayStore()?.getItem(DAILY_KEY) || 'null') as { tag?: string; model?: string; usable?: unknown; at?: number } | null;
     if (!saved || saved.tag !== keyTag(apiKey.trim()) || typeof saved.model !== 'string' || typeof saved.at !== 'number' || now - saved.at > DAILY_TTL_MS) return null;
     const usable = Array.isArray(saved.usable) && saved.usable.every((m) => typeof m === 'string') ? (saved.usable as string[]) : [saved.model];
     cacheModel(saved.model, usable);
