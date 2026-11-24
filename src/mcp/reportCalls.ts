@@ -106,7 +106,7 @@ import type { QueryJson } from '../lib/databaseAi';
 import type { Answerer, GenDone, GenEvent, InputFile, Printed, ReviseAction } from './genJobs';
 import type { Generator, JobSource } from './generator';
 import { nodeWriteFs, parsePath, resolveReadPath, resolveWritePath, type IfExists, type PathScope, type PathSystem, type PlacedStatus, type WriteFs, type WriteStatus } from './paths';
-import { LAYOUT_FILE_EXTENSIONS, MAX_LAYOUT_FILE_BYTES, SAMPLE_FILE_EXTENSIONS, type Binding, type DatabaseJob } from './nodeDatabase';
+import { LAYOUT_FILE_EXTENSIONS, MAX_LAYOUT_FILE_BYTES, SAMPLE_FILE_EXTENSIONS, type Binding, type DatabaseJob, type LayoutBytes } from './nodeDatabase';
 import type { Audited } from './pipeline';
 import { besideName, codeRefusal, outputPath, overInputRefusal, readReport, sameFile, writeReport, type LayoutKind, type ReportFile, type Written } from './reportFile';
 
@@ -257,38 +257,57 @@ export async function readJudged(judged: readonly Judged[], voice: Voice, maxByt
  * consent, OC6), the query pinned as JSON (databaseAi.ts `QueryJson`), and
  * the connection a report names when it names none. The MCP server's tools
  * take none until that work's wave 7; the command line's `--database`.
+ *
+ * Since that work's wave 6 (2026-11-25, D2-6) the layout and the sample rows
+ * can also be text already read, as `LayoutBytes` (a name for what is said
+ * of it, and its bytes): the command line's `--connection`, whose layout
+ * Forma Designer printed (designerVerbs.ts) on the thread that called,
+ * before the job, so the job is handed what a layout file's bytes would be
+ * and no worker ever starts a program. Such text is no file: nothing judges
+ * it, and no output can be written over it.
  */
 export interface DatabaseInput {
-  layout: string;
-  samples?: readonly string[];
+  layout: DatabaseSource;
+  samples?: readonly DatabaseSource[];
   query?: QueryJson | null;
   connectionName?: string;
 }
 
-/** A database's files judged before the call waits; read only at its turn. */
+/** A layout or a file of sample rows as a call takes it: a file's path, or text already read (`--connection`). */
+export type DatabaseSource = string | LayoutBytes;
+
+/** A database's files judged before the call waits (read only at its turn), or text already read, passed as it is. */
 export interface JudgedDatabase {
-  layout: Judged;
-  samples: Judged[];
+  layout: Judged | LayoutBytes;
+  samples: (Judged | LayoutBytes)[];
   query: QueryJson | null;
   connectionName?: string;
 }
 
-/** Judges a database's files, as the kinds a layout and sample rows are read from, at most nodeDatabase.ts's size. Throws a `ToolRefusal`. */
+/** The database's files on disk, of those a call was given, for the rule that no output is written over one. */
+export function databaseFilesOf(db: JudgedDatabase): Judged[] {
+  return [db.layout, ...db.samples].filter((d): d is Judged => 'path' in d);
+}
+
+/** Judges a database's files, as the kinds a layout and sample rows are read from, at most nodeDatabase.ts's size; text already read passes as it is. Throws a `ToolRefusal`. */
 export function judgeDatabase(input: DatabaseInput, scope: PathScope, sys: PathSystem): JudgedDatabase {
+  const judged = (raw: DatabaseSource, extensions: readonly string[]) => (typeof raw === 'string' ? judgeInput(raw, extensions, scope, sys, MAX_LAYOUT_FILE_BYTES) : raw);
   return {
-    layout: judgeInput(input.layout, LAYOUT_FILE_EXTENSIONS, scope, sys, MAX_LAYOUT_FILE_BYTES),
-    samples: (input.samples ?? []).map((raw) => judgeInput(raw, SAMPLE_FILE_EXTENSIONS, scope, sys, MAX_LAYOUT_FILE_BYTES)),
+    layout: judged(input.layout, LAYOUT_FILE_EXTENSIONS),
+    samples: (input.samples ?? []).map((raw) => judged(raw, SAMPLE_FILE_EXTENSIONS)),
     query: input.query ?? null,
     ...(input.connectionName !== undefined ? { connectionName: input.connectionName } : {}),
   };
 }
 
-/** A database's files read at the call's turn (W8C-6), as the job carries them to the work's thread. Throws a `ToolRefusal`. */
+/** A database's files read at the call's turn (W8C-6), as the job carries them to the work's thread; text already read as it is. Throws a `ToolRefusal`. */
 export async function readDatabaseFiles(db: JudgedDatabase, voice: Voice): Promise<DatabaseJob> {
-  const [layout] = await readJudged([db.layout], voice, MAX_LAYOUT_FILE_BYTES);
+  const read = async (d: Judged | LayoutBytes): Promise<LayoutBytes> => ('path' in d ? (await readJudged([d], voice, MAX_LAYOUT_FILE_BYTES))[0] : d);
+  const samples: LayoutBytes[] = [];
+  for (const d of db.samples) samples.push(await read(d));
   return {
-    layout,
-    samples: await readJudged(db.samples, voice, MAX_LAYOUT_FILE_BYTES),
+    layout: await read(db.layout),
+    samples,
     query: db.query,
     ...(db.connectionName !== undefined ? { connectionName: db.connectionName } : {}),
   };
@@ -409,7 +428,7 @@ export async function planGenerate<W extends IfExists>(input: GenerateInput, pol
   // A report made from a file is never written over that file, whatever replaces (the wave-4 review's SEC-W4-2): a
   // report to start from would lose what it was, its login included. Only a policy that replaces can reach it.
   if (policy.ifExists === 'replace') {
-    const read = [...inputs, ...(database ? [database.layout, ...database.samples] : [])];
+    const read = [...inputs, ...(database ? databaseFilesOf(database) : [])];
     for (const written of [target.path, ...(draft?.ok ? [draft.path] : [])]) {
       const over = read.find((i) => sameFile(written, i.path, sys));
       if (over) throw new ToolRefusal(say.overSource(quoted(over.path, policy.voice)));
@@ -530,7 +549,7 @@ export async function planRevise<W extends IfExists>(input: ReviseInput, policy:
   const target = outputPath(input.output, report, '.revised.repx', ['.repx'], scope, policy.sys);
   const database = input.database ? judgeDatabase(input.database, scope, policy.sys) : null;
   // A layout read from a report's own source is never what a change is written over (SEC-W4-2's rule, for --force).
-  if (database && policy.ifExists === 'replace' && [database.layout, ...database.samples].some((d) => sameFile(target, d.path, policy.sys) && !sameFile(target, report.path, policy.sys))) {
+  if (database && policy.ifExists === 'replace' && databaseFilesOf(database).some((d) => sameFile(target, d.path, policy.sys) && !sameFile(target, report.path, policy.sys))) {
     throw new ToolRefusal(SAY[policy.voice].overSource(quoted(target, policy.voice)));
   }
   return { request, report, target, policy, editsOnly: input.editsOnly === true, database };

@@ -89,6 +89,35 @@
  * shown as `?` as every line's are), and `--require-binding` makes a report
  * written but not bound an input that failed (`unbound`, exit 4).
  *
+ * ## Forma Designer's connections (the same work's wave 6)
+ *
+ * Findings D2-1, D2-5, D2-6, D2-10, D2-11 and SEC-5, the owner's OC1 and
+ * OC6. On Windows, Forma Designer keeps a person's SQL Server connections,
+ * a login's secret encrypted for their Windows account, and from 1.2.0
+ * (not yet released: the owner packs it) answers command-line verbs that
+ * designerVerbs.ts starts: `connections` lists the names it keeps, with
+ * each one's database and how it signs in; `--connection <name>`, in place
+ * of `--database` on generate, revise, batch, convert and bind, has it read
+ * that connection's layout, which is then used exactly as a layout file's
+ * (`DatabaseInput` takes it as bytes), the report's connection written with
+ * the name Forma Designer keeps it under unless `--connection-name` names
+ * another (D2-10); `--sample-objects dbo.A,dbo.B [--rows N]`, with it, has
+ * it read sample rows of those tables, whose values go to the AI: naming
+ * them is the person's consent (OC6), as passing `--samples` is, and no
+ * value is printed; a table SQL Server cannot read is left out and said by
+ * name and SQL Server's number alone (the wave's review, R6-2), and a
+ * connection an older Forma Designer kept under a name beginning with `.`
+ * or `-` is listed as one `--connection` cannot name, with how to rename it
+ * (N6-6). The layout is read once, on this thread, before any
+ * job starts (`connectionFirst`, D2-6), within `DESIGNER_CLI_SECONDS` for
+ * each verb and killed by a stop; a Forma Designer that is not there, is
+ * older than 1.2.0 or is not on Windows is refused in words with the way
+ * on (a layout file), exit 4, before anything else is read. The entry
+ * finds it (`designerPlace`: the per-user install, or FORMA_DESIGNER for a
+ * copy built from source) and builds the environment it is started with
+ * from Windows' own variables, after the keys are deleted; nothing here
+ * reads the environment.
+ *
  * ## Paths and writes
  *
  * Every path goes through paths.ts in the working-folder mode (`PathScope`
@@ -181,7 +210,8 @@ import { PROVIDER_NAMES } from '../lib/aiProvider';
 import type { AiLimit } from '../lib/aiLimit';
 import type { QueryJson } from '../lib/databaseAi';
 import { EDIT_OPS } from '../lib/editLanguage';
-import type { SampleTarget } from '../lib/sqlSchemaScript';
+import { MAX_SAMPLE_ROWS } from '../lib/sqlSchema';
+import { SAMPLE_SCRIPT_ROWS, type SampleTarget } from '../lib/sqlSchemaScript';
 import { fallbacksFor } from '../lib/fallbackChain';
 import { MAX_BATCH_FILES } from '../lib/folderDrop';
 import { MAX_FILE_BYTES } from '../lib/attachmentBudget';
@@ -193,7 +223,9 @@ import type { GenEvent, GenSetup } from './genJobs';
 import { GEN_LIMITS, STAGES, workerGenerator, type Generator } from './generator';
 import { CONVERTED_VERSION, NO_EDIT_MADE, auditLayout, bindLayout, convertForeign, convertLayout, copyLayout, editLayout, notConverted, outlineLayout, pdfLayout, readLayout, repairLayout, writeLayout, type LayoutRun } from './layoutCalls';
 import { formaUserFolder, keyParked } from './modelParks';
-import { CHOSEN_WORDS } from './nodeDatabase';
+import { DESIGNER_VERBS_SINCE } from '../lib/designerRelease';
+import { DESIGNER_INSTALL, DESIGNER_MAX_OBJECTS, RENAME_TO_USE, designerConnections, designerRead, type DesignerSetup } from './designerVerbs';
+import { CHOSEN_WORDS, type LayoutBytes } from './nodeDatabase';
 import { nodeSystem, parsePath, resolveFolderPath, resolveReadPath, resolveWritePath, type PathSystem, type PathVerdict, type WorkingFolder, type WriteFs, type WriteStatus } from './paths';
 import { DATA_EXTENSIONS, SOURCE_EXTENSIONS, answeredBy, judgeDatabase, judgeInput, planGenerate, planRevise, runGenerate, runRevise, type BindingText, type DatabaseInput, type PathPolicy, type RevisePlan } from './reportCalls';
 import { FOREIGN_EXTENSIONS, LAYOUT_EXTENSIONS, besideName } from './reportFile';
@@ -231,6 +263,12 @@ export interface CliIo {
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   /** The time, for the batch's summary; Date.now by default. */
   now?: () => number;
+  /**
+   * Where Forma Designer is and the environment it is started with, as the
+   * entry worked them out (designerVerbs.ts `designerPlace`, `designerEnvFrom`):
+   * `connections` and `--connection` start it. Absent, neither can.
+   */
+  designer?: DesignerSetup;
 }
 
 /** Waits `ms`, or until `signal` is aborted, whichever comes first. */
@@ -320,6 +358,10 @@ interface Options {
   max: number;
   /** A database's layout file: generate, revise, batch, convert and bind bind their reports to it (the header's *A database*). */
   database?: string;
+  /** A connection Forma Designer keeps, whose layout it reads in place of --database's file (the header's *Forma Designer's connections*). */
+  connection?: string;
+  /** With --connection: the tables and views Forma Designer reads sample rows of, whose values go to the AI: naming them is the person's consent (OC6). */
+  sampleObjects?: SampleTarget[];
   /** Files of sample rows of the same database, whose values go to the AI: passing one is the person's consent (OC6). */
   samples: string[];
   /** The query pinned, as JSON (databaseAi.ts `QueryJson`): from --procedure, --object or --query. */
@@ -330,7 +372,7 @@ interface Options {
   requireBinding: boolean;
   /** sql-script: the tables and views to read sample rows of, as `schema.name`. */
   sample?: SampleTarget[];
-  /** sql-script: the rows read of each. */
+  /** sql-script with --sample, or --sample-objects: the rows read of each. */
   rows?: number;
   /** sql-script: the server and database the sqlcmd line names. */
   sqlcmd?: { server: string; database: string };
@@ -340,7 +382,7 @@ interface Options {
 export type Parsed = { kind: 'help' } | { kind: 'version' } | { kind: 'run'; command: CliCommand; inputs: string[]; options: Options };
 
 /** Options that take a value. */
-const VALUED = new Set(['--out', '--fail-on', '--description', '--data', '--words', '--edits', '--max', '--database', '--samples', '--procedure', '--query', '--object', '--connection-name', '--sample', '--rows']);
+const VALUED = new Set(['--out', '--fail-on', '--description', '--data', '--words', '--edits', '--max', '--database', '--connection', '--sample-objects', '--samples', '--procedure', '--query', '--object', '--connection-name', '--sample', '--rows']);
 /** Options that take two values: sql-script's `--sqlcmd <server> <database>`. */
 const PAIRED_VALUES = new Set(['--sqlcmd']);
 /** Options given once for each file. */
@@ -353,9 +395,10 @@ const PINS = ['--procedure', '--query', '--object'] as const;
 /**
  * The tables and views sql-script's `--sample` names, `dbo.Orders,Sales.[Order Lines]`:
  * split at commas outside brackets, each `schema.name` (`dbo` when only a name is given),
- * a bracketed part taken as it is written. Throws a `UsageError`.
+ * a bracketed part taken as it is written; `option`, the option a usage error names
+ * (`--sample-objects` reads its tables the same way). Throws a `UsageError`.
  */
-export function sampleTargets(text: string): SampleTarget[] {
+export function sampleTargets(text: string, option = '--sample'): SampleTarget[] {
   const parts: string[] = [];
   let at = '';
   let depth = 0;
@@ -373,7 +416,7 @@ export function sampleTargets(text: string): SampleTarget[] {
     // A control character is refused, never put in a script printed whole (UNSAFE_IN_LINE, as every line's are).
     const safe = part.replace(UNSAFE_IN_LINE, '?');
     if (!names.length || names.length > 2 || safe !== part) {
-      throw new UsageError(`--sample names tables or views as schema.name, separated by commas, such as dbo.Orders,dbo.Customers; ${quoted(safe.trim() || safe)} is not one.`);
+      throw new UsageError(`${option} names tables or views as schema.name, separated by commas, such as dbo.Orders,dbo.Customers; ${quoted(safe.trim() || safe)} is not one.`);
     }
     return names.length === 1 ? { schema: 'dbo', name: names[0] } : { schema: names[0], name: names[1] };
   });
@@ -474,26 +517,48 @@ export function parseArgs(argv: readonly string[]): Parsed {
     dryRun: switched.has('--dry-run'),
     max: maxGiven === undefined ? MAX_BATCH_FILES : Number(maxGiven),
     database: one('--database'),
+    connection: one('--connection'),
     samples: given.get('--samples') ?? [],
     query: null,
     connectionName: one('--connection-name'),
     requireBinding: switched.has('--require-binding'),
   };
-  for (const [option, value] of [['--out', options.out], ['--edits', options.edits], ['--database', options.database], ...options.samples.map((s) => ['--samples', s] as const), ...PINS.map((p) => [p, one(p)] as const)] as const) {
+  for (const [option, value] of [['--out', options.out], ['--edits', options.edits], ['--database', options.database], ['--connection', options.connection], ...options.samples.map((s) => ['--samples', s] as const), ...PINS.map((p) => [p, one(p)] as const)] as const) {
     if (value !== undefined && !value.trim()) throw new UsageError(`${option} needs a value after it.`);
   }
-  // A database's layout, and what goes with it (the header's *A database*): each of these needs --database, and one query at most.
+  // A database's layout, and what goes with it (the header's *A database*): a file (--database) or a connection Forma Designer
+  // keeps (--connection), one of them; each of these needs one, and one query at most.
+  if (options.database !== undefined && options.connection !== undefined) {
+    throw new UsageError('--database and --connection each give the database the report reads, a layout file or a connection Forma Designer keeps; give one of them.');
+  }
   const pins = PINS.filter((p) => given.has(p));
-  if (options.database === undefined) {
+  if (options.database === undefined && options.connection === undefined) {
     const without = [...(options.samples.length ? ['--samples'] : []), ...pins, ...(options.connectionName !== undefined ? ['--connection-name'] : [])];
-    if (without.length) throw new UsageError(`${without[0]} goes with --database, the layout of the database the report reads.`);
-    if (options.requireBinding && !options.data.length) throw new UsageError('--require-binding goes with --database, or a layout given with --data: with no database, no report is bound.');
+    if (without.length) throw new UsageError(`${without[0]} goes with --database or --connection, the database the report reads.`);
+    if (options.requireBinding && !options.data.length) throw new UsageError('--require-binding goes with --database, or a layout given with --data, or --connection: with no database, no report is bound.');
   }
   if (pins.length > 1) throw new UsageError(`${pins.join(' and ')} each say what the report reads; give one of them.`);
   if (pins.length) options.query = pinnedJson(pins[0], one(pins[0]) as string);
   if (options.connectionName !== undefined && !options.connectionName.trim()) throw new UsageError('--connection-name needs a value after it.');
   if (command.name === 'bind' && !pins.length) throw new UsageError('Name what the report reads with --procedure, --object or --query; bind binds with no AI, so nothing chooses it for you.');
-  if (command.name === 'bind' && options.database === undefined) throw new UsageError('Give the layout of the database the report reads with --database.');
+  if (command.name === 'bind' && options.database === undefined && options.connection === undefined) {
+    throw new UsageError('Give the database the report reads: its layout with --database, or a connection Forma Designer keeps with --connection.');
+  }
+  // Sample rows Forma Designer reads through the connection (OC6: naming them is the person's act), and how many of each.
+  if (command.name !== 'sql-script') {
+    const objects = one('--sample-objects');
+    if (objects !== undefined) {
+      if (options.connection === undefined) throw new UsageError('--sample-objects goes with --connection, whose database Forma Designer reads the rows from; with a layout file, give the sample script\'s answer with --samples.');
+      options.sampleObjects = sampleTargets(objects, '--sample-objects');
+      if (options.sampleObjects.length > DESIGNER_MAX_OBJECTS) throw new UsageError(`--sample-objects names ${options.sampleObjects.length} tables or views; Forma Designer reads at most ${DESIGNER_MAX_OBJECTS} at a time.`);
+    }
+    const rows = one('--rows');
+    if (rows !== undefined) {
+      if (objects === undefined) throw new UsageError('--rows goes with --sample-objects, the tables whose rows Forma Designer reads.');
+      if (!/^\d+$/.test(rows) || Number(rows) < 1 || Number(rows) > MAX_SAMPLE_ROWS) throw new UsageError(`--rows with --sample-objects takes a whole number of rows from 1 to ${MAX_SAMPLE_ROWS}, the most of each Forma keeps.`);
+      options.rows = Number(rows);
+    }
+  }
   if (command.name === 'sql-script') {
     if (rest.length) throw new UsageError(`sql-script takes no file; ${rest.length === 1 ? 'one was' : `${rest.length} were`} named. Give --out to write the script to a file.`);
     const sample = one('--sample');
@@ -524,6 +589,8 @@ export function parseArgs(argv: readonly string[]): Parsed {
   } else if (command.name === 'generate') {
     if (!rest.length && !options.description?.trim()) throw new UsageError('Name files to make the report from, give --description "...", or both.');
     if (!rest.length && options.out === undefined) throw new UsageError('Name where to write the report with --out, since there is no file to write it beside.');
+  } else if (command.name === 'connections') {
+    if (rest.length) throw new UsageError(`connections takes no file; ${rest.length === 1 ? 'one was' : `${rest.length} were`} named.`);
   } else if (command.name !== 'sql-script' && rest.length !== 1) throw new UsageError(`${command.name} takes one report; ${rest.length} were named.`);
   if (command.name === 'edit' && options.edits === undefined) throw new UsageError('Give the edits with --edits: a .json file, or the JSON itself, an array of edits each with its op.');
   if (command.name === 'revise' && !options.words?.trim()) throw new UsageError('Give the request with --words "...": what to change in the report, or what to ask about it.');
@@ -546,7 +613,7 @@ export function helpText(version: string): string {
   ];
   for (const c of CLI_COMMANDS) {
     const soon = 'soon' in c && c.soon ? ' (not built yet)' : '';
-    lines.push(`  ${c.name} ${c.usage}${aiMark(c)}`, `      ${c.says}${soon}`);
+    lines.push(`  ${c.name}${c.usage ? ` ${c.usage}` : ''}${aiMark(c)}`, `      ${c.says}${soon}`);
   }
   lines.push(
     '',
@@ -571,17 +638,21 @@ export function helpText(version: string): string {
     '  --dry-run           print what each file would be made into, and which need the AI, reading no file and asking no AI (batch)',
     `  --max <n>           the most files a batch makes; ${MAX_BATCH_FILES} unless given, and a folder holding more is refused before anything is read`,
     "  --database <layout> a database's layout: what sql-script's script answers, saved as a file (UTF-8 or UTF-16), an SSMS \"Generate Scripts\" file, or a .repx whose data source it reads; the AI binds the report to it, and Forma writes the SQL data source with the connection by name only (generate, revise, batch; convert and bind with no AI)",
+    `  --connection <name> a SQL Server connection Forma Designer keeps for you (connections lists them), in place of --database: Forma Designer ${DESIGNER_VERBS_SINCE} or later, on Windows, reads its database's layout, and the report's connection is written with this name (generate, revise, batch, convert, bind)`,
     "  --samples <file>    sample rows of the same database (sql-script --sample's answer), whose values go to the AI with the layout: giving the file is your consent; once for each file (generate, revise, batch). Without it, only names go",
+    "  --sample-objects <dbo.A,dbo.B>  with --connection: Forma Designer reads a few rows of these tables or views, whose values go to the AI with the layout: naming them is your consent (generate, revise, batch). Without it, only names go",
     '  --procedure <name>  the stored procedure the report reads, such as dbo.usp_Sales; refused before any AI is asked when the layout does not say what it returns (generate, revise, batch, bind)',
     '  --object <name>     the table or view the report reads, such as dbo.Orders (generate, revise, batch, bind)',
     '  --query <json>      the query the report reads, as JSON: {"table":"dbo.Orders","joins":[{"table":"dbo.Customers"}],"filter":"[Orders.Freight] > ?Min"}, or {"procedure":"..."}, or {"name":"...","sql":"SELECT ..."}; every name must be in the layout (generate, revise, batch, bind)',
-    "  --connection-name <name>  the name your application knows the database by, written as the report's connection when it names none; the database's own name by default",
+    "  --connection-name <name>  the name your application knows the database by, written as the report's connection when it names none; the database's own name by default, or --connection's",
     '  --require-binding   a report written but not bound to the database given ends its input with exit 4 (generate, revise, batch, convert)',
     '  --sample <dbo.A,dbo.B>  sql-script: the script that reads a few rows of these tables and views instead of the layout',
-    '  --rows <n>          sql-script --sample: the rows read of each, 1 to 50; 5 unless given',
+    `  --rows <n>          the rows read of each table or view: 1 to 50 with sql-script --sample, 1 to ${MAX_SAMPLE_ROWS} with --sample-objects (the most Forma keeps); ${SAMPLE_SCRIPT_ROWS} unless given`,
     '  --sqlcmd <server> <database>  sql-script with --out: also prints the sqlcmd line that runs the script into a UTF-8 .txt beside it',
     '',
     `A batch makes one file at a time, each that asks the AI in a thread of its own, with at most ${Math.round(GEN_LIMITS.deadlineMs / 60_000)} minutes and ${GEN_LIMITS.heapMb} MB of memory, so one bad file cannot end the batch. A minute's limit is waited out and the file made once more; the day's limit stops the files that ask the AI, each listed as not started, while those that need none are still made, and the same command with --skip-existing carries on once it lifts. A report the words leave as it was is written as it reads (an SSRS or FastReport report as converted), so --out holds every report.`,
+    '',
+    `Forma Designer, for connections and --connection: the one installed for this Windows user, in ${DESIGNER_INSTALL.join('\\')} under LOCALAPPDATA, ${DESIGNER_VERBS_SINCE} or later; or FORMA_DESIGNER, the full path of a RepxDesigner.exe built from source. It reads the database with the connection it keeps, whose server, login and password it never gives Forma.`,
     '',
     'The AI, from the environment the command runs in (in CI, from its secrets into the step\'s environment): FORMA_GEMINI_KEY; or FORMA_OPENROUTER_KEY and FORMA_OPENROUTER_MODEL; or FORMA_LOCAL_MODEL, with FORMA_LOCAL_URL for a server not at Ollama\'s address; FORMA_PROVIDER when more than one is set; FORMA_MODEL and FORMA_LOCALE if wanted.',
     '',
@@ -682,6 +753,8 @@ interface Run {
   stopped?: { why: 'limit'; limit: AiLimit } | { why: 'key' };
   /** The batch's plan and walk, for its summary; absent for every other command. */
   batch?: BatchFacts;
+  /** --connection's layout and --sample-objects' rows, as Forma Designer printed them, once read (`connectionFirst`). */
+  fetched?: { connection: string; layout: LayoutBytes; samples: LayoutBytes[] };
   out(line: string): void;
   err(line: string): void;
 }
@@ -1240,11 +1313,99 @@ async function sqlScriptCommand(run: Run): Promise<Row> {
   });
 }
 
-/** The database the person gave, as the calls take it; undefined without one. */
+/**
+ * The database the person gave, as the calls take it; undefined without one.
+ * With --connection, the layout Forma Designer printed (read first, by
+ * `connectionFirst`), and the report's connection named as Forma Designer
+ * keeps it unless --connection-name names another (D2-10: a report written
+ * with the database's own name was one Forma Designer could not connect).
+ */
 function databaseOf(run: Run): DatabaseInput | undefined {
   const o = run.options;
+  if (o.connection !== undefined) {
+    const f = run.fetched;
+    if (!f) throw new Error('the connection was not read before its layout was used');
+    return { layout: f.layout, samples: [...f.samples, ...o.samples], query: o.query, connectionName: o.connectionName ?? f.connection };
+  }
   if (o.database === undefined) return undefined;
   return { layout: o.database, samples: o.samples, query: o.query, ...(o.connectionName !== undefined ? { connectionName: o.connectionName } : {}) };
+}
+
+/** Whether the person gave a database, as a file or a connection. */
+const hasDatabase = (run: Run) => run.options.database !== undefined || run.options.connection !== undefined;
+
+/** The database the person gave, as a row that refuses it names it. */
+const databaseLabel = (run: Run) => run.options.database ?? (run.options.connection !== undefined ? `connection ${run.options.connection}` : '');
+
+/**
+ * The seconds each of Forma Designer's verbs is given from the command line,
+ * which no client cuts short: ten minutes, where a page waits three for the
+ * same layout (lib/sqlCompanion.ts) and Forma Designer's own default is two,
+ * since a large database's layout describes what every procedure returns,
+ * and a CI step is better served by a long wait than a failed one. A stop
+ * (Ctrl+C) ends it at once, and Forma Designer ends itself at the deadline.
+ */
+export const DESIGNER_CLI_SECONDS = 600;
+
+/** Forma Designer as the entry found it, or why it was not looked for. */
+const designerOf = (run: Run): DesignerSetup => run.io.designer ?? { place: { ok: false, reason: 'Forma Designer was not looked for in this run.' }, env: {} };
+
+/** The way on when Forma Designer cannot be used: the layout as a file. */
+const LAYOUT_INSTEAD = "Give the database's layout as a file with --database instead: sql-script prints the script that reads it.";
+
+/** A table or view as a line names it. */
+const objectName = (t: SampleTarget) => `${t.schema}.${t.name}`;
+
+/**
+ * --connection's layout, and --sample-objects' rows, read through Forma
+ * Designer once, before anything else reads the database (the header's
+ * *Forma Designer's connections*): on this thread, before any job starts, so
+ * no worker thread ever starts a program (D2-6), and said on stderr, never a
+ * value (OC6). Null when read; else the input's refused row, exit 4.
+ */
+async function connectionFirst(run: Run, label: string): Promise<Row | null> {
+  const name = run.options.connection;
+  if (name === undefined || run.fetched) return null;
+  const row = await attempt(run, label, async () => {
+    const setup = designerOf(run);
+    if (!setup.place.ok) throw new ToolRefusal(`${setup.place.reason} ${LAYOUT_INSTEAD}`);
+    const objects = run.options.sampleObjects;
+    const rows = run.options.rows ?? SAMPLE_SCRIPT_ROWS;
+    run.err(
+      `Reading the layout of the connection ${name}${objects ? `, and ${n(rows, 'row')} of each of ${objects.map(objectName).join(', ')}, whose values go to the AI with it,` : ''} through Forma Designer, within ${n(DESIGNER_CLI_SECONDS / 60, 'minute')} for each.`,
+    );
+    const read = await designerRead(setup, name, { voice: 'cli', signal: run.io.signal, seconds: DESIGNER_CLI_SECONDS, log: (line) => run.options.verbose && run.err(line) }, objects ? { objects, rows } : undefined);
+    // A table SQL Server could not read is left out, the rest sent (R6-2): said by name and number, never SQL Server's words.
+    for (const u of read.unread) {
+      run.err(`SQL Server could not read sample rows of ${u.object}${u.number === null ? '' : ` (its error ${u.number})`}, so its rows were left out.`);
+    }
+    // The name what is read is said under: the connection's, as Forma Designer keeps it, never a file's.
+    const as = `${read.connection} in Forma Designer`;
+    const bytes = (text: string) => new TextEncoder().encode(text);
+    run.fetched = { connection: read.connection, layout: { name: as, bytes: bytes(read.layout) }, samples: read.samples === null ? [] : [{ name: as, bytes: bytes(read.samples) }] };
+    return { status: 'done', lines: [], notes: [], fields: {} };
+  });
+  return row.status === 'done' ? null : row;
+}
+
+/**
+ * connections: the SQL Server connections Forma Designer keeps for this
+ * Windows user (`sql-list`), each by name with its database and how it signs
+ * in, never a server or a secret, which Forma Designer never prints. Opens
+ * no connection; needs no AI.
+ */
+async function connectionsCommand(run: Run): Promise<Row> {
+  return attempt(run, 'Forma Designer', async () => {
+    const setup = designerOf(run);
+    if (!setup.place.ok) throw new ToolRefusal(setup.place.reason);
+    const list = await designerConnections(setup, { voice: 'cli', signal: run.io.signal, log: (line) => run.options.verbose && run.err(line) });
+    // Each line begins with Forma's own word, never a name from the store; one --connection cannot name is said so (N6-6).
+    const lines = list.length
+      ? list.map((c) => `connection ${c.name}: database ${c.database}, signing in ${c.signIn === 'windows' ? 'with Windows' : 'with a saved SQL Server login'}${c.usable ? '' : '; its name begins with . or -, so --connection cannot name it'}`)
+      : ['Forma Designer keeps no SQL Server connection for this Windows user. Add one from its tray menu, SQL Server connections.'];
+    const notes = list.some((c) => !c.usable) ? [`A connection whose name begins with . or - was kept by an older Forma Designer. ${RENAME_TO_USE}`] : [];
+    return { status: 'done', lines, notes, fields: { connections: list } };
+  });
 }
 
 /** What a query reads, in words: a stored procedure, a SQL query by its name, or a table or view with what it joins. */
@@ -1285,6 +1446,8 @@ const withoutBinding = <T extends object>(fromFile: T): T => Object.fromEntries(
  * pinned. Null when read; else the input's refused row.
  */
 async function layoutFirst(run: Run, label: string): Promise<Row | null> {
+  const fetched = await connectionFirst(run, label);
+  if (fetched) return fetched;
   const database = databaseOf(run);
   if (!database) return null;
   const checked = await attempt(run, label, async () => {
@@ -1520,7 +1683,7 @@ function batchSummary(run: Run, facts: BatchFacts): { fields: Record<string, unk
   };
   // With a database, how many reports written are bound to it (D1-9), each file's on its own.
   const bindings = run.rows.map((r) => r.fields.binding as { bound?: boolean } | null | undefined).filter((b) => b !== undefined);
-  const bound = run.options.database !== undefined ? { bound: bindings.filter((b) => b?.bound).length, unbound: bindings.filter((b) => !b?.bound).length } : null;
+  const bound = hasDatabase(run) ? { bound: bindings.filter((b) => b?.bound).length, unbound: bindings.filter((b) => !b?.bound).length } : null;
   const fields = { routes: facts.routes, providers, models, seconds: Math.round(ms / 1000), stoppedBy: stopped, resetsAt, limits, leftOut: facts.leftOut, ...(bound ? { binding: bound } : {}) };
   const lines: string[] = [];
   if (bound) lines.push(`Bound to the database: ${bound.bound} of ${bindings.length} report${bindings.length === 1 ? '' : 's'} made.`);
@@ -1551,6 +1714,12 @@ async function work(run: Run, setGenerator: (g: Generator) => void): Promise<num
     const problem = (await import('../lib/databaseAi')).connectionNameProblem(run.options.connectionName);
     if (problem) throw new UsageError(problem);
   }
+  // A Forma Designer connection's name by its own rule, before anything starts (SEC-2): no name it could keep reads as a switch.
+  if (run.options.connection !== undefined && !(await import('../lib/databaseAi')).DESIGNER_NAME.test(run.options.connection)) {
+    // A name Forma Designer 1.1.0 kept may begin with . or -, which connections lists as one to add again (N6-6): say how here too.
+    const older = /^[.-][A-Za-z0-9_.-]{0,127}$/.test(run.options.connection) ? ` A connection kept under such a name by an older Forma Designer cannot be read until it is renamed: ${RENAME_TO_USE}` : ' connections lists the names it keeps.';
+    throw new UsageError(`--connection names a connection Forma Designer keeps, whose name begins with a letter, a digit or _, and holds only letters, digits, _, . and -, at most 128; ${quoted(run.options.connection.replace(UNSAFE_IN_LINE, '?'))} is not one.${older}`);
+  }
   if (run.command === 'batch') return batchCommand(run, setGenerator);
   if (run.command === 'generate' || run.command === 'revise') {
     // The gate before any file is read, so a run with no AI costs nothing and says what to set (GAP1-2, CLI-7).
@@ -1565,6 +1734,18 @@ async function work(run: Run, setGenerator: (g: Generator) => void): Promise<num
     emit(run, await sqlScriptCommand(run));
     return 1;
   }
+  if (run.command === 'connections') {
+    emit(run, await connectionsCommand(run));
+    return 1;
+  }
+  // bind reads its layout in its own call: a connection's is read first, so a refused one costs no report read.
+  if (run.command === 'bind') {
+    const refused = await connectionFirst(run, run.inputs[0]);
+    if (refused) {
+      emit(run, refused);
+      return 1;
+    }
+  }
   const planned: string[] = [];
   for (const raw of run.inputs) {
     const found = run.command === 'audit' || run.command === 'convert' ? folderInputs(run, raw, run.command) : [raw];
@@ -1573,7 +1754,7 @@ async function work(run: Run, setGenerator: (g: Generator) => void): Promise<num
   }
   // convert's database read and said once, before its first file; each conversion reads it again in its own thread.
   if (run.command === 'convert' && planned.length) {
-    const refused = await layoutFirst(run, run.options.database ?? '');
+    const refused = await layoutFirst(run, databaseLabel(run));
     if (refused) {
       emit(run, refused);
       return run.rows.length + planned.length;
@@ -1685,7 +1866,7 @@ async function batchCommand(run: Run, setGenerator: (g: Generator) => void): Pro
   }
   // The database read and said once, before the first file (D1-3, D1-7); each file's job reads it again and builds a step of
   // its own, so no file's query carries to the next (D1-9), a departure from browser Batch, which shares no database.
-  const refusedDb = await layoutFirst(run, options.database ?? '');
+  const refusedDb = await layoutFirst(run, databaseLabel(run));
   if (refusedDb) {
     emit(run, refusedDb);
     return 1;

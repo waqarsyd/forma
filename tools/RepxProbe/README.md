@@ -120,11 +120,11 @@ looks like this" into a measurement.
 ## Build
 
 ```powershell
-& "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\MSBuild.exe" `
-    tools\RepxProbe\RepxProbe.csproj /p:Configuration=Release
+$msbuild = & 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe' -latest -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+& $msbuild tools\RepxProbe\RepxProbe.csproj /p:Configuration=Release
 ```
 
-Output lands in `tools\RepxProbe\bin\Release\RepxProbe.exe`, which is gitignored
+MSBuild found by `vswhere`, as `scripts/package-designer.ts` finds it (2026-11-25): this line named Visual Studio 2019's Community path until then, which the PC Forma is built on does not have (it has `C:\Program Files\Microsoft Visual Studio\18\Community`). Output lands in `tools\RepxProbe\bin\Release\RepxProbe.exe`, which is gitignored
 along with `obj/` by the `tools/**/bin/` rules in `.gitignore`.
 
 Unlike `RepxDesigner`, this is a **console** app and never opens a window — so

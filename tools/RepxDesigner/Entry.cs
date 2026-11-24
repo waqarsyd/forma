@@ -18,6 +18,10 @@ namespace RepxDesigner
         [STAThread]
         private static int Main(string[] args)
         {
+            // Forma Designer's verbs first of all (2026-11-25, Verbs.cs): before Configure reads
+            // --devexpress-root and before --check, so nothing handed to a verb is ever read as
+            // another switch, and no DevExpress is looked for.
+            if (Verbs.Is(args)) return Verbs.Run(args);
             DevExpressLocator.Configure(args);
             if (Array.IndexOf(args, "--check") >= 0) return Check.Run(args);
 
@@ -29,7 +33,10 @@ namespace RepxDesigner
             Program.Found = found;
             Program.Installed = usable;
             Program.Run(args);
-            return 0;
+            // What --install and --uninstall set when they fail, and --sql-add and --sql-remove
+            // when they cannot (2026-11-25, D2-4): returning 0 here, as until then, discarded it,
+            // since a Main that returns int is the process's exit code whatever ExitCode says.
+            return Environment.ExitCode;
         }
     }
 }

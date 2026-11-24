@@ -745,6 +745,10 @@ describe("the policy covers Forma's MCP server", () => {
       expect(policy).not.toMatch(/by saying yes when Forma asks first\. Otherwise none of it is sent/);
     }
     if (cli.includes("'--samples'")) expect(policy).toMatch(/sample values only from the command line, when you pass them with --samples/);
+    // The CLI and Forma Designer work's wave 6 (2026-11-25, OC6): a layout read through a connection Forma Designer keeps, and
+    // the sample rows of the tables the person names, are routes of their own.
+    if (cli.includes("'--connection'")) expect(policy).toMatch(/from its command line on Windows by naming a connection the Forma Designer app keeps for you, whose layout Forma Designer reads on your computer/);
+    if (cli.includes("'--sample-objects'")) expect(policy).toMatch(/or name the tables with --sample-objects\)\. Otherwise none of it is sent\./);
   });
 });
 
@@ -932,8 +936,14 @@ describe('the legal copy and its date change together', () => {
      passed as data, and the command line to one given with --database, so it
      names that route too, and sample values from the command line only with
      --samples. What is sent changed, so the date moved.
+
+     Moved again the same day (that work's wave 6, OC6): the command line's
+     --connection has Forma Designer read a connection's layout on the
+     person's computer, and its --sample-objects the rows of the tables
+     named, so the paragraph names that route and that act. Substantive, and
+     already that day's date.
      */
-  const EXPECTED_COPY_HASH = '00f8fc27eb0f';
+  const EXPECTED_COPY_HASH = '5da72d14577c';
   const EXPECTED_UPDATED = '25 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {

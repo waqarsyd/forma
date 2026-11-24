@@ -26,10 +26,12 @@
 using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 using System.Text.RegularExpressions;
 using DevExpress.DataAccess.ConnectionParameters;
@@ -90,10 +92,16 @@ namespace RepxDesigner
             return Load().FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
         }
 
-        /// <summary>A connection's name as a report names it: letters, digits and _ . - only, so it can never be a connection string.</summary>
+        /// <summary>
+        /// A connection's name as a report names it: letters, digits and _ . - only, so it can
+        /// never be a connection string. Since 2026-11-25 (the CLI and Forma Designer work's
+        /// wave 6, SEC-2) it may not begin with - or ., so a name handed on a command line can
+        /// never read as a switch (--install, --devexpress-root) to this program or another.
+        /// src/lib/databaseAi.ts DESIGNER_NAME is the same expression, held by its test.
+        /// </summary>
         public static bool IsName(string name)
         {
-            return !string.IsNullOrEmpty(name) && Regex.IsMatch(name, @"^[A-Za-z0-9_.\-]{1,128}$");
+            return !string.IsNullOrEmpty(name) && Regex.IsMatch(name, @"^[A-Za-z0-9_][A-Za-z0-9_.\-]{0,127}$");
         }
 
         public static void Put(StoredConnection c)
@@ -126,10 +134,33 @@ namespace RepxDesigner
             password = nul < 0 ? "" : plain.Substring(nul + 1);
         }
 
-        /// <summary>For ADO.NET (the layout and the samples), never written anywhere.</summary>
-        public static string ConnectionString(StoredConnection c)
+        /// <summary>
+        /// What SQL Server's words must never carry out of this program (D2-7): a login's name
+        /// and password, which the store encrypts together, as the credential they are. Empty
+        /// for Windows authentication, and when the secret cannot be read on this account.
+        /// </summary>
+        internal static string[] SecretsOf(StoredConnection c)
         {
-            var b = new SqlConnectionStringBuilder { DataSource = c.Server, InitialCatalog = c.Database, ConnectTimeout = 15, ApplicationName = "Forma companion" };
+            if (c == null || c.Mode != "login" || string.IsNullOrEmpty(c.Secret)) return new string[0];
+            try
+            {
+                string login, password;
+                Unprotect(c.Secret, out login, out password);
+                return new[] { login, password };
+            }
+            catch (Exception)
+            {
+                return new string[0];
+            }
+        }
+
+        /// <summary>
+        /// For ADO.NET (the layout and the samples), never written anywhere. Connecting waits
+        /// at most <paramref name="connectSeconds"/>, which was a fixed 15 until 2026-11-25.
+        /// </summary>
+        public static string ConnectionString(StoredConnection c, int connectSeconds)
+        {
+            var b = new SqlConnectionStringBuilder { DataSource = c.Server, InitialCatalog = c.Database, ConnectTimeout = connectSeconds, ApplicationName = "Forma companion" };
             if (c.Mode == "login")
             {
                 string login, password;
@@ -161,18 +192,27 @@ namespace RepxDesigner
         /// <summary>GET /sql/connections: names, how each signs in, and its database. Never a server's secret.</summary>
         public static string Connections()
         {
-            return "{\"connections\":[" + string.Join(",", Load().Select(c =>
-                "{\"name\":" + Json(c.Name) + ",\"mode\":" + Json(c.Mode) + ",\"database\":" + Json(c.Database) + "}")) + "]}";
+            return "{\"connections\":" + ConnectionList() + "}";
         }
 
-        /// <summary>GET /sql/schema?connection=NAME: Forma's layout script's one value, as SSMS would show it.</summary>
-        public static string Schema(StoredConnection c)
+        /// <summary>The connections as a JSON array, for /sql/connections and the sql-list verb (Verbs.cs) alike: never a server, never a secret.</summary>
+        public static string ConnectionList()
+        {
+            return "[" + string.Join(",", Load().Select(c =>
+                "{\"name\":" + Json(c.Name) + ",\"mode\":" + Json(c.Mode) + ",\"database\":" + Json(c.Database) + "}")) + "]";
+        }
+
+        /// <summary>
+        /// GET /sql/schema?connection=NAME: Forma's layout script's one value, as SSMS would show
+        /// it, within the <paramref name="budget"/>'s seconds in all (the verbs' --seconds).
+        /// </summary>
+        public static string Schema(StoredConnection c, Budget budget)
         {
             string last = null;
-            using (var conn = new SqlConnection(ConnectionString(c)))
+            using (var conn = new SqlConnection(ConnectionString(c, budget.ConnectSeconds)))
             {
                 conn.Open();
-                using (var cmd = new SqlCommand(SqlScripts.Schema, conn) { CommandTimeout = 120 })
+                using (var cmd = new SqlCommand(SqlScripts.Schema, conn) { CommandTimeout = budget.Left })
                 using (var r = cmd.ExecuteReader())
                 {
                     do { while (r.Read()) last = r.IsDBNull(0) ? null : Convert.ToString(r.GetValue(0), CultureInfo.InvariantCulture); } while (r.NextResult());
@@ -185,44 +225,78 @@ namespace RepxDesigner
         /// GET /sql/sample?connection=NAME&amp;objects=dbo.A,dbo.B&amp;rows=N: the sample script's
         /// own format, built here. Each object must be a table or view the
         /// catalog has; its name is quoted by QUOTENAME; N is 1 to 50.
+        ///
+        /// Since 2026-11-25 (the CLI and Forma Designer work's wave 6, D2-5) each object is read
+        /// by SqlScripts.Sample, SAMPLE_OBJECT_SCRIPT in src/lib/sqlSchemaScript.ts: binary,
+        /// image, rowversion, xml, sql_variant and spatial columns left out and text (and SQL
+        /// Server 2025's json) cut at one character over what Forma keeps, on the server. Until
+        /// then it was SELECT TOP (n) *, which FOR JSON answers with a photo column in base64.
+        /// And all of it within the <paramref name="budget"/>, where each object had 60 seconds
+        /// of its own.
+        ///
+        /// An object SQL Server cannot read (a view over a table since dropped, a computed column
+        /// that divides by zero, a table this sign-in may not SELECT) is left out, as one the
+        /// catalog lacks is, and named in <paramref name="unread"/> with SQL Server's number,
+        /// never its words, which can quote a row's value (the same wave's review, R6-2): until
+        /// then one such object failed the whole call and the others' rows were lost. A failure
+        /// of the connection itself (severity 20 or more, or the connection no longer open) and
+        /// the call's time running out still end the call.
         /// </summary>
-        public static string Samples(StoredConnection c, IEnumerable<string> objects, int rows)
+        public static string Samples(StoredConnection c, IEnumerable<string> objects, int rows, Budget budget, List<KeyValuePair<string, int>> unread = null)
         {
             rows = Math.Max(1, Math.Min(50, rows));
             var parts = new List<string>();
             string database;
-            using (var conn = new SqlConnection(ConnectionString(c)))
+            using (var conn = new SqlConnection(ConnectionString(c, budget.ConnectSeconds)))
             {
                 conn.Open();
-                using (var cmd = new SqlCommand("SELECT DB_NAME()", conn)) database = Convert.ToString(cmd.ExecuteScalar());
+                using (var cmd = new SqlCommand("SELECT DB_NAME()", conn) { CommandTimeout = budget.Left }) database = Convert.ToString(cmd.ExecuteScalar());
                 foreach (string obj in objects.Take(20))
                 {
                     string[] names = obj.Split('.');
                     string schema = names.Length > 1 ? names[names.Length - 2] : "dbo";
                     string name = names[names.Length - 1];
-                    const string sql =
-                        "IF EXISTS (SELECT 1 FROM sys.objects o JOIN sys.schemas s ON s.schema_id = o.schema_id WHERE s.name = @s AND o.name = @n AND o.type IN ('U','V')) " +
-                        "BEGIN DECLARE @q nvarchar(max) = N'SELECT TOP (' + CONVERT(nvarchar(10), @rows) + N') * FROM ' + QUOTENAME(@s) + N'.' + QUOTENAME(@n) + N' FOR JSON PATH, INCLUDE_NULL_VALUES'; EXEC sp_executesql @q; END";
                     var json = new StringBuilder();
                     bool found = false;
-                    using (var cmd = new SqlCommand(sql, conn) { CommandTimeout = 60 })
+                    try
                     {
-                        cmd.Parameters.AddWithValue("@s", schema);
-                        cmd.Parameters.AddWithValue("@n", name);
-                        cmd.Parameters.AddWithValue("@rows", rows);
-                        using (var r = cmd.ExecuteReader())
+                        using (var cmd = new SqlCommand(SqlScripts.Sample, conn) { CommandTimeout = budget.Left })
                         {
-                            // No result set at all: the catalog has no such table or view, so it is left out.
-                            found = r.FieldCount > 0;
-                            // FOR JSON comes back in pieces across rows; they join into one array.
-                            while (r.Read()) if (!r.IsDBNull(0)) json.Append(r.GetString(0));
+                            cmd.Parameters.AddWithValue("@s", schema);
+                            cmd.Parameters.AddWithValue("@n", name);
+                            cmd.Parameters.AddWithValue("@rows", rows);
+                            using (var r = cmd.ExecuteReader())
+                            {
+                                // No result set at all: the catalog has no such table or view, so it is left out.
+                                found = r.FieldCount > 0;
+                                // FOR JSON comes back in pieces across rows; they join into one array.
+                                while (r.Read()) if (!r.IsDBNull(0)) json.Append(r.GetString(0));
+                            }
                         }
+                    }
+                    catch (SqlException ex) when (ObjectOnly(ex, conn))
+                    {
+                        if (unread != null) unread.Add(new KeyValuePair<string, int>(schema + "." + name, ex.Number));
+                        continue;
                     }
                     if (found) parts.Add("{\"object\":" + Json(schema + "." + name) + ",\"rows\":" + (json.Length > 0 ? json.ToString() : "[]") + "}");
                 }
             }
             string body = "{\"format\":\"forma-sql-sample\",\"version\":1,\"database\":" + Json(database) + ",\"samples\":[" + string.Join(",", parts) + "]}";
             return "<?forma " + body.Replace("?>", "?\\u003e") + "?>";
+        }
+
+        /// <summary>
+        /// Whether a failure reading one sampled object leaves the connection usable for the
+        /// next (Samples): an error of the statement, below severity 20, not a timeout (each
+        /// command runs for what is left of the call, so a timeout is the call's time up), on a
+        /// connection still open.
+        /// </summary>
+        private static bool ObjectOnly(SqlException ex, SqlConnection conn)
+        {
+            var errors = ex.Errors.Cast<SqlError>().ToList();
+            if (errors.Any(e => e.Class >= 20 || e.Number == -2 || e.Number == 258)) return false;
+            return conn.State == System.Data.ConnectionState.Open;
         }
 
         // OPENQUERY, KILL, WAITFOR, WRITETEXT, UPDATETEXT and RECONFIGURE joined the list on
@@ -418,6 +492,120 @@ namespace RepxDesigner
             return sources.Count - missing.Count - held.Count;
         }
 
+        // ------------------------------------------------------------ SQL Server's words
+
+        /// <summary>
+        /// A failure in a word a caller can act on, and the words to say (2026-11-25, the CLI and
+        /// Forma Designer work's wave 6, D2-7). SQL Server's own words can carry the saved login,
+        /// which the store encrypts as half of the credential ("Login failed for user 'x'."), and
+        /// a verb's words reach a command line and, through Forma's MCP server, a host's AI. So the
+        /// failures people meet are said in plain sentences that name nothing, and anything else
+        /// is SQL Server's first line with the login, the password, this Windows account and the
+        /// server taken out (Scrub). Never a connection string, never the server's name.
+        /// </summary>
+        internal sealed class Failure
+        {
+            /// <summary>deadline, sign-in, database, unreachable, sql or failed.</summary>
+            public string Problem;
+            public string Words;
+            /// <summary>SQL Server's error number, 0 when SQL Server did not raise it.</summary>
+            public int Number;
+        }
+
+        /// <summary>A sign-in SQL Server refused: failed, untrusted domain, disabled, locked, or its password expired.</summary>
+        private static readonly int[] SignInRefused = { 18456, 18452, 18470, 18486, 18487, 18488 };
+
+        /// <summary>
+        /// No server answered at that name: named pipes' "not found" (2, 53, 40), an instance not
+        /// found (26, -1), TCP's timed out, refused and unknown host (10060, 10061, 11001). Measured
+        /// here on 2026-11-25: a refused TCP port (tcp:127.0.0.1,1) is 1225, and a LocalDB instance
+        /// that does not exist -1983577849 (0x89C50107).
+        /// </summary>
+        private static readonly int[] Unreachable = { 2, 53, 40, 26, -1, 1225, 10060, 10061, 11001, -1983577849 };
+
+        internal static Failure Explain(Exception ex, StoredConnection c, Budget budget)
+        {
+            if (ex is BudgetSpent) return new Failure { Problem = "deadline", Words = Within(budget) };
+            var sql = ex as SqlException;
+            if (sql != null)
+            {
+                var numbers = sql.Errors.Cast<SqlError>().Select(e => e.Number).ToList();
+                int first = numbers.Count > 0 ? numbers[0] : sql.Number;
+                // -2 is a timeout, and so is 258 (WAIT_TIMEOUT), which the TCP provider reports for a
+                // port that refuses until the connection's time is up (measured on 2026-11-25): the
+                // call's own when its seconds are spent (each command is given what is left), else
+                // connecting, which waits at most 15 of them.
+                int timeout = numbers.FirstOrDefault(n => n == -2 || n == 258);
+                if (timeout != 0 && (budget == null || budget.Spent)) return new Failure { Problem = "deadline", Words = Within(budget), Number = timeout };
+                if (timeout != 0) return new Failure { Problem = "unreachable", Words = "SQL Server did not answer when Forma Designer connected to it. The server the connection names is not running, or this PC cannot reach it.", Number = timeout };
+                if (numbers.Contains(4060)) return new Failure { Problem = "database", Words = "SQL Server would not open the connection's database with the saved sign-in. It is not there, or the sign-in may not open it.", Number = 4060 };
+                int refused = numbers.FirstOrDefault(n => SignInRefused.Contains(n));
+                if (refused != 0) return new Failure { Problem = "sign-in", Words = "SQL Server refused the saved sign-in.", Number = refused };
+                if (Unreachable.Contains(first)) return new Failure { Problem = "unreachable", Words = "SQL Server could not be reached. The server the connection names is not running, or this PC cannot reach it.", Number = first };
+                return new Failure { Problem = "sql", Words = Scrub(FirstLine(sql.Message), c), Number = first };
+            }
+            if (ex is CryptographicException)
+            {
+                return new Failure { Problem = "sign-in", Words = "The saved sign-in cannot be read by this Windows account. Add the connection again, from Forma Designer's SQL Server connections." };
+            }
+            return new Failure { Problem = "failed", Words = Scrub(ex.GetType().Name + ": " + FirstLine(ex.Message), c) };
+        }
+
+        private static string Within(Budget budget)
+        {
+            int seconds = budget == null ? 0 : budget.Seconds;
+            return "SQL Server did not answer within " + seconds + (seconds == 1 ? " second." : " seconds.");
+        }
+
+        private static string FirstLine(string text)
+        {
+            return (text ?? "").Split('\n')[0].TrimEnd('\r').Trim();
+        }
+
+        /// <summary>
+        /// The text with the connection's login and password, this Windows account (DOMAIN\user
+        /// and user, which SQL Server names when Windows authentication fails) and the server it
+        /// names put in words, each matched whole and in any case.
+        /// </summary>
+        internal static string Scrub(string text, StoredConnection c)
+        {
+            if (string.IsNullOrEmpty(text)) return text ?? "";
+            const string signIn = "the saved sign-in", server = "the server";
+            var names = new List<KeyValuePair<string, string>>();
+            // The login and password whatever their length; an account or a server of one
+            // character (".") is left, as it would match ordinary words and names nothing.
+            foreach (string secret in SecretsOf(c)) if (!string.IsNullOrEmpty(secret)) names.Add(new KeyValuePair<string, string>(secret, signIn));
+            string account = null;
+            try { account = WindowsIdentity.GetCurrent().Name; } catch (Exception) { }
+            var others = new List<KeyValuePair<string, string>>
+            {
+                new KeyValuePair<string, string>(account, signIn),
+                new KeyValuePair<string, string>(Environment.UserName, signIn),
+            };
+            if (c != null)
+            {
+                others.Add(new KeyValuePair<string, string>(c.Server, server));
+                others.Add(new KeyValuePair<string, string>(HostOf(c.Server), server));
+            }
+            names.AddRange(others.Where(n => n.Key != null && n.Key.Trim().Length > 1));
+            // The longest first, so DOMAIN\user is replaced before user alone.
+            foreach (var n in names.OrderByDescending(n => n.Key.Length))
+            {
+                text = Regex.Replace(text, @"(?<![A-Za-z0-9_])" + Regex.Escape(n.Key) + @"(?![A-Za-z0-9_])", n.Value.Replace("$", "$$"), RegexOptions.IgnoreCase);
+            }
+            return text;
+        }
+
+        /// <summary>A server's host alone: tcp:db01.corp\SQL2019,1433 is db01.corp.</summary>
+        private static string HostOf(string server)
+        {
+            string s = (server ?? "").Trim();
+            int colon = s.IndexOf(':');
+            if (colon > 0 && colon < 6) s = s.Substring(colon + 1);
+            int cut = s.IndexOfAny(new[] { '\\', ',' });
+            return cut >= 0 ? s.Substring(0, cut) : s;
+        }
+
         // ------------------------------------------------------------ JSON
 
         public static string Json(string s)
@@ -455,5 +643,50 @@ namespace RepxDesigner
             if (v is IFormattable) return Json(((IFormattable)v).ToString(null, CultureInfo.InvariantCulture));
             return Json(v.ToString());
         }
+    }
+
+    /// <summary>
+    /// A call's seconds in all (2026-11-25, the CLI and Forma Designer work's wave 6, D2-6):
+    /// connecting waits what is left of them and never more than 15, as before, and each command
+    /// runs for what is left, so the last one ends when the call's time does and a call whose
+    /// caller has gone ends by itself. The verbs take it from --seconds; the HTTP routes keep
+    /// about the time they had (Program.cs HandleSql).
+    /// </summary>
+    internal sealed class Budget
+    {
+        private readonly Stopwatch _clock = Stopwatch.StartNew();
+        public readonly int Seconds;
+
+        public Budget(int seconds)
+        {
+            Seconds = Math.Max(1, seconds);
+        }
+
+        /// <summary>Whether the call's time is up, give or take the half second a timeout may be early.</summary>
+        public bool Spent
+        {
+            get { return _clock.Elapsed.TotalSeconds >= Seconds - 0.5; }
+        }
+
+        /// <summary>Whole seconds left, at least one (a CommandTimeout of 0 waits for ever); BudgetSpent when none are.</summary>
+        public int Left
+        {
+            get
+            {
+                double left = Seconds - _clock.Elapsed.TotalSeconds;
+                if (left <= 0) throw new BudgetSpent();
+                return (int)Math.Ceiling(left);
+            }
+        }
+
+        public int ConnectSeconds
+        {
+            get { return Math.Min(15, Left); }
+        }
+    }
+
+    internal sealed class BudgetSpent : Exception
+    {
+        public BudgetSpent() : base("The time allowed has passed.") { }
     }
 }

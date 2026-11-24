@@ -36,6 +36,9 @@ namespace RepxDesigner
     ///   RepxDesigner.exe --install       install for this user (also offered on a double-click, Installer.cs)
     ///   RepxDesigner.exe --uninstall     remove that install
     ///   RepxDesigner.exe --check         what DevExpress it finds, as JSON (DevExpressLocator.cs)
+    ///   RepxDesigner.exe sql-list ... --check --no-load
+    ///                                    Forma's command line's verbs, one line of JSON and an
+    ///                                    exit code, run by Entry.Main before this (Verbs.cs)
     ///
     /// --serve is what Forma's Open in designer dialog talks to (designerStep in
     /// src/lib/designerBridge.ts): when it is clicked the page asks /health, then
@@ -117,22 +120,58 @@ namespace RepxDesigner
                 return;
             }
 
+            // Both print one line of JSON and exit 2 when they cannot be carried out (2026-11-25,
+            // D2-4): until then a bad name or a missing --server printed nothing and exited 0, so
+            // neither a script nor a test could tell, and --sql-add with no name went on to be
+            // opened as a report path.
             int add = Array.IndexOf(args, "--sql-add");
-            if (add >= 0 && add + 1 < args.Length)
+            if (add >= 0)
             {
                 // Windows authentication only: a login's password is typed in the window, never on a command line.
                 int server = Array.IndexOf(args, "--server"), database = Array.IndexOf(args, "--database");
-                if (SqlCompanion.IsName(args[add + 1]) && server > 0 && database > 0 && server + 1 < args.Length && database + 1 < args.Length)
+                string name = add + 1 < args.Length ? args[add + 1] : null;
+                if (!SqlCompanion.IsName(name) || server < 0 || database < 0 || server + 1 >= args.Length || database + 1 >= args.Length)
                 {
-                    SqlCompanion.Put(new StoredConnection { Name = args[add + 1], Mode = "windows", Server = args[server + 1], Database = args[database + 1] });
+                    Environment.ExitCode = 2;
+                    Console.Out.WriteLine("{\"added\":false,\"error\":" + SqlCompanion.Json(
+                        "--sql-add NAME --server S --database D, a NAME beginning with a letter, a digit or _ and holding only letters, digits, _, . and -, at most 128.") + "}");
+                    return;
+                }
+                try
+                {
+                    SqlCompanion.Put(new StoredConnection { Name = name, Mode = "windows", Server = args[server + 1], Database = args[database + 1] });
+                    Console.Out.WriteLine("{\"added\":true,\"name\":" + SqlCompanion.Json(name) + "}");
+                }
+                catch (Exception ex)
+                {
+                    Environment.ExitCode = 1;
+                    Console.Out.WriteLine("{\"added\":false,\"error\":" + SqlCompanion.Json(ex.GetType().Name + ": " + ex.Message) + "}");
                 }
                 return;
             }
 
             int remove = Array.IndexOf(args, "--sql-remove");
-            if (remove >= 0 && remove + 1 < args.Length)
+            if (remove >= 0)
             {
-                SqlCompanion.Remove(args[remove + 1]);
+                string name = remove + 1 < args.Length ? args[remove + 1] : null;
+                if (string.IsNullOrEmpty(name))
+                {
+                    Environment.ExitCode = 2;
+                    Console.Out.WriteLine("{\"removed\":false,\"error\":\"--sql-remove NAME\"}");
+                    return;
+                }
+                try
+                {
+                    bool removed = SqlCompanion.Remove(name);
+                    // 4 as the verbs' NotKept: no connection of that name was kept.
+                    if (!removed) Environment.ExitCode = 4;
+                    Console.Out.WriteLine("{\"removed\":" + (removed ? "true" : "false") + ",\"name\":" + SqlCompanion.Json(name) + "}");
+                }
+                catch (Exception ex)
+                {
+                    Environment.ExitCode = 1;
+                    Console.Out.WriteLine("{\"removed\":false,\"error\":" + SqlCompanion.Json(ex.GetType().Name + ": " + ex.Message) + "}");
+                }
                 return;
             }
 
@@ -950,12 +989,22 @@ namespace RepxDesigner
                 {
                     StoredConnection c = SqlCompanion.IsName(name) ? SqlCompanion.Find(name) : null;
                     if (c == null) { Respond(stream, 404, "application/json", "{\"missing\":[" + SqlCompanion.Json(name ?? "") + "]}", allowed); return; }
-                    if (path == "/sql/schema") { Respond(stream, 200, "text/plain", SqlCompanion.Schema(c), allowed); return; }
-                    string objects, rows;
-                    query.TryGetValue("objects", out objects);
-                    query.TryGetValue("rows", out rows);
-                    int n;
-                    Respond(stream, 200, "text/plain", SqlCompanion.Samples(c, (objects ?? "").Split(',').Where(o => o.Length > 0), int.TryParse(rows, out n) ? n : 5), allowed);
+                    var budget = new Budget(path == "/sql/schema" ? LayoutSeconds : SampleSeconds);
+                    try
+                    {
+                        if (path == "/sql/schema") { Respond(stream, 200, "text/plain", SqlCompanion.Schema(c, budget), allowed); return; }
+                        string objects, rows;
+                        query.TryGetValue("objects", out objects);
+                        query.TryGetValue("rows", out rows);
+                        int n;
+                        Respond(stream, 200, "text/plain", SqlCompanion.Samples(c, (objects ?? "").Split(',').Where(o => o.Length > 0), int.TryParse(rows, out n) ? n : 5, budget), allowed);
+                    }
+                    catch (Exception ex)
+                    {
+                        // SQL Server's words as the verbs say them (2026-11-25, D2-7): never the saved
+                        // sign-in, this Windows account or the server, which until then reached the page.
+                        Respond(stream, 502, "application/json", "{\"error\":" + SqlCompanion.Json(SqlCompanion.Explain(ex, c, budget).Words) + "}", allowed);
+                    }
                     return;
                 }
                 if (method == "POST" && path == "/sql/fill")
@@ -979,6 +1028,15 @@ namespace RepxDesigner
                 Respond(stream, 502, "application/json", "{\"error\":" + SqlCompanion.Json(ex.GetType().Name + ": " + ex.Message.Split('\n')[0]) + "}", allowed);
             }
         }
+
+        /// <summary>
+        /// The seconds /sql/schema and /sql/sample have in all (2026-11-25, Budget in Sql.cs):
+        /// the layout about what it had (15 to connect, 120 to run), within the page's 180-second
+        /// wait (src/lib/sqlCompanion.ts); the samples within the page's 120, where each object had
+        /// 60 of its own, so a request the page has given up on ends by itself.
+        /// </summary>
+        private const int LayoutSeconds = 135;
+        private const int SampleSeconds = 110;
 
         /// <summary>
         /// A Forma page served from this PC (npm run dev, npm start): every route,

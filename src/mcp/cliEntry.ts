@@ -33,12 +33,19 @@
  *      Gemini SDK or start the worker threads, which would otherwise copy
  *      them (SEC-3, SEC-9, DOC-4). No dotenv: a .env in the folder a command
  *      runs in is never Forma's business.
- *   3. commandLine.ts is loaded, Ctrl+C and a termination are wired to a stop
+ *   3. Forma Designer is looked for (designerVerbs.ts, since that work's
+ *      wave 6, 2026-11-25; D2-11): its place from the platform,
+ *      LOCALAPPDATA (the per-user install) and FORMA_DESIGNER (a copy built
+ *      from source), and the environment it is started with, Windows' own
+ *      variables alone, built only after the keys are deleted
+ *      (`designerEnvFrom`), so no key of any program reaches it; nothing is
+ *      started here. Both are handed to `main` as values, as the AI's are.
+ *   4. commandLine.ts is loaded, Ctrl+C and a termination are wired to a stop
  *      (`stopOnSignals`), and `main` runs with the arguments after the
  *      launcher's and what the process gives it: the working folder, the
- *      AI's values, stdout through `protocolOut`, stderr through the guard's
- *      log and its scrubber.
- *   4. The exit code is set and the process leaves when nothing is left to
+ *      AI's values, Forma Designer's place, stdout through `protocolOut`,
+ *      stderr through the guard's log and its scrubber.
+ *   5. The exit code is set and the process leaves when nothing is left to
  *      do, so what was written to a pipe is flushed; a timer that does not
  *      hold the process open makes sure of the exit two seconds later. On
  *      Windows a stop once the AI's thread has started ends the process
@@ -72,6 +79,14 @@ const { aiEnv, secrets, remove } = takeAiEnv(process.env, 'cli');
 guard.addSecrets(secrets);
 for (const name of remove) delete process.env[name];
 
+// Forma Designer, which connections and --connection start (designerVerbs.ts): found by the two values read here, and handed an
+// environment of Windows' own variables, built only now that the keys are deleted, so no key of any program reaches it.
+const { designerEnvFrom, designerPlace } = await import('./designerVerbs');
+const designer = {
+  place: designerPlace({ platform: process.platform, localAppData: process.env.LOCALAPPDATA, override: process.env.FORMA_DESIGNER }),
+  env: designerEnvFrom(process.env),
+};
+
 const { main, stopOnSignals } = await import('./commandLine');
 const stop = new AbortController();
 stopOnSignals(process, stop, (line) => guard.log(line));
@@ -86,6 +101,7 @@ const code = await main(process.argv.slice(2), {
   err: (line) => guard.log(line),
   redact: guard.redact,
   signal: stop.signal,
+  designer,
 });
 process.exitCode = code;
 

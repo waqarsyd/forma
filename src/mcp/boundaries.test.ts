@@ -61,11 +61,19 @@
  *   what makes it the user's own program rather than a server (PRD section 6).
  * - Only src/mcp may read a key from the environment, and within it only
  *   the entries touch the environment at all, never loading dotenv. Each
- *   hands its environment to aiSettings.ts's `takeAiEnv`, which is the one
- *   shape below these readers cannot see, decided (CLI-9): its own test
- *   hands it a proxy that fails on any read of a name it does not list.
- *   Outside it, the reads that exist are named below with their reasons, so
- *   a new one fails here until someone decides it belongs.
+ *   hands its environment to aiSettings.ts's `takeAiEnv`, which is one of
+ *   two shapes below these readers cannot see, decided (CLI-9): its own test
+ *   hands it a proxy that fails on any read of a name it does not list. The
+ *   other, since the CLI and Forma Designer work's wave 6 (2026-11-25,
+ *   D2-11, SEC-5), is designerVerbs.ts's `designerEnvFrom`, which the
+ *   command line's entry hands its environment once the keys are deleted,
+ *   to build the one Forma Designer is started with from Windows' own
+ *   variables; the case below hands it such a proxy too, and the command
+ *   line's wiring case holds where it is called. Forma Designer, started
+ *   from designerVerbs.ts alone, is the one program src/mcp starts, and its
+ *   start is held as its header says (no shell, never synchronous, stdout
+ *   piped). Outside src/mcp, the reads that exist are named below with
+ *   their reasons, so a new one fails here until someone decides it belongs.
  *
  * The sources are read with regular expressions over the raw text, and the
  * first two cases of each reader show the shapes it finds. A comment can
@@ -80,6 +88,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { Voice } from './caller';
+import { DESIGNER_ENV, designerEnvFrom } from './designerVerbs';
 
 const CLONE = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const rel = (abs: string) => relative(CLONE, abs).split(sep).join('/');
@@ -332,8 +341,9 @@ describe('the import boundaries', () => {
     // review (SEC-W2-4: an import of it from the layer passed here, and cliVoice.test.ts skipped it by name).
     // Since wave 4 (2026-11-24) the command line itself is the head of its layer: its launcher, its entry, commandLine.ts, its
     // table, and layoutCalls.ts, the report tools' steps it shares with the server; since that wave's second part folderBatch.ts,
-    // the batch's walk, routes and names, and modelParks.ts, whose kept parks the batch reads on its own thread.
-    const CLI_LAYER = ['cli.mjs', 'cliEntry.ts', 'commandLine.ts', 'cliCommands.ts', 'layoutCalls.ts', 'folderBatch.ts', 'modelParks.ts', 'reportCalls.ts', 'paths.ts', 'reportFile.ts', 'caller.ts', 'version.ts', 'aiSettings.ts', 'generator.ts', 'workerPool.ts', 'stdoutGuard.ts', 'genJobs.ts', 'pipeline.ts'].map((f) => join(CLONE, 'src', 'mcp', f));
+    // the batch's walk, routes and names, and modelParks.ts, whose kept parks the batch reads on its own thread; since wave 6
+    // designerVerbs.ts, which starts Forma Designer's verbs on the command line's own thread (D2-6).
+    const CLI_LAYER = ['cli.mjs', 'cliEntry.ts', 'commandLine.ts', 'cliCommands.ts', 'layoutCalls.ts', 'folderBatch.ts', 'modelParks.ts', 'designerVerbs.ts', 'reportCalls.ts', 'paths.ts', 'reportFile.ts', 'caller.ts', 'version.ts', 'aiSettings.ts', 'generator.ts', 'workerPool.ts', 'stdoutGuard.ts', 'genJobs.ts', 'pipeline.ts'].map((f) => join(CLONE, 'src', 'mcp', f));
     const SERVER_ONLY = ['toolShape.ts', 'formaServer.ts', 'aiTools.ts', 'reportTools.ts', 'statusTool.ts', 'roots.ts', 'skillResource.ts', 'toolList.ts', 'stdio.ts', 'run.mjs', 'testFs.ts', 'testClient.ts'].map((f) => `src/mcp/${f}`);
     const seen = new Set<string>(CLI_LAYER);
     const queue = [...CLI_LAYER];
@@ -465,6 +475,32 @@ function cliWiringProblems(body: string): string[] {
   const taken = body.search(/\btakeAiEnv\(\s*process\.env\s*,/);
   const before = [...body.matchAll(/\bprocess\.env\b/g)].map((m) => m.index ?? -1).filter((i) => deleted < 0 || i < deleted);
   if (before.some((i) => i !== body.indexOf('process.env', taken))) problems.push('the environment is referred to before its keys are deleted other than by takeAiEnv(process.env, ...)');
+  // Forma Designer (the CLI work's wave 6, D2-11, SEC-5): its environment built from the entry's once the keys are deleted, by
+  // designerEnvFrom alone; its place from LOCALAPPDATA and FORMA_DESIGNER; both handed to main; and never another connections
+  // file (`store`), which only a test or a measurement may name, since Forma Designer reads whatever file it is given.
+  const built = [...body.matchAll(/\bdesignerEnvFrom\(\s*process\.env\s*\)/g)];
+  if (built.length !== 1 || (body.match(/\bdesignerEnvFrom\b/g) ?? []).length !== 2) problems.push("Forma Designer's environment is not built once, by designerEnvFrom(process.env)");
+  if (built.length && (deleted < 0 || (built[0].index ?? -1) < deleted)) problems.push("Forma Designer's environment is built before the keys are deleted");
+  if (!/\bdesignerPlace\(\s*\{\s*platform:\s*process\.platform,\s*localAppData:\s*process\.env\.LOCALAPPDATA,\s*override:\s*process\.env\.FORMA_DESIGNER\s*\}\s*\)/.test(body)) {
+    problems.push("Forma Designer's place is not worked out from process.platform, LOCALAPPDATA and FORMA_DESIGNER");
+  }
+  if (!/\bdesigner\s*,|\bdesigner\s*:\s*designer\b/.test(call)) problems.push("main is not handed Forma Designer's place and environment");
+  if (/\bstore\b/.test(body)) problems.push('the entry names another connections file for Forma Designer (store)');
+  // After the delete, the environment is referred to by these and nothing else (the wave-6 review, N6-4: until then any
+  // reference after the delete passed, so the entry could hand Forma Designer the whole environment, every other program's
+  // key with it, and every case stayed green): the delete itself, LOCALAPPDATA and FORMA_DESIGNER in designerPlace's call,
+  // designerEnvFrom's one argument, and the test-only switch.
+  const allowed = [
+    /\bdelete\s+(process\.env)\[\s*\w+\s*\]/g,
+    /\bdesignerPlace\(\s*\{\s*platform:\s*process\.platform,\s*localAppData:\s*(process\.env)\.LOCALAPPDATA,/g,
+    /,\s*override:\s*(process\.env)\.FORMA_DESIGNER\s*\}\s*\)/g,
+    /\bdesignerEnvFrom\(\s*(process\.env)\s*\)/g,
+    /\bif\s*\(\s*(process\.env)\.FORMA_CLI_TEST_NOISE\s*\)/g,
+  ].map((shape) => [...body.matchAll(shape)].map((m) => (m.index ?? 0) + m[0].indexOf(m[1])));
+  if (allowed.some((at) => at.length !== 1)) problems.push('the environment is not referred to once each by the delete, designerPlace, designerEnvFrom and the test-only switch');
+  const known = new Set(allowed.flat());
+  const after = [...body.matchAll(/\bprocess\.env\b/g)].map((m) => m.index ?? -1).filter((i) => deleted >= 0 && i > deleted);
+  if (after.some((i) => !known.has(i))) problems.push('the environment is referred to after its keys are deleted other than by the delete, designerPlace, designerEnvFrom and the test-only switch');
   return problems;
 }
 
@@ -490,6 +526,17 @@ describe("the command line's entry's wiring", () => {
     expect(broken('guard.protocolOut.write(text);', 'process.stdout.write(text);')).not.toEqual([]);
     // M15: a copy of the environment, keys and all, after takeAiEnv and before the delete.
     expect(broken('guard.addSecrets(secrets);', 'guard.addSecrets(secrets);\nconst kept = { ...process.env };')).not.toEqual([]);
+    // Wave 6: Forma Designer's environment the process's own, or built before the delete; another connections file named.
+    expect(broken('env: designerEnvFrom(process.env),', 'env: { ...process.env },')).not.toEqual([]);
+    const early = right.replace('guard.addSecrets(secrets);', 'guard.addSecrets(secrets);\nconst early = designerEnvFrom(process.env);').replace('env: designerEnvFrom(process.env),', 'env: early,');
+    expect(cliWiringProblems(early)).not.toEqual([]);
+    expect(broken('env: designerEnvFrom(process.env),', "env: designerEnvFrom(process.env),\n  store: 'C:\\\\x.tsv',")).not.toEqual([]);
+    expect(broken(/\n  designer,\n/, '\n')).not.toEqual([]);
+    // The wave-6 review's N6-4: the whole environment handed to Forma Designer after the delete, which passed every case.
+    expect(broken('env: designerEnvFrom(process.env),\n};', 'env: designerEnvFrom(process.env),\n};\nObject.assign(designer.env, process.env);')).not.toEqual([]);
+    expect(broken('env: designerEnvFrom(process.env),', 'env: designerEnvFrom(process.env),\n  ...{ env: { ...process.env } },')).not.toEqual([]);
+    expect(broken('const { main, stopOnSignals }', "const home = process.env.USERPROFILE;\nconst { main, stopOnSignals }")).not.toEqual([]);
+    expect(broken('if (process.env.FORMA_CLI_TEST_NOISE) makeTestNoise();', 'if (process.env.FORMA_CLI_TEST_NOISE || process.env.CI) makeTestNoise();')).not.toEqual([]);
   });
 });
 
@@ -635,6 +682,52 @@ describe('stdio only, no port', () => {
     const entry = text(join(CLONE, 'src', 'mcp', 'stdio.ts'));
     expect(specifiersOf(entry)).toContain('@modelcontextprotocol/server/stdio');
     expect(entry).toMatch(/\bserveStdio\(/);
+  });
+});
+
+/*
+ * The one program src/mcp starts (2026-11-25, the CLI and Forma Designer work's wave 6; findings D2-5, D2-11 and SEC-5 of its
+ * design audit): Forma Designer, for its command-line verbs, from designerVerbs.ts alone. Its stdout is piped, which the bypass
+ * list above already holds for every file of src/mcp; these hold the rest of what its header says.
+ */
+describe('the one program src/mcp starts, Forma Designer', () => {
+  const mcp = SRC.filter((f) => inMcp(f) && !isTest(f));
+  const verbs = () => code(text(join(CLONE, 'src', 'mcp', 'designerVerbs.ts')));
+
+  it('is started from designerVerbs.ts alone, asynchronously, with no shell, stdin closed, stdout and stderr piped, no window, in its own folder, with the environment the entry built, never detached', () => {
+    const starters = mcp.filter((f) => specifiersOf(text(f)).some((s) => s === 'node:child_process' || s === 'child_process')).map(rel);
+    expect(starters).toEqual(['src/mcp/designerVerbs.ts']);
+    const body = verbs();
+    expect(body).toMatch(/import \{ spawn, type ChildProcess, type SpawnOptions \} from 'node:child_process'/);
+    // Never a synchronous start, whose 1 MiB buffer killed a large layout (D2-5), never a shell, never fork.
+    expect(body).not.toMatch(/(?<![.\w$])(spawnSync|execSync|execFileSync|execFile|exec|fork)\s*\(/);
+    expect(body).toContain("{ cwd: dirname(exe), env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, shell: false }");
+    expect(body).not.toMatch(/\bdetached\s*:/);
+    // The sentinel ends every call (D2-1).
+    expect(body).toContain('...DESIGNER_SENTINEL]');
+  });
+
+  it('is never handed another connections file from src/mcp: no --store, and no setup that carries one (the wave-6 review, N6-5)', () => {
+    // Forma Designer reads whatever file --store names, and a crafted one can point Windows authentication at a server of its
+    // maker's choosing; a test or a measurement adds it through its own DesignerStart.
+    const naming = mcp.filter((f) => /--store\b|\bstore\s*\??\s*:/.test(code(text(f)))).map(rel);
+    expect(naming).toEqual([]);
+  });
+
+  it("is handed an environment of Windows' own variables, none named for a key, read by designerEnvFrom by those names and no other", () => {
+    for (const name of DESIGNER_ENV) expect(KEY_NAME.test(name), name).toBe(false);
+    const read: string[] = [];
+    const source = new Proxy({} as Record<string, string | undefined>, {
+      get(_target, name) {
+        if (typeof name !== 'string' || !(DESIGNER_ENV as readonly string[]).includes(name)) throw new Error(`designerEnvFrom read ${String(name)}`);
+        read.push(name);
+        return name === 'PATH' ? '' : `value of ${name}`;
+      },
+    });
+    const env = designerEnvFrom(source);
+    expect(read).toEqual([...DESIGNER_ENV]);
+    // An empty value is left out, never passed as set.
+    expect(Object.keys(env)).toEqual(DESIGNER_ENV.filter((n) => n !== 'PATH'));
   });
 });
 

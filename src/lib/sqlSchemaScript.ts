@@ -21,6 +21,7 @@
  * SQL Server 2016 or later (FOR JSON). Checked against LocalDB 13.1 over the
  * made-up `FormaSample` database with `RepxProbe sql-run`.
  */
+import { MAX_SAMPLE_VALUE } from './sqlSchema';
 
 /** The layout script: tables, views, keys, procedures and their result columns. */
 export const SCHEMA_SCRIPT = `-- Forma: your database's layout, for designing reports.
@@ -91,6 +92,85 @@ SELECT
     ORDER BY s.name, pr.name FOR JSON PATH) AS [procedures]
 FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);
 SELECT REPLACE(@json, N'?>', N'?\\u003e') AS [processing-instruction(forma)] FOR XML PATH(''), TYPE;
+`;
+
+/**
+ * The longest text value Forma Designer sends of a sample row: one character
+ * more than `MAX_SAMPLE_VALUE`, so `readSampleExport` still sees that a value
+ * was longer and marks it cut, as it marks one the SSMS script returned whole.
+ */
+export const SAMPLE_VALUE_CUT = MAX_SAMPLE_VALUE + 1;
+
+/**
+ * What Forma Designer runs for each table or view it is asked sample rows of,
+ * its `/sql/sample` route and its `sql-sample` verb alike (2026-11-25, the CLI
+ * and Forma Designer work's wave 6, finding D2-5): `@s`, `@n` and `@rows` are
+ * its parameters, and its one answer is that object's rows as `FOR JSON`
+ * writes them, which Forma Designer wraps in the sample script's own format
+ * (`forma-sql-sample`, the same `readSampleExport` reads).
+ *
+ * It differs from `sampleScript` below in what it leaves out, on the server:
+ * a binary, image, rowversion, xml, sql_variant or assembly-typed (geography,
+ * geometry, hierarchyid) column is not selected, and text is cut at
+ * `SAMPLE_VALUE_CUT` characters. Until then Forma Designer ran
+ * `SELECT TOP (n) *`, which `FOR JSON` answers with every photo column in
+ * base64, so a few product pictures made megabytes that the reader cut to 200
+ * characters of noise afterwards. The column list is built from `sys.columns`
+ * of the one object the catalog has under those names, each name quoted by
+ * QUOTENAME, so it stays read-only: one SELECT. `TYPE_NAME` of an assembly
+ * type's system type is NULL (measured on LocalDB 17.0: geography, geometry
+ * and hierarchyid share system type 240), which is why those are named by
+ * `is_assembly_type`. `SET QUOTED_IDENTIFIER ON` because the column list is
+ * joined with an XML method, which SQL Server refuses without it (measured:
+ * sqlcmd leaves it off, Msg 1934; SqlClient and SSMS turn it on).
+ *
+ * Two more since the wave's review (2026-11-25). SQL Server 2025's own `json`
+ * type (R6-1; LocalDB 17.0 on the PC Forma is built on has it) is in neither
+ * list, so it was selected whole, and `FOR JSON` nests it as an object, which
+ * the reader cuts only as a string: one row of a 2 MB document came to a
+ * 1 MB answer. It is now converted to text and cut as text is, so it arrives
+ * as a string and is marked cut; SQL Server 2025's `vector` is `varbinary` to
+ * `TYPE_NAME` and left out with it. And `FOR JSON AUTO` in place of `PATH`
+ * (R6-3): `PATH` reads a dot in a column's name as nesting, so a column
+ * `Ship.City` came back as an object under `Ship`, a column the layout does
+ * not have, and a table holding both `Address` and `Address.City` was refused
+ * outright (Msg 13601); `AUTO` over one table or view gives each row flat,
+ * every name as written. Written into tools/RepxDesigner/SqlScripts.cs as
+ * `SqlScripts.Sample` by `npx tsx scripts/companion-scripts.ts`, and held
+ * equal to it by sqlCompanion.test.ts. SQL Server 2016 or later, as the layout.
+ */
+export const SAMPLE_OBJECT_SCRIPT = `-- Forma Designer: sample rows of one table or view, for designing reports.
+-- Read-only: one SELECT TOP (@rows) of @s.@n, which must be a table or view in
+-- the catalog, every name quoted by QUOTENAME. Binary, image, rowversion, xml,
+-- sql_variant, geography, geometry and hierarchyid columns are left out, and
+-- text and json are cut at ${SAMPLE_VALUE_CUT} characters.
+SET NOCOUNT ON;
+SET QUOTED_IDENTIFIER ON;
+DECLARE @id int = (SELECT o.object_id FROM sys.objects o JOIN sys.schemas s ON s.schema_id = o.schema_id
+                    WHERE s.name = @s AND o.name = @n AND o.type IN ('U', 'V'));
+IF @id IS NOT NULL
+BEGIN
+  DECLARE @columns nvarchar(max) = STUFF((
+    SELECT N', ' + CASE WHEN TYPE_NAME(c.system_type_id) IN (N'char', N'varchar', N'nchar', N'nvarchar', N'text', N'ntext')
+                        THEN N'SUBSTRING(' + QUOTENAME(c.name) + N', 1, ${SAMPLE_VALUE_CUT}) AS ' + QUOTENAME(c.name)
+                        WHEN TYPE_NAME(c.system_type_id) = N'json'
+                        THEN N'SUBSTRING(CONVERT(nvarchar(max), ' + QUOTENAME(c.name) + N'), 1, ${SAMPLE_VALUE_CUT}) AS ' + QUOTENAME(c.name)
+                        ELSE QUOTENAME(c.name) END
+      FROM sys.columns c
+      JOIN sys.types t ON t.user_type_id = c.user_type_id
+     WHERE c.object_id = @id
+       AND t.is_assembly_type = 0
+       AND TYPE_NAME(c.system_type_id) NOT IN (N'binary', N'varbinary', N'image', N'timestamp', N'xml', N'sql_variant')
+     ORDER BY c.column_id
+       FOR XML PATH(''), TYPE).value('.', 'nvarchar(max)'), 1, 2, N'');
+  IF @columns IS NULL SELECT N'[]';
+  ELSE
+  BEGIN
+    DECLARE @q nvarchar(max) = N'SELECT TOP (' + CONVERT(nvarchar(10), @rows) + N') ' + @columns +
+      N' FROM ' + QUOTENAME(@s) + N'.' + QUOTENAME(@n) + N' FOR JSON AUTO, INCLUDE_NULL_VALUES';
+    EXEC sp_executesql @q;
+  END
+END
 `;
 
 /** A table or view to take sample rows from. */

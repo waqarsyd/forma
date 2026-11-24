@@ -432,7 +432,7 @@ function measuredInStandIns(gen: NodeGeneration, xml: string, notices: string[],
 /** Why a `data` edit is declined when no database layout came with the request, in the caller's words (the header's *A database*). */
 const NO_DATABASE: Record<Voice, string> = {
   mcp: 'no database layout came with the request, so what the report reads cannot change here',
-  cli: 'no database layout was given, so what the report reads cannot change: give one with --database, or bind the report with the bind command',
+  cli: 'no database layout was given, so what the report reads cannot change: give one with --database or --connection, or bind the report with the bind command',
 };
 
 /** Said when a query was pinned and the request wrote nothing, so nothing was bound to it (the header's *A database*). */

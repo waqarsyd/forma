@@ -225,7 +225,8 @@ describe('the arguments, the help and the exit codes', () => {
     const help = helpText('9.9.9');
     expect(help).toContain(`node <clone>/${CLI_LAUNCHER} <command> [options]`);
     for (const c of CLI_COMMANDS) {
-      expect(help).toContain(`  ${c.name} ${c.usage}${aiMark(c)}\n`);
+      // A command that takes nothing (connections, since the CLI work's wave 6) is its name alone, no space after it.
+      expect(help).toContain(`  ${c.name}${c.usage ? ` ${c.usage}` : ''}${aiMark(c)}\n`);
       for (const option of c.options) expect(help, option).toContain(`  ${option}`);
     }
     expect(CLI_COMMANDS.filter((c) => c.needsAi === true).map((c) => c.name)).toEqual(['generate', 'revise']);

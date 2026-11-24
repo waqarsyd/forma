@@ -9,7 +9,8 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { SCHEMA_SCRIPT } from './sqlSchemaScript';
+import { SAMPLE_OBJECT_SCRIPT, SAMPLE_SCRIPT_ROWS, SAMPLE_VALUE_CUT, SCHEMA_SCRIPT, sampleScript } from './sqlSchemaScript';
+import { MAX_SAMPLE_VALUE } from './sqlSchema';
 import {
   companionConnections,
   companionFill,
@@ -28,12 +29,107 @@ import {
 
 afterEach(() => vi.unstubAllGlobals());
 
+/** A string constant of tools/RepxDesigner/SqlScripts.cs, its literals joined and read as C# and JSON read them alike. */
+function scriptsConstant(name: string): string {
+  const cs = readFileSync('tools/RepxDesigner/SqlScripts.cs', 'utf8');
+  const body = new RegExp(`public const string ${name} =\\s*([\\s\\S]*?);\\s*(?:\\}|///)`).exec(cs)![1];
+  return [...body.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => JSON.parse(`"${m[1]}"`) as string).join('');
+}
+
 describe('the companion’s own copy of the layout script', () => {
   it('is the text a person runs in SSMS (regenerate with npx tsx scripts/companion-scripts.ts)', () => {
-    const cs = readFileSync('tools/RepxDesigner/SqlScripts.cs', 'utf8');
-    const body = /public const string Schema =\s*([\s\S]*?);\s*\}/.exec(cs)![1];
-    const text = [...body.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => JSON.parse(`"${m[1]}"`) as string).join('');
-    expect(text).toBe(SCHEMA_SCRIPT);
+    expect(scriptsConstant('Schema')).toBe(SCHEMA_SCRIPT);
+  });
+
+  /* D2-5 (2026-11-25, the CLI and Forma Designer work's wave 6): the samples trimmed on the server. */
+  it('reads each sampled object with the sample SQL written here, trimmed as Forma keeps a sample', () => {
+    expect(scriptsConstant('Sample')).toBe(SAMPLE_OBJECT_SCRIPT);
+    // One character over what the reader keeps, so readSampleExport still marks a long value cut.
+    expect(SAMPLE_VALUE_CUT).toBe(MAX_SAMPLE_VALUE + 1);
+    expect(SAMPLE_OBJECT_SCRIPT).toContain(`N'SUBSTRING(' + QUOTENAME(c.name) + N', 1, ${SAMPLE_VALUE_CUT}) AS '`);
+    expect(SAMPLE_OBJECT_SCRIPT).toContain("NOT IN (N'binary', N'varbinary', N'image', N'timestamp', N'xml', N'sql_variant')");
+    expect(SAMPLE_OBJECT_SCRIPT).toContain('t.is_assembly_type = 0');
+    // The wave's review, R6-1: SQL Server 2025's json is cut as text, so it arrives as a string the reader marks cut (vector is
+    // varbinary to TYPE_NAME, and left out with it). R6-3: AUTO, which keeps a dotted column name flat where PATH nests it.
+    expect(SAMPLE_OBJECT_SCRIPT).toContain(`WHEN TYPE_NAME(c.system_type_id) = N'json'\n                        THEN N'SUBSTRING(CONVERT(nvarchar(max), ' + QUOTENAME(c.name) + N'), 1, ${SAMPLE_VALUE_CUT}) AS '`);
+    expect(SAMPLE_OBJECT_SCRIPT).toContain("N' FOR JSON AUTO, INCLUDE_NULL_VALUES'");
+    expect(SAMPLE_OBJECT_SCRIPT).not.toContain('FOR JSON PATH');
+    // Read-only: one SELECT, every name quoted by SQL Server; no star.
+    expect(SAMPLE_OBJECT_SCRIPT).not.toMatch(/SELECT TOP \([^)]*\) \*|\b(INSERT|UPDATE|DELETE|MERGE|DROP|ALTER|CREATE|TRUNCATE)\b/i);
+    expect(SAMPLE_OBJECT_SCRIPT).toContain("QUOTENAME(@s) + N'.' + QUOTENAME(@n)");
+    expect(SAMPLE_OBJECT_SCRIPT).toMatch(/^[\x20-\x7e\n]*$/);
+    // Forma Designer runs it for every object, the route and the verb alike, and no longer its own SELECT *.
+    const sql = readFileSync('tools/RepxDesigner/Sql.cs', 'utf8');
+    expect(sql).toContain('new SqlCommand(SqlScripts.Sample, conn)');
+    expect(sql).not.toMatch(/N'\) \* FROM '/);
+    // The rows it gives are those the SSMS script gives: 1 to 50, five unless asked.
+    expect(/rows = Math\.Max\(1, Math\.Min\((\d+), rows\)\)/.exec(sql)![1]).toBe('50');
+    // R6-2: an object SQL Server cannot read is left out and named by its number, the connection's own failures still end the call.
+    expect(sql).toContain('catch (SqlException ex) when (ObjectOnly(ex, conn))');
+    expect(sql).toMatch(/e\.Class >= 20 \|\| e\.Number == -2 \|\| e\.Number == 258/);
+    expect(sampleScript([{ schema: 'dbo', name: 'A' }], 99)).toContain('TOP (50)');
+  });
+});
+
+/*
+ * Forma Designer's command-line verbs (2026-11-25, the CLI and Forma Designer work's wave 6;
+ * D2-1 to D2-4, D2-9, D2-12 and SEC-2 of its design audit). No test may start Forma Designer
+ * and CI builds no C#, so what can be held from here is its source: the order Main reads its
+ * arguments in, what the verbs reach, and the contract a caller reads. Its runs over LocalDB's
+ * FormaSample, an older build answering the sentinel among them, are recorded in
+ * tools/RepxDesigner/README.md, *Verbs for Forma's command line*.
+ */
+describe('Forma Designer’s verbs, held to its source', () => {
+  const code = (path: string) => readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const entry = code('tools/RepxDesigner/Entry.cs');
+  const verbs = code('tools/RepxDesigner/Verbs.cs');
+
+  it('runs a verb as Main’s first statement, before any switch is read anywhere in the arguments', () => {
+    const main = /private static int Main\(string\[\] args\)\s*\{([\s\S]*)\}\s*\}\s*\}\s*$/.exec(entry)![1];
+    const statements = main.split(';').map((s) => s.trim()).filter(Boolean);
+    expect(statements[0]).toBe('if (Verbs.Is(args)) return Verbs.Run(args)');
+    expect(main.indexOf('Verbs.Run(args)')).toBeLessThan(main.indexOf('DevExpressLocator.Configure(args)'));
+    expect(main.indexOf('DevExpressLocator.Configure(args)')).toBeLessThan(main.indexOf('"--check"'));
+    // D2-4: the exit code --install, --uninstall, --sql-add and --sql-remove set reaches the process.
+    expect(main).toContain('return Environment.ExitCode');
+    expect(main).not.toMatch(/Program\.Run\(args\);\s*return 0/);
+  });
+
+  it('names no DevExpress type, and reaches only what of the SQL store loads none (D2-9)', () => {
+    expect(verbs).not.toMatch(/DevExpress|XtraReport|Program\./);
+    const reached = new Set([...verbs.matchAll(/SqlCompanion\.(\w+)/g)].map((m) => m[1]));
+    expect([...reached].sort()).toEqual(['ConnectionList', 'Explain', 'Failure', 'Find', 'IsName', 'Json', 'Samples', 'Schema', 'StorePath']);
+    for (const loads of ['Parameters', 'Connect', 'Fill', 'PrepareForDesigner']) expect(reached.has(loads)).toBe(false);
+    expect(verbs).toMatch(/\[MethodImpl\(MethodImplOptions\.NoInlining\)\]\s*public static int Run\(string\[\] args\)/);
+    expect(readFileSync('tools/RepxDesigner/RepxDesigner.csproj', 'utf8')).toContain('<Compile Include="Verbs.cs" />');
+  });
+
+  it('takes the verb at args[0] alone and every call ending with the sentinel an older build answers (D2-1, SEC-2)', () => {
+    expect(/Names = \{ ([^}]*) \}/.exec(verbs)![1]).toBe('"sql-list", "sql-schema", "sql-sample"');
+    expect(/Sentinel = \{ ([^}]*) \}/.exec(verbs)![1]).toBe('"--check", "--no-load"');
+    expect(verbs).toContain('Array.IndexOf(Names, args[0]) >= 0');
+    // Forma Designer 1.1.0 and 1.0.0 reach --check with those arguments, which prints and exits.
+    expect(entry).toMatch(/if \(Array\.IndexOf\(args, "--check"\) >= 0\) return Check\.Run\(args\)/);
+    expect(code('tools/RepxDesigner/DevExpressLocator.cs')).toMatch(/Array\.IndexOf\(args, "--no-load"\) < 0/);
+    // A name never reads as a switch: IsName refuses a leading - or . (databaseAi.test.ts holds the expression).
+    expect(code('tools/RepxDesigner/Sql.cs')).toContain('@"^[A-Za-z0-9_][A-Za-z0-9_.\\-]{0,127}$"');
+  });
+
+  it('prints one ASCII line of JSON whose marker and exit codes a caller reads, 3 left to --check (D2-2, D2-4)', () => {
+    const exits = Object.fromEntries([...verbs.matchAll(/public const int (\w+) = (\d+);/g)].map((m) => [m[1], Number(m[2])]));
+    expect(exits).toMatchObject({ Done: 0, Usage: 2, NotKept: 4, SqlFailed: 5, DeadlinePassed: 6, DefaultRows: SAMPLE_SCRIPT_ROWS, MaxRows: 50, MaxObjects: 20 });
+    expect(Object.values(exits)).not.toContain(3);
+    expect(code('tools/RepxDesigner/DevExpressLocator.cs')).toMatch(/return usable == null \? 3 : 0;/);
+    expect(verbs).toContain('"{\\"formaDesignerVerb\\":1,\\"verb\\":"');
+    // R6-4: the exit code is the one of the line printed, the watchdog's when it spoke first.
+    expect(verbs).toContain('if (TrySay(verb, code, fields)) return code;');
+    expect(verbs).toContain('_code = code;');
+    expect(verbs).toContain('new StreamWriter(Console.OpenStandardOutput(), utf8) { AutoFlush = true }');
+    expect(verbs).toContain('new UTF8Encoding(false)');
+    // Every string through SqlCompanion.Json, which writes each character above 126 as \uXXXX.
+    expect(code('tools/RepxDesigner/Sql.cs')).toContain('if (ch < 32 || ch > 126) b.Append("\\\\u")');
+    // --check's own writer too, since 1.2.0 (D2-2).
+    expect(code('tools/RepxDesigner/DevExpressLocator.cs')).toContain("else if (c < ' ' || c > '~') b.Append(\"\\\\u\")");
   });
 });
 

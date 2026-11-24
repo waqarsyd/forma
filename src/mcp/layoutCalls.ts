@@ -56,7 +56,7 @@ import { CallStopped, ToolRefusal, quoted, type Voice } from './caller';
 import { nodeWriteFs, resolveWritePath, type IfExists, type PathScope, type PathSystem } from './paths';
 import type { Binding, ChosenBy, DatabaseJob } from './nodeDatabase';
 import type { Audited, DesignerText, Dropped, LayoutSaid, ReportRead } from './pipeline';
-import { bindingParts, judgeDatabase, readDatabaseFiles, scopeOf, type BindingText, type DatabaseInput, type PathPolicy, type WrittenBy } from './reportCalls';
+import { bindingParts, databaseFilesOf, judgeDatabase, readDatabaseFiles, scopeOf, type BindingText, type DatabaseInput, type PathPolicy, type WrittenBy } from './reportCalls';
 import {
   CONNECTION_BY_NAME,
   LAYOUT_EXTENSIONS,
@@ -349,7 +349,7 @@ export async function bindLayout<W extends IfExists>(raw: string, database: Data
   const target = outputPath(output, report, `.bound${ext}`, LAYOUT_EXTENSIONS, scope, sys);
   const kind = targetKind(target, report, voice);
   const judged = judgeDatabase(database, scope, sys);
-  if (policy.ifExists === 'replace' && [judged.layout, ...judged.samples].some((d) => sameFile(target, d.path, sys) && !sameFile(target, report.path, sys))) {
+  if (policy.ifExists === 'replace' && databaseFilesOf(judged).some((d) => sameFile(target, d.path, sys) && !sameFile(target, report.path, sys))) {
     throw new ToolRefusal(`${quoted(target, voice)} is the database layout the report is bound with; ${voice === 'cli' ? 'name another --out' : 'name another output'}.`);
   }
   const files = await readDatabaseFiles(judged, voice);

@@ -54,6 +54,15 @@ const assemblyInfo = readFileSync(join(project, 'AssemblyInfo.cs'), 'utf8');
 const versionMatch = /AssemblyVersion\("(\d+\.\d+\.\d+)\.\d+"\)/.exec(assemblyInfo);
 if (!versionMatch) fail('no AssemblyVersion("x.y.z.0") in tools/RepxDesigner/AssemblyInfo.cs.');
 const version = versionMatch[1];
+// The file version is what Forma's command line reads before it starts Forma Designer (src/mcp/designerVerbs.ts, which
+// reads the exe's VS_FIXEDFILEINFO, set by AssemblyFileVersion), and the version is what this record and /health say
+// (AssemblyVersion): one raised without the other packs a 1.2.0 the command line reads as 1.1.0 and never starts (the
+// CLI and Forma Designer work's wave-6 review, N6-1). So the two must say the same, all four parts.
+const fileVersionMatch = /AssemblyFileVersion\("([^"]*)"\)/.exec(assemblyInfo);
+const fullVersion = /AssemblyVersion\("([^"]*)"\)/.exec(assemblyInfo)![1];
+if (!fileVersionMatch || fileVersionMatch[1] !== fullVersion) {
+  fail(`AssemblyFileVersion (${fileVersionMatch ? fileVersionMatch[1] : 'none'}) must say what AssemblyVersion says (${fullVersion}) in tools/RepxDesigner/AssemblyInfo.cs: raise both.`);
+}
 
 // 1. Build.
 function findMsBuild(): string {
@@ -65,9 +74,9 @@ function findMsBuild(): string {
     const first = (found.stdout || '').split(/\r?\n/).find((line) => line.trim());
     if (first) return first.trim();
   }
-  const known = 'C:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools\\MSBuild\\Current\\Bin\\MSBuild.exe';
-  if (existsSync(known)) return known;
-  fail('MSBuild not found; pass --msbuild <path to MSBuild.exe>.');
+  // vswhere only (2026-11-25, D2-12 of the CLI and Forma Designer work): the fixed path tried
+  // after it named a Build Tools install that this PC, where Forma Designer is packed, never had.
+  fail('MSBuild not found (vswhere found none); pass --msbuild <path to MSBuild.exe>.');
 }
 const msbuild = findMsBuild();
 console.log(`Building Forma Designer ${version} with ${msbuild}`);

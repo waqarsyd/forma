@@ -427,6 +427,12 @@ namespace RepxDesigner
             }
         }
 
+        /// <summary>
+        /// A JSON string in ASCII. Since 2026-11-25 (D2-2) a character above 126 is written as
+        /// \uXXXX too, as SqlCompanion.Json writes it: a WinExe's Console.Out writes the ANSI code
+        /// page into a pipe, so a bin folder under a non-Latin user name reached
+        /// scripts/package-designer.ts, which reads UTF-8, as '?' or as bytes that are not UTF-8.
+        /// </summary>
         private static string Str(string s)
         {
             if (s == null) return "null";
@@ -434,7 +440,7 @@ namespace RepxDesigner
             foreach (char c in s)
             {
                 if (c == '"' || c == '\\') b.Append('\\').Append(c);
-                else if (c < ' ') b.Append("\\u").Append(((int)c).ToString("x4"));
+                else if (c < ' ' || c > '~') b.Append("\\u").Append(((int)c).ToString("x4"));
                 else b.Append(c);
             }
             return b.Append('"').ToString();

@@ -821,6 +821,20 @@ src/
                        reads a layout and binds a report with on the
                        pipeline (the command line's --database, bind,
                        convert --database and sql-script).
+                       Since that work's wave 6, designerVerbs (the one
+                       program src/mcp starts: Forma Designer's command-line
+                       verbs, sql-list, sql-schema and sql-sample, coming
+                       with Forma Designer 1.2.0; where it is, worked out
+                       from the values the entry read, the per-user install
+                       or FORMA_DESIGNER; the environment it gets, Windows'
+                       own variables; the exe's own version read from the
+                       file before any start; the sentinel on every call,
+                       its envelope trusted before its exit code; started
+                       asynchronously, its output capped, killed at a
+                       deadline or a stop, the call ended soon after it
+                       exits whoever holds its pipes; SQL Server's quoted
+                       words never repeated), which the command line's
+                       connections and --connection run.
                        Tests beside them: stdoutGuard, toolShape, paths,
                        roots, formaServer and reportTools each have one
                        (formaServer's drives forma_status in both eras and
@@ -857,7 +871,11 @@ src/
                        command line's --database, --samples, bind, convert
                        --database, sql-script and a batch over the
                        FormaSample captures written to files, in process and
-                       spawned from outside the clone;
+                       spawned from outside the clone; designerVerbs.test.ts
+                       holds the verbs' helper and the command line's
+                       connections and --connection against a Node stand-in
+                       for the exe written at run time, so it runs on Linux
+                       too;
                        boundaries.test.ts holds src/mcp and src/server
                        apart from the browser code
   fonts/               the three self-hosted typefaces as variable woff2, their
@@ -868,7 +886,11 @@ tests/                 Firestore rules tests (emulator)
 tools/RepxDesigner/    optional Windows companion that opens a generated .repx
                        in the real DevExpress designer — C# and MSBuild, with
                        its own README; nothing in the web app depends on it;
-                       downloaded as Forma Designer (scripts/package-designer.ts)
+                       downloaded as Forma Designer (scripts/package-designer.ts);
+                       Verbs.cs (since 2026-11-25, coming with 1.2.0) its
+                       command-line verbs, sql-list, sql-schema and
+                       sql-sample, which print one line of JSON and exit,
+                       which Forma's command line starts (src/mcp/designerVerbs.ts)
 tools/RepxProbe/       console tool that asks DevExpress what a .repx really
                        contains — `emit` prints what the serializer writes,
                        `inspect` reports what the loader sees and fails when a
@@ -949,7 +971,9 @@ scripts/               dev.mjs (npm run dev:log) and build-server.mjs; the
                        fetch-handwriting.mjs and fetch-paddle.mjs (the
                        picture reader's models, SHA-256 pinned);
                        package-designer.ts and companion-scripts.ts (Forma
-                       Designer's zip, and the layout script it runs);
+                       Designer's zip, and the layout script and, since
+                       2026-11-25, the sample SQL it runs, written into
+                       its SqlScripts.cs);
                        repx.ts (since the CLI and Forma Designer work's wave
                        4 a forwarder to Forma's command line's entry,
                        src/mcp/cliEntry.ts, so `npx tsx scripts/repx.ts

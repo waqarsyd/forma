@@ -105,7 +105,8 @@ export const WHERE: Record<Voice, DatabaseWhere> = {
   cli: {
     chose: 'as the user chose',
     choose: 'with --procedure, --query or --object',
-    samples: 'when they are given with --samples',
+    // Since the CLI work's wave 6, rows Forma Designer reads through --connection are named with --sample-objects, the same act.
+    samples: 'when they are given with --samples, or named with --sample-objects',
   },
 };
 

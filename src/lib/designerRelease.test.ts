@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs';
 import {
   DESIGNER_PACKAGE_FILES,
   DESIGNER_RELEASE,
+  DESIGNER_VERBS_SINCE,
   designerDownloadUrl,
   designerIsOlder,
   designerReleasePage,
@@ -57,6 +58,35 @@ describe('what a package may hold', () => {
       expect(text).toMatch(/DevExpress (is NOT included|software)/);
     }
     expect(readFileSync('tools/RepxDesigner/download/README.txt', 'utf8')).toContain('https://www.devexpress.com/products/try/');
+  });
+});
+
+describe('the first Forma Designer with the command-line verbs (D2-8)', () => {
+  /** The last Forma Designer published without them: 1.1.0, on v1.6.0. */
+  const LAST_WITHOUT_VERBS = '1.1.0';
+  const assembly = /AssemblyVersion\("(\d+\.\d+\.\d+)\.\d+"\)/.exec(readFileSync('tools/RepxDesigner/AssemblyInfo.cs', 'utf8'))![1];
+
+  it('is newer than the last release without them, so an installed 1.1.0 is never started with a verb', () => {
+    expect(DESIGNER_VERBS_SINCE).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(designerIsOlder(LAST_WITHOUT_VERBS, DESIGNER_VERBS_SINCE)).toBe(true);
+  });
+
+  it('is read from the file version, which says what the version says, so raising one alone fails here rather than in the field (N6-1)', () => {
+    // src/mcp/designerVerbs.ts reads the exe's VS_FIXEDFILEINFO, which AssemblyFileVersion sets; the record, /health and this
+    // file's other cases read AssemblyVersion. A 1.2.0 packed with AssemblyFileVersion left at 1.1.0.0 would pass everything
+    // else and be refused by the command line on every PC; scripts/package-designer.ts refuses to pack it too.
+    const info = readFileSync('tools/RepxDesigner/AssemblyInfo.cs', 'utf8');
+    const version = /AssemblyVersion\("([^"]*)"\)/.exec(info)![1];
+    const fileVersion = /AssemblyFileVersion\("([^"]*)"\)/.exec(info)?.[1];
+    expect(fileVersion).toBe(version);
+    expect(readFileSync('scripts/package-designer.ts', 'utf8')).toContain('AssemblyFileVersion (');
+  });
+
+  it('is not newer than the source once the owner has raised it past 1.1.0, so a packed build with the verbs passes its own check', () => {
+    // Until the owner's packing commit the source says 1.1.0 though Verbs.cs is in it, which is why a copy built from source
+    // (FORMA_DESIGNER) skips the check, and the sentinel and the envelope (src/mcp/designerVerbs.ts) decide alone.
+    if (designerIsOlder(LAST_WITHOUT_VERBS, assembly)) expect(designerIsOlder(assembly, DESIGNER_VERBS_SINCE)).toBe(false);
+    else expect(assembly).toBe(LAST_WITHOUT_VERBS);
   });
 });
 

@@ -110,6 +110,32 @@ export function packageProblems(names: readonly string[]): string[] {
   return problems;
 }
 
+/**
+ * The first Forma Designer with the command-line verbs Forma's command line
+ * starts to read a database (`sql-list`, `sql-schema`, `sql-sample`; the CLI
+ * and Forma Designer work's wave 6, 2026-11-25, finding D2-8 of its design
+ * audit). They are in its source since then, and come with this version,
+ * which the owner raises and packs (scripts/package-designer.ts): until that
+ * commit `AssemblyInfo.cs` still says 1.1.0, as the download does. The bump
+ * raises both of its versions, `AssemblyVersion` (this record, /health) and
+ * `AssemblyFileVersion` (the file's VS_FIXEDFILEINFO, which is what is read
+ * below): one raised alone would pack a 1.2.0 the command line reads as
+ * 1.1.0 and never starts, so designerRelease.test.ts holds the two equal and
+ * package-designer.ts refuses to pack them apart (the wave's review, N6-1).
+ * Before src/mcp/designerVerbs.ts starts the per-user install, it reads the
+ * exe's own file version and starts nothing older than this, since 1.1.0
+ * given a verb it does not know would open it as a report path (it answers
+ * the sentinel the verbs end with by printing `--check`'s JSON, and a build
+ * older than 2026-11-09 has no `--check` at all). A copy built from source,
+ * named by FORMA_DESIGNER, is not held to it, since its file says 1.1.0.0
+ * until the owner's bump, but it is held to 1.0.0, the first with a file
+ * version and with `--check` (designerVerbs.ts `DESIGNER_CHECK_SINCE`).
+ * designerRelease.test.ts holds it newer than 1.1.0, the last release
+ * without the verbs, and not newer than the source's own version once the
+ * bump has landed.
+ */
+export const DESIGNER_VERBS_SINCE = '1.2.0';
+
 /** Whether the version a running copy reports is older than the download (a.b.c, numeric). */
 export function designerIsOlder(running: string | null | undefined, latest: string = DESIGNER_RELEASE.version): boolean {
   if (!running || !/^\d+\.\d+\.\d+$/.test(running) || !/^\d+\.\d+\.\d+$/.test(latest)) return false;

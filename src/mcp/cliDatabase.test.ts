@@ -339,7 +339,7 @@ describe('generate with a database', () => {
     expect(seen[0]).not.toMatch(/Example Traders/);
     const [line] = ran.json();
     expect(line.binding).toMatchObject({ bound: true, query: { table: 'dbo.Customers' } });
-    expect(line.notices).toContain('"rows.txt" holds sample rows, which go to the AI only when they are given with --samples, so they were not read.');
+    expect(line.notices).toContain('"rows.txt" holds sample rows, which go to the AI only when they are given with --samples, or named with --sample-objects, so they were not read.');
   });
 
   it('--require-binding: a report written but not bound ends the input with 4, said why', async () => {
@@ -405,7 +405,7 @@ describe('revise with no database', () => {
     const chat: GenHooks['chat'] = async () => ({ reply: 'Bound it.', wantsReport: false, action: 'edit', edits: [{ op: 'data', query: { table: 'dbo.Customers' } }] }) as ChatOutcome;
     const ran = await cli(['revise', 'r.repx', '--words', 'Bind it to dbo.Customers', '--edits-only', '--json'], { cwd: dir, env: AI, hooks: { ...NEVER, chat } });
     const [line] = ran.json();
-    expect(line.fileText.declined.join(' ')).toContain('no database layout was given, so what the report reads cannot change: give one with --database, or bind the report with the bind command');
+    expect(line.fileText.declined.join(' ')).toContain('no database layout was given, so what the report reads cannot change: give one with --database or --connection, or bind the report with the bind command');
     expect(JSON.stringify(line)).not.toContain('Data tab');
     expect(line.binding).toBeUndefined();
   });
@@ -470,7 +470,7 @@ describe('bind, with no AI', () => {
     const ran = await cli(['bind', 'c.repx', '--database', 'formasample.txt', '--object', 'dbo.Customers', '--connection-name', 'My Shop'], { cwd: dir });
     expect(ran.code, ran.err).toBe(EXIT.done);
     expect(ran.lines).toContain('  bound to dbo.Customers on connection "My Shop"');
-    expect(ran.lines).toContain('  Forma Designer cannot fill a connection named "My Shop": the names it fills hold only letters, digits, _, . and -, at most 128.');
+    expect(ran.lines).toContain('  Forma Designer cannot fill a connection named "My Shop": the names it fills begin with a letter, a digit or _, and hold only letters, digits, _, . and -, at most 128.');
     const json = await cli(['bind', 'c.repx', '--database', 'formasample.txt', '--object', 'dbo.Customers', '--connection-name', 'My Shop', '--out', 'j.repx', '--json'], { cwd: dir });
     expect(json.json()[0].binding).toMatchObject({ bound: true, designerFills: false, notes: [expect.stringMatching(/^Forma Designer cannot fill a connection named "My Shop"/)] });
   });

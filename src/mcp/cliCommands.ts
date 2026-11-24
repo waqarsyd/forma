@@ -28,7 +28,12 @@
  *
  * Since that work's wave 5 (D1-4, D1-11, the owner's OC7): `bind` and
  * `sql-script`, neither asking the AI, and the database's options on
- * generate, revise, batch and convert (commandLine.ts, *A database*).
+ * generate, revise, batch and convert (commandLine.ts, *A database*). Since
+ * its wave 6 (2026-11-25, D2-1, D2-11, OC1): `connections`, and
+ * `--connection` beside `--database` wherever that is taken, with
+ * `--sample-objects` and `--rows` on the three that ask the AI, all read
+ * through Forma Designer's command-line verbs, which come with Forma
+ * Designer 1.2.0 (commandLine.ts, *Forma Designer's connections*).
  *
  * `CLI_LAUNCHER` is the launcher's path in the clone. The documented command
  * is `node <clone>/src/mcp/cli.mjs <command> ...`, from any folder (cli.mjs
@@ -88,38 +93,40 @@ export const CLI_COMMANDS = [
   {
     name: 'convert',
     needsAi: false,
-    usage: '<file|folder>... [--database <layout> [--connection-name <name>] [--require-binding]] [--out <file|folder>] [--force]',
-    says: 'Makes an SSRS (.rdl, .rdlc) or FastReport (.frx) report, or every one directly in a folder, into a repaired .repx with no AI, as DevExpress 20.1 writes one, and writes <name>.converted.repx with the audit of the result; with --database, binds it to what its own SSRS DataSet reads when the layout has it, else to the object holding most of its fields.',
-    options: ['--database', '--connection-name', '--require-binding', '--out', '--force', '--fail-on'],
+    usage: '<file|folder>... [(--database <layout> | --connection <name>) [--connection-name <name>] [--require-binding]] [--out <file|folder>] [--force]',
+    says: 'Makes an SSRS (.rdl, .rdlc) or FastReport (.frx) report, or every one directly in a folder, into a repaired .repx with no AI, as DevExpress 20.1 writes one, and writes <name>.converted.repx with the audit of the result; with --database or --connection, binds it to what its own SSRS DataSet reads when the layout has it, else to the object holding most of its fields.',
+    options: ['--database', '--connection', '--connection-name', '--require-binding', '--out', '--force', '--fail-on'],
   },
   {
     name: 'bind',
     needsAi: false,
-    usage: '<file> --database <layout> (--procedure <name> | --query <json> | --object <name>) [--connection-name <name>] [--out <file|folder>] [--force]',
+    usage: '<file> (--database <layout> | --connection <name>) (--procedure <name> | --query <json> | --object <name>) [--connection-name <name>] [--out <file|folder>] [--force]',
     says: "Binds a report to a stored procedure, a table or view, or a query of a database's layout with no AI, writing its SQL data source as DevExpress 20.1 does with the connection by name only, and writes <name>.bound.repx with the audit of the result.",
-    options: ['--database', '--procedure', '--query', '--object', '--connection-name', '--out', '--force', '--fail-on'],
+    options: ['--database', '--connection', '--procedure', '--query', '--object', '--connection-name', '--out', '--force', '--fail-on'],
   },
   {
     name: 'generate',
     needsAi: true,
-    usage: '[<file>...] [--description "..."] [--data <file>]... [--database <layout> [--samples <file>]... [--procedure <name> | --query <json> | --object <name>] [--connection-name <name>] [--require-binding]] [--out <file|folder>] [--force] [--allow-stand-in] [--mock]',
+    usage:
+      '[<file>...] [--description "..."] [--data <file>]... [(--database <layout> | --connection <name> [--sample-objects <dbo.A,dbo.B> [--rows <n>]]) [--samples <file>]... [--procedure <name> | --query <json> | --object <name>] [--connection-name <name>] [--require-binding]] [--out <file|folder>] [--force] [--allow-stand-in] [--mock]',
     says: "Makes a report as Forma's workspace makes one, from pictures, PDFs, a report or template to start from, and/or a description, and writes <first file>.generated.repx.",
-    options: ['--description', '--data', '--database', '--samples', '--procedure', '--query', '--object', '--connection-name', '--require-binding', '--out', '--force', '--allow-stand-in', '--mock', '--fail-on'],
+    options: ['--description', '--data', '--database', '--connection', '--sample-objects', '--rows', '--samples', '--procedure', '--query', '--object', '--connection-name', '--require-binding', '--out', '--force', '--allow-stand-in', '--mock', '--fail-on'],
   },
   {
     name: 'revise',
     needsAi: true,
-    usage: '<file> --words "..." [--edits-only] [--database <layout> [--samples <file>]... [--procedure <name> | --query <json> | --object <name>] [--connection-name <name>] [--require-binding]] [--out <file|folder>] [--force] [--mock]',
+    usage:
+      '<file> --words "..." [--edits-only] [(--database <layout> | --connection <name> [--sample-objects <dbo.A,dbo.B> [--rows <n>]]) [--samples <file>]... [--procedure <name> | --query <json> | --object <name>] [--connection-name <name>] [--require-binding]] [--out <file|folder>] [--force] [--mock]',
     says: "Changes a report as a request in words asks, as Forma's chat does, by control name where it can, and writes <name>.revised.repx; a question is answered and nothing written.",
-    options: ['--words', '--edits-only', '--database', '--samples', '--procedure', '--query', '--object', '--connection-name', '--require-binding', '--out', '--force', '--mock', '--fail-on'],
+    options: ['--words', '--edits-only', '--database', '--connection', '--sample-objects', '--rows', '--samples', '--procedure', '--query', '--object', '--connection-name', '--require-binding', '--out', '--force', '--mock', '--fail-on'],
   },
   {
     name: 'batch',
     needsAi: 'by route',
     usage:
-      '<folder> --out <folder> [--words "..."] [--description "..."] [--data <file>]... [--database <layout> [--samples <file>]... [--procedure <name> | --query <json> | --object <name>] [--connection-name <name>] [--require-binding]] [--repair] [--edits-only] [--skip-existing | --force] [--allow-stand-in] [--dry-run] [--max <n>] [--mock]',
-    says: 'Makes every report source in a folder and its subfolders, one file at a time, each in a thread of its own: pictures and PDFs generated, SSRS and FastReport reports converted (and revised with --words), reports revised with --words or repaired with --repair; writes each under --out, its subfolder kept, and ends with a summary; with --database, each report is bound to it on its own. Only the files whose route needs one ask the AI.',
-    options: ['--out', '--words', '--description', '--data', '--database', '--samples', '--procedure', '--query', '--object', '--connection-name', '--require-binding', '--repair', '--edits-only', '--skip-existing', '--force', '--allow-stand-in', '--dry-run', '--max', '--mock', '--fail-on'],
+      '<folder> --out <folder> [--words "..."] [--description "..."] [--data <file>]... [(--database <layout> | --connection <name> [--sample-objects <dbo.A,dbo.B> [--rows <n>]]) [--samples <file>]... [--procedure <name> | --query <json> | --object <name>] [--connection-name <name>] [--require-binding]] [--repair] [--edits-only] [--skip-existing | --force] [--allow-stand-in] [--dry-run] [--max <n>] [--mock]',
+    says: 'Makes every report source in a folder and its subfolders, one file at a time, each in a thread of its own: pictures and PDFs generated, SSRS and FastReport reports converted (and revised with --words), reports revised with --words or repaired with --repair; writes each under --out, its subfolder kept, and ends with a summary; with --database or --connection, each report is bound to it on its own. Only the files whose route needs one ask the AI.',
+    options: ['--out', '--words', '--description', '--data', '--database', '--connection', '--sample-objects', '--rows', '--samples', '--procedure', '--query', '--object', '--connection-name', '--require-binding', '--repair', '--edits-only', '--skip-existing', '--force', '--allow-stand-in', '--dry-run', '--max', '--mock', '--fail-on'],
   },
   {
     name: 'sql-script',
@@ -127,6 +134,13 @@ export const CLI_COMMANDS = [
     usage: '[--sample <dbo.A,dbo.B>] [--rows <n>] [--out <file.sql>] [--force] [--sqlcmd <server> <database>]',
     says: "Prints Forma's read-only script that reads a SQL Server database's layout (tables, views, keys, procedures and what they return, never a row), or with --sample the one that reads a few rows of the tables named; what it answers, saved as a file, is what --database and --samples read. With --sqlcmd, the sqlcmd line that runs it and keeps every name readable. Opens no connection.",
     options: ['--sample', '--rows', '--out', '--force', '--sqlcmd'],
+  },
+  {
+    name: 'connections',
+    needsAi: false,
+    usage: '',
+    says: 'Lists the SQL Server connections Forma Designer keeps for this Windows user, each by name with its database and how it signs in, never a server or a password: the names --connection takes. Needs Forma Designer 1.2.0 or later, on Windows; opens no connection.',
+    options: [],
   },
 ] as const satisfies readonly CliCommand[];
 

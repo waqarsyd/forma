@@ -67,11 +67,14 @@ export const ON_THE_DATA_TAB: DatabaseWhere = {
 
 /**
  * The names Forma Designer fills a report's connection from: `IsName` in
- * tools/RepxDesigner/Sql.cs, `^[A-Za-z0-9_.\-]{1,128}$` (databaseAi.test.ts
- * holds the two equal). A report whose connection is named otherwise is
- * never filled by it: not for Live rows, not in the designer (D1-5).
+ * tools/RepxDesigner/Sql.cs, `^[A-Za-z0-9_][A-Za-z0-9_.\-]{0,127}$`
+ * (databaseAi.test.ts holds the two equal). A report whose connection is
+ * named otherwise is never filled by it: not for Live rows, not in the
+ * designer (D1-5). Since 2026-11-25 (the CLI and Forma Designer work's wave
+ * 6, SEC-2) a name may not begin with - or ., so none handed to its
+ * command-line verbs can read as a switch; until then `^[A-Za-z0-9_.\-]{1,128}$`.
  */
-export const DESIGNER_NAME = /^[A-Za-z0-9_.\-]{1,128}$/;
+export const DESIGNER_NAME = /^[A-Za-z0-9_][A-Za-z0-9_.\-]{0,127}$/;
 
 /** Whether Forma Designer can fill a connection of this name. */
 export function designerCanFill(name: string): boolean {
@@ -80,7 +83,7 @@ export function designerCanFill(name: string): boolean {
 
 /** What a reply says of a connection Forma Designer cannot fill. */
 export function designerNote(name: string): string {
-  return `Forma Designer cannot fill a connection named "${name.trim()}": the names it fills hold only letters, digits, _, . and -, at most 128.`;
+  return `Forma Designer cannot fill a connection named "${name.trim()}": the names it fills begin with a letter, a digit or _, and hold only letters, digits, _, . and -, at most 128.`;
 }
 
 /**

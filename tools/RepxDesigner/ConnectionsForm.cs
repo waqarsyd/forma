@@ -71,7 +71,10 @@ namespace RepxDesigner
             _list.Items.Clear();
             foreach (var c in SqlCompanion.Load())
             {
-                _list.Items.Add(new Row { Name = c.Name, Label = c.Name + "  -  " + c.Server + " / " + c.Database + (c.Mode == "login" ? "  (SQL Server login)" : "  (Windows)") });
+                // A name kept by 1.1.0 or older may begin with . or -, which IsName refuses since
+                // 2026-11-25 (SEC-2): no report, page or command can use it, so it says so (R6-5).
+                string old = SqlCompanion.IsName(c.Name) ? "" : "  - unusable: add it again under a name that begins with a letter, a digit or _";
+                _list.Items.Add(new Row { Name = c.Name, Label = c.Name + "  -  " + c.Server + " / " + c.Database + (c.Mode == "login" ? "  (SQL Server login)" : "  (Windows)") + old });
             }
         }
     }
@@ -133,7 +136,10 @@ namespace RepxDesigner
             save.Click += (s, e) =>
             {
                 string name = _name.Text.Trim();
-                if (!SqlCompanion.IsName(name)) { _status.Text = "A name is letters, digits, _ . or - (as in connectionStrings)."; return; }
+                // The verbs' own words for the rule (2026-11-25, the CLI and Forma Designer work's
+                // review, R6-5): until then this said "letters, digits, _ . or -", which IsName
+                // stopped allowing first on that day, so '.local' or '-prod' was refused as if allowed.
+                if (!SqlCompanion.IsName(name)) { _status.Text = Verbs.NameRule + " (as in connectionStrings)"; return; }
                 if (_server.Text.Trim().Length == 0 || _database.Text.Trim().Length == 0) { _status.Text = "Give the server and the database."; return; }
                 // A same-named connection used to be replaced without a word (SD-28).
                 StoredConnection existing = SqlCompanion.Find(name);
@@ -174,7 +180,7 @@ namespace RepxDesigner
         {
             try
             {
-                using (var conn = new SqlConnection(SqlCompanion.ConnectionString(c))) conn.Open();
+                using (var conn = new SqlConnection(SqlCompanion.ConnectionString(c, 15))) conn.Open();
                 return null;
             }
             catch (Exception ex)

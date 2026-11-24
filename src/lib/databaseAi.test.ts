@@ -381,10 +381,12 @@ describe('the connection a report is written with (D1-5)', () => {
   it('says when Forma Designer could not fill the name written, by the rule Forma Designer itself applies', async () => {
     const spaced = { ...formaSample, database: 'My Shop' };
     const out = await bind(spaced, report(['CompanyName']));
-    expect(out.note).toBe('Bound it to Customers on "My Shop". Forma Designer cannot fill a connection named "My Shop": the names it fills hold only letters, digits, _, . and -, at most 128.');
+    expect(out.note).toBe('Bound it to Customers on "My Shop". Forma Designer cannot fill a connection named "My Shop": the names it fills begin with a letter, a digit or _, and hold only letters, digits, _, . and -, at most 128.');
     expect((await bind(formaSample, report(['CompanyName']))).note).not.toContain('Forma Designer');
-    expect(designerCanFill('Forma.Sample-2_x')).toBe(true);
+    expect(['Forma.Sample-2_x', '_x', '7', 'x'.repeat(128)].map(designerCanFill)).toEqual([true, true, true, true]);
     expect(['My Shop', 'Ventes€', 'x'.repeat(129), ''].map(designerCanFill)).toEqual([false, false, false, false]);
+    // SEC-2 (2026-11-25): never a name that reads as a switch to its command line.
+    expect(['--install', '-x', '.hidden', '--devexpress-root'].map(designerCanFill)).toEqual([false, false, false, false]);
     // IsName in Forma Designer's own source, the regular expression Find is reached through (tools/RepxDesigner/Sql.cs).
     const sql = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'tools', 'RepxDesigner', 'Sql.cs'), 'utf8');
     const isName = /public static bool IsName\(string name\)\s*\{[^}]*Regex\.IsMatch\(name, @"([^"]+)"\)/.exec(sql);

@@ -82,6 +82,7 @@
     <Compile Include="Probe.cs" />
     <Compile Include="Sql.cs" />
     <Compile Include="SqlScripts.cs" />
+    <Compile Include="Verbs.cs" />
     <Compile Include="ConnectionsForm.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
