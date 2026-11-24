@@ -54,7 +54,9 @@
  * - The model Gemini answers with is probed once a day for a key and kept in
  *   a file in Forma's folder, by the key's tag and never the key
  *   (lib/modelCache.ts `keepModelChoiceIn`), or pinned (`model`), which
- *   probes nothing (NODE-7).
+ *   probes nothing (NODE-7). The models a limit parked are kept in another
+ *   beside it, the same way, as each limit happens, so a thread started
+ *   afresh asks none of them again (modelParks.ts, GAP3-1).
  * - The AI's design is handed in (`ask`): geminiService's by default, the
  *   mock invoice with `mock`, and a test's own stand-in. The mock hands in
  *   mock mode's translation too, so a request that names a language makes no
@@ -68,8 +70,8 @@
  *   (Node 26 defines localStorage and throws on a read, TST-12).
  *
  * Forma's folder (`formaUserFolder`) is per user and outside any repository
- * and the user's project: the probe's file and the gathered language data
- * are all it holds, and all this writes.
+ * and the user's project: the probe's file, the parks' file and the gathered
+ * language data are all it holds, and all this writes.
  *
  * Pure ASCII.
  */
@@ -88,6 +90,7 @@ import { emptyMemory } from '../lib/memory';
 import { keepModelChoiceIn, type ModelStorage } from '../lib/modelCache';
 import { measureOn } from '../lib/textMeasure';
 import type { ReportConfig, StreamProgress } from '../services/geminiService';
+import { fileParks, PARKS_FILE } from './modelParks';
 import { checkMeasuring, METRIC_FACES, standInFamilies, useMetricFonts, type MetricFace } from './nodeFonts';
 import { nodeDrawing } from './nodeIntake';
 import { nodeOcr } from './nodeOcr';
@@ -188,7 +191,7 @@ export function unreadNotice(meta: PreviewMeta): string {
 export interface NodeGenerationOptions {
   /** The clone's root, whose assets/model and vendor/paddle are read; this file's own clone by default. */
   clone?: string;
-  /** Forma's own folder (`formaUserFolder` by default): the probe's file and the gathered language data. */
+  /** Forma's own folder (`formaUserFolder` by default): the probe's file, the parks' file and the gathered language data. */
   userFolder?: string;
   /** PaddleOCR's models; the clone's vendor/paddle by default, null for Tesseract alone. */
   paddleModels?: string | null;
@@ -253,7 +256,7 @@ export async function nodeGeneration(options: NodeGenerationOptions = {}): Promi
   const ocr = nodeOcr({ languages: join(folder, 'tessdata'), paddle: options.paddleModels === undefined ? join(clone, 'vendor', 'paddle') : options.paddleModels, log });
   // OCR's language data too, needed in PaddleOCR's mode as well (another language, and Tesseract's turn): NODE7-OCR-QUIET.
   ocr.ready();
-  keepModelChoiceIn({ session: null, day: fileStorage(join(folder, 'model-choice.json')) });
+  keepModelChoiceIn({ session: null, day: fileStorage(join(folder, 'model-choice.json')), parks: fileParks(join(folder, PARKS_FILE)) });
   // The five families' own widths on any host, then a canvas that measures something (GAP2-1).
   useMetricFonts(clone, options.metricFaces ?? METRIC_FACES);
   const canvas =options.canvas ?? (() => createCanvas(1, 1).getContext('2d') as unknown as CanvasRenderingContext2D);

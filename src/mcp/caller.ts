@@ -12,6 +12,9 @@
  *   generator.ts, workerPool.ts and the work the two threads run) import it
  *   from here, so none of them loads either, which boundaries.test.ts holds.
  *   toolShape.ts re-exports it, one class, so `instanceof` holds across both.
+ * - `AiFailure`, the refusal when the AI made nothing, which also carries the
+ *   limit it met as data (since that work's wave 3): a `ToolRefusal`, so the
+ *   server says its words and nothing else, as before.
  * - `MAX_FILE_TEXT`, the longest single string read from a file that a
  *   result carries (reportFile.ts `fileLines` folds lines to it, and
  *   `clippedFromFile` clips what goes under `fromFile` to it).
@@ -40,9 +43,27 @@
  *
  * Pure ASCII.
  */
+import type { AiLimit } from '../lib/aiLimit';
 
 /** A refusal whose words were written for whoever called: sent as they are (keys still taken out). */
 export class ToolRefusal extends Error {}
+
+/**
+ * The refusal when the AI made nothing (2026-11-24, the CLI and Forma
+ * Designer work's wave 3; findings GAP3-2 and CLI-4, the owner's decision
+ * OC5): its words as any refusal's, which the server sends as before, and
+ * the limit the AI met as data (lib/aiLimit.ts `limitOf`, worked out
+ * in the work's thread from the error itself), so the command line's batch
+ * can wait a minute's limit out or stop at the day's; null when the failure
+ * was not a limit.
+ */
+export class AiFailure extends ToolRefusal {
+  readonly limit: AiLimit | null;
+  constructor(message: string, limit: AiLimit | null) {
+    super(message);
+    this.limit = limit;
+  }
+}
 
 /** The call was stopped (a host's cancellation, Ctrl+C at a command line) before anything was written. */
 export class CallStopped extends Error {

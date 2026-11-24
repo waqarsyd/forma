@@ -5,9 +5,11 @@
  * `runGenerate`, `planRevise` and `runRevise` with a working-folder policy
  * in the command line's voice, on files in a scratch folder, the AI stood in
  * by the mock or by a stub that fails the test if it is asked. No key is real
- * and no request leaves the process; every key is built at run time (TST-10).
- * aiTools.test.ts drives the same functions through the MCP server, its
- * expectations unchanged by the move.
+ * and no request leaves this computer: the one request made goes to a
+ * stand-in server this file starts on 127.0.0.1, answering 429 (wave 3);
+ * every key is built at run time (TST-10). aiTools.test.ts drives the same
+ * functions through the MCP server, its expectations unchanged by the move
+ * but for the fields wave 3 adds.
  *
  * What is held: relative paths judged against the working folder and the
  * output beside the first file or where named; generate_report's and
@@ -17,20 +19,27 @@
  * the plan refused at its turn; a link out of the working folder refused; a
  * stop writing nothing; the gate; a failure's keys out before its cut; and a
  * result, unscrubbed as it comes back, shown through caller.ts with its keys
- * out before any string is clipped (the wave-2 review's SEC-W2-3).
+ * out before any string is clipped (the wave-2 review's SEC-W2-3). Since the
+ * work's wave 3: the limit the AI met, refused as an `AiFailure` or carried
+ * in the data, out of the real worker thread too; nothing standing in when
+ * the command asks for none; and the model that answered, and the fix's.
  */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { SET_UP_AI } from '../lib/aiProvider';
 import { MAX_ATTACHMENTS } from '../lib/attachmentBudget';
+import { classifyGeminiError } from '../lib/geminiErrors';
 import { FORMA_KEYS, redactorFor } from '../lib/keyRedact';
+import { buildMockReportReply, mockAnswer } from '../services/geminiService';
 import { readAiSettings, takeAiEnv, type AiSettings } from './aiSettings';
-import { CallStopped, MAX_FILE_TEXT, ToolRefusal, clippedFromFile, scrubbed } from './caller';
-import type { GenEvent, GenSetup } from './genJobs';
-import type { Generator } from './generator';
+import { AiFailure, CallStopped, MAX_FILE_TEXT, ToolRefusal, clippedFromFile, scrubbed } from './caller';
+import type { GenEvent, GenHooks, GenSetup } from './genJobs';
+import { workerGenerator, type Generator } from './generator';
 import { nodeSystem, type IfExists } from './paths';
 import { failureSaid, planGenerate, planRevise, readyGenerator, runGenerate, runRevise, type CallRun, type PathPolicy } from './reportCalls';
 import { inThreadGenerator } from './testClient';
@@ -121,8 +130,9 @@ describe('generate, as the command line calls it', () => {
     expect(plan.target).toBe(at('described', 'invoice.repx'));
     const { r, events } = run();
     const made = await runGenerate(plan, r);
-    expect(Object.keys(made.data)).toEqual(['written', 'ai', 'switched', 'standIn', 'notices', 'pictures', 'errors', 'warnings', 'summary', 'findings', 'printFindings', 'translated']);
-    expect(made.data).toMatchObject({ written: { path: at('described', 'invoice.repx'), status: 'written' }, ai: 'mock', switched: false, standIn: null, pictures: 0 });
+    // The wave-3 fields last (GAP3-2, GAP3-4): every field before them as it was.
+    expect(Object.keys(made.data)).toEqual(['written', 'ai', 'switched', 'standIn', 'notices', 'pictures', 'errors', 'warnings', 'summary', 'findings', 'printFindings', 'translated', 'model', 'fixModel', 'limit']);
+    expect(made.data).toMatchObject({ written: { path: at('described', 'invoice.repx'), status: 'written' }, ai: 'mock', switched: false, standIn: null, pictures: 0, model: null, fixModel: null, limit: null });
     expect(made.data.written.bytes).toBe(readFileSync(at('described', 'invoice.repx')).byteLength);
     expect(Array.isArray(made.fromFile.findings) && Array.isArray(made.fromFile.printed)).toBe(true);
     expect(typeof made.auditWords).toBe('string');
@@ -228,7 +238,7 @@ describe('revise, as the command line calls it', () => {
     const plan = await planRevise({ path: join('revise', 'inv.repx'), request: 'Make the title bold' }, policy());
     expect(plan.target).toBe(at('revise', 'inv.revised.repx'));
     const made = await runRevise(plan, run().r);
-    expect(Object.keys(made.data)).toEqual(['path', 'kind', 'loginRemoved', 'action', 'applied', 'declined', 'ai', 'switched', 'notices', 'translated', 'written', 'errors', 'warnings', 'summary', 'findings']);
+    expect(Object.keys(made.data)).toEqual(['path', 'kind', 'loginRemoved', 'action', 'applied', 'declined', 'ai', 'switched', 'notices', 'translated', 'written', 'errors', 'warnings', 'summary', 'findings', 'model', 'fixModel', 'limit']);
     expect(made.data).toMatchObject({ path: at('revise', 'inv.repx'), kind: 'repx', action: 'edit', applied: 1, ai: 'mock', written: { path: at('revise', 'inv.revised.repx'), status: 'written' } });
     expect(readFileSync(at('revise', 'inv.revised.repx'), 'utf8')).toMatch(/Name="title"[^>]*Font="Arial, 14pt, style=Bold"/);
     expect(readFileSync(at('revise', 'inv.repx'), 'utf8')).toBe(INVOICE);
@@ -249,6 +259,254 @@ describe('revise, as the command line calls it', () => {
       const said = await refusal(planRevise(input, policy()).then((plan) => runRevise(plan, run(never).r)));
       expect(said).toMatch(why);
       expect(said).not.toMatch(MODEL_WORDS);
+    }
+  });
+});
+
+/*
+ * What a failure and an answer carry (2026-11-24, the CLI and Forma Designer
+ * work's wave 3; GAP3-2, GAP3-3, GAP3-4, GAP3-5 and the owner's OC5), read
+ * the way the command line's batch is to read them in its wave 4: the limit
+ * the AI met on an `AiFailure` or in the data, worked out in the work's
+ * thread from the error itself; the model that answered; and nothing standing
+ * in when the command asked for none. The AI is a stub that throws the
+ * service's own classified errors, or, through the real worker thread, a
+ * stand-in OpenAI-compatible server on this computer that answers 429.
+ */
+describe('what a failure and an answer carry, as the command line is to read them', () => {
+  /** Google's own 429 under the service's classified error, as analyzeReportDesign throws it. */
+  const googleLimit = (quotaId: string, retryDelay?: string) =>
+    classifyGeminiError(
+      Object.assign(
+        new Error(
+          JSON.stringify({
+            error: {
+              code: 429,
+              message: 'You exceeded your current quota, please check your plan and billing details.',
+              status: 'RESOURCE_EXHAUSTED',
+              details: [
+                { '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: [{ quotaId }] },
+                ...(retryDelay ? [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay }] : []),
+              ],
+            },
+          }),
+        ),
+        { status: 429 },
+      ),
+    );
+  const DAY = 'GenerateRequestsPerDayPerProjectPerModel-FreeTier';
+  const MINUTE = 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier';
+  type Ask = NonNullable<GenHooks['ask']>;
+  /** The mock invoice as each answer, its `n`th call refused by `fail`, changed by `answer`. */
+  const asking = (o: { fail?: (n: number) => Error | null; answer?: (n: number) => Record<string, unknown> } = {}): Ask => {
+    let n = 0;
+    return async (_prompt, _parts, _config, previous, _signal, _onProgress, options) => {
+      n += 1;
+      const failure = o.fail?.(n);
+      if (failure) throw failure;
+      return { ...mockAnswer('true', previous, options), ...o.answer?.(n) };
+    };
+  };
+  /** A generator whose AI is `hooks`' stand-ins, never the mock's answer. */
+  const answering = (hooks: GenHooks) => inThreadGenerator({ ...SETUP, mock: false }, { log: () => {}, ...hooks });
+  const failedWith = async (p: Promise<unknown>): Promise<AiFailure> => {
+    const error = await p.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(AiFailure);
+    // A refusal still, so the server sends its words alone, as before.
+    expect(error).toBeInstanceOf(ToolRefusal);
+    return error as AiFailure;
+  };
+  const DESCRIPTION = 'An invoice with a title and a table of items.';
+
+  it("stands nothing in when the command asks for none: the day's limit refused with the limit as data, and nothing written", { timeout: 60_000 }, async () => {
+    const gen = answering({ ask: asking({ fail: () => googleLimit(DAY, '20s') }) });
+    try {
+      const plan = await planGenerate({ description: DESCRIPTION, output: join('limited', 'invoice.repx') }, policy(), { standIn: false });
+      expect(plan.standIn).toBe(false);
+      const failure = await failedWith(runGenerate(plan, run(gen).r));
+      expect(failure.limit).toEqual({ kind: 'daily', waitMs: expect.any(Number), provider: 'gemini' });
+      expect(failure.limit!.waitMs).toBeGreaterThan(0);
+      // At most the longest day, the 25 hours of the day the clocks go back.
+      expect(failure.limit!.waitMs).toBeLessThanOrEqual(25 * 3600_000);
+      expect(failure.message).toMatch(/^No report was made: Today's free daily allowance for this key is used up\. .* Nothing was written\.$/);
+      expect(failure.message).not.toMatch(MODEL_WORDS);
+      expect(existsSync(at('limited'))).toBe(false);
+    } finally {
+      await gen.close();
+    }
+  });
+
+  it("stands Forma's draft in by default, as the server has it, and the result says which limit it stood in for", { timeout: 60_000 }, async () => {
+    const gen = answering({ ask: asking({ fail: () => googleLimit(DAY) }) });
+    try {
+      const made = await runGenerate(await planGenerate({ description: DESCRIPTION, output: join('stood-in', 'invoice.repx') }, policy()), run(gen).r);
+      expect(made.data).toMatchObject({ standIn: 'offline', ai: null, model: null, fixModel: null, limit: { kind: 'daily', provider: 'gemini' } });
+      expect(made.data.written).toMatchObject({ path: at('stood-in', 'invoice.repx'), status: 'written' });
+    } finally {
+      await gen.close();
+    }
+  });
+
+  it("carries a minute's limit that kept the print check's fix from being asked: the report before the fix written, with the wait and the model", { timeout: 60_000 }, async () => {
+    const clipped = [{ severity: 'error', code: 'clipped-at-margin', message: 'A label runs past the right margin.' }];
+    const gen = answering({
+      ask: asking({
+        fail: (n) => (n === 2 ? googleLimit(MINUTE, '41s') : null),
+        answer: () => ({ model: 'gemini-3.6-flash-002', printFindings: clipped }),
+      }),
+    });
+    try {
+      const made = await runGenerate(await planGenerate({ description: DESCRIPTION, output: join('unfixed', 'invoice.repx') }, policy(), { standIn: false }), run(gen).r);
+      expect(made.data).toMatchObject({ ai: 'gemini', standIn: null, model: 'gemini-3.6-flash-002', fixModel: null, limit: { kind: 'per-minute', waitMs: 41_000, provider: 'gemini' } });
+      expect(made.data.printFindings).toEqual([{ severity: 'error', code: 'clipped-at-margin' }]);
+      expect(existsSync(at('unfixed', 'invoice.repx'))).toBe(true);
+      // The model is data, never a phrase: no notice names it.
+      expect(made.data.notices.join(' ')).not.toContain('gemini-3.6');
+    } finally {
+      await gen.close();
+    }
+  });
+
+  it('names the AI that answered for a fix it could not answer, when a limit had switched the request to another than the one chosen', { timeout: 60_000 }, async () => {
+    const clipped = [{ severity: 'error', code: 'clipped-at-margin', message: 'A label runs past the right margin.' }];
+    // OpenRouter chosen, at its limit; Gemini set up beside it answers, and is asked the fix, which meets Gemini's minute's limit.
+    const routerKey = ['sk', 'or', 'v1'].join('-') + '-' + '0'.repeat(64);
+    const both = readAiSettings(takeAiEnv({ FORMA_PROVIDER: 'openrouter', FORMA_OPENROUTER_KEY: routerKey, FORMA_OPENROUTER_MODEL: 'x:free', FORMA_GEMINI_KEY: geminiKey }, 'cli').aiEnv, { voice: 'cli' });
+    const gemini = asking({ fail: (n) => (n === 2 ? googleLimit(MINUTE, '41s') : null), answer: () => ({ printFindings: clipped }) });
+    const ask: Ask = async (prompt, parts, config, ...rest) => {
+      if (config?.provider === 'openrouter') throw Object.assign(new Error('OpenRouter answered 429: Rate limit exceeded'), { status: 429, provider: 'openrouter' });
+      return gemini(prompt, parts, config, ...rest);
+    };
+    const gen = answering({ ask });
+    try {
+      const plan = await planGenerate({ description: DESCRIPTION, output: join('switched', 'invoice.repx') }, policy());
+      const made = await runGenerate(plan, { ...run(gen).r, ai: { settings: both, generator: gen } });
+      expect(made.data).toMatchObject({ ai: 'gemini', switched: true, limit: { kind: 'per-minute', waitMs: 41_000, provider: 'gemini' } });
+    } finally {
+      await gen.close();
+    }
+  });
+
+  it('names the model that designed the report and, when another made the fix kept, that one too', { timeout: 60_000 }, async () => {
+    const clipped = [{ severity: 'error', code: 'clipped-at-margin', message: 'A label runs past the right margin.' }];
+    const gen = answering({
+      ask: asking({ answer: (n) => (n === 1 ? { model: 'gemini-3.6-flash-002', printFindings: clipped } : { model: 'gemini-3.5-flash-lite-001' }) }),
+    });
+    try {
+      const made = await runGenerate(await planGenerate({ description: DESCRIPTION, output: join('fixed', 'invoice.repx') }, policy()), run(gen).r);
+      expect(made.data).toMatchObject({ ai: 'gemini', model: 'gemini-3.6-flash-002', fixModel: 'gemini-3.5-flash-lite-001', limit: null, printFindings: [] });
+    } finally {
+      await gen.close();
+    }
+  });
+
+  it("refuses a revise the AI could not answer with the limit as data, and names the model that answered an edit", { timeout: 60_000 }, async () => {
+    put(at('revise-limit', 'inv.repx'), INVOICE);
+    const plan = await planRevise({ path: join('revise-limit', 'inv.repx'), request: 'Make the title bold' }, policy());
+    const limited = answering({ chat: async () => Promise.reject(googleLimit(MINUTE, '41s')) });
+    try {
+      const failure = await failedWith(runRevise(plan, run(limited).r));
+      expect(failure.limit).toEqual({ kind: 'per-minute', waitMs: 41_000, provider: 'gemini' });
+      expect(failure.message).toMatch(/^No change was made: This key has used its free quota of requests for the moment/);
+    } finally {
+      await limited.close();
+    }
+    expect(readdirSync(at('revise-limit'))).toEqual(['inv.repx']);
+    const named = answering({
+      chat: async (history, _config, _signal, _partial, report) => ({ ...buildMockReportReply(history.at(-1)!.text, report!.outline), model: 'gemini-3.5-flash-lite-001' }),
+    });
+    try {
+      const made = await runRevise(plan, run(named).r);
+      expect(made.data).toMatchObject({ action: 'edit', ai: 'gemini', model: 'gemini-3.5-flash-lite-001', fixModel: null, limit: null });
+    } finally {
+      await named.close();
+    }
+  });
+
+  it("carries the limit out of the real worker thread: a Local AI that answers 429 with its headers, asked once, and nothing written", { timeout: 120_000 }, async () => {
+    // A stand-in for an OpenAI-compatible server on this computer, answering every request with OpenRouter's rate-limit headers.
+    const seen: string[] = [];
+    const server = createServer((req, res) => {
+      seen.push(`${req.method} ${req.url}`);
+      req.on('end', () => {
+        res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '30', 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': String(Date.now() + 30_000) });
+        res.end(JSON.stringify({ error: { message: 'Rate limit exceeded' } }));
+      });
+      req.resume();
+    });
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+    const { port } = server.address() as AddressInfo;
+    const local = readAiSettings(takeAiEnv({ FORMA_PROVIDER: 'local', FORMA_LOCAL_MODEL: 'stand-in-model', FORMA_LOCAL_URL: `http://127.0.0.1:${port}/v1` }, 'cli').aiEnv, { voice: 'cli' });
+    expect(local.ready).toBe(true);
+    const gen = workerGenerator({ setup: { mock: false, userFolder: SETUP.userFolder, paddleModels: null }, log: () => {} });
+    try {
+      const plan = await planGenerate({ description: DESCRIPTION, output: join('worker', 'invoice.repx') }, policy(), { standIn: false });
+      const failure = await failedWith(runGenerate(plan, { ...run(gen).r, ai: { settings: local, generator: gen } }));
+      expect(failure.limit).toEqual({ kind: 'per-minute', waitMs: 30_000, provider: 'local' });
+      expect(failure.message).toMatch(/^No report was made: The local AI refused the request for its rate limit/);
+      expect(seen).toEqual(['POST /v1/chat/completions']);
+      expect(existsSync(at('worker'))).toBe(false);
+    } finally {
+      await gen.close();
+      await new Promise((done) => server.close(done));
+    }
+  });
+
+  /*
+   * The wave's review (W3R-1): the AI designs the report, and the
+   * translation the words ask for then meets a limit. With nothing to stand
+   * in, a report in the language it was made in is not the report asked
+   * for: refused, the limit as data, nothing written, so a rerun makes it.
+   * By default, as the server has it, the report is written and says why it
+   * is not translated, with the limit. The design is a stand-in; the
+   * translation goes to a stand-in Local AI on this computer that answers
+   * 429.
+   */
+  it("refuses a report whose translation met a limit when nothing is to stand in, by default writes it saying so, and a revise's carries it too", { timeout: 60_000 }, async () => {
+    const seen: string[] = [];
+    const server = createServer((req, res) => {
+      seen.push(`${req.method} ${req.url}`);
+      req.on('end', () => {
+        res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '30' });
+        res.end(JSON.stringify({ error: { message: 'Rate limit exceeded' } }));
+      });
+      req.resume();
+    });
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+    const { port } = server.address() as AddressInfo;
+    const local = readAiSettings(takeAiEnv({ FORMA_PROVIDER: 'local', FORMA_LOCAL_MODEL: 'stand-in-model', FORMA_LOCAL_URL: `http://127.0.0.1:${port}/v1` }, 'cli').aiEnv, { voice: 'cli' });
+    const gen = answering({ ask: asking({ answer: () => ({ model: 'stand-in-model' }) }) });
+    const chatting = answering({ chat: async (_history, _config, _signal, _partial, report) => ({ ...buildMockReportReply('Make the title bold', report!.outline), tools: [{ name: 'translate', language: 'German' }] }) });
+    const IN_GERMAN = 'An invoice with a title and a table of items, in German.';
+    try {
+      const none = await planGenerate({ description: IN_GERMAN, output: join('untranslated', 'invoice.repx') }, policy(), { standIn: false });
+      const failure = await failedWith(runGenerate(none, { ...run(gen).r, ai: { settings: local, generator: gen } }));
+      expect(failure.limit).toEqual({ kind: 'per-minute', waitMs: 30_000, provider: 'local' });
+      expect(failure.message).toMatch(/^No report was made: the translation into German the request asks for did not answer: .+ Nothing was written\.$/);
+      expect(failure.message).not.toMatch(MODEL_WORDS);
+      expect(seen).toEqual(['POST /v1/chat/completions']);
+      expect(existsSync(at('untranslated'))).toBe(false);
+
+      const kept = await runGenerate(await planGenerate({ description: IN_GERMAN, output: join('as-built', 'invoice.repx') }, policy()), { ...run(gen).r, ai: { settings: local, generator: gen } });
+      expect(kept.data).toMatchObject({ ai: 'local', standIn: null, translated: null, model: 'stand-in-model', limit: { kind: 'per-minute', waitMs: 30_000, provider: 'local' } });
+      expect(kept.data.notices).toContain('The report could not be translated into German; it stays in the language it was made in.');
+      expect(kept.data.written).toMatchObject({ path: at('as-built', 'invoice.repx'), status: 'written' });
+      expect(seen).toHaveLength(2);
+
+      // revise_report's translation, asked by the chat beside an edit: the edit written as it was, the limit carried.
+      put(at('revise-translate', 'inv.repx'), INVOICE);
+      const plan = await planRevise({ path: join('revise-translate', 'inv.repx'), request: 'Make the title bold and translate it into German' }, policy());
+      const revised = await runRevise(plan, { ...run(chatting).r, ai: { settings: local, generator: chatting } });
+      expect(revised.data).toMatchObject({ action: 'edit', applied: 1, ai: 'local', translated: null, limit: { kind: 'per-minute', waitMs: 30_000, provider: 'local' } });
+      expect(revised.data.notices).toContain('The report could not be translated into German; it stays as it was.');
+      expect(seen).toHaveLength(3);
+    } finally {
+      await gen.close();
+      await chatting.close();
+      await new Promise((done) => server.close(done));
     }
   });
 });

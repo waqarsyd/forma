@@ -322,9 +322,15 @@ src/
                        model and a page reader as helpers beside any of them),
                        fallbackChain (on a limit, the next AI the user set up
                        answers and the reply says so; never away from a local
-                       AI), localModels (the Ollama pair suggested for the
-                       computer's memory, and the page reader's text and the
-                       question it is asked), reportFacts (the open report's
+                       AI), aiLimit (which limit an AI met, the minute's or
+                       the day's, and when it lifts, read off the error
+                       itself; since the CLI and Forma Designer work's
+                       wave 3, for Node alone: the MCP server's and the
+                       command line's work, and the parks they keep; no
+                       browser chunk loads it), localModels (the Ollama pair
+                       suggested for the computer's memory, and the page
+                       reader's text and the question it is asked),
+                       reportFacts (the open report's
                        fields, totals, groups and bands counted from the file:
                        a plain question answered with no AI, the facts told to
                        the AI, a field the data lacks refused), docsKnowledge
@@ -754,7 +760,14 @@ src/
                        worker.mjs is) and generator (starts it with a
                        generation's memory bound and deadline, ends it on a
                        cancellation, a queue of one for the whole process,
-                       and progress that only goes up).
+                       and progress that only goes up; since the CLI and
+                       Forma Designer work's wave 3, a thread of its own for
+                       each job when asked, the command line's batch), and
+                       since that wave modelParks (the models a limit parked,
+                       kept in a file in Forma's folder by the key's tag as
+                       each limit happens, so a thread started afresh asks
+                       none of them again; and the soonest the key can be
+                       asked again when every model it can call is parked).
                        Tests beside them: stdoutGuard, toolShape, paths,
                        roots, formaServer and reportTools each have one
                        (formaServer's drives forma_status in both eras and
@@ -771,7 +784,10 @@ src/
                        cancellation, the switch note, no key in any result),
                        and so does reportCalls (the same calls as the
                        command line is to make them: a working folder, a
-                       person's words, a taken name refused); cliVoice.test.ts
+                       person's words, a taken name refused), and modelParks
+                       (the file, and a park one thread records honoured by
+                       the next, in fresh modules and in real worker
+                       threads, the network stubbed); cliVoice.test.ts
                        holds what the command line is told to none of the
                        server's words, read from the source of every module
                        it runs and heard from its calls;

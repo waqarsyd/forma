@@ -23,7 +23,8 @@
  *   is sent back once (`fixUntilPrints`), a shared database's source is
  *   written, the language the words name is carried out, and the report is
  *   turned right to left where its source is. When every AI fails, Forma's own
- *   draft stands in, except over a report the person brought.
+ *   draft stands in, except over a report the person brought, or for a
+ *   caller that asked for none (`standIn: false`, below).
  * - `makeReport`: both, from files taken in here, for a caller with no
  *   workspace (Batch, and the MCP server's AI tools since wave 8).
  *
@@ -64,6 +65,39 @@
  * lib/batchRun.ts makes itself, in the `beforeGeneration` it hands in: the
  * request is told the memory's instructions alone, never the nearest kept
  * report as an example.
+ *
+ * ## Nothing standing in
+ *
+ * `standIn: false` (2026-11-24, the CLI and Forma Designer work's wave 3;
+ * the owner's decision OC5 and finding GAP3-3 of its design audit): a single
+ * report, made as one, with nothing standing in when every AI fails. The
+ * failure is returned, never thrown, with its error as it was, so the caller
+ * can tell a limit and when it lifts (lib/aiLimit.ts `limitOf`), and
+ * Forma's draft is never made. The workspace and Batch never set it: the
+ * workspace keeps its stand-in, Batch its `batchFile`. It is for a run that
+ * must not take Forma's draft for the AI's report: the command line's batch,
+ * which that work's wave 4 is to build, where a daily limit stops the run and
+ * a rerun carries on from the files not yet written, so a draft written at
+ * the limit would be kept for good. That batch is to make each file this way,
+ * not as a Batch file (decided in wave 3), each of Batch's differences above
+ * decided for the best report: the first and last pages read before the
+ * request when Forma's draft is what the AI corrects, the rest only if the
+ * AI designs it; a template's layout taken when the words ask for one; the
+ * other files attached and the page reader's readings sent with the
+ * correction; the fix given the draft's text, so a fixed report's account of
+ * the page is worked out again; the language translated only when the report
+ * does not already read in it, and turned right to left when asked for in
+ * such a language; the REPX pane's key made and unused, since the command
+ * line has no pane; and a stop ending the file with nothing written, never
+ * finishing after the translation, as the design has every stop on the
+ * command line do. The memory's and the kept reports' difference does not
+ * arise: Node keeps neither (src/mcp/nodeGeneration.ts). A translation the
+ * words ask for is part of the report asked for (the wave's review, W3R-1):
+ * when it fails, a limit above all, the report is a failure too, with the
+ * language and the AI it was asked of (`Failed`'s `translating` and `by`),
+ * rather than a report in the language it was built in that a rerun would
+ * then keep for good. Without `standIn: false` the report is kept as built,
+ * as before, and `translateFailed` says why it is not translated.
  *
  * Moved out of App.tsx (`prepareTeam`, the reading in `runTurn`, the request
  * in `runGeneration`) and lib/batchRun.ts the same day, with no change in
@@ -516,6 +550,8 @@ export interface GenerateRequest {
   signal: AbortSignal;
   /** A Batch file, made as Batch made it (the header). */
   batchFile?: boolean;
+  /** False: nothing stands in when every AI fails, and the failure is returned (the header's *Nothing standing in*). Absent, Forma's draft stands in as before. */
+  standIn?: boolean;
 }
 
 /** The AI's report, finished. */
@@ -533,6 +569,33 @@ export interface Answered {
   note: string;
   /** Who answered. */
   by: EffectiveProvider;
+  /**
+   * The model that designed the report (geminiService's `GenerationResult`
+   * `model`: the answer's own `modelVersion`, else the id asked), before any
+   * fix; null when the answer named none (the mock's, a test's). Machinery
+   * (lib/fallbackChain.ts `switchNote`): the workspace never shows it; the
+   * MCP server and the command line record it (2026-11-24, the CLI and Forma
+   * Designer work's wave 3, GAP3-4). `response.model` is the last answer
+   * kept's, which is the fix's when one was kept.
+   */
+  model: string | null;
+  /** The model that made the print check's fix kept, when another than `model`; null otherwise. */
+  fixModel: string | null;
+  /**
+   * What the print check's one more answer failed with, when it did
+   * (lib/printCheck.ts `fixFailed`): the report is the one before that fix.
+   * For a caller that holds it to tell a limit (lib/aiLimit.ts `limitOf`);
+   * undefined when no fix failed.
+   */
+  fixFailed?: unknown;
+  /**
+   * The translation the words asked for, when it failed (the wave-3
+   * review, W3R-1): its language and what it failed with, a limit above
+   * all; the report is in the language it was built in. Absent when no
+   * translation was asked or it was made. With `standIn: false` the report
+   * is not returned at all (`Failed`'s `translating`).
+   */
+  translateFailed?: { language: string; error: unknown };
   /** The settings the answer came from, a limit's switch included. */
   answering: ReportConfig;
   /** The language the report was translated into, when the words named one. */
@@ -564,6 +627,14 @@ export interface Failed {
   error: unknown;
   /** Null when no draft could stand in: a missing AI, a report the person brought, or none made. */
   standIn: StandIn | null;
+  /**
+   * With `standIn: false`, when the AI's report was made and the translation
+   * the words asked for then failed (the wave-3 review, W3R-1): the language,
+   * and `by`, the AI it was asked of (a limit's switch may have made it
+   * another than the one chosen). Absent on every other failure.
+   */
+  translating?: string;
+  by?: EffectiveProvider;
 }
 
 export type Generated = Answered | Failed;
@@ -698,6 +769,9 @@ export async function generateReport(request: GenerateRequest, deps: TeamDeps & 
       draftText: batch ? undefined : team.correct?.text,
     }));
     if (!fixed || (batch && signal.aborted)) return null;
+    // Who designed it, and who made the fix kept when another (GAP3-4): read before the fix's answer replaces the first.
+    const model = response.model ?? null;
+    const fixedBy = fixed.answer !== response ? fixed.answer.model ?? null : null;
     response = fixed.answer;
     const printed = response.repxContent;
 
@@ -727,6 +801,8 @@ export async function generateReport(request: GenerateRequest, deps: TeamDeps & 
      * a translation that fails leaves the report as built.
      */
     let translated: { xml: string; language: string; bilingual: boolean } | null = null;
+    /** The translation the words asked for, when it failed (the wave-3 review, W3R-1): the language and the error. */
+    let translateFailed: { language: string; error: unknown } | null = null;
     const asked = words || description?.description || '';
     const tr = !batch && !open && response.repxContent ? await import('./repxTranslate').catch(() => null) : null;
     // Not when the report already reads in it (R2-01): the design request carried the same words.
@@ -745,8 +821,15 @@ export async function generateReport(request: GenerateRequest, deps: TeamDeps & 
       } catch (translateError) {
         if (signal.aborted) return null;
         console.warn(`The report could not be translated into ${language}; it stays as built.`, translateError);
+        translateFailed = { language, error: translateError };
       }
     }
+    // A report in a language other than the one the words asked for is not
+    // the report asked for: a caller that asked for nothing to stand in gets
+    // the failure, its limit read from its error, and writes nothing (the
+    // header's *Nothing standing in*). The workspace and Batch never ask
+    // that, and keep the report as built, as before.
+    if (translateFailed && request.standIn === false) return { ok: false, error: translateFailed.error, standIn: null, by: chained.by, translating: translateFailed.language };
     if (translated && translated.xml !== response.repxContent) {
       const views = await import('./repxViews');
       const title = response.layout?.title;
@@ -773,6 +856,10 @@ export async function generateReport(request: GenerateRequest, deps: TeamDeps & 
       spent: fixed.spent,
       note: chained.note,
       by: chained.by,
+      model,
+      fixModel: fixedBy && fixedBy !== model ? fixedBy : null,
+      ...('fixFailed' in fixed ? { fixFailed: fixed.fixFailed } : {}),
+      ...(translateFailed ? { translateFailed } : {}),
       answering: chained.config,
       translated: translated && { language: translated.language, bilingual: translated.bilingual },
       kept,
@@ -795,8 +882,9 @@ export async function generateReport(request: GenerateRequest, deps: TeamDeps & 
     // that failed replaced the report the person had with an OCR draft of
     // the picture they sent to change it. Nor over a .repx attached with a
     // picture (the re-audit's R2-03): the draft is of the picture, and the
-    // report the person brought would be dropped for it.
-    if (team.draft && !startedFromReport && !open) {
+    // report the person brought would be dropped for it. Nor when the caller
+    // asked for none (`standIn: false`, the header's *Nothing standing in*).
+    if (team.draft && !startedFromReport && !open && request.standIn !== false) {
       try {
         const made = await team.draft();
         if (made && !signal.aborted) {
@@ -830,6 +918,8 @@ export interface MakeRequest {
   signal: AbortSignal;
   /** A Batch file, made as Batch made it (the header). */
   batchFile?: boolean;
+  /** False: nothing stands in when every AI fails, and the failure is returned (the header's *Nothing standing in*). */
+  standIn?: boolean;
 }
 
 /** What `makeReport` returns: the report or the failure, and what taking the files in said. */
@@ -868,7 +958,7 @@ export async function makeReport(request: MakeRequest, deps: GenerationDeps & In
     // The words are the whole source here, answers included ("on A4", "EXEC dbo.Sales").
     const settings = applyDetected(config, deps.detect({ words: descriptionWords(described) }));
     const made = await generateReport(
-      { words: '', images: [], texts: [], settings, description: described, team: { read: [], described }, open: null, fields: request.fields, signal, batchFile: request.batchFile },
+      { words: '', images: [], texts: [], settings, description: described, team: { read: [], described }, open: null, fields: request.fields, signal, batchFile: request.batchFile, standIn: request.standIn },
       deps,
     );
     return made && { ...made, notices, pictures: 0 };
@@ -879,7 +969,7 @@ export async function makeReport(request: MakeRequest, deps: GenerationDeps & In
   );
   if (!read) return null;
   const made = await generateReport(
-    { words: request.words, images, texts: read.texts, settings: read.settings, team: read.team, open: request.open ?? null, fields: request.fields, signal, batchFile: request.batchFile },
+    { words: request.words, images, texts: read.texts, settings: read.settings, team: read.team, open: request.open ?? null, fields: request.fields, signal, batchFile: request.batchFile, standIn: request.standIn },
     deps,
   );
   return made && { ...made, notices, pictures: images.length };

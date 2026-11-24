@@ -184,8 +184,12 @@
  * written out carry the settings with their keys removed. Do not add a .env
  * fallback: CLAUDE.md's rule that .env holds no Gemini key is the correction
  * to a real leak. The core's Node parts write only to Forma's own folder
- * (OCR's gathered languages, the model chosen by the key's tag, never the
- * key: src/mcp/nodeGeneration.ts `formaUserFolder`) and to the results folder.
+ * (OCR's gathered languages, the model chosen and the models a limit parked,
+ * each by the key's tag, never the key: src/mcp/nodeGeneration.ts
+ * `formaUserFolder`, src/mcp/modelParks.ts) and to the results folder. A run
+ * shares those parks with the MCP server on the same key (and the command
+ * line, once it exists), so a model one found spent today is not asked again
+ * by the other.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path';

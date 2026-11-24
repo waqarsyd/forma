@@ -1,7 +1,8 @@
 /**
  * Where the MCP server's AI tools run (2026-11-24, the MCP work's wave 8):
  * the progress that only goes up (PROTO-3), the queue of one (OD7,
- * PROTO-7), and the worker thread's bounds (PROTO-4, GAP3-3), on stand-ins:
+ * PROTO-7), the worker thread's bounds (PROTO-4, GAP3-3), and since the CLI
+ * and Forma Designer work's wave 3 a thread per job (`fresh`, CLI-12), on stand-ins:
  * a clock the test moves, a generator the test answers, and worker threads
  * started from a few lines of script, so no AI and no model is involved.
  */
@@ -272,6 +273,45 @@ describe('workerGenerator', () => {
     expect(genTooLong(100)).toBe(genTooLong(100, 'mcp'));
     expect(genTooLong(15 * 60_000)).toContain('the longest one call may take');
     expect(genTooMuchMemory(GEN_LIMITS.heapMb)).toContain('; send fewer or smaller files.');
+  });
+
+  it("with `fresh`, runs each job in a thread of its own and gives the answer only once that thread has ended (the command line's batch, OC2)", async () => {
+    const exited: number[] = [];
+    let starts = 0;
+    const gen = workerGenerator({
+      setup: { mock: true },
+      log: () => {},
+      fresh: true,
+      spawn: () => {
+        const n = ++starts;
+        const w = scripted("parentPort.on('message', ({ id, job }) => parentPort.postMessage({ id, ok: true, value: { kind: job.kind, id } }));")();
+        w.on('exit', () => exited.push(n));
+        return w;
+      },
+    });
+    for (let i = 1; i <= 3; i++) {
+      expect(await gen.run(JOB, new AbortController().signal, () => {})).toEqual({ kind: 'revise', id: i });
+      // Ended before its answer was given: the next job's thread never runs beside it.
+      expect(exited).toEqual(Array.from({ length: i }, (_, n) => n + 1));
+    }
+    expect(starts).toBe(3);
+    // A refusal ends its thread as well, and the next job still gets one of its own.
+    const refusing = workerGenerator({ setup: { mock: true }, log: () => {}, fresh: true, spawn: scripted("parentPort.on('message', ({ id }) => parentPort.postMessage({ id, ok: false, refusal: 'No, in plain words.' }));") });
+    await expect(refusing.run(JOB, new AbortController().signal, () => {})).rejects.toThrow('No, in plain words.');
+    await expect(refusing.run(JOB, new AbortController().signal, () => {})).rejects.toThrow('No, in plain words.');
+    await gen.close();
+    await refusing.close();
+  });
+
+  it('with `fresh`, still ends a thread at once on a cancellation, answering with nothing', async () => {
+    let starts = 0;
+    const gen = workerGenerator({ setup: { mock: true }, log: () => {}, fresh: true, spawn: () => (starts++, scripted("parentPort.on('message', () => {});")()) });
+    const stop = new AbortController();
+    const running = gen.run(JOB, stop.signal, () => {});
+    setTimeout(() => stop.abort(), 50);
+    expect(await running).toBeNull();
+    expect(starts).toBe(1);
+    await gen.close();
   });
 
   it('keeps a failure inside the work for the log, and names the bounds a generation runs within', async () => {

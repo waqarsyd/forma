@@ -49,7 +49,13 @@
  * - **Where the words went is said** (SEC-11): the result names the AI that
  *   answered, and when the free chain asked another on a limit, its switch
  *   note is in the notices; when Forma's own draft stood in, the result says
- *   so and which.
+ *   so and which. Since the CLI and Forma Designer work's wave 3 (GAP3-2,
+ *   GAP3-4) its data also has the model that answered (`model`, and
+ *   `fixModel` for the fix's when another) and a limit the AI met
+ *   (`limit`), under the rule `ai` follows: an id in the data, while the
+ *   summary names the provider and never a model, which is machinery
+ *   (lib/fallbackChain.ts `switchNote`). A call the AI made nothing for is
+ *   refused in the same words as before.
  * - **A font measured in a stand-in is said** (the CLI and Forma Designer
  *   work's GAP2-4): a report made through the core whose fonts name a family
  *   this machine lacks carries genJobs.ts's STAND_IN_FONTS notice, and the
@@ -87,6 +93,9 @@ export type AiToolsOptions = AiCall;
 type Registrar = (server: McpServer, deps: ToolDeps, entry: ToolEntry) => void;
 
 const hints: ToolHints = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true };
+
+/** A limit the AI met, as a result carries it (lib/aiLimit.ts `AiLimit`). */
+const LIMIT = z.looseObject({ kind: z.enum(['per-minute', 'daily', 'unknown']), waitMs: z.number().nullable(), provider: z.string() });
 
 /** The AI tools, by name, for formaServer.ts to register in toolList.ts's order. */
 export function aiTools(sys: PathSystem, options: AiToolsOptions, wfs: WriteFs = nodeWriteFs): Record<Extract<ToolName, 'generate_report' | 'revise_report'>, Registrar> {
@@ -139,6 +148,9 @@ export function aiTools(sys: PathSystem, options: AiToolsOptions, wfs: WriteFs =
             findings: z.array(FINDING),
             printFindings: z.array(FINDING),
             translated: z.looseObject({ language: z.string(), bilingual: z.boolean() }).nullable(),
+            model: z.string().nullable(),
+            fixModel: z.string().nullable(),
+            limit: LIMIT.nullable(),
           },
         },
         async (args, tc) => {
@@ -188,6 +200,9 @@ export function aiTools(sys: PathSystem, options: AiToolsOptions, wfs: WriteFs =
             summary: z.string().optional(),
             findings: z.array(FINDING).optional(),
             translated: z.looseObject({ language: z.string(), bilingual: z.boolean() }).nullable(),
+            model: z.string().nullable(),
+            fixModel: z.string().nullable(),
+            limit: LIMIT.nullable(),
           },
         },
         async (args, tc) => {

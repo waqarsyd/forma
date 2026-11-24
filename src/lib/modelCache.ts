@@ -58,10 +58,15 @@ export type ModelStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 let sessionStore: () => ModelStorage | null = () => sessionStorage;
 let dayStore: () => ModelStorage | null = () => localStorage;
 
-/** Keep the choice in these, never the browser's storage: the session's (null: memory only) and the day's. */
-export function keepModelChoiceIn(stores: { session: ModelStorage | null; day: ModelStorage | null }): void {
+/**
+ * Keep the choice in these, never the browser's storage: the session's (null:
+ * memory only) and the day's; and a limit's parks in `parks` as well as in
+ * memory (the cooldown section below), where one is handed in.
+ */
+export function keepModelChoiceIn(stores: { session: ModelStorage | null; day: ModelStorage | null; parks?: ParkStore | null }): void {
   sessionStore = () => stores.session;
   dayStore = () => stores.day;
+  parkStore = stores.parks ?? null;
 }
 
 /*
@@ -135,7 +140,12 @@ export function readCachedModelSet(): string[] | null {
   }
 }
 
-/** Drop the cached choice — called when a model 404s mid-flight, or the key changes. */
+/**
+ * Drop the cached choice — called when a model 404s mid-flight, or the key
+ * changes. A store's kept parks stay: they are a key's, by its tag, so a
+ * 404's re-detect lays them in again (`restoreParks`) and another key's tag
+ * has none of them.
+ */
 export function clearCachedModel(): void {
   resolvedModel = null;
   resolvedModelSet = null;
@@ -227,6 +237,20 @@ export function lightModel(fallback: string): string {
  * again as soon as the window passes. It is memory-only and per-tab — this is
  * a fact about the last minute, not about the key, and writing it to
  * `sessionStorage` would carry a stale outage into a reload.
+ *
+ * A limit's park (a 429, through `noteModelLimited`) is the one kept beyond
+ * memory, and only where a store is handed in (2026-11-24, the CLI and Forma
+ * Designer work's wave 3, GAP3-1): Node's, a file in Forma's own folder
+ * (src/mcp/modelParks.ts). A limit is a fact about the key, for the minute
+ * or until midnight Pacific; the MCP server's thread ends on a cancellation,
+ * a deadline or a crash, and the command line is to make each file of a
+ * batch in a thread of its own, so with memory alone a new thread began on
+ * the model the last one had spent, a request each out of the file's budget.
+ * Each one is kept as it happens, by the key's tag and never the key, and
+ * laid into memory again whenever a model is resolved for that key
+ * (`restoreParks`), so a thread started afresh honours what one before it
+ * learned. An overload's park stays in memory, as above. The browser hands
+ * in no store: there both are memory-only and per-tab, as they always were.
  * ------------------------------------------------------------------ */
 
 /** Long enough to outlast a burst, short enough that recovery is not waited on. */
@@ -251,6 +275,61 @@ export function noteModelOverloaded(
   forMs: number = OVERLOAD_COOLDOWN_MS
 ): void {
   coolingUntil.set(model, now + forMs);
+}
+
+/** A limit's park as a store keeps it: the model, which limit (geminiErrors.ts `quotaKind`), and the instant it lifts. */
+export type ModelPark = { model: string; kind: 'daily' | 'per-minute' | 'unknown'; until: number };
+
+/** Where a key's limit parks are kept beyond memory, by the key's tag: Node's file (src/mcp/modelParks.ts); the browser has none. */
+export interface ParkStore {
+  /** The parks kept for this tag that have not lifted by `now`. */
+  read(tag: string, now: number): ModelPark[];
+  /** Keep one more, as it happens. */
+  add(tag: string, park: ModelPark, now: number): void;
+  /**
+   * The instant a day's limit lifts, where the store's side knows it better
+   * than the wait it is handed: Node's reads midnight Pacific on the zone's
+   * own calendar, which the browser's count misses by an hour on the two days
+   * a year the clocks change (src/mcp/modelParks.ts, *The day's reset*).
+   */
+  dailyReset?(now: number): number;
+}
+
+let parkStore: ParkStore | null = null;
+
+/**
+ * Park a model on a limit (a 429): in memory exactly as `noteModelOverloaded`
+ * parks it, and in the store when one is kept, by the key's tag (the section's
+ * header). A store that fails leaves the park in memory, as before it existed.
+ * Where the store says when a day's limit lifts (`dailyReset`), the park is
+ * kept until then, in memory as in the store; with no store, as in the
+ * browser, nothing here differs from an overload's park.
+ */
+export function noteModelLimited(model: string, apiKey: string, kind: ModelPark['kind'], forMs: number | undefined, now: number = Date.now()): void {
+  noteModelOverloaded(model, now, forMs);
+  if (!parkStore) return;
+  try {
+    const until = kind === 'daily' && parkStore.dailyReset ? parkStore.dailyReset(now) : now + (forMs ?? OVERLOAD_COOLDOWN_MS);
+    coolingUntil.set(model, until);
+    parkStore.add(keyTag(apiKey.trim()), { model, kind, until }, now);
+  } catch {
+    /* kept in memory still */
+  }
+}
+
+/** The parks kept for this key beyond memory and not yet lifted; none without a store, as in the browser. */
+export function keptParks(apiKey: string, now: number = Date.now()): ModelPark[] {
+  try {
+    return parkStore?.read(keyTag(apiKey.trim()), now) ?? [];
+  } catch {
+    return []; // a store that will not read keeps nothing
+  }
+}
+
+/** Lays this key's kept parks into memory, each for as long as it lasts: a thread started afresh skips what one before it learned. */
+export function restoreParks(apiKey: string, now: number = Date.now()): void {
+  if (!parkStore) return;
+  for (const park of keptParks(apiKey, now)) if (park.until > (coolingUntil.get(park.model) ?? 0)) coolingUntil.set(park.model, park.until);
 }
 
 /** Is this model parked right now? */

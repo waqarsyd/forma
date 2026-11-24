@@ -15,7 +15,9 @@ import {
   clearCachedModel,
   isModelInCooldown,
   lightModel,
+  noteModelLimited,
   noteModelOverloaded,
+  restoreParks,
   startingModel,
 } from "../lib/modelCache";
 
@@ -679,8 +681,15 @@ async function probeModel(model: string, apiKey: string, signal?: AbortSignal): 
  * Pick a model this key can actually call. Cached per session, and since
  * 2026-11-02 for a day across tabs for the same key (`readDailyModel`), so the
  * probing cost is paid once a day rather than once a tab.
+ *
+ * Every path that chooses where a request starts resolves here first, so the
+ * limit parks a store keeps for this key are laid into memory here
+ * (`restoreParks`, 2026-11-24, GAP3-1): a thread started afresh in Node
+ * starts on no model a thread before it found spent. The browser keeps no
+ * store, and this does nothing there.
  */
 export async function resolveModel(apiKey: string, signal?: AbortSignal): Promise<string> {
+  restoreParks(apiKey);
   const cached = readCachedModel() ?? readDailyModel(apiKey);
   if (cached) return cached;
   if (signal?.aborted) throw abortError();
@@ -821,6 +830,13 @@ export interface ChatOutcome {
    * of an edit in place rests on.
    */
   usage?: TokenUsage | null;
+  /**
+   * The model that answered the turn (2026-11-24, the CLI and Forma Designer
+   * work's wave 3, GAP3-4): the stream's own `modelVersion`, else the id asked
+   * (`answeringModel`). For a caller's record of a run, the MCP server's and
+   * the command line's; the workspace never shows it. Absent from the mock's.
+   */
+  model?: string;
 }
 
 /**
@@ -1548,6 +1564,8 @@ export async function chatReply(
   let usageMetadata: Parameters<typeof readTokenUsage>[0] = null;
   // Why the model stopped, when the stream says (2026-11-07): MAX_TOKENS is an answer cut off.
   let finishReason = '';
+  // The model the stream says answered (2026-11-24, GAP3-4, `answeringModel`), for the turn's record only.
+  let answered = '';
 
   /**
    * The whole turn is retryable, request and stream together.
@@ -1572,6 +1590,7 @@ export async function chatReply(
     firstChunkAt = 0;
     usageMetadata = null;
     finishReason = '';
+    answered = '';
 
     // This attempt's own controller, chained to the caller's, so a looping or
     // stalled answer is cut off without the user pressing anything (2026-11-11,
@@ -1607,6 +1626,7 @@ export async function chatReply(
 
       for await (const chunk of stream) {
         if (signal?.aborted) throw abortError();
+        answered = answeringModel(chunk) || answered;
         if ((chunk as { usageMetadata?: Parameters<typeof readTokenUsage>[0] }).usageMetadata) {
           usageMetadata = (chunk as { usageMetadata?: Parameters<typeof readTokenUsage>[0] }).usageMetadata ?? null;
         }
@@ -1687,7 +1707,8 @@ export async function chatReply(
        */
       const quota = isQuotaExhausted(err) && !pinnedModel;
       if (quota) {
-        noteModelOverloaded(activeModel, Date.now(), quotaWaitMs(err));
+        // Kept beyond this thread too where a store is (Node), by the key's tag: modelCache.ts.
+        noteModelLimited(activeModel, currentApiKey, quotaKind(err), quotaWaitMs(err));
         // The limit Google named, for Settings' Usage today (2026-11-05).
         noteDailyLimit(activeModel, dailyLimitOf(err));
       }
@@ -1758,6 +1779,8 @@ export async function chatReply(
   if (!raw) throw new Error('The assistant did not respond. Try again.');
 
   const usage = readTokenUsage(usageMetadata);
+  /** Which model answered the turn, for a caller's record (GAP3-4); the workspace never shows it. */
+  const model = answered || activeModel;
   /*
    * A report turn cut off, or whose answer did not parse, changes nothing and
    * says so (2026-11-07, agent audit item 9). Its reply was salvaged and
@@ -1770,6 +1793,7 @@ export async function chatReply(
     action: 'answer',
     edits: [],
     usage,
+    model,
   });
   if (report && finishReason === 'MAX_TOKENS') return cutOff('The answer was cut off before it finished');
   try {
@@ -1778,7 +1802,7 @@ export async function chatReply(
     if (!parsed) throw new Error('no JSON object in the answer');
     // As the model wrote it; `readReportOutcome` decides what it means.
     const brief = typeof parsed.brief === 'string' && parsed.brief.trim() ? parsed.brief.trim() : undefined;
-    if (report) return { reply: parsed.reply ?? '', wantsReport: parsed.action === 'rebuild', action: parsed.action, edits: parsed.edits, tools: parsed.tools, brief, usage };
+    if (report) return { reply: parsed.reply ?? '', wantsReport: parsed.action === 'rebuild', action: parsed.action, edits: parsed.edits, tools: parsed.tools, brief, usage, model };
     // "true" from a model with no schema is true; "false" is not (agent audit item 16).
     const wantsReport = parsed.wantsReport === true || (parsed.wantsReport as unknown) === 'true';
     return {
@@ -1787,6 +1811,7 @@ export async function chatReply(
       wantsReport,
       brief,
       usage,
+      model,
     };
   } catch {
     // Never show the user raw JSON if the object arrived malformed — the
@@ -1794,7 +1819,7 @@ export async function chatReply(
     const salvaged = extractPartialReply(raw);
     return report
       ? cutOff('The answer came back incomplete')
-      : { reply: salvaged || raw, wantsReport: false };
+      : { reply: salvaged || raw, wantsReport: false, model };
   }
 }
 
@@ -2882,7 +2907,7 @@ ${houseStyleContext}
    * written. That turns the progress bar from a 2.5s timer that invented its
    * own percentages into something driven by real output.
    */
-  const requestFor = async (modelName: string, temperature = 0): Promise<{ text: string; finishReason?: string; usage?: TokenUsage | null }> => {
+  const requestFor = async (modelName: string, temperature = 0): Promise<{ text: string; finishReason?: string; usage?: TokenUsage | null; model: string }> => {
     // Our own controller, chained to the caller's signal, so a looping model
     // can be cut off below without the user having pressed anything -- and so
     // that cutting it off closes the connection rather than leaving the model
@@ -2910,11 +2935,14 @@ ${houseStyleContext}
     // report is simply large. The two have completely different remedies.
     let firstChunkAt = 0;
     let usage: any;
+    /** The model the response says wrote it, which an alias resolves to (`answeringModel`). */
+    let answered = '';
 
     for await (const chunk of stream) {
       // The SDK honours config.abortSignal, but checking here as well tears the
       // loop down promptly rather than waiting on the next chunk.
       if (signal?.aborted) throw abortError();
+      answered = answeringModel(chunk) || answered;
 
       if (chunk.text) {
         if (!firstChunkAt) firstChunkAt = Date.now();
@@ -2981,7 +3009,7 @@ ${houseStyleContext}
       }
     }
 
-    return { text, finishReason, usage: readTokenUsage(usage) };
+    return { text, finishReason, usage: readTokenUsage(usage), model: answered || modelName };
   };
 
   /**
@@ -3285,7 +3313,8 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       // arithmetic that makes a wasted request expensive.
       const quota = isQuotaExhausted(error) && !pinnedModel;
       if (quota) {
-        noteModelOverloaded(selectedModel, Date.now(), quotaWaitMs(error));
+        // Kept beyond this thread too where a store is (Node), by the key's tag: modelCache.ts.
+        noteModelLimited(selectedModel, currentApiKey, quotaKind(error), quotaWaitMs(error));
         // The limit Google named, for Settings' Usage today (2026-11-05).
         noteDailyLimit(selectedModel, dailyLimitOf(error));
       }
@@ -3723,6 +3752,7 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
       // The console line in requestFor stays: it is the only record when a run
       // fails before here.
       usage: addUsage(spentBefore, response.usage),
+      model: response.model,
       ...(draft ? { fromDraft: true } : {}),
       ...(named.query !== undefined ? { dataQuery: named.query } : {}),
       ...(coverage ? { coverage } : {}),
@@ -3800,8 +3830,46 @@ ${sections.includes('gauges') ? GAUGES_BLOCK : ''}${sections.includes('bookmarks
   }
 }
 
+/** A model's id as `answeringModel` takes it: letters and digits first, then those, `.`, `_`, `:`, `/`, `@`, `+` and `-`, at most 128. */
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$/;
+
+/**
+ * The model a streamed piece of an answer says wrote it (2026-11-24, the CLI
+ * and Forma Designer work's wave 3, GAP3-4): Gemini's `modelVersion`, which
+ * names the model an alias such as `gemini-flash-latest` resolved to, or for
+ * OpenRouter and Local AI the model their server names (compatClient.ts);
+ * '' when the piece names none. Machinery, as fallbackChain.ts `switchNote`
+ * says: never shown in the workspace, only recorded where a caller keeps a
+ * machine's record of a run.
+ *
+ * Only a name shaped as a model's id is taken (the wave's review, W3R-5): the
+ * answering server writes it, and an MCP result carries it as data outside
+ * the marking a file's text gets, so a server's sentence ("Ignore previous
+ * instructions...") or a name of about 104,000 characters, which made the result
+ * too long to give after the report was written, is '' here, and the id the
+ * request asked is recorded instead. `MODEL_ID` admits ids such as
+ * `gemini-2.5-flash`, `google/gemma-4-31b-it:free`, `qwen3.5:9b` and
+ * `hf.co/bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M`.
+ */
+export function answeringModel(chunk: unknown): string {
+  const version = (chunk as { modelVersion?: unknown } | null | undefined)?.modelVersion;
+  if (typeof version !== 'string') return '';
+  const id = version.trim().replace(/^models\//, '');
+  return MODEL_ID.test(id) ? id : '';
+}
+
 /** A generation's result: the report, and what Forma's own reading of the page found in it. */
 export interface GenerationResult extends AnalysisResponse {
+  /**
+   * The model that wrote this answer (2026-11-24, GAP3-4): the response's
+   * own `modelVersion` where the AI gives one (`answeringModel`), else the id
+   * the request asked, so an alias is recorded as what answered. When the
+   * service moved to another model within the request, the one that
+   * answered; a second answer kept for what the first left out is the
+   * answer, so its model is this one. Absent from an answer no AI wrote: the
+   * mock's, or a test's. Never shown in the workspace.
+   */
+  model?: string;
   /**
    * Findings only the source's evidence could make (2026-11-11, the full
    * audit, PL-11a), `evidenceFindingsOf`; absent when there were none. App

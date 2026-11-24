@@ -25,6 +25,29 @@
  * job's files are moved to the thread, not copied (the wave-8 review's
  * W8C-6).
  *
+ * ## A thread per job (the command line's batch)
+ *
+ * With `fresh` (the CLI and Forma Designer work's wave 3, CLI-12, the
+ * owner's decision OC2: "each file in its own bounded worker so one bad file
+ * cannot end the batch") no thread is kept: each job starts one, which is
+ * ended when the job ends, and the job's answer is given only once it has
+ * ended, so the next job's thread never runs beside it. A kept thread
+ * carries from one file to the next what `resourceLimits` does not bound
+ * (ArrayBuffers, the canvas's and onnxruntime's native memory) and every
+ * module's state. Measured on 2026-11-24 with the same mock generate job on
+ * one drawn page, four times each way
+ * (`DevFiles/forma-model-data-kept-not-in-git/forma-model-data/work/cd-wave3/measure-fresh.txt`):
+ * a fresh thread costs about 1.6 seconds a file with Tesseract (0.55 to start
+ * and assemble Node's parts, 0.9 for Tesseract's first start) and about 0.7
+ * to 1 with PaddleOCR, and 21 to 161 ms to end; the process stayed at 165 to
+ * 236 MB between files, where a kept thread left it at 450 MB with Tesseract
+ * and 1.7 GB with PaddleOCR. A report from a real AI takes tens of seconds
+ * at least. What a thread learned about the AI's limits outlives it: each
+ * limit's park is kept in Forma's folder as it happens (modelParks.ts), so a
+ * new thread asks no model one before it found spent; the day's model
+ * choice already was (nodeGeneration.ts). The server leaves it off: its
+ * thread, kept idle, answers the next call without the start.
+ *
  * ## A queue of one (OD7, PROTO-7)
  *
  * The spec asks a server to rate-limit its tools, and one report can spend a
@@ -114,13 +137,20 @@ export interface WorkerGeneratorOptions {
   /** A line on the server's log, stderr. */
   log(line: string): void;
   limits?: Partial<PipelineLimits>;
+  /**
+   * Each job in a thread of its own, ended when the job ends and before its
+   * result is given (the header's *A thread per job*): for the command line's
+   * batch, its wave 4. The server leaves it off and keeps one idle.
+   */
+  fresh?: boolean;
   /** Starts a worker; genWorker.mjs with the limits by default. A test starts one of its own. */
   spawn?(limits: PipelineLimits, setup: GenSetup): Worker;
 }
 
-/** The generator the server runs: one worker thread at a time, kept idle between calls (the header). */
+/** The generator the server runs: one worker thread at a time, kept idle between calls, or with `fresh` one per job (the header). */
 export function workerGenerator(options: WorkerGeneratorOptions): Generator {
   const limits: PipelineLimits = { ...GEN_LIMITS, ...options.limits };
+  const fresh = options.fresh === true;
   const spawn =
     options.spawn ??
     ((l: PipelineLimits, setup: GenSetup) =>
@@ -164,6 +194,11 @@ export function workerGenerator(options: WorkerGeneratorOptions): Generator {
           worker.off('error', onError);
           worker.off('exit', onExit);
           busy.delete(worker);
+          if (keep && fresh) {
+            // Its answer is given once the thread has ended, so the next job's never runs beside it (the header).
+            worker.terminate().then(settle, settle);
+            return;
+          }
           if (keep && !closed && !idle) {
             worker.unref();
             idle = worker;

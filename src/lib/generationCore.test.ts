@@ -434,6 +434,50 @@ describe('the generation core: one way a report is made', () => {
     });
   });
 
+  // 2026-11-24, the CLI and Forma Designer work's wave 3 (OC5, GAP3-3): the header's *Nothing standing in*.
+  it('stands nothing in when the caller asks for none: the failure is returned as it was, and no draft is made', async () => {
+    const { makeReport } = await import('./generationCore');
+    h.buildWithReader.mockReturnValue(null);
+    const error = Object.assign(LIMIT(), { cause: { status: 429 } });
+    h.askWithChain.mockRejectedValueOnce(error);
+    const page = await makeReport({ files: png(), words: '', config, signal: new AbortController().signal, standIn: false }, deps());
+    expect(page).toMatchObject({ ok: false, error, standIn: null, pictures: 1 });
+    expect(h.buildFromRead).not.toHaveBeenCalled();
+    // Nor Forma's own model's design from a description, nor its learning event.
+    h.askWithChain.mockRejectedValueOnce(error);
+    const d = deps();
+    const words = await makeReport({ words: '', description: { description: 'A customer list grouped by country' }, config, signal: new AbortController().signal, standIn: false }, d);
+    expect(words).toMatchObject({ ok: false, error, standIn: null });
+    expect(vi.mocked(d.designFromWords)).not.toHaveBeenCalled();
+    expect(vi.mocked(d.recordLearning)).not.toHaveBeenCalled();
+    // A single report still, never a Batch file: the first and last pages alone read before the request.
+    h.askWithChain.mockRejectedValueOnce(error);
+    const long = deps();
+    await makeReport({ files: pdf(4), words: '', config, signal: new AbortController().signal, standIn: false }, long);
+    expect(vi.mocked(long.readPages).mock.calls[0][3]).toHaveLength(2);
+  });
+
+  it('records the model that designed the report and the one whose fix was kept, and what a fix failed with', async () => {
+    const { makeReport } = await import('./generationCore');
+    h.analyzeReportDesign.mockResolvedValue({ ...ANSWER, model: 'gemini-3.6-flash-002' });
+    const run = () => makeReport({ files: png(), words: '', config, signal: new AbortController().signal }, deps());
+    expect(await run()).toMatchObject({ ok: true, model: 'gemini-3.6-flash-002', fixModel: null });
+    expect('fixFailed' in (await run())!).toBe(false);
+    // A fix kept from another model: both named, and the answer kept is the fix's.
+    h.fixUntilPrints.mockImplementationOnce(async (first: object) => ({ answer: { ...first, repxContent: '<Fixed/>', model: 'gemini-3.5-flash-lite-001' }, spent: null, findings: [] }));
+    expect(await run()).toMatchObject({ ok: true, model: 'gemini-3.6-flash-002', fixModel: 'gemini-3.5-flash-lite-001', response: { model: 'gemini-3.5-flash-lite-001' } });
+    // A fix kept from the same model names one model.
+    h.fixUntilPrints.mockImplementationOnce(async (first: object) => ({ answer: { ...first, repxContent: '<Fixed/>' }, spent: null, findings: [] }));
+    expect(await run()).toMatchObject({ model: 'gemini-3.6-flash-002', fixModel: null });
+    // A fix that failed: the report before it, and what it failed with.
+    const limit = Object.assign(new Error('quota'), { status: 429 });
+    h.fixUntilPrints.mockImplementationOnce(async (first: object) => ({ answer: first, spent: null, findings: [], fixFailed: limit }));
+    expect(await run()).toMatchObject({ ok: true, repxContent: '<AI/>', fixFailed: limit });
+    // An answer that names no model (the mock's, a test's): none.
+    h.analyzeReportDesign.mockResolvedValue(ANSWER);
+    expect(await run()).toMatchObject({ ok: true, model: null, fixModel: null });
+  });
+
   it('stands nothing in for a missing AI: that is a setup step, not a failure', async () => {
     const { makeReport } = await import('./generationCore');
     const missing = Object.assign(new Error('Set up an AI.'), { name: 'MissingApiKeyError' });
@@ -477,6 +521,26 @@ describe('the generation core: one way a report is made', () => {
     const translateTexts = vi.fn() as unknown as GenerationDeps['translateTexts'];
     await makeReport({ files: png(), words: 'make it in German', config, signal: new AbortController().signal }, { ...deps(), translateTexts });
     expect(h.translateReportXml.mock.calls[1][5]).toBe(translateTexts);
+  });
+
+  // The CLI and Forma Designer work's wave-3 review (W3R-1): the header's *Nothing standing in*, its translation.
+  it('keeps a report whose translation failed as built, saying what it failed with, and with standIn false fails it instead', async () => {
+    const { makeReport } = await import('./generationCore');
+    const switched = { ...config, provider: 'openrouter' } as ReportConfig;
+    h.askWithChain.mockImplementation(async (_c: ReportConfig, ask: (c: ReportConfig) => Promise<unknown>) => ({ value: await ask(switched), config: switched, by: 'openrouter', note: '' }));
+    h.languageToTranslate.mockReturnValue('German');
+    const limit = Object.assign(new Error('OpenRouter answered 429: Rate limit exceeded'), { status: 429, provider: 'openrouter' });
+    h.translateReportXml.mockRejectedValue(limit);
+    const asBuilt = await makeReport({ files: png(), words: 'make it in German', config, signal: new AbortController().signal }, deps());
+    expect(asBuilt).toMatchObject({ ok: true, repxContent: '<AI/>', translated: null, by: 'openrouter', translateFailed: { language: 'German', error: limit } });
+    const none = await makeReport({ files: png(), words: 'make it in German', config, signal: new AbortController().signal, standIn: false }, deps());
+    expect(none).toEqual({ ok: false, error: limit, standIn: null, by: 'openrouter', translating: 'German', notices: [], pictures: 1 });
+    expect(h.buildFromRead).not.toHaveBeenCalled();
+    // A translation made, or none asked, says nothing of one.
+    h.translateReportXml.mockResolvedValue({ xml: '<AI lang="de"/>', bilingual: false });
+    expect('translateFailed' in (await makeReport({ files: png(), words: 'make it in German', config, signal: new AbortController().signal, standIn: false }, deps()))!).toBe(false);
+    h.languageToTranslate.mockReturnValue(null);
+    expect('translateFailed' in (await makeReport({ files: png(), words: '', config, signal: new AbortController().signal }, deps()))!).toBe(false);
   });
 
   it("hands the intake the request's signal, and takes no file in once stopped", async () => {

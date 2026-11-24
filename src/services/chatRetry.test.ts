@@ -391,6 +391,36 @@ describe('a chat turn on a model that stays overloaded', () => {
   });
 });
 
+/*
+ * Which model answered the turn (2026-11-24, the CLI and Forma Designer
+ * work's wave 3, GAP3-4): the stream's own modelVersion, else the model the
+ * turn asked, for a caller's record; the reply never says it.
+ */
+describe('the model a chat turn records', () => {
+  const modelOf = (url: unknown) => /models\/([^:/?]+):/.exec(String(url))?.[1];
+
+  it('is the one the answer names, else the one asked, and the one moved to when the first stayed busy', async () => {
+    stubSequence(() => streamOf(`data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ reply: 'Hi.', wantsReport: false }) }], role: 'model' }, finishReason: 'STOP' }], modelVersion: 'model-a-002' })}\r\n\r\n`));
+    const named = await runTurn();
+    expect(named).toMatchObject({ reply: 'Hi.', model: 'model-a-002' });
+    expect(named.reply).not.toContain('model-a');
+
+    const asked = stubSequence(() => reply('Hello.'));
+    expect((await runTurn()).model).toBe(modelOf(asked.mock.calls[0][0]));
+
+    cacheModel('model-a', ['model-a', 'model-b']);
+    const moved = stubSequence(
+      () => failure(503, 'This model is currently experiencing high demand.'),
+      () => failure(503, 'This model is currently experiencing high demand.'),
+      () => failure(503, 'This model is currently experiencing high demand.'),
+      () => reply('Answered by the fallback.'),
+    );
+    const outcome = await runTurn();
+    expect(outcome.model).toBe(modelOf(moved.mock.lastCall![0]));
+    expect(outcome.model).not.toBe(modelOf(moved.mock.calls[0][0]));
+  });
+});
+
 describe('a chat turn whose stream ends mid-object', () => {
   it('retries the whole turn rather than salvaging half a JSON object', async () => {
     const fetchMock = stubSequence(

@@ -28,7 +28,41 @@
  * found, and the families the report names that this machine measured in a
  * stand-in (nodeFonts.ts `standInFamilies`, the CLI and Forma Designer work's
  * GAP2-4), with a notice when there are any; a redesign in revise_report
- * carries the same, an edit measures no text.
+ * carries the same, an edit measures no text. A job with `standIn: false`
+ * gets no stand-in: the failure alone comes back, and nothing is to be
+ * written (the command line's batch, OC5).
+ *
+ * ## What a failure carries, and who answered
+ *
+ * Since the CLI and Forma Designer work's wave 3 (2026-11-24; findings
+ * GAP3-2, GAP3-4 and GAP3-5, the owner's decision OC5) both results carry,
+ * as plain data, three things only this thread can know, because they are
+ * read off the error and the answers themselves, which never cross:
+ *
+ * - `limit`: the limit the AI met (lib/aiLimit.ts `limitOf`: the
+ *   minute's, the day's or unknown, the wait when known, which AI), or null;
+ *   for Gemini with no model pinned, when every model the key can call is
+ *   parked for a limit, the one that lifts soonest decides the kind and the
+ *   wait (modelParks.ts `limitAfterParks`, the parks kept in Forma's folder).
+ *   With no report it is why; with Forma's draft standing in, why it does;
+ *   with a report the AI made, the print check's fix (or an edit's second
+ *   pass) was not answered for it, so the report is the one before that, or
+ *   the translation the words asked for was not, so the report is in the
+ *   language it was made in, which a notice says (the wave's review,
+ *   W3R-1); with a generate job's `standIn: false` such a translation is
+ *   the job's failure instead, and no report comes back. A caller waits a minute's limit out
+ *   or stops at the day's.
+ * - `model`: the model that designed the report, or for revise_report the
+ *   one that answered the request (a redesign's is the core's), as the
+ *   answer names it (geminiService's `answeringModel`: an alias is recorded
+ *   as what it resolved to); null with no AI's answer (the mock's, the
+ *   report's facts, Forma's draft).
+ * - `fixModel`: the model whose answer went in after that one, the print
+ *   check's fix or an edit's second pass kept, when another; null otherwise.
+ *
+ * Who answered by provider is `by`, in the result's words; a model id is
+ * machinery (lib/fallbackChain.ts `switchNote`, 2026-11-11), so it is data
+ * for a caller's record and never a phrase here.
  *
  * ## revise_report
  *
@@ -83,11 +117,14 @@
  *
  * Pure ASCII.
  */
-import type { EffectiveProvider } from '../lib/aiProvider';
+import { effectiveProvider, type EffectiveProvider } from '../lib/aiProvider';
 import type { AgentTool } from '../lib/agentEdit';
 import type { GenerationDeps } from '../lib/generationCore';
 import type { Answered } from '../lib/fallbackChain';
+import { limitOf, type AiLimit } from '../lib/aiLimit';
+import { keptParks, readCachedModelSet } from '../lib/modelCache';
 import type { ChatOutcome, ChatTurn, ReportConfig, chatReply } from '../services/geminiService';
+import { limitAfterParks } from './modelParks';
 import { nodeGeneration, type MakeHooks, type MakeStage, type NodeGeneration } from './nodeGeneration';
 import { fileFrom } from './nodeIntake';
 import { audited, jobFailure, type Audited, type ReportRead } from './pipeline';
@@ -135,6 +172,13 @@ export interface GenerateJob {
   words: string;
   /** Pictures, PDFs, reports, templates; then data files, taken in after them. */
   files: InputFile[];
+  /**
+   * False: when every AI fails nothing stands in, no report is returned and
+   * the failure, with its limit, is (the core's `standIn: false`, OC5; the
+   * header's *What a failure carries*). Absent, Forma's draft stands in, as
+   * generate_report has it.
+   */
+  standIn?: boolean;
 }
 
 export interface ReviseJob {
@@ -183,6 +227,12 @@ export interface GenerateDone {
   printed: Printed;
   /** The families the report names that this machine measured in a stand-in (nodeFonts.ts): text from the report, for fromFile. */
   standInFonts: string[];
+  /** The limit the AI met, as data (the header's *What a failure carries*); null when it met none. */
+  limit: AiLimit | null;
+  /** The model that designed the report, when an AI did and named it (the header's *What a failure carries*); null otherwise. */
+  model: string | null;
+  /** The model that made the print check's fix kept, when another than `model`; null otherwise. */
+  fixModel: string | null;
 }
 
 export type ReviseAction = 'answer' | 'edit' | 'unchanged' | 'rebuild' | 'new';
@@ -210,6 +260,12 @@ export interface ReviseDone {
   audit: Audited | null;
   /** As GenerateDone's, for a report redesigned through the core; an edit measures no text, so it names none. */
   standInFonts: string[];
+  /** As GenerateDone's: why the AI made nothing, or that the second pass of an edit, or a redesign's fix, was not answered for a limit. */
+  limit: AiLimit | null;
+  /** The model that answered the request (the chat's, for an answer or an edit) or designed the redesign; null for an answer from the report's facts. */
+  model: string | null;
+  /** The model whose answer went into the change after the first: an edit's second pass kept, or a redesign's fix; null when none or the same. */
+  fixModel: string | null;
 }
 
 export type GenDone = GenerateDone | ReviseDone;
@@ -349,6 +405,17 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
     }));
   const chat: ChatFn = hooks.chat ?? (setup.mock ? mockChat : async (...args) => (await import('../services/geminiService')).chatReply(...args));
   const answerer = (by: EffectiveProvider): Answerer => (setup.mock ? 'mock' : by);
+  /**
+   * The limit an error is (lib/aiLimit.ts `limitOf`), with the parks
+   * kept for the key laid over it (modelParks.ts `limitAfterParks`): when
+   * every model the key can call is parked, the soonest it can be asked
+   * again. A pinned model is never parked, so its limit is the error's alone.
+   */
+  const limitFrom = (error: unknown, by: EffectiveProvider, config: ReportConfig): AiLimit | null => {
+    const limit = limitOf(error, by);
+    if (setup.model?.trim() || config.modelName?.trim()) return limit;
+    return limitAfterParks(limit, keptParks(config.customApiKey ?? ''), readCachedModelSet());
+  };
 
   const makeHooks = (tell: (event: GenEvent) => void): MakeHooks => ({
     onStage: (stage) => tell({ stage }),
@@ -360,23 +427,53 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
     const files = job.files.map((f, i) => ({ file: fileFrom(f.name.replace(/\.vsrepx$/i, '.repx'), f.bytes), uploadId: `mcp-${i + 1}` }));
     if (files.length) tell({ stage: 'reading' });
     const made = await gen.make(
-      { files, words: files.length ? job.words : '', ...(files.length ? {} : { description: { description: job.words } }), config: job.config, signal },
+      {
+        files,
+        words: files.length ? job.words : '',
+        ...(files.length ? {} : { description: { description: job.words } }),
+        config: job.config,
+        signal,
+        ...(job.standIn === false ? { standIn: false } : {}),
+      },
       makeHooks(tell),
     );
     if (!made || signal.aborted) return null;
-    const base = { kind: 'generate' as const, notices: [...made.notices], pictures: made.pictures, translated: null, audit: null, printed: printedOf([]), standInFonts: [] as string[] };
+    const chosen = effectiveProvider(job.config);
+    const base = { kind: 'generate' as const, notices: [...made.notices], pictures: made.pictures, translated: null, audit: null, printed: printedOf([]), standInFonts: [] as string[], model: null, fixModel: null };
     if (made.ok) {
       const xml = await asWritten(made.repxContent);
+      // The translation the words asked for, when it failed, is said, as revise_report says its own (the wave-3 review, W3R-1).
+      if (made.translateFailed) base.notices.push(`The report could not be translated into ${made.translateFailed.language}; it stays in the language it was made in.`);
       const standInFonts = measuredInStandIns(gen, xml, base.notices, log, job.voice);
-      return { ...base, xml, by: answerer(made.by), note: made.note, standIn: null, failure: '', translated: made.translated, audit: await audited(xml), printed: printedOf(made.response.printFindings), standInFonts };
+      // A step after the report that failed on a limit (the translation asked for, else the print check's fix) says when
+      // the AI can be asked again: of the AI that answered, which both are asked of, and which a limit's switch may have
+      // made another than the one chosen. The translation comes after the fix, so it is the later word on the limit.
+      const translateLimit = made.translateFailed ? limitFrom(made.translateFailed.error, made.by, job.config) : null;
+      return {
+        ...base,
+        xml,
+        by: answerer(made.by),
+        note: made.note,
+        standIn: null,
+        failure: '',
+        translated: made.translated,
+        audit: await audited(xml),
+        printed: printedOf(made.response.printFindings),
+        standInFonts,
+        limit: translateLimit ?? (made.fixFailed === undefined ? null : limitFrom(made.fixFailed, made.by, job.config)),
+        model: made.model,
+        fixModel: made.fixModel,
+      };
     }
-    const failure = failureWords(made.error);
+    // With standIn false, a report made whose translation then failed is no report (the core's *Nothing standing in*): said as the translation's failure.
+    const failure = made.translating ? `the translation into ${made.translating} the request asks for did not answer: ${failureWords(made.error)}` : failureWords(made.error);
+    const limit = limitFrom(made.error, made.by ?? chosen, job.config);
     if (made.standIn?.result.repxContent) {
       const xml = await asWritten(made.standIn.result.repxContent);
       const standInFonts = measuredInStandIns(gen, xml, base.notices, log, job.voice);
-      return { ...base, xml, by: null, note: '', standIn: made.standIn.source, failure, audit: await audited(xml), standInFonts };
+      return { ...base, xml, by: null, note: '', standIn: made.standIn.source, failure, audit: await audited(xml), standInFonts, limit };
     }
-    return { ...base, xml: '', by: null, note: '', standIn: null, failure };
+    return { ...base, xml: '', by: null, note: '', standIn: null, failure, limit };
   }
 
   async function revise(job: ReviseJob, gen: NodeGeneration, signal: AbortSignal, tell: (event: GenEvent) => void): Promise<ReviseDone | null> {
@@ -387,7 +484,26 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
     const report: ReportRead = { loginRemoved: opened.loginRemoved, connectionsChanged: opened.connectionsChanged, notices: opened.notices };
     const notices: string[] = [];
     const [agent, factsLib, { auditRepx }, { applyDetected }] = await Promise.all([import('../lib/agentEdit'), import('../lib/reportFacts'), import('../lib/repxAudit'), import('../lib/autoConfig')]);
-    const empty = { kind: 'revise' as const, xml: '', reply: [] as string[], applied: [] as string[], declined: [] as string[], changes: [] as string[], report, notices, note: '', brief: [] as string[], failure: '', translated: null, audit: null, standInFonts: [] as string[] };
+    const empty = {
+      kind: 'revise' as const,
+      xml: '',
+      reply: [] as string[],
+      applied: [] as string[],
+      declined: [] as string[],
+      changes: [] as string[],
+      report,
+      notices,
+      note: '',
+      brief: [] as string[],
+      failure: '',
+      translated: null,
+      audit: null,
+      standInFonts: [] as string[],
+      limit: null as AiLimit | null,
+      model: null as string | null,
+      fixModel: null as string | null,
+    };
+    const chosen = effectiveProvider(job.config);
 
     // The settings worked out with the report laid over the stored ones, as the workspace's are.
     const asked = gen.config(applyDetected(job.config, gen.deps(job.config, open).detect({ words: job.request })));
@@ -408,18 +524,20 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
       // Every AI set up failed: said in plain words, nothing written (a wrong key, a limit, a server not running).
       if (signal.aborted) return null;
       log(`${w.revise}: the AI did not answer: ${failureWords(error)}`);
-      return { ...empty, action: 'answer', by: null, failure: failureWords(error) };
+      return { ...empty, action: 'answer', by: null, failure: failureWords(error), limit: limitFrom(error, chosen, job.config) };
     }
     if (signal.aborted) return null;
     tell({ stage: 'checking' });
     const outcome = agent.readReportOutcome(chained.value, job.request);
     let by = answerer(chained.by);
     const notes = new Set([chained.note].filter(Boolean));
+    /** The model that answered the request, as the chat names it (GAP3-4): every result from here on is that answer's, but a redesign's. */
+    const answered = { ...empty, model: chained.value.model ?? null };
 
     // A redesign or a new report that hinges on a field the report's data lacks is declined; a reply naming one says so.
     const invented = factsLib.inventedFields(`${outcome.reply ?? ''} ${outcome.brief ?? ''}`, facts);
     if (invented.length && (outcome.action === 'rebuild' || outcome.action === 'new')) {
-      return { ...empty, action: 'answer', reply: fileLines(factsLib.declinedForFields(invented, facts).split('\n')), by, note: [...notes].join(' ') };
+      return { ...answered, action: 'answer', reply: fileLines(factsLib.declinedForFields(invented, facts).split('\n')), by, note: [...notes].join(' ') };
     }
     const reply = invented.length ? `${outcome.reply}\n\n${factsLib.inventedNote(invented)}` : outcome.reply;
     const designWords = outcome.brief || job.request;
@@ -434,6 +552,8 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
     }
     const declinedTools = outcome.toolsDeclined ?? [];
 
+    /** The limit the translation the words asked for met, when it failed on one (the wave-3 review, W3R-1, as generate's): why the report is not translated. */
+    let translateLimit: AiLimit | null = null;
     const translated = async (xml: string): Promise<{ xml: string; translated: ReviseDone['translated'] }> => {
       if (!translateTool) return { xml, translated: null };
       const tr = await import('../lib/repxTranslate');
@@ -450,6 +570,8 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
         if (signal.aborted) throw error;
         notices.push(`The report could not be translated into ${language}; it stays as it was.`);
         log(`${w.revise}: the translation failed: ${failureWords(error)}`);
+        // Asked of the AI that answered the request, which a limit's switch may have made another than the one chosen.
+        translateLimit = limitFrom(error, effectiveProvider(chained.config), job.config);
         return { xml, translated: null };
       }
     };
@@ -459,7 +581,7 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
       const made = await gen.make({ words: designWords, open: { repxContent: open }, config: job.config, signal }, makeHooks(tell));
       if (!made || signal.aborted) return null;
       notices.push(...made.notices);
-      if (!made.ok) return { ...empty, action: 'rebuild', reply: fileLines([reply]), by, note: [...notes].join(' '), failure: failureWords(made.error) };
+      if (!made.ok) return { ...answered, action: 'rebuild', reply: fileLines([reply]), by, note: [...notes].join(' '), failure: failureWords(made.error), limit: limitFrom(made.error, chosen, job.config) };
       if (made.note) notes.add(made.note);
       by = answerer(made.by);
       const xml = await asWritten(made.repxContent);
@@ -474,10 +596,14 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
         translated: made.translated,
         audit: await audited(xml),
         standInFonts: measuredInStandIns(gen, xml, notices, log, job.voice),
+        // The redesign is the core's answer: its model, and its fix's (GAP3-4); a fix not answered for a limit says so, of the AI that answered.
+        limit: made.fixFailed === undefined ? null : limitFrom(made.fixFailed, made.by, job.config),
+        model: made.model,
+        fixModel: made.fixModel,
       };
     };
 
-    if (outcome.action === 'new') return { ...empty, action: 'new', reply: fileLines([reply]), brief: fileLines([designWords]), by, note: [...notes].join(' ') };
+    if (outcome.action === 'new') return { ...answered, action: 'new', reply: fileLines([reply]), brief: fileLines([designWords]), by, note: [...notes].join(' ') };
     if (outcome.action === 'rebuild' || (outcome.wantsReport && outcome.action !== 'edit')) return redesign();
 
     if (outcome.action === 'edit') {
@@ -487,6 +613,8 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
       const errorsBefore = new Set(errorsOf(open));
       const brought = done.changed ? errorsOf(done.xml).filter((m) => !errorsBefore.has(m)) : [];
       // One more pass when an edit could not be made or brought an error, as App's (agent audit item 23).
+      /** The second pass's model when its edits were kept and another answered it, and the limit that kept it from answering (GAP3-2, GAP3-4). */
+      let second: { fixModel: string | null; limit: AiLimit | null } = { fixModel: null, limit: null };
       if (done.declined.length || brought.length) {
         try {
           const again = await chat(
@@ -497,12 +625,17 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
             reportFor(done.xml),
           );
           if (signal.aborted) return null;
-          const second = agent.readReportOutcome(again);
-          const more = second.action === 'edit' && second.edits.length ? agent.applyEdits(done.xml, second.edits, hooks) : null;
-          if (more?.changed) done = { xml: more.xml, applied: [...done.applied, ...more.applied], appliedOps: [...done.appliedOps, ...more.appliedOps], declined: more.declined, changed: true };
+          const read = agent.readReportOutcome(again);
+          const more = read.action === 'edit' && read.edits.length ? agent.applyEdits(done.xml, read.edits, hooks) : null;
+          if (more?.changed) {
+            done = { xml: more.xml, applied: [...done.applied, ...more.applied], appliedOps: [...done.appliedOps, ...more.appliedOps], declined: more.declined, changed: true };
+            if (again.model && again.model !== answered.model) second = { ...second, fixModel: again.model };
+          }
         } catch (error) {
           if (signal.aborted) return null;
           log(`${w.revise}: the second pass did not answer; the first stands: ${failureWords(error)}`);
+          // Asked of the AI that answered the first pass, which a limit's switch may have made another than the one chosen.
+          second = { ...second, limit: limitFrom(error, effectiveProvider(chained.config), job.config) };
         }
       }
       if (done.changed) {
@@ -516,7 +649,10 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
         const after = await translated(xml);
         const written = await asWritten(after.xml);
         return {
-          ...empty,
+          ...answered,
+          ...second,
+          // The translation comes after the second pass, so a limit it met is the later word.
+          ...(translateLimit ? { limit: translateLimit } : {}),
           action: 'edit',
           xml: written,
           reply: fileLines([reply]),
@@ -530,7 +666,7 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
         };
       }
       // The report already reads that way: said so, nothing written.
-      if (done.applied.length) return { ...empty, action: 'unchanged', reply: fileLines([reply]), applied: fileLines(done.applied), declined: fileLines([...done.declined, ...declinedTools]), by, note: [...notes].join(' ') };
+      if (done.applied.length) return { ...answered, ...second, action: 'unchanged', reply: fileLines([reply]), applied: fileLines(done.applied), declined: fileLines([...done.declined, ...declinedTools]), by, note: [...notes].join(' ') };
       // Nothing could be made in place: a redesign from the words, as the chat starts one.
       notices.push('That could not be changed in place, so the report was redesigned from the request.');
       const remade = await redesign();
@@ -542,10 +678,10 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
       const after = await translated(open);
       if (after.translated && after.xml !== open) {
         const written = await asWritten(after.xml);
-        return { ...empty, action: 'edit', xml: written, reply: fileLines([reply]), changes: fileLines(agent.describeChanges(open, written)), declined: fileLines(declinedTools), by, note: [...notes].join(' '), translated: after.translated, audit: await audited(written) };
+        return { ...answered, action: 'edit', xml: written, reply: fileLines([reply]), changes: fileLines(agent.describeChanges(open, written)), declined: fileLines(declinedTools), by, note: [...notes].join(' '), translated: after.translated, audit: await audited(written) };
       }
     }
-    return { ...empty, action: 'answer', reply: fileLines([reply]), declined: fileLines(declinedTools), by, note: [...notes].join(' ') };
+    return { ...answered, action: 'answer', reply: fileLines([reply]), declined: fileLines(declinedTools), by, note: [...notes].join(' '), limit: translateLimit };
   }
 
   return {

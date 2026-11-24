@@ -182,8 +182,14 @@ describe('fixUntilPrints', () => {
     const first = answer({ printFindings: [finding('clipped-at-margin')] });
     const worse = answer({ printFindings: [finding('clipped-at-margin'), finding('prints-extra-pages')] });
     const base = { described: false, spent: null, aborted: () => false };
-    expect((await fixUntilPrints(first, { ...base, left: () => 3, ask: async () => worse }))?.answer).toBe(first);
-    expect((await fixUntilPrints(first, { ...base, left: () => 3, ask: async () => Promise.reject(new Error('429')) }))?.answer).toBe(first);
+    const kept = await fixUntilPrints(first, { ...base, left: () => 3, ask: async () => worse });
+    expect(kept?.answer).toBe(first);
+    expect(kept && 'fixFailed' in kept).toBe(false);
+    // A fix that failed says what with (2026-11-24, GAP3-2), so a caller holding it can tell a limit.
+    const limit = Object.assign(new Error('429'), { status: 429 });
+    const failed = await fixUntilPrints(first, { ...base, left: () => 3, ask: async () => Promise.reject(limit) });
+    expect(failed?.answer).toBe(first);
+    expect(failed?.fixFailed).toBe(limit);
     const ask = vi.fn(async () => worse);
     await fixUntilPrints(answer(), { ...base, left: () => 3, ask });
     await fixUntilPrints(first, { ...base, left: () => 0, ask });

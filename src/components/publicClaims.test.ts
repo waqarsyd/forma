@@ -626,7 +626,9 @@ describe("the Docs page and the README say what Forma's MCP server offers, as to
   /*
    * Since the wave-10 review (2026-11-24, R2): outside the folders in effect
    * the server keeps a cache of its own, OCR's languages and the model chosen
-   * for a key's tag, and the README, the Docs article and the PRD say where,
+   * for a key's tag (and since the CLI and Forma Designer work's wave 3 the
+   * models a limit paused for that tag, src/mcp/modelParks.ts), and the
+   * README, the Docs article and the PRD say where,
    * as formaUserFolder makes it on each system; stdio.test.ts holds that
    * nothing else lands in the home or the temp folder but tsx's cache.
    */
@@ -638,6 +640,34 @@ describe("the Docs page and the README say what Forma's MCP server offers, as to
     for (const [platform, sep] of [['win32', '\\'], ['darwin', '/'], ['linux', '/']] as const) {
       const folder = formaUserFolder('HOME', platform).split(/[\\/]/).slice(1).join(sep);
       for (const [name, src] of [['README', section()], ['Docs', docsMcp], ['PRD', prd]] as const) expect(src, `${name} names ${folder}`).toContain(folder);
+    }
+  });
+
+  /*
+   * The CLI and Forma Designer work's wave-3 review (W3R-6): each page that
+   * lists what that cache holds says "only", so a file added to the folder
+   * makes every such list untrue. Since that wave the folder holds the parks
+   * as well (modelParks.ts `PARKS_FILE`, beside the model probe's file).
+   */
+  it("lists the limits' parks wherever it lists what that cache holds", () => {
+    const flat = (text: string) => text.replace(/&apos;/g, "'").replace(/\s+/g, ' ');
+    expect(readFileSync('src/mcp/nodeGeneration.ts', 'utf8')).toMatch(/fileParks\(join\(folder, PARKS_FILE\)\)/);
+    const start = info.indexOf('export const SECURITY');
+    const security = visible(info.slice(start, info.indexOf('/* ---', start)));
+    const prd = readFileSync('docs/PRD.md', 'utf8');
+    const lists = [
+      ['README', section()],
+      ['Docs', article('mcp')],
+      ['/security', security],
+      ['SECURITY.md', readFileSync('SECURITY.md', 'utf8')],
+      ['PRD', prd],
+    ] as const;
+    for (const [name, src] of lists) {
+      const text = flat(src);
+      // Each sentence that names the model a key answers with as part of the cache names the parks beside it.
+      const listing = text.split(/(?<=\.) /).filter((s) => /(Gemini model (answers your key|chosen for a key)|model chosen for a key's tag)/.test(s));
+      expect(listing.length, name).toBeGreaterThan(0);
+      for (const sentence of listing) expect(sentence, name).toMatch(/reached a limit|a limit has paused/);
     }
   });
 });

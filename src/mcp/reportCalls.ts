@@ -38,6 +38,15 @@
  *   text read from files apart under `fromFile`, and the audit's words for
  *   a summary.
  *
+ * Since that work's wave 3 (GAP3-2, GAP3-4, OC5): a call the AI made nothing
+ * for is refused as an `AiFailure` (caller.ts), a `ToolRefusal` whose words
+ * are the same and which carries the limit the AI met as data; a result
+ * carries the model that answered, the fix's when another, and a limit met
+ * though a report was written (genJobs.ts, *What a failure carries, and who
+ * answered*), each as data and never in a phrase, as `ai` names a provider
+ * and only `answeredBy` words it; and `planGenerate` takes `standIn: false`
+ * (`GenerateHow`), with which nothing stands in for the AI.
+ *
  * Only a refusal's quoted failure has its keys out here (`failureSaid`).
  * Every string in a returned result is unscrubbed: `fromFile.aiError` is the
  * AI's failure, and `reply`, `brief` and the notices are the AI's words, as
@@ -65,9 +74,10 @@
 import { readFile } from 'node:fs/promises';
 import { PROVIDER_NAMES } from '../lib/aiProvider';
 import { MAX_ATTACHMENTS, MAX_FILE_BYTES } from '../lib/attachmentBudget';
+import type { AiLimit } from '../lib/aiLimit';
 import { reportFileKind } from '../lib/vsReport';
 import { notReadyMessage, type AiSettings } from './aiSettings';
-import { CallStopped, ToolRefusal, type Voice } from './caller';
+import { AiFailure, CallStopped, ToolRefusal, type Voice } from './caller';
 import type { Answerer, GenDone, GenEvent, InputFile, Printed, ReviseAction } from './genJobs';
 import type { Generator, JobSource } from './generator';
 import { nodeWriteFs, parsePath, resolveReadPath, resolveWritePath, type IfExists, type PathScope, type PathSystem, type PlacedStatus, type WriteFs, type WriteStatus } from './paths';
@@ -243,16 +253,28 @@ export interface GenerateInput {
   output?: string;
 }
 
-/** A generate call judged: its words, its files (sources first, then data), the output, and the policy it was judged by. */
+/** A generate call judged: its words, its files (sources first, then data), the output, the policy it was judged by, and whether Forma's draft may stand in. */
 export interface GeneratePlan<W extends IfExists = IfExists> {
   words: string;
   inputs: readonly Judged[];
   target: string;
   policy: PathPolicy<W>;
+  standIn: boolean;
+}
+
+/**
+ * How the caller has a generate call made, beside what it is made from:
+ * `standIn` false and nothing stands in when every AI fails (the core's
+ * `standIn: false`, OC5), the failure refused as an `AiFailure` with the
+ * limit it met. The server leaves it out, so Forma's draft stands in, as
+ * before; the command line's batch is to set it (its wave 4).
+ */
+export interface GenerateHow {
+  standIn?: boolean;
 }
 
 /** Judges a generate call, its words and then every path, before it waits. Throws a `ToolRefusal`. */
-export async function planGenerate<W extends IfExists>(input: GenerateInput, policy: PathPolicy<W>): Promise<GeneratePlan<W>> {
+export async function planGenerate<W extends IfExists>(input: GenerateInput, policy: PathPolicy<W>, how: GenerateHow = {}): Promise<GeneratePlan<W>> {
   const say = SAY[policy.voice];
   const words = (input.description ?? '').trim();
   const sources = input.files ?? [];
@@ -266,7 +288,7 @@ export async function planGenerate<W extends IfExists>(input: GenerateInput, pol
   if (!input.output && !first) throw new ToolRefusal(say.noOutput);
   const target = resolveWritePath(input.output || besideName(first.spelled, '.generated.repx', sys), scope, sys, { extensions: ['.repx'] });
   if (!target.ok) throw new ToolRefusal(target.reason);
-  return { words, inputs, target: target.path, policy };
+  return { words, inputs, target: target.path, policy, standIn: how.standIn !== false };
 }
 
 /** generate_report's output object: the file written, who answered, what stood in, the notices, the audit and what printing found. */
@@ -283,6 +305,12 @@ export interface GenerateData<W extends IfExists = IfExists> {
   findings: Audited['data']['findings'];
   printFindings: Printed['data'];
   translated: { language: string; bilingual: boolean } | null;
+  /** The model that designed the report, as the answer named it; null with no AI's answer (genJobs.ts, *What a failure carries, and who answered*). */
+  model: string | null;
+  /** The model that made the print check's fix kept, when another; null otherwise. */
+  fixModel: string | null;
+  /** The limit the AI met though a report was written: why Forma's draft stands in, or why the fix was not asked; null when none. */
+  limit: AiLimit | null;
 }
 
 /** What a generate call returns: its data, the text read from files apart, and the audit's words for a summary (null with no audit). */
@@ -296,9 +324,16 @@ export interface GenerateResult<W extends IfExists = IfExists> {
 export async function runGenerate<W extends IfExists>(plan: GeneratePlan<W>, run: CallRun): Promise<GenerateResult<W>> {
   const { policy } = plan;
   // The job is made, its files read, only once the call has its turn (W8C-6).
-  const done = await asked(run, async () => ({ kind: 'generate', voice: policy.voice, config: run.ai.settings.config, words: plan.words, files: await readJudged(plan.inputs, policy.voice) }));
+  const done = await asked(run, async () => ({
+    kind: 'generate',
+    voice: policy.voice,
+    config: run.ai.settings.config,
+    words: plan.words,
+    files: await readJudged(plan.inputs, policy.voice),
+    ...(plan.standIn ? {} : { standIn: false }),
+  }));
   if (done.kind !== 'generate') throw new Error('the generator answered another call');
-  if (!done.xml) throw new ToolRefusal(`No report was made: ${failureSaid(done.failure, run.redact)} Nothing was written.`);
+  if (!done.xml) throw new AiFailure(`No report was made: ${failureSaid(done.failure, run.redact)} Nothing was written.`, done.limit);
   const written = writeMade(plan.target, done.xml, run.signal, policy);
   const audit = done.audit;
   const notices = [...done.notices, ...(done.note ? [done.note] : [])];
@@ -314,6 +349,9 @@ export async function runGenerate<W extends IfExists>(plan: GeneratePlan<W>, run
       ...(audit?.data ?? NO_AUDIT),
       printFindings: done.printed.data,
       translated: done.translated,
+      model: done.model,
+      fixModel: done.fixModel,
+      limit: done.limit,
     },
     fromFile: {
       findings: audit?.lines ?? [],
@@ -367,6 +405,12 @@ export interface ReviseData<W extends IfExists = IfExists> {
   warnings?: number;
   summary?: string;
   findings?: Audited['data']['findings'];
+  /** The model that answered the request, or designed the redesign; null for an answer from the report's facts (genJobs.ts). */
+  model: string | null;
+  /** The model whose answer went in after that one (an edit's second pass kept, a redesign's fix), when another; null otherwise. */
+  fixModel: string | null;
+  /** The limit an edit's second pass or a redesign's fix met, so the change is the one before it; null when none. */
+  limit: AiLimit | null;
 }
 
 /** What a revise call returns: its data, the text read from the report and the AI's reply apart, and the audit's words (null with nothing written). */
@@ -381,7 +425,7 @@ export async function runRevise<W extends IfExists>(plan: RevisePlan<W>, run: Ca
   const { report, policy } = plan;
   const done = await asked(run, { kind: 'revise', voice: policy.voice, config: run.ai.settings.config, request: plan.request, name: report.spelled, text: report.text });
   if (done.kind !== 'revise') throw new Error('the generator answered another call');
-  if (done.failure && !done.xml) throw new ToolRefusal(`No change was made: ${failureSaid(done.failure, run.redact)} Nothing was written.`);
+  if (done.failure && !done.xml) throw new AiFailure(`No change was made: ${failureSaid(done.failure, run.redact)} Nothing was written.`, done.limit);
   const notices = [...done.report.notices, ...done.notices, ...(done.note ? [done.note] : [])];
   const base = {
     path: report.path,
@@ -402,10 +446,11 @@ export async function runRevise<W extends IfExists>(plan: RevisePlan<W>, run: Ca
     ...(done.changes.length ? { changes: done.changes } : {}),
     ...(done.brief.length ? { brief: done.brief } : {}),
   };
-  if (!done.xml) return { data: { ...base, written: null }, fromFile, auditWords: null };
+  const answered = { model: done.model, fixModel: done.fixModel, limit: done.limit };
+  if (!done.xml) return { data: { ...base, written: null, ...answered }, fromFile, auditWords: null };
   const written = writeMade(plan.target, done.xml, run.signal, policy);
   return {
-    data: { ...base, written, ...(done.audit?.data ?? {}) },
+    data: { ...base, written, ...(done.audit?.data ?? {}), ...answered },
     fromFile: { ...fromFile, ...(done.audit ? { findings: done.audit.lines } : {}), ...(done.standInFonts.length ? { standInFonts: done.standInFonts } : {}) },
     auditWords: done.audit?.words ?? null,
   };

@@ -6,8 +6,10 @@
  * error keeping the status the quota and overload checks read.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { compatClient, contextTooSmall, listModels, LOCAL_FIRST_BYTES_MS, MIN_COMPAT_OUTPUT_TOKENS, refusesFormat, STREAM_BETWEEN_PIECES_MS, STREAM_FIRST_BYTES_MS, toJsonSchema, toMessages, type CompatEndpoint } from './compatClient';
+import { bodyLimit, compatClient, contextTooSmall, listModels, LOCAL_FIRST_BYTES_MS, MIN_COMPAT_OUTPUT_TOKENS, rateLimitHeaders, refusesFormat, STREAM_BETWEEN_PIECES_MS, STREAM_FIRST_BYTES_MS, toJsonSchema, toMessages, type CompatEndpoint } from './compatClient';
 import { compatEndpoint, isTruncatedStream } from './geminiService';
+import { limitOf } from '../lib/aiLimit';
+import { classifyGeminiError } from '../lib/geminiErrors';
 
 const LOCAL: CompatEndpoint = { kind: 'local', baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5vl:7b' };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -85,6 +87,147 @@ describe('compatClient', () => {
   it('keeps an error’s status, so a 429 is still a quota and a 503 an overload', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ error: { message: 'Rate limit exceeded: free-models-per-day' } }, 429)));
     await expect(compatClient(LOCAL).models.generateContent({ model: 'm', contents: 'q' })).rejects.toMatchObject({ status: 429, message: expect.stringContaining('free-models-per-day') });
+  });
+
+  /*
+   * 2026-11-24, the CLI and Forma Designer work's wave 3 (GAP3-5): OpenRouter
+   * opens its words with "Rate limit exceeded" for its minute's limit and its
+   * day's alike, and says which it is, and when it lifts, in its headers, and
+   * since the wave's review (W3R-2) in its body too, which a browser can
+   * always read. A stubbed Response carries them; no request leaves the
+   * process.
+   */
+  describe('what a 429 says of its limit', () => {
+    const ROUTER: CompatEndpoint = { kind: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: 'sk-or-test', model: 'x:free' };
+    const limited = (headers: Record<string, string>, status = 429) =>
+      new Response(JSON.stringify({ error: { message: 'Rate limit exceeded', metadata: { error_type: 'rate_limit_exceeded' } } }), { status, headers: { 'Content-Type': 'application/json', ...headers } });
+    const failed = async (response: Response, endpoint: CompatEndpoint = ROUTER) => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response));
+      return compatClient(endpoint)
+        .models.generateContent({ model: 'm', contents: 'q' })
+        .then(
+          () => {
+            throw new Error('the 429 was answered');
+          },
+          (e: unknown) => e as Error & Record<string, unknown>,
+        );
+    };
+
+    it("keeps Retry-After and the window's requests left and reset on the error, with the provider, and limitOf tells the day's from the minute's", async () => {
+      const resetAt = Date.now() + 6 * 3600_000;
+      const day = await failed(limited({ 'X-RateLimit-Limit': '50', 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': String(resetAt) }));
+      expect(day).toMatchObject({ status: 429, provider: 'openrouter', rateLimit: { remaining: 0, resetAt } });
+      expect(limitOf(classifyGeminiError(day, { provider: 'openrouter', model: 'x:free' }))).toMatchObject({ kind: 'daily', provider: 'openrouter' });
+
+      const minute = await failed(limited({ 'Retry-After': '20', 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': String(Date.now() + 20_000) }));
+      expect(minute).toMatchObject({ retryAfterMs: 20_000, rateLimit: { remaining: 0 } });
+      expect(limitOf(classifyGeminiError(minute, { provider: 'openrouter', model: 'x:free' }))).toMatchObject({ kind: 'per-minute', waitMs: 20_000, provider: 'openrouter' });
+    });
+
+    it('keeps nothing when the 429 has no such header, and the limit is of no known kind, as before', async () => {
+      const bare = await failed(limited({}));
+      expect(bare).toMatchObject({ status: 429, provider: 'openrouter' });
+      expect(bare.retryAfterMs).toBeUndefined();
+      expect(bare.rateLimit).toBeUndefined();
+      expect(limitOf(classifyGeminiError(bare, { provider: 'openrouter', model: 'x:free' }))).toEqual({ kind: 'unknown', waitMs: null, provider: 'openrouter' });
+    });
+
+    /*
+     * The wave-3 review (W3R-2): OpenRouter's own 429, as its rate-limit
+     * tutorial shows it, carries the headers and the limit's source in its
+     * body; with no HTTP header at all, the body alone tells the minute's
+     * limit from the day's.
+     */
+    const documented = (message: string, limitSource: string, reset: number) =>
+      new Response(
+        JSON.stringify({
+          error: {
+            message,
+            code: 429,
+            metadata: { headers: { 'X-RateLimit-Limit': '20', 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': String(reset) }, limit_source: limitSource, provider_name: null },
+          },
+        }),
+        { status: 429, headers: { 'Content-Type': 'application/json' } },
+      );
+
+    it("reads the limit and its reset off the body when the response's headers say nothing, as OpenRouter documents it", async () => {
+      const inAMinute = Date.now() + 40_000;
+      const minute = await failed(documented('Rate limit exceeded: free-models-per-min. ', 'openrouter_free_tier_per_minute', inAMinute));
+      expect(minute).toMatchObject({ status: 429, provider: 'openrouter', limitKind: 'per-minute', rateLimit: { remaining: 0, resetAt: inAMinute } });
+      expect(limitOf(classifyGeminiError(minute, { provider: 'openrouter', model: 'x:free' }))).toMatchObject({ kind: 'per-minute', provider: 'openrouter' });
+      expect(limitOf(classifyGeminiError(minute, { provider: 'openrouter', model: 'x:free' }))!.waitMs).toBeGreaterThan(30_000);
+
+      const tonight = Date.now() + 5 * 3600_000;
+      const day = await failed(documented('Rate limit exceeded: free-models-per-day. ', 'openrouter_free_tier_daily', tonight));
+      expect(day).toMatchObject({ limitKind: 'daily', rateLimit: { remaining: 0, resetAt: tonight } });
+      expect(limitOf(classifyGeminiError(day, { provider: 'openrouter', model: 'x:free' }))).toMatchObject({ kind: 'daily', provider: 'openrouter' });
+      // The words alone name it too, with no wait known.
+      const words = await failed(new Response(JSON.stringify({ error: { message: 'Rate limit exceeded: free-models-per-day. ', code: 429 } }), { status: 429 }));
+      expect(limitOf(classifyGeminiError(words, { provider: 'openrouter', model: 'x:free' }))).toEqual({ kind: 'daily', waitMs: null, provider: 'openrouter' });
+      // The sentence a person reads is the one it always was.
+      expect(classifyGeminiError(day, { provider: 'openrouter', model: 'x:free' }).message).toBe(
+        "OpenRouter refused the request for its rate limit. OpenRouter's free models allow a few requests a minute and a number a day; another free model has a limit of its own.",
+      );
+    });
+
+    it("takes the response's own headers before the body's, and the limit the body names before the headers' arithmetic", async () => {
+      const resetAt = Date.now() + 30_000;
+      const both = new Response(
+        JSON.stringify({ error: { message: 'Rate limit exceeded: free-models-per-day. ', metadata: { headers: { 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': String(Date.now() + 9 * 3600_000) }, limit_source: 'openrouter_free_tier_daily' } } }),
+        { status: 429, headers: { 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': String(resetAt) } },
+      );
+      const e = await failed(both);
+      expect(e).toMatchObject({ limitKind: 'daily', rateLimit: { remaining: 0, resetAt } });
+      // Thirty seconds by the headers, which alone would make it the minute's; the body says the day's.
+      expect(limitOf(e)).toMatchObject({ kind: 'daily', provider: 'openrouter' });
+    });
+
+    it("reads the same off a stream's error event, and nothing off a body that names no limit", async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sse([`data: ${JSON.stringify({ error: { code: 429, message: 'Rate limit exceeded: free-models-per-min. ', metadata: { limit_source: 'openrouter_free_tier_per_minute' } } })}`])));
+      const thrown = await (async () => {
+        for await (const chunk of await compatClient(ROUTER).models.generateContentStream({ model: 'm', contents: 'q' })) void chunk;
+      })().catch((err: unknown) => err as Record<string, unknown>);
+      expect(thrown).toMatchObject({ status: 429, provider: 'openrouter', limitKind: 'per-minute' });
+      expect(bodyLimit({ message: 'Rate limit exceeded', metadata: { error_type: 'rate_limit_exceeded' } })).toEqual({});
+      expect(bodyLimit(null)).toEqual({});
+      expect(bodyLimit({ metadata: { headers: { 'x-ratelimit-remaining': 'none' }, limit_source: 'upstream_provider_shared_pool' } })).toEqual({});
+    });
+
+    it('reads only a 429, and the words a failure is said in are as they were', async () => {
+      const busy = await failed(limited({ 'Retry-After': '20' }, 503));
+      expect(busy.retryAfterMs).toBeUndefined();
+      expect(busy).toMatchObject({ status: 503, provider: 'openrouter' });
+      const said = classifyGeminiError(await failed(limited({ 'Retry-After': '20' })), { provider: 'openrouter', model: 'x:free' }).message;
+      expect(said).toBe("OpenRouter refused the request for its rate limit. OpenRouter's free models allow a few requests a minute and a number a day; another free model has a limit of its own.");
+      expect(await failed(limited({}), LOCAL)).toMatchObject({ status: 429, provider: 'local' });
+    });
+
+    it('reads Retry-After as seconds or a date, the reset as milliseconds or seconds since the epoch, and refuses the rest', () => {
+      const now = Date.parse('2026-11-24T20:00:00Z');
+      const h = (entries: Record<string, string>) => new Headers(entries);
+      expect(rateLimitHeaders(h({ 'retry-after': '1.5' }), now)).toEqual({ retryAfterMs: 1500 });
+      expect(rateLimitHeaders(h({ 'retry-after': new Date(now + 60_000).toUTCString() }), now)).toEqual({ retryAfterMs: 60_000 });
+      expect(rateLimitHeaders(h({ 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String((now + 60_000) / 1000) }), now)).toEqual({ rateLimit: { remaining: 0, resetAt: now + 60_000 } });
+      // A reset in the past, nonsense, or days off is not kept; nor is a wait of none.
+      expect(rateLimitHeaders(h({ 'retry-after': '0', 'x-ratelimit-reset': String(now - 1000) }), now)).toEqual({});
+      expect(rateLimitHeaders(h({ 'retry-after': 'soon', 'x-ratelimit-reset': 'tomorrow', 'x-ratelimit-remaining': 'none' }), now)).toEqual({});
+      expect(rateLimitHeaders(h({ 'retry-after': String(3 * 24 * 3600) }), now)).toEqual({});
+      expect(rateLimitHeaders(h({}), now)).toEqual({});
+    });
+  });
+
+  it('names the model the server says answered, as Gemini names its own, and nothing when it names none', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ model: 'google/gemma-4-31b-it:free', choices: [{ message: { content: 'hi' }, finish_reason: 'stop' }] })));
+    expect(await compatClient(LOCAL).models.generateContent({ model: 'm', contents: 'q' })).toMatchObject({ text: 'hi', modelVersion: 'google/gemma-4-31b-it:free' });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sse([
+      'data: {"model":"qwen3.5:9b","choices":[{"delta":{"content":"{}"},"finish_reason":"stop"}]}',
+      'data: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}',
+      'data: [DONE]',
+    ])));
+    const chunks = [];
+    for await (const c of await compatClient(LOCAL).models.generateContentStream({ model: 'm', contents: 'q' })) chunks.push(c);
+    expect(chunks.map((c) => c.modelVersion)).toEqual(['qwen3.5:9b', undefined]);
+    expect('modelVersion' in chunks[1]).toBe(false);
   });
 
   // Agent audit item 94: a 400 for a model the server does not have is not a schema it refuses.

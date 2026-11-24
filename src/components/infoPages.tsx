@@ -131,8 +131,9 @@ export const SECURITY: InfoDoc = {
             such as Claude Code can use Forma&apos;s tools; this site does not run it. It talks only to the assistant
             that started it, over its standard input and output, and opens no network port. Its tools read and write
             your files only in the folders they are given and only by full path (outside them the server keeps only
-            a cache of its own under your home folder: OCR&apos;s languages, and which Gemini model answers your key,
-            filed by a short tag of it, never the key), never replace a file unless asked, take a
+            a cache of its own under your home folder: OCR&apos;s languages, which Gemini model answers your key, and
+            which of its models have reached a limit and until when, filed by a short tag of it, never the key),
+            never replace a file unless asked, take a
             database login stored in a report out before reading it, and hand back what they read from a file as data,
             never as instructions. What a tool returns goes to your assistant and the AI behind it, under that
             assistant&apos;s terms.

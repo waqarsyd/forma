@@ -1409,7 +1409,8 @@ npm ci`}
                 <code className="doc-code">{'AppData\\Local\\Forma'}</code> on Windows,{' '}
                 <code className="doc-code">Library/Caches/Forma</code> on macOS or{' '}
                 <code className="doc-code">.cache/forma</code> elsewhere: the OCR languages the two AI tools read
-                with, and which Gemini model answers your key, filed by a short tag of the key, never the key. tsx,
+                with, which Gemini model answers your key, and which of its models have reached a limit and until
+                when, filed by a short tag of the key, never the key. tsx,
                 which runs it, keeps its compile cache in your system&apos;s temp folder. A database login stored in a
                 report is taken out before any tool reads the report, wherever the report keeps it. A file that is
                 not well-formed XML is refused, with the line where it breaks, and a report that takes more than 30

@@ -415,6 +415,31 @@ describe('generate_report', () => {
     await padded.close();
   });
 
+  // 2026-11-24, the CLI and Forma Designer work's wave 3 (GAP3-2, GAP3-4): as `ai` is, an id in the data and never a phrase.
+  it('carries the model that answered and the limit the AI met as data, and says neither in its words', { timeout: 60_000 }, async () => {
+    const plain = askWith();
+    const named: Ask = async (...args) => ({ ...(await plain(...args)), model: 'gemini-3.6-flash-002' });
+    const gen = inThreadGenerator(SETUP, { ask: named });
+    const c = await serve(readAiSettings(GEMINI), gen);
+    const made = await call(c, 'generate_report', { description: 'An invoice with a title.', output: at('model', 'invoice.repx') });
+    expect(made.isError, JSON.stringify(made).slice(0, 600)).toBeUndefined();
+    expect(made.structuredContent).toMatchObject({ ai: 'gemini', model: 'gemini-3.6-flash-002', fixModel: null, limit: null });
+    expect(made.content[0].text.split('\n\n')[0]).toContain('Made by Gemini');
+    expect(made.content[0].text.split('\n\n')[0]).not.toContain('gemini-3.6');
+    expect(made.structuredContent.notices.join(' ')).not.toContain('gemini-3.6');
+    await c.close();
+    await gen.close();
+
+    // Every AI at its limit: Forma's draft stands in, said as before, and the data says which limit.
+    const spent = inThreadGenerator(SETUP, { ask: askWith({ fail: () => Object.assign(new Error("Quota exceeded for quota metric 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', limit: 20"), { status: 429 }) }) });
+    const s = await serve(readAiSettings(GEMINI), spent);
+    const stood = await call(s, 'generate_report', { description: 'An invoice with a title and a table of items.', output: at('model', 'stood-in.repx') });
+    expect(stood.structuredContent).toMatchObject({ ai: null, standIn: 'offline', model: null, limit: { kind: 'daily', provider: 'gemini' } });
+    expect(stood.content[0].text.split('\n\n')[0]).toContain("Forma's own draft stands in for the AI, which did not answer");
+    await s.close();
+    await spent.close();
+  });
+
   it('reports its progress only rising while it runs, when the request asks, and none after the result', { timeout: 60_000 }, async () => {
     const gen = oneAtATime(inThreadGenerator(SETUP, { ask: askWith({ progress: [5, 30, 60, 10, 50, 90, 95] }) }));
     const c = await serve(readAiSettings(GEMINI), gen);

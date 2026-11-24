@@ -18,9 +18,16 @@ import {
   cacheModel,
   clearCachedModel,
   isModelInCooldown,
+  keepModelChoiceIn,
+  keptParks,
+  keyTag,
+  noteModelLimited,
   noteModelOverloaded,
   onModelCacheChange,
+  restoreParks,
   startingModel,
+  type ModelPark,
+  type ParkStore,
 } from './modelCache';
 
 const T0 = 1_800_000_000_000;
@@ -167,5 +174,134 @@ describe('onModelCacheChange', () => {
     expect(listener).toHaveBeenCalledTimes(1);
     broken();
     stop();
+  });
+});
+/*
+ * A limit's park kept beyond memory (2026-11-24, the CLI and Forma Designer
+ * work's wave 3, GAP3-1). The browser hands in no store, so there a limit
+ * parks a model in memory exactly as an overload does and nothing else
+ * happens; Node hands in a file (src/mcp/modelParks.ts, whose tests hold the
+ * file and the threads), stood in for here by a list.
+ */
+describe("a limit's park, and the store Node keeps it in", () => {
+  const KEY = 'stand-in-key-not-a-credential';
+
+  /** A store over a list, as the file keeps it: by tag, read as it stands at `now`. */
+  function listStore() {
+    const kept: { tag: string; park: ModelPark }[] = [];
+    const store: ParkStore = {
+      read: (tag, now) => kept.filter((k) => k.tag === tag && k.park.until > now).map((k) => k.park),
+      add: (tag, park) => {
+        kept.push({ tag, park });
+      },
+    };
+    return { kept, store };
+  }
+
+  it('with no store, as in the browser, parks in memory exactly as an overload does, and keeps nothing else', () => {
+    noteModelLimited('limited', KEY, 'per-minute', 2_049, T0);
+    noteModelOverloaded('busy', T0, 2_049);
+    for (const model of ['limited', 'busy']) {
+      expect(isModelInCooldown(model, T0 + 2_048)).toBe(true);
+      expect(isModelInCooldown(model, T0 + 2_049)).toBe(false);
+    }
+    noteModelLimited('unstated', KEY, 'unknown', undefined, T0);
+    expect(isModelInCooldown('unstated', T0 + OVERLOAD_COOLDOWN_MS - 1)).toBe(true);
+    expect(isModelInCooldown('unstated', T0 + OVERLOAD_COOLDOWN_MS)).toBe(false);
+    expect(keptParks(KEY, T0)).toEqual([]);
+    restoreParks(KEY, T0);
+    expect(isModelInCooldown('never-seen', T0)).toBe(false);
+  });
+
+  it("keeps each limit's park by the key's tag, never the key, the minute when no wait was said, and lays them in again after the memory is cleared", () => {
+    const { kept, store } = listStore();
+    keepModelChoiceIn({ session: null, day: null, parks: store });
+    try {
+      noteModelLimited('spent', ` ${KEY} `, 'daily', 5 * 3_600_000, T0);
+      noteModelLimited('unstated', KEY, 'unknown', undefined, T0);
+      expect(kept).toEqual([
+        { tag: keyTag(KEY), park: { model: 'spent', kind: 'daily', until: T0 + 5 * 3_600_000 } },
+        { tag: keyTag(KEY), park: { model: 'unstated', kind: 'unknown', until: T0 + OVERLOAD_COOLDOWN_MS } },
+      ]);
+      expect(JSON.stringify(kept)).not.toContain(KEY);
+      // An overload's park is the last minute's, not the key's: memory alone.
+      noteModelOverloaded('busy', T0);
+      expect(kept.map((k) => k.park.model)).not.toContain('busy');
+
+      // A 404's re-detect clears the memory; the key's parks come back with the next model resolved for it, another key's do not.
+      clearCachedModel();
+      expect(isModelInCooldown('spent', T0 + 1_000)).toBe(false);
+      restoreParks('another-key', T0 + 1_000);
+      expect(isModelInCooldown('spent', T0 + 1_000)).toBe(false);
+      restoreParks(KEY, T0 + 1_000);
+      expect(isModelInCooldown('spent', T0 + 1_000)).toBe(true);
+      expect(startingModel('spent', ['spent', 'unstated', 'free'], T0 + 1_000)).toBe('free');
+      expect(isModelInCooldown('spent', T0 + 5 * 3_600_000)).toBe(false);
+    } finally {
+      keepModelChoiceIn({ session: null, day: null, parks: null });
+    }
+  });
+
+  it('never shortens a park already in memory, and a store that fails never fails the request: the park stays in memory', () => {
+    const { store } = listStore();
+    keepModelChoiceIn({ session: null, day: null, parks: store });
+    try {
+      noteModelOverloaded('model', T0, 120_000);
+      store.add(keyTag(KEY), { model: 'model', kind: 'per-minute', until: T0 + 30_000 }, T0);
+      restoreParks(KEY, T0);
+      expect(isModelInCooldown('model', T0 + 60_000)).toBe(true);
+    } finally {
+      keepModelChoiceIn({ session: null, day: null, parks: null });
+    }
+    const broken: ParkStore = {
+      read: () => {
+        throw new Error('the file cannot be read');
+      },
+      add: () => {
+        throw new Error('the folder cannot be written');
+      },
+    };
+    keepModelChoiceIn({ session: null, day: null, parks: broken });
+    try {
+      expect(() => noteModelLimited('limited', KEY, 'daily', 60_000, T0)).not.toThrow();
+      expect(isModelInCooldown('limited', T0 + 1_000)).toBe(true);
+      expect(keptParks(KEY, T0)).toEqual([]);
+      expect(() => restoreParks(KEY, T0)).not.toThrow();
+    } finally {
+      keepModelChoiceIn({ session: null, day: null, parks: null });
+    }
+  });
+
+  /*
+   * The wave's review (W3R-3): the wait geminiService hands in for a day's
+   * limit is the browser's count, an hour out on the days the clocks change;
+   * a store that knows the reset (Node's, src/mcp/modelParks.ts) decides it,
+   * in memory as in the store. A minute's limit keeps the wait Google said.
+   */
+  it("keeps a day's park until the reset the store names, in memory as in the store, and a minute's for the wait said", () => {
+    const { kept, store } = listStore();
+    const reset = T0 + 22.5 * 3_600_000;
+    keepModelChoiceIn({ session: null, day: null, parks: { ...store, dailyReset: () => reset } });
+    try {
+      noteModelLimited('spent', KEY, 'daily', 23.5 * 3_600_000, T0);
+      noteModelLimited('minute', KEY, 'per-minute', 41_000, T0);
+      expect(kept.map((k) => k.park)).toEqual([
+        { model: 'spent', kind: 'daily', until: reset },
+        { model: 'minute', kind: 'per-minute', until: T0 + 41_000 },
+      ]);
+      expect(isModelInCooldown('spent', reset - 1)).toBe(true);
+      expect(isModelInCooldown('spent', reset)).toBe(false);
+    } finally {
+      keepModelChoiceIn({ session: null, day: null, parks: null });
+    }
+    // A reset that cannot be worked out leaves the park as it was handed in, in memory.
+    keepModelChoiceIn({ session: null, day: null, parks: { ...store, dailyReset: () => { throw new Error('no time zone data'); } } });
+    try {
+      noteModelLimited('spent-again', KEY, 'daily', 60_000, T0);
+      expect(isModelInCooldown('spent-again', T0 + 59_999)).toBe(true);
+      expect(isModelInCooldown('spent-again', T0 + 60_000)).toBe(false);
+    } finally {
+      keepModelChoiceIn({ session: null, day: null, parks: null });
+    }
   });
 });

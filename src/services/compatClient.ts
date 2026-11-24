@@ -13,10 +13,13 @@
  *   a schema is asked for a JSON object, then for plain text, since the
  *   prompt describes the shape too.
  * - **The answer:** `.text`, a finish reason in Gemini's words (`length` is
- *   `MAX_TOKENS`, which the truncation checks read) and usage in Gemini's
- *   fields.
+ *   `MAX_TOKENS`, which the truncation checks read), usage in Gemini's
+ *   fields, and since 2026-11-24 the model the server says answered as
+ *   Gemini's `modelVersion`.
  * - **An HTTP error** keeps its `status`, so a 429 is still a quota and a 503
- *   an overload.
+ *   an overload; since 2026-11-24 it names its provider, and a 429 keeps what
+ *   its headers and its body say of the limit (`rateLimitHeaders`,
+ *   `bodyLimit`).
  * Gemini-only settings such as `thinkingConfig` are dropped.
  *
  * Loaded only when a provider other than Gemini is chosen.
@@ -57,6 +60,8 @@ export interface CompatChunk {
   text: string;
   candidates?: { finishReason?: string }[];
   usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number; totalTokenCount?: number };
+  /** The model that answered, as the server names it (Gemini's field of the same name); absent when it names none. */
+  modelVersion?: string;
 }
 
 type OpenAiContent = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
@@ -106,17 +111,116 @@ function usageOf(u: Record<string, any> | undefined): CompatChunk['usageMetadata
   };
 }
 
-/** An HTTP failure as an Error carrying its status, which geminiErrors.ts classifies. */
+/** What a 429's headers say of when the limit lifts: Retry-After, and the window's requests left and its reset (OpenRouter's X-RateLimit-*). */
+export interface RateLimitHeaders {
+  /** Retry-After, in milliseconds. */
+  retryAfterMs?: number;
+  /** X-RateLimit-Remaining and X-RateLimit-Reset (as milliseconds since the epoch); null where one was not sent or not readable. */
+  rateLimit?: { remaining: number | null; resetAt: number | null };
+}
+
+/** The longest wait a header is believed for: a day and a half, past any day's reset. */
+const MAX_HEADER_WAIT_MS = 36 * 3600 * 1000;
+
+/**
+ * Read off a 429's headers (2026-11-24, the CLI and Forma Designer work's
+ * wave 3, GAP3-5): "Rate limit exceeded" opens OpenRouter's words for its
+ * minute's limit and its day's alike, while its X-RateLimit-Remaining and
+ * X-RateLimit-Reset say which, and Retry-After how long. lib/aiLimit.ts
+ * `limitOf` reads them. Retry-After is seconds or an HTTP date; the reset is
+ * milliseconds since the epoch, as OpenRouter documents it, or seconds,
+ * told apart by size; anything else, or a wait past `MAX_HEADER_WAIT_MS`, is
+ * not kept. A browser reads only the headers the server exposes to it, so
+ * there they are often absent; OpenRouter's body says the same, and
+ * `bodyLimit` reads it there.
+ */
+export function rateLimitHeaders(headers: Pick<Headers, 'get'>, now: number = Date.now()): RateLimitHeaders {
+  const out: RateLimitHeaders = {};
+  const after = headers.get('retry-after')?.trim();
+  if (after) {
+    const ms = /^\d+(\.\d+)?$/.test(after) ? Math.round(Number(after) * 1000) : Date.parse(after) - now;
+    if (Number.isFinite(ms) && ms > 0 && ms <= MAX_HEADER_WAIT_MS) out.retryAfterMs = ms;
+  }
+  const remainingText = headers.get('x-ratelimit-remaining')?.trim();
+  const resetText = headers.get('x-ratelimit-reset')?.trim();
+  const remaining = remainingText && /^\d+$/.test(remainingText) ? Number(remainingText) : null;
+  const reset = resetText && /^\d+(\.\d+)?$/.test(resetText) ? Number(resetText) : NaN;
+  const resetMs = reset >= 1e12 ? reset : reset >= 1e9 ? reset * 1000 : NaN;
+  const resetAt = Number.isFinite(resetMs) && resetMs > now && resetMs - now <= MAX_HEADER_WAIT_MS ? Math.round(resetMs) : null;
+  if (remaining !== null || resetAt !== null) out.rateLimit = { remaining, resetAt };
+  return out;
+}
+
+/** What a 429's answer says of its limit: its headers' (`RateLimitHeaders`), and the limit it names. */
+export interface LimitSaid extends RateLimitHeaders {
+  /** The limit the answer's body named (`bodyLimit`); absent when it named none. */
+  limitKind?: 'per-minute' | 'daily';
+}
+
+/**
+ * What a 429's body says of its limit (the wave-3 review, W3R-2). OpenRouter
+ * documents its 429 with the limit in the body as well as in the response's
+ * headers (openrouter.ai/blog/tutorials/llm-api-rate-limits, read
+ * 2026-11-24): `error.metadata.headers` holds X-RateLimit-Limit, -Remaining
+ * and -Reset, and `error.metadata.limit_source` names the limit
+ * ("openrouter_free_tier_per_minute", "openrouter_free_tier_daily"), as its
+ * words do ("Rate limit exceeded: free-models-per-min.", or
+ * "free-models-per-day"), which geminiErrors.ts `quotaKind` does not read.
+ * `error` is the body's `error` object, or a stream's error event; the
+ * headers are read as `rateLimitHeaders` reads a response's, by any case.
+ */
+export function bodyLimit(error: unknown, now: number = Date.now()): LimitSaid {
+  const e = error as { message?: unknown; metadata?: { headers?: unknown; limit_source?: unknown } | null } | null | undefined;
+  const headers = e?.metadata?.headers;
+  const out: LimitSaid =
+    headers && typeof headers === 'object'
+      ? rateLimitHeaders(
+          {
+            get: (name: string) => {
+              const value = Object.entries(headers as Record<string, unknown>).find(([key]) => key.toLowerCase() === name)?.[1];
+              return typeof value === 'string' || typeof value === 'number' ? String(value) : null;
+            },
+          },
+          now,
+        )
+      : {};
+  const kindIn = (text: unknown): LimitSaid['limitKind'] =>
+    typeof text !== 'string' ? undefined : /daily|per[-_ ]day/i.test(text) ? 'daily' : /per[-_ ]min/i.test(text) ? 'per-minute' : undefined;
+  const limitKind = kindIn(e?.metadata?.limit_source) ?? kindIn(e?.message);
+  return limitKind ? { ...out, limitKind } : out;
+}
+
+/**
+ * An HTTP failure as an Error carrying its status, which geminiErrors.ts
+ * classifies, and since 2026-11-24 (the CLI and Forma Designer work's wave 3)
+ * the provider it came from, and on a 429 what it says of the limit: its
+ * headers (`rateLimitHeaders`), else the ones its body repeats, and the limit
+ * its body names (`bodyLimit`), for lib/aiLimit.ts `limitOf`. Nothing that
+ * words a failure reads them.
+ */
 async function failure(res: Response, endpoint: CompatEndpoint): Promise<Error> {
   let detail = '';
+  let said: unknown = null;
   try {
     const body = await res.json();
+    said = body?.error;
     detail = body?.error?.message || body?.message || JSON.stringify(body).slice(0, 300);
   } catch {
     detail = res.statusText;
   }
   const where = endpoint.kind === 'local' ? `the local AI at ${endpoint.baseUrl}` : 'OpenRouter';
-  return Object.assign(new Error(`${where} answered ${res.status}: ${detail}`), { status: res.status });
+  let limit: LimitSaid = {};
+  if (res.status === 429) {
+    const fromResponse = rateLimitHeaders(res.headers);
+    const fromBody = bodyLimit(said);
+    limit = fromResponse.retryAfterMs !== undefined || fromResponse.rateLimit ? { ...fromResponse, ...(fromBody.limitKind ? { limitKind: fromBody.limitKind } : {}) } : fromBody;
+  }
+  return Object.assign(new Error(`${where} answered ${res.status}: ${detail}`), { status: res.status, provider: endpoint.kind, ...limit });
+}
+
+/** The model that answered, as the server names it in its answer (OpenRouter's routed model, Local AI's own), for geminiService to record; absent when it names none. */
+function answeredModel(body: { model?: unknown } | null | undefined): { modelVersion?: string } {
+  return typeof body?.model === 'string' && body.model.trim() ? { modelVersion: body.model.trim() } : {};
 }
 
 /**
@@ -277,6 +381,7 @@ export function compatClient(endpoint: CompatEndpoint) {
           text,
           candidates: [{ finishReason: FINISH[choice?.finish_reason] ?? choice?.finish_reason }],
           usageMetadata: usageOf(body?.usage),
+          ...answeredModel(body),
         };
       },
       async generateContentStream(req: GeminiRequest): Promise<AsyncGenerator<CompatChunk>> {
@@ -296,7 +401,7 @@ export function compatClient(endpoint: CompatEndpoint) {
             } catch {
               continue;
             }
-            if (event?.error) throw Object.assign(new Error(event.error.message || 'The model reported an error.'), { status: event.error.code });
+            if (event?.error) throw Object.assign(new Error(event.error.message || 'The model reported an error.'), { status: event.error.code, provider: endpoint.kind, ...(event.error.code === 429 ? bodyLimit(event.error) : {}) });
             const small = contextTooSmall(endpoint, chars, event?.usage?.prompt_tokens);
             if (small) throw small;
             const choice = event?.choices?.[0];
@@ -310,6 +415,7 @@ export function compatClient(endpoint: CompatEndpoint) {
               text,
               candidates: reason ? [{ finishReason: FINISH[reason] ?? reason }] : undefined,
               usageMetadata: usageOf(event?.usage),
+              ...answeredModel(event),
             };
           }
         })();

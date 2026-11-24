@@ -223,6 +223,14 @@ export interface FixLoop<R extends FixableAnswer> {
   spent: TokenUsage | null;
   /** What is still to fix in the answer kept. */
   findings: RepxFinding[];
+  /**
+   * What the fix failed with, when it did and the answer before it was kept
+   * (2026-11-24, the CLI and Forma Designer work's wave 3, GAP3-2): a limit
+   * above all, which the MCP server's and the command line's work read for
+   * when the AI can be asked again (lib/aiLimit.ts `limitOf`). Absent
+   * when no fix failed.
+   */
+  fixFailed?: unknown;
 }
 
 /**
@@ -258,6 +266,8 @@ export async function fixUntilPrints<R extends FixableAnswer>(
   let answer = first;
   let spent = options.spent;
   let findings = findingsToFix(answer, options);
+  /** What a fix failed with, held so that even a thrown `undefined` counts as a failure. */
+  let failed: { error: unknown } | null = null;
   for (let attempt = 1; findings.length && attempt < MAX_FIX_ATTEMPTS; ) {
     if (options.left() <= 0) {
       console.warn(`The report has ${findings.length} thing(s) to fix, and this request's allowance is spent; keeping it as it is.`);
@@ -271,6 +281,7 @@ export async function fixUntilPrints<R extends FixableAnswer>(
     } catch (err) {
       if (options.aborted()) throw err;
       console.warn(`The fix (attempt ${attempt}) did not answer; keeping the report as it was.`, err);
+      failed = { error: err };
       break;
     }
     if (options.aborted()) return null;
@@ -287,5 +298,5 @@ export async function fixUntilPrints<R extends FixableAnswer>(
   if (answer !== first && first.coverage && !answer.coverage && options.draftText?.trim()) {
     answer = { ...answer, coverage: readCoverage(captionsOfDraft(options.draftText), answer.repxContent) };
   }
-  return { answer, spent, findings };
+  return { answer, spent, findings, ...(failed ? { fixFailed: failed.error } : {}) };
 }
