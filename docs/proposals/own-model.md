@@ -1265,7 +1265,8 @@ one path:
 - the vision model alone, on Local AI.
 
 Now one AI generation brings the rest along (`lib/formaTeam.ts`, and
-`prepareTeam` in `App.tsx`):
+`prepareTeam`, in `App.tsx` until 2026-11-24 and in `lib/generationCore.ts`
+since):
 
 | Part | Role |
 |---|---|

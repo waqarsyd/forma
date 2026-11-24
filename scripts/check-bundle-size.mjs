@@ -264,7 +264,20 @@ const BUDGETS = [
   // batchCheckpoint.ts, docsKnowledge.ts); AB to AE's model choice, page
   // resolution, OCR stages and coverage readout the rest, not attributed.
   // 168_500 is 94.2%.
-  { prefix: 'App-', ext: '.js', max: 168_500, note: 'the workspace, loaded on /workspace' },
+  // Lowered to 142_000 on 2026-11-24 (the MCP work's wave 6, the wave-6
+  // review's S1), when the generation code moved out of the workspace into
+  // lib/generationCore.ts, its own lazy chunk below: 140,594 -> 133,398 B,
+  // -7,196, the entry and the eager total unchanged. It was at 83.4% before
+  // the move (a6ca605's build); left at 168_500 it would be 79.2%, room to
+  // hide a regression. 142_000 is 93.9%.
+  { prefix: 'App-', ext: '.js', max: 142_000, note: 'the workspace, loaded on /workspace' },
+  // The generation core (2026-11-24, the MCP work's wave 6): the reading of a
+  // turn's pages, Forma's team, the request, the fix, the translation and the
+  // stand-in, which the workspace warms when idle and Batch loads, moved out
+  // of App- and lib/batchRun.ts. Budgeted in the same commit, so the moved
+  // code is watched as it was inside App-, not by the dist/ total alone:
+  // 13,789 B, 14_700 is 93.8%.
+  { prefix: 'generationCore-', ext: '.js', max: 14_700, note: 'the generation core, lazy, warmed with the workspace' },
   /*
    * The generation service, lazy as of 2026-09-04.
    *

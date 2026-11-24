@@ -141,7 +141,9 @@ The draft PDF is the one output that is not the web app's: `scripts/repx.ts` dre
 
 ## What comes next, and whose step each is
 
-Planned, and not built: generation through the server (`generate_report` and `revise_report`, on one generation core moved out of `App.tsx` into `src/lib`, with the user's own AI set up in the server's environment under the workspace's rule that an AI must be set up to start, the key read only in the entry); the command line's `generate` on the same core; and a database's schema through a Forma Designer release that admits a local caller. Until each exists, no page, release note or tool description may say it does.
+Planned, and not built: generation through the server (`generate_report` and `revise_report`, with the user's own AI set up in the server's environment under the workspace's rule that an AI must be set up to start, the key read only in the entry); the command line's `generate` on the same core; and a database's schema through a Forma Designer release that admits a local caller. Until each exists, no page, release note or tool description may say it does.
+
+The core those two will call exists since 2026-11-24 (the MCP work's wave 6): `lib/generationCore.ts`, the one way a report is made, moved out of `App.tsx` and `lib/batchRun.ts`, which both call it, with no change in what the web app asks. `makeReport` takes files and words, or a description, and an open report for a redesign, and returns the report or Forma's draft standing in, the note when another AI answered on a limit, and what taking the files in could not do. What the browser owns is handed in (reading a page, the page reader, the settings worked out, the box reader's model, Forma's own model and the memory, the vision model's set-up, the learning events), and the module imports nothing at its top that needs a document, a worker or storage. The server does not call it yet: its Node versions of those parts (pictures and PDFs taken in without a browser, OCR in Node, the model files read from the clone) are the next wave, and until then nothing says the server generates.
 
 Steps that are the owner's, never a session's:
 

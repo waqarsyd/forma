@@ -496,8 +496,9 @@ function attachmentFor(c: LoadedCase, rerender: boolean): AttachmentPart[] {
 }
 
 /**
- * Forma's box reader's brief for a picture, as App.tsx's prepareTeam passes it
- * with every upload since 2026-11-04 (`--brief`): the page read by OCR as the
+ * Forma's box reader's brief for a picture, as prepareTeam passes it with
+ * every upload since 2026-11-04 (in App.tsx until 2026-11-24, then in
+ * src/lib/generationCore.ts, which this runner does not call yet) (`--brief`): the page read by OCR as the
  * app reads it (scripts/model/ocrPages.ts), the box reader run over that
  * reading, and `draftBrief` of what it built. '' when the case is not a PNG or
  * the reader declines the page, which the product would answer the same way.

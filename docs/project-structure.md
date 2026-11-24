@@ -583,6 +583,12 @@ src/
                        change), deferredDelete (a deleted project's few seconds
                        of Undo) and inspectionGuard (what may go to DevExpress
                        on the person's own PC without a click).
+                       Since 2026-11-24: generationCore (the one way a report
+                       is made, which the workspace and batchRun call and the
+                       MCP server's generation tools are to call: the pages
+                       read, Forma's team, the request through the free
+                       chain, the fix, the translation and the stand-in,
+                       with what the browser owns handed in).
                        Plus motion tokens, and pdf + genai + firebaseClient —
                        three loaders that exist so their dependencies stay out of
                        the eager bundle, and are the only files here that are not

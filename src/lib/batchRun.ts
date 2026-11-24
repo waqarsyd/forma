@@ -14,14 +14,18 @@
  * printing it with the page's records shows is sent back once, from the
  * file's own allowance, and what is left counts on the row.
  *
- * ## Out of App, and why the parts it needs are handed in
+ * ## Made by the generation core
  *
- * It lived in App.tsx and took the workspace chunk past its size budget the
- * day it was written, so it is a module of its own, loaded on the first
- * batch run. Forma's team, OCR's attachments, the right-to-left pass, the
- * translation and the learning event are App's own functions (they read the
- * bench's settings and the vision model's set-up), so App hands them in
- * (`BatchRunDeps`) each with the settings worked out for this file.
+ * Since 2026-11-24 (the MCP work's wave 6) the file is made by
+ * lib/generationCore.ts `makeReport`, the one way a report is made, as a
+ * Batch file (`batchFile`): the places Batch still differs from a single
+ * report are listed in that module's header. What is left here is Batch's
+ * own: the row's id, its reading of each page, the settings worked out from
+ * the file alone, its remembered preferences, the row's counts and its
+ * learning event. Forma's team, OCR's attachments, the right-to-left pass
+ * and the translation moved into the core; App hands in its own parts
+ * (`BatchRunDeps`): the box reader's model, the vision model's set-up, Forma's
+ * own model and the learning events.
  *
  * ## Read straight through, not through the chat's cache
  *
@@ -36,36 +40,18 @@
  * Worked out per file and not kept, since up to three files run at once, and
  * from the file alone: the report open on the bench is not its source.
  */
-import { applyDetected, detectSettings, type DetectInput, type SourcePage } from './autoConfig';
-import { toAttachmentParts } from './attachmentParts';
-import type { PreviewMeta } from './attachments';
-import { loadGemini } from './geminiClient';
+import { detectSettings, type DetectInput } from './autoConfig';
 import type { BatchOutcome } from './batchQueue';
+import type { DetectionSources, PageRead, SentPage, TeamDeps } from './generationCore';
 import type { LearningRecord } from './learning';
-import type { ReadPage } from './ocrAttach';
-import type { TextAttachment } from './repxIntake';
-import { isReportFile } from './reportFile';
-import type { DraftRequest, ReportConfig, ReportLayout } from '../services/geminiService';
+import type { ReportConfig } from '../services/geminiService';
 
-type Read = { meta: PreviewMeta; read: ReadPage }[];
-type Page = { src: string; meta: PreviewMeta };
-
-/** What App hands in: its own functions, each told this file's settings. */
-export interface BatchRunDeps {
+/** What App hands in: its own parts, and the settings each file's are worked out over. */
+export interface BatchRunDeps extends TeamDeps {
   /** The stored settings, which this file's are worked out over. */
   config: ReportConfig;
   /** The detection input for this file's sources alone, never the open report. */
-  detectInput: (sources: { texts: readonly { file: string; text: string }[]; metas: readonly PreviewMeta[]; pages?: readonly SourcePage[]; words: string }) => DetectInput;
-  /** The first page and the same upload's last, for the vision model. */
-  visionPages: (images: readonly string[], metas: readonly PreviewMeta[]) => number[];
-  prepareTeam: (
-    input: { read: Read; firstImage?: Page; lastImage?: Page } | undefined,
-    signal: AbortSignal,
-    worked: ReportConfig,
-  ) => Promise<{ brief: string; evidence?: ReportLayout | null; correct?: DraftRequest | null }>;
-  ocrAttachments: (read: Read, worked: ReportConfig) => Promise<TextAttachment[]>;
-  asConfigured: (xml: string, asSeen: boolean, built: boolean, worked: ReportConfig) => Promise<string>;
-  translateXml: (xml: string, language: string, signal: AbortSignal, worked: ReportConfig) => Promise<{ xml: string }>;
+  detectInput: (sources: DetectionSources) => DetectInput;
   recordLearning: (record: LearningRecord) => unknown;
   aiKindOf: (by: 'gemini' | 'local' | 'openrouter') => LearningRecord['ai'];
   /** Whose remembered preferences the request carries. */
@@ -75,8 +61,8 @@ export interface BatchRunDeps {
 }
 
 /** Each page's text, read for this file alone; a page that cannot be read goes without its text. */
-async function readFilePages(pages: readonly Page[], settings: ReportConfig, signal: AbortSignal): Promise<Read> {
-  const out: Read = [];
+async function readFilePages(pages: readonly SentPage[], settings: ReportConfig, signal: AbortSignal): Promise<PageRead[]> {
+  const out: PageRead[] = [];
   if (!pages.length) return out;
   const { readPage } = await import('./ocrAttach');
   for (const { src, meta } of pages) {
@@ -94,108 +80,25 @@ async function readFilePages(pages: readonly Page[], settings: ReportConfig, sig
 
 export async function runBatchFile(file: File, signal: AbortSignal, id: string, words: string, deps: BatchRunDeps): Promise<BatchOutcome> {
   const startedAt = Date.now();
-  const stopped = () => {
-    if (signal.aborted) throw new Error('stopped while this file was generating');
-  };
-  const { config } = deps;
-  const { ingestFile, inUnit } = await import('./repxIntake');
-  const uploadId = `batch-${id}`;
-  const ingested = await ingestFile(file, uploadId, config.unit);
-  stopped();
-  // The pages whose text came with them (a PDF's text layer) are not read again.
-  const withText = new Set(ingested.texts.map((t) => `${t.uploadId}#${t.page ?? 0}`));
-  const pages = ingested.images.flatMap((src, i) => (withText.has(`${uploadId}#${ingested.imageMeta[i]?.page ?? 0}`) ? [] : [{ src, meta: ingested.imageMeta[i] }]));
-  const sources = { texts: ingested.texts, metas: ingested.imageMeta, words };
-  const read = await readFilePages(pages, applyDetected(config, detectSettings(deps.detectInput(sources))), signal);
-  stopped();
-  // What was read settles the paper and the direction, as for a single report.
-  const fileConfig = applyDetected(
-    config,
-    detectSettings(
-      deps.detectInput({
-        ...sources,
-        pages: read.map(({ meta, read: r }) => ({ width: r.ocr.width, height: r.ocr.height, pagePoints: meta.pagePoints })),
-        words: [words, ...read.flatMap(({ read: r }) => r.ocr.lines.map((l) => l.text))].join('\n'),
-      }),
-    ),
-  );
-  // A PDF's strings in the unit worked out for it (2026-11-11, PL-18), and what OCR read.
-  const texts = [...inUnit(ingested.texts, fileConfig.unit), ...(await deps.ocrAttachments(read, fileConfig))];
-  const [firstAt, lastAt] = deps.visionPages(ingested.images, ingested.imageMeta);
-  const team = await deps.prepareTeam(
-    ingested.images.length
-      ? {
-          read,
-          ...(firstAt !== undefined ? { firstImage: { src: ingested.images[firstAt], meta: ingested.imageMeta[firstAt] } } : {}),
-          ...(lastAt !== undefined ? { lastImage: { src: ingested.images[lastAt], meta: ingested.imageMeta[lastAt] } } : {}),
-        }
-      : undefined,
-    signal,
-    fileConfig,
-  );
-  stopped();
-  const parts = toAttachmentParts(ingested.images, texts);
-  const remembered = await import('./memory').then((m) => m.instructionsOf(m.readMemory(deps.uid))).catch(() => '');
-  const [{ analyzeReportDesign, REQUEST_BUDGET }, { askWithChain }] = await Promise.all([loadGemini(), import('./fallbackChain')]);
   const { fields } = deps;
-  /*
-   * One allowance a file, as one click has (PL-20): the service's own
-   * retries and repeats and the fix below spend from it, so a batch never
-   * asks more for a file than a single report would. A new one for each AI
-   * the chain asks, as App gives it.
-   */
-  let budget = { left: REQUEST_BUDGET };
-  // On a limit the next AI set up designs it (2026-11-10, batch AG item 23, lib/fallbackChain.ts);
-  // when every one gives out, the batch pauses on that error and is kept.
-  const chained = await askWithChain(
-    fileConfig,
-    (asked) => {
-      budget = { left: REQUEST_BUDGET };
-      return analyzeReportDesign(words, parts, asked, undefined, signal, undefined, { remembered, formaBrief: team.brief, evidence: team.evidence, draft: team.correct ?? null, fields, budget });
+  const { makeReport } = await import('./generationCore');
+  const made = await makeReport(
+    { files: [{ file, uploadId: `batch-${id}` }], words, config: deps.config, fields, signal, batchFile: true },
+    {
+      ...deps,
+      detect: (sources) => detectSettings(deps.detectInput(sources)),
+      readPages: (pages, s, settings) => readFilePages(pages, settings, s),
+      // The memory's instructions alone: no kept report as an example (the core's header).
+      beforeGeneration: async () => ({
+        remembered: await import('./memory').then((m) => m.instructionsOf(m.readMemory(deps.uid))).catch(() => ''),
+        kept: null,
+      }),
     },
-    signal,
   );
-  stopped();
-  const fromReport = texts.some(isReportFile);
-  /*
-   * What printing it with the page's records showed, sent back as a single
-   * report's is (2026-11-11, the re-audit's R2-05, lib/printCheck.ts): a
-   * Batch report skipped it, so one that printed on two pages, or blank
-   * where a field should be, came back counted as clean. With the files'
-   * texts, not their pictures, so a field the data has can be found.
-   */
-  const textParts = toAttachmentParts([], texts.filter((t) => !isReportFile(t)));
-  const fixed = await import('./printCheck').then((m) =>
-    m.fixUntilPrints(chained.value, {
-      described: false,
-      fields,
-      fromReport,
-      spent: chained.value.usage ?? null,
-      left: () => budget.left,
-      aborted: () => signal.aborted,
-      ask: (instruction, repxContent) =>
-        analyzeReportDesign(instruction, textParts, chained.config, { repxContent }, signal, undefined, { evidence: team.evidence, fields, budget }),
-    }),
-  );
-  stopped();
-  // Null only when stopped, which `stopped` has just thrown on.
-  let response = fixed!.answer;
-  // The language the words name, as a single report carries it out (CV-14).
-  const language = words ? await import('./repxTranslate').then((m) => m.languageAsked(words)).catch(() => null) : null;
-  if (language && response.repxContent) {
-    try {
-      const done = await deps.translateXml(response.repxContent, language, signal, fileConfig);
-      if (done.xml !== response.repxContent) {
-        const views = await import('./repxViews');
-        const title = response.layout?.title;
-        response = { ...response, repxContent: done.xml, markdown: views.specFromRepx(done.xml, title), layout: views.layoutFromRepx(done.xml, title) };
-      }
-    } catch (translateError) {
-      stopped();
-      console.warn(`The batch report could not be translated into ${language}; it stays as built.`, translateError);
-    }
-  }
-  const repxContent = await deps.asConfigured(response.repxContent, !fromReport, false, fileConfig);
+  if (!made) throw new Error('stopped while this file was generating');
+  // A Batch file's failure is thrown by the core, never stood in for.
+  if (!made.ok) throw made.error;
+  const { response, repxContent } = made;
   const { auditRepx } = await import('./repxAudit');
   const audit = auditRepx(repxContent, response.layout, { fields });
   // Counted on the row as the single path says them (R2-05): what the print
@@ -207,14 +110,14 @@ export async function runBatchFile(file: File, signal: AbortSignal, id: string, 
     // Under no project (2026-11-11): the one open on the bench is not this file's.
     projectId: null,
     sourceCounts: {
-      images: ingested.images.length,
+      images: made.pictures,
       pdfs: /\.pdf$/i.test(file.name) ? 1 : 0,
-      repx: fromReport ? 1 : 0,
+      repx: made.startedFromReport ? 1 : 0,
       words: Boolean(words.trim()),
       database: false,
     },
     request: 'batch',
-    ai: deps.aiKindOf(chained.by),
+    ai: deps.aiKindOf(made.by),
     repx: repxContent,
     prompt: words,
     ms: Date.now() - startedAt,
@@ -225,6 +128,6 @@ export async function runBatchFile(file: File, signal: AbortSignal, id: string, 
     bands: response.layout?.sections?.length ?? 0,
     errors: audit.errors + count('error'),
     warnings: audit.warnings + count('warning'),
-    ...(ingested.notices.length ? { notes: ingested.notices.join(' ') } : {}),
+    ...(made.notices.length ? { notes: made.notices.join(' ') } : {}),
   };
 }

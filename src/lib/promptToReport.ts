@@ -141,6 +141,16 @@ export function describeDataSource(source: DataSource): string {
   return source.fields.map((f) => `- ${f.name} (${f.type})`).join('\n');
 }
 
+/**
+ * The words a described report's settings are worked out from
+ * (lib/autoConfig.ts): the request is the whole source, its answers included
+ * ("on A4", "EXEC dbo.Sales"). One copy for the workspace and the generation
+ * core (2026-11-24, lib/generationCore.ts).
+ */
+export function descriptionWords(request: ReportDescriptionRequest): string {
+  return [request.description, request.title, request.dataSchema, ...(request.answers ?? []).map((a) => a.answer)].filter(Boolean).join('\n');
+}
+
 /** Append the user's answers so the next call carries them. */
 export function withAnswers(request: ReportDescriptionRequest, answers: ClarificationAnswer[]): ReportDescriptionRequest {
   const kept = answers.filter((a) => a.answer.trim());

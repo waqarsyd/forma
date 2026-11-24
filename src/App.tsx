@@ -47,7 +47,7 @@ import {
   IconWarn,
   IconAlert,
 } from './components/landing/icons';
-import { applyDetected, detectSettings, repxFacts, type DetectInput, type DetectedSettings, type SourcePage } from './lib/autoConfig';
+import { applyDetected, detectSettings, repxFacts, type DetectInput, type DetectedSettings } from './lib/autoConfig';
 import {
   SIDEBAR_CLOSED_WIDTH,
   SIDEBAR_OPEN_WIDTH,
@@ -74,12 +74,10 @@ import type {
   ReportConfig,
   StreamProgress,
   ChatTurn,
-  DraftRequest,
 } from './services/geminiService';
 import { loadGemini, isMissingApiKey } from './lib/geminiClient';
 import { answeringModel, effectiveProvider, isVisionOnly, librarySearchable, pageReaderOf, PROVIDER_NAMES, readProviderSettings, SET_UP_AI, visionModelOf, workspaceOpen, writeProviderSettings } from './lib/aiProvider';
 import type { SettingsSection } from './components/SettingsDialog';
-import type { DraftSource } from './lib/formaTeam';
 import type { JobPlan } from './lib/jobPlan';
 /* Eager on purpose: cleared from a synchronous effect. See lib/modelCache.ts. */
 import { clearCachedModel, onModelCacheChange, readCachedModel, readCachedModelSet, readDailyModel } from './lib/modelCache';
@@ -222,6 +220,17 @@ import { pushRevision, type Revision } from './lib/revisions';
 const loadLibrary = () => import('./services/library');
 /** What the person's own reports teach their next one (2026-11-11, D1 to D4). */
 const loadLoop = () => import('./lib/learningLoop');
+/**
+ * The one way a report is made (2026-11-24, lib/generationCore.ts): the
+ * reading of a turn's pages, Forma's team, the request, the fix, the
+ * translation and the stand-in, which Batch calls too (its `makeReport`) and
+ * the MCP server's generation tools are to call. Off this chunk, and warmed
+ * when the workspace is idle, as its panes are, since every turn reads
+ * through it.
+ */
+const loadCore = () => import('./lib/generationCore');
+/** Forma's box reader's model, a file this site serves (lib/boxReader.ts). */
+const loadBoxReader = () => import('./lib/boxReader').then((m) => m.loadBoxReader());
 import type { LibraryDeps, LibrarySource } from './services/library';
 /* Persisting those revisions. Pure — it plans documents, it does not write them —
    so it stays eager while `accountData`'s path builders arrive through
@@ -240,6 +249,7 @@ import type { AgentTool, FormatAction } from './lib/agentEdit';
 import type { PrintFormat } from './lib/exportJob';
 import {
   describedRequest,
+  descriptionWords,
   isDescribable,
   withAnswers,
   type ClarificationAnswer,
@@ -313,6 +323,7 @@ const Composer = lazy(() => import('./components/Composer'));
 import type { OcrBuiltReport } from './components/OcrDialog';
 import type { ReaderBuiltReport } from './lib/ocrAttach';
 import type { ReadPage } from './lib/ocrAttach';
+import type { DetectionSources, TeamDeps, TeamInput } from './lib/generationCore';
 import type { DatabaseText, SqlSchema } from './lib/sqlSchema';
 import type { TextAttachment } from './lib/repxIntake';
 import type { PreviewTool } from './components/PreviewRail';
@@ -320,13 +331,8 @@ import type { ReportQuery } from './lib/sqlQuery';
 import type { DataField } from './lib/dataSource';
 import { mergeStoredConfig, toPersistable, STORAGE_KEY as CONFIG_STORAGE_KEY } from './lib/reportConfigStore';
 
-/** What a request brings that its settings are worked out from (lib/autoConfig.ts). */
-interface DetectionSources {
-  texts?: readonly { file: string; text: string }[];
-  metas?: readonly PreviewMeta[];
-  pages?: readonly SourcePage[];
-  words?: string;
-}
+/* DetectionSources, what a request brings that its settings are worked out
+   from, is lib/generationCore.ts's since 2026-11-24, with the reading it serves. */
 
 interface DesignResult {
   content: string;
@@ -524,74 +530,13 @@ const DESCRIBE_RUN: RunCopy = {
   done: 'Report designed from the description.',
 };
 
-/**
- * What the rest of Forma's team has for a run (2026-11-03, lib/formaTeam.ts),
- * captured when the run starts so a resume has it too. Absent on a turn
- * that only refines the open report in words: there is no page to read and
- * no draft worth handing over in its place.
- */
-type TeamInput = {
-  /** The staged pages OCR finished reading. */
-  read: { meta: PreviewMeta; read: ReadPage }[];
-  /** The first page, for Forma's vision model, when it is an image. */
-  firstImage?: { src: string; meta: PreviewMeta };
-  /** The same upload's last page, when it has more than one (2026-11-04): its footers and totals. */
-  lastImage?: { src: string; meta: PreviewMeta };
-  /** A report described in words: the house style is told, and Forma's own model drafts. */
-  described?: ReportDescriptionRequest;
-  /**
-   * The pages not read yet, read and given as texts when the AI designs the
-   * report rather than correcting Forma's draft (2026-11-11, the full audit's
-   * PL-23): the draft is written from the first page and the last alone.
-   */
-  readRest?: (signal: AbortSignal) => Promise<TextAttachment[]>;
-};
-
-/**
- * What the team brought to a run: the brief the AI is told and the quicker
- * version that stands in if the AI fails. Who took part is not kept
- * (2026-11-11, the full audit's RH-08): the reply is the result, and names
- * nobody.
- */
-type TeamPlan = {
-  brief: string;
-  draft: (() => Promise<{ result: DesignResult; source: DraftSource } | null>) | null;
-  /**
-   * OCR's own layout of the source, which the audit checks the AI's REPX
-   * against (2026-11-05, `sourceLayoutOf`).
-   */
-  evidence?: ReportLayout | null;
-  /**
-   * Forma's draft of the page, for the AI to correct rather than design the
-   * report from nothing (2026-11-05, lib/draftText.ts). Null without a picture
-   * whose layout the vision model or the box reader read.
-   */
-  correct?: DraftRequest | null;
-  /** The page's shape as Forma read it, which the nearest kept report is found by (2026-11-11, D3). */
-  shape?: import('./lib/reportSkeleton').ReportSkeleton;
-  /** The first page in numbers alone, kept on the device with the request's learning event (2026-11-12, D10). */
-  reading?: import('./lib/readerPairs').PageReading | null;
-};
-
-const NO_TEAM: TeamPlan = { brief: '', draft: null };
+/* TeamInput, TeamPlan and NO_TEAM, what Forma's team is given and brings,
+   are lib/generationCore.ts's since 2026-11-24, with `prepareTeam`. */
 
 /** The bench's view tabs, in their order (2026-11-11, WS-37: the arrows walk them). */
 const PLATE_TABS: readonly (readonly [Plate, string])[] = [['proof', 'Mockup'], ['print', 'Preview'], ['data', 'Data'], ['spec', 'Spec'], ['xml', 'REPX']];
 
-/**
- * The staged pages Forma's vision model reads, by index (2026-11-04): the
- * first, when it is an image, and the same upload's last page when it has
- * more than one, since a report's last page holds the footers and totals its
- * first does not. Empty when the first is not an image (a PDF read as one).
- */
-function visionPages(images: readonly string[], metas: readonly PreviewMeta[]): number[] {
-  if (!images[0]?.startsWith('data:image/') || !metas[0]) return [];
-  let last = 0;
-  metas.forEach((m, i) => {
-    if (i > 0 && m.uploadId === metas[0].uploadId && images[i]?.startsWith('data:image/')) last = i;
-  });
-  return last > 0 ? [0, last] : [0];
-}
+/* `visionPages`, the pages Forma's vision model reads, is lib/generationCore.ts's since 2026-11-24. */
 
 // RESUMED_RUN, the copy for resuming a paused run, went with pause and resume
 // on 2026-11-04: the chat shows working dots and a Stop, as other chat apps do.
@@ -2518,32 +2463,38 @@ export default function App() {
    */
   const dataFields = (): string[] | undefined =>
     activeDatabase && queryFieldList.fields.length ? queryFieldList.fields.map((f) => f.name) : undefined;
-  /** Pages OCR read, as detection takes them: their shape, and their words for the direction. */
-  const readSources = (read: readonly { meta: PreviewMeta; read: ReadPage }[]) => ({
-    pages: read.map(({ meta, read: r }) => ({ width: r.ocr.width, height: r.ocr.height, pagePoints: meta.pagePoints })),
-    words: read.flatMap(({ read: r }) => r.ocr.lines.map((l) => l.text)).join('\n'),
+  /* `readSources`, pages OCR read as detection takes them, is lib/generationCore.ts's since 2026-11-24. */
+
+  /**
+   * Forma's own parts as the generation core takes them (2026-11-24,
+   * lib/generationCore.ts): the box reader's model, the vision model's
+   * set-up, Forma's own model and the memory (this person's, for the project
+   * open), and the learning events, which the stand-in of a description is one
+   * of. The house style is told only while the box's switch is on (2026-11-08).
+   */
+  const teamDeps = (): TeamDeps => ({
+    visionModel: visionModelOf,
+    loadReader: loadBoxReader,
+    ...(houseStyleOn ? { houseBrief: (unit: string) => loadLoop().then((l) => l.houseBrief(previousUidRef.current, unit)) } : {}),
+    designFromWords: (request, message) => loadLoop().then((l) => l.designFromWords(request, message, previousUidRef.current, openReportId.current)),
+    recordLearning,
   });
 
   /*
    * One Batch file, made the way a single report is (2026-11-11, the full
    * audit's PL-15, CV-10 and ARCH-B), in lib/batchRun.ts, loaded on the first
-   * batch run: it took this chunk past its size budget. App hands in its own
-   * parts, each told the settings worked out for that file. Read through a
-   * ref, so the panel's stable callback runs the latest render's (the
-   * settings, the memory, the house style switch).
+   * batch run: it took this chunk past its size budget. Made by the generation
+   * core since 2026-11-24; App hands in its own parts, and the settings each
+   * file's are worked out over. Read through a ref, so the panel's stable
+   * callback runs the latest render's (the settings, the memory, the house
+   * style switch).
    */
   const runOneBatchRef = useRef<(file: File, signal: AbortSignal, id: string, words: string) => Promise<BatchOutcome>>(null!);
   runOneBatchRef.current = async (file, signal, id, words) =>
     (await import('./lib/batchRun')).runBatchFile(file, signal, id, words, {
+      ...teamDeps(),
       config,
       detectInput: (sources) => detectionInput(sources, false),
-      visionPages,
-      prepareTeam,
-      ocrAttachments,
-      asConfigured,
-      // A Batch file is translated whole, never into two languages, so it hands no words.
-      translateXml: (xml, language, signal, worked) => translateXml(xml, language, signal, '', worked),
-      recordLearning,
       aiKindOf,
       uid: previousUidRef.current,
       fields: dataFields(),
@@ -2696,30 +2647,15 @@ export default function App() {
   const ocrReviewPages = useMemo(() => (ocrReview ? sentPages[ocrReview] ?? [] : []), [sentPages, ocrReview]);
 
   /**
-   * A report as its source is written: right to left when the request's text
-   * or report is (2026-11-04, lib/repxRtl.ts and lib/autoConfig.ts). Applied
-   * wherever a report reaches the bench, because the prompt is the only other
-   * thing that knows the direction and most of the ways Forma makes a report
-   * use no prompt.
-   *
-   * `asSeen` (2026-11-11, the full audit's PL-04b): the report was written as
-   * its page is seen, by the AI (told so by the prompt) or by one of Forma's
-   * readers, so it is turned round first (`toLogicalRtl`); with both
-   * attributes set over it as it was, DevExpress printed the page mirrored.
-   * Checked with RepxProbe render: the turned report printed every string
-   * where the page as seen printed it. A report already laid out right to
-   * left is left as it is. Loaded when needed, off the workspace's chunk.
-   *
-   * `built`: one of Forma's own builds, which goes through every repair an
-   * AI's answer does first (2026-11-11, the full audit's ARCH-1b,
-   * lib/repairChain.ts); it had three of them.
+   * A report as its source is written, right to left where it is, and one of
+   * Forma's own builds (`built`) through every repair an AI's answer goes
+   * through: lib/generationCore.ts `asConfigured` since 2026-11-24, which says
+   * why (PL-04b, ARCH-1b), with this request's settings. Loaded when needed,
+   * off the workspace's chunk.
    */
   const asConfigured = async (xml: string, asSeen = false, built = false, worked?: ReportConfig): Promise<string> => {
     const settings = worked ?? effectiveConfig();
-    if (built && xml) xml = (await import('./lib/repairChain')).repairRepx(xml, { version: settings.version }).xml;
-    if (!settings.rtl || !xml) return xml;
-    const { makeRightToLeft, toLogicalRtl } = await import('./lib/repxRtl');
-    return makeRightToLeft(asSeen ? toLogicalRtl(xml) : xml);
+    return (await loadCore()).asConfigured(xml, settings, asSeen, built);
   };
 
   /** A report built from OCR alone: every pane, a revision, and a line in the thread. */
@@ -2785,25 +2721,9 @@ export default function App() {
     setOcrReview(null);
   };
 
-  /** Forma's box reader's report from the pages read, or null when it cannot load or finds no text. */
-  const readerBuild = async (read: readonly { meta: PreviewMeta; read: ReadPage }[], worked?: ReportConfig): Promise<ReaderBuiltReport | null> => {
-    try {
-      const [{ loadBoxReader }, { buildWithReader }] = await Promise.all([import('./lib/boxReader'), import('./lib/ocrAttach')]);
-      return buildWithReader(read, await loadBoxReader(), (worked ?? effectiveConfig()).pageSize);
-    } catch (err) {
-      console.warn("Forma's box reader could not read the page.", err);
-      return null;
-    }
-  };
-
-  /** The text read from the sent pages, as attachments for the message. */
-  const ocrAttachments = async (read: readonly { meta: PreviewMeta; read: ReadPage }[], worked?: ReportConfig): Promise<TextAttachment[]> => {
-    if (!read.length) return [];
-    const { ocrTexts } = await import('./lib/ocrAttach');
-    const stamp = Date.now();
-    const { unit, pageSize } = worked ?? effectiveConfig();
-    return ocrTexts(read, unit, pageSize).map((t, i) => ({ ...t, id: `${stamp}-${i}-ocr-${t.file}-p${t.page ?? 1}`, readByOcr: true as const }));
-  };
+  /* `readerBuild` (the box reader's report from the pages read) and
+     `ocrAttachments` (their text as attachments) are lib/generationCore.ts's
+     since 2026-11-24. */
 
   /** The page reader's reading of the sent pictures, when one is set up (lib/pageReading.ts). */
   const pageReaderAttachments = async (pages: readonly { src: string; meta: PreviewMeta }[], signal: AbortSignal): Promise<TextAttachment[]> => {
@@ -3809,118 +3729,27 @@ export default function App() {
     afterSignIn ? <NoticePill text={afterSignIn} onDismiss={() => setAfterSignIn(null)} atTop={inWorkspace} /> : null;
 
   /**
-   * `runGeneration`, after `offlineDesign` below: the generation run itself,
-   * ticker, request, result, transcript, error handling, teardown.
+   * `runGeneration`: the generation run itself, ticker, request, result,
+   * transcript, error handling, teardown.
    *
    * It is the single copy of what `handleGenerate` and `handleResume` used to
    * do twice (resume went with pause on 2026-11-04). What a run varies is in
-   * `copy`; everything that has to stay in step — above all the `catch`,
-   * which is the error path for a call that can 404, 429, 503, hang, abort,
-   * or return truncated `repxContent` — is there once and cannot drift.
+   * `copy`; everything that has to stay in step — above all the error path
+   * for a call that can 404, 429, 503, hang, abort, or return truncated
+   * `repxContent` — is there once and cannot drift.
+   *
+   * The report itself is made by the generation core since 2026-11-24
+   * (lib/generationCore.ts `generateReport`, which Batch's `makeReport`
+   * calls too): Forma's team (`prepareTeam`, with this person's parts,
+   * `teamDeps`), the pages left to read, a template's draft, the request
+   * through the free chain from one budget, the fix, a shared database's
+   * source, the language asked for, the direction, and Forma's draft standing
+   * in when every AI fails. What is left here is the workspace's: the ticker,
+   * the reply, the bench, Revisions, the thread and the learning event.
    *
    * The caller owns the setup: a message adds itself to the transcript and
    * may take a chat turn first, and a description passes its request.
    */
-  /** A report Forma's own model designs from a description, with no AI: the stand-in when the AI fails (the chat box with no key used it until 2026-11-05). */
-  const offlineDesign = async (request: ReportDescriptionRequest, message: string) => {
-    // In the person's own style where their memory has one (lib/learningLoop.ts, D1).
-    const { design } = await (await loadLoop()).designFromWords(request, message, previousUidRef.current, openReportId.current);
-    const newResult: DesignResult = {
-      content: design.markdown,
-      timestamp: new Date(),
-      title: design.title,
-      layout: design.layout,
-      repxContent: design.repx,
-      usage: null,
-    };
-    recordLearning({ kind: 'generation', source: 'words', request: 'new', ai: 'forma', draft: 'offline', repx: design.repx });
-    return { design, result: newResult };
-  };
-
-  /**
-   * Everything Forma's own parts bring to a run before the AI is asked
-   * (2026-11-03, lib/formaTeam.ts). Each part is optional and none can fail
-   * the run: a vision model that is off, or a model file that will not load,
-   * leaves that part out with a warning in the console.
-   * - A picture: Forma's vision model, when one is set up, reads the first
-   *   page, and OCR's words go into its boxes. That draft is the brief, and
-   *   the stand-in. With no vision model, OCR's own build is the stand-in.
-   * - A description: the house style Forma's own model learned is the brief,
-   *   and that model's own design is the stand-in.
-   */
-  const prepareTeam = async (input: TeamInput | undefined, signal: AbortSignal, worked?: ReportConfig): Promise<TeamPlan> => {
-    if (!input) return NO_TEAM;
-    // The settings worked out for this request, not the stored ones
-    // (lib/autoConfig.ts); a Batch file's own, since three run at once (PL-15).
-    const config = worked ?? effectiveConfig();
-    let brief = '';
-    let draft: TeamPlan['draft'] = null;
-    let evidence: ReportLayout | null = null;
-    let correct: DraftRequest | null = null;
-    let shape: TeamPlan['shape'];
-    let reading: TeamPlan['reading'] = null;
-    if (input.read.length) {
-      // OCR's own picture of the source, every row it read, for the audit
-      // to check the AI's REPX against (2026-11-05, lib/ocrAttach.ts).
-      const { sourceLayoutOf } = await import('./lib/ocrAttach');
-      evidence = sourceLayoutOf(input.read, config.unit, config.pageSize);
-    }
-
-    const vision = input.firstImage ? visionModelOf(config) : null;
-    if (vision && input.firstImage) {
-      try {
-        // The first page and the upload's last, in lib/visionDraft.ts since 2026-11-11 (BW).
-        const made = await (await import('./lib/visionDraft')).visionDraft(vision, input.firstImage, input.lastImage, input.read, config, signal);
-        ({ brief, correct } = made);
-        shape = made.skeleton;
-        draft = async () => ({ result: made.result, source: 'vision' });
-      } catch (err) {
-        if (signal.aborted) throw err;
-        console.warn("Forma's vision model could not read the page; the AI designs without its draft.", err);
-      }
-    }
-    // With no vision model's draft, Forma's box reader puts the texts OCR read
-    // in their bands (2026-11-04, lib/boxReader.ts), and that is the brief and
-    // the stand-in. It needs no AI and no GPU, so it is there for every picture.
-    if (!draft && input.read.length) {
-      const built = await readerBuild(input.read, config);
-      if (built && !signal.aborted) {
-        const { draftBrief, readerCorrection } = await import('./lib/formaTeam');
-        brief = draftBrief((shape = built.skeleton), built.layout, config.unit, 'reader');
-        correct = readerCorrection(built);
-        reading = built.pageReading ?? null;
-        const readerResult: DesignResult = { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: built.repxContent, usage: null };
-        draft = async () => ({ result: readerResult, source: 'reader' });
-      }
-    }
-    if (!draft && input.read.length) {
-      const read = input.read;
-      draft = async () => {
-        const { buildFromRead } = await import('./lib/ocrAttach');
-        const built = buildFromRead(read, config.unit, config.pageSize);
-        if (!built) return null;
-        return {
-          result: { content: built.markdown, timestamp: new Date(), title: built.title, layout: built.layout, repxContent: built.repxContent, usage: null },
-          source: 'ocr',
-        };
-      };
-    }
-
-    const described = input.described;
-    if (described) {
-      // Forma's own style, unless the box's switch is off (2026-11-08); the
-      // person's own once two reports they kept show it, with what their
-      // changes taught (2026-11-11, D1 and D4; lib/learningLoop.ts).
-      if (houseStyleOn) try {
-        brief = await (await loadLoop()).houseBrief(previousUidRef.current, config.unit);
-      } catch (err) {
-        console.warn("Forma's own model could not be loaded; the AI designs without its house style.", err);
-      }
-      draft = async () => ({ result: (await offlineDesign(described, described.description)).result, source: 'offline' });
-    }
-    return { brief, draft, evidence, correct, shape, reading };
-  };
-
   const runGeneration = async (
     currentPrompt: string,
     currentPreviews: readonly string[],
@@ -3952,231 +3781,130 @@ export default function App() {
     const signal = abortControllerRef.current.signal;
     /** The AI chosen in the settings, by name, for the replies. */
     const aiName = PROVIDER_NAMES[effectiveProvider(config)];
-    let team: TeamPlan = NO_TEAM;
-    // Before the try, so a failure knows it too (R2-03): the open report, or a .repx attached.
-    const startedFromReport = Boolean(open?.repxContent) || currentTexts.some(isReportFile);
+
+    /*
+     * The AI could not answer. No AI set up is a setup step, not a failure:
+     * the person goes straight to the place they can fix it. Anything else is
+     * said on the request that failed (agent audit item 5): the log marks it
+     * failed and its card offers Try again, where it read as answered. Not
+     * over the box as well, where it was said a second time (item 54), unless
+     * there is no request of the person's to carry it.
+     */
+    const failed = (err: any, friendlyMessage: string) => {
+      if (isMissingApiKey(err)) {
+        // Once, on the request, or over the box when there is none (item 54).
+        if (messages.some((m) => m.role === 'user')) setMessages((prev) => markAskError(prev, SET_UP_AI, turnOf?.askId));
+        else setError(SET_UP_AI);
+        setIsConfigOpen(true);
+        return;
+      }
+      if (messages.some((m) => m.role === 'user')) setMessages((prev) => markAskError(prev, friendlyMessage, turnOf?.askId));
+      else setError(friendlyMessage);
+    };
+    // A spent quota is not overridden here (2026-11-05): `classifyGeminiError`
+    // already says when it resets and what works meanwhile, and this said
+    // "check your plan and billing" over it, to a user of a free tool.
+    const friendlyOf = (err: any): string => {
+      const message: string = err?.message || 'An error occurred during analysis.';
+      return message.includes('Failed to fetch') ? 'Network error. Please check your internet connection.' : message;
+    };
 
     try {
-      team = await prepareTeam(teamInput, signal);
-      // No draft to correct, so the AI designs the report from every page:
-      // the pages between the first and the last are read now (PL-23).
-      if (teamInput?.readRest && (open || !team.correct)) {
-        const more = await teamInput.readRest(signal);
-        if (signal.aborted) return;
-        currentTexts = [...currentTexts, ...more];
-      }
-      // A Word or Excel template's layout, when the words ask for a report from it (CP-11); after the pages, which it does not stand in for.
-      if (!team.correct && currentTexts.some((t) => t.layout)) team = { ...team, correct: (await loadIntake()).templateCorrection(currentTexts, currentPrompt) };
-      if (signal.aborted) return;
-      // Text before images, and malformed previews dropped rather than thrown
-      // on — see src/lib/attachmentParts.ts.
-      const attachmentParts = toAttachmentParts(currentPreviews, currentTexts);
-
       console.debug(copy.request);
-      const { analyzeReportDesign, REQUEST_BUDGET } = await loadGemini();
-      /*
-       * What else the user attached, for the AI that corrects Forma's draft
-       * (2026-11-11, the full audit's PL-02b): a data file's columns, a
-       * document, a PDF's text. The correction was sent the draft and the
-       * pictures alone, so "this picture, bound to this CSV" lost the CSV.
-       * Not OCR's texts, which the draft is written from, and the page
-       * reader's apart, as a reading rather than a file (R2-11).
-       */
-      const extras = toAttachmentParts([], currentTexts.filter((t) => !t.readByOcr && !t.readByReader));
       // The Data tab's fields, for the audit's misspelt-field check (CP-07).
       const fields = dataFields();
-      /*
-       * The requests this click may make (2026-11-11, the full audit's PL-20),
-       * shared by the service's own retries and repeats and the fix attempts
-       * below. One per AI the chain asks: a limit on the first is no reason to
-       * give the next nothing to answer with.
-       */
-      let budget = { left: REQUEST_BUDGET };
+      const schema = databaseShared ? activeDatabase : null;
+      const made = await (await loadCore()).generateReport(
+        { words: currentPrompt, images: currentPreviews, texts: currentTexts, settings: config, description: describeRequest, team: teamInput, open, fields, signal },
+        {
+          ...teamDeps(),
+          onProgress: handleStreamProgress,
+          // On a first report, after the house style switch, the kept report nearest it as an example (D3).
+          beforeGeneration: (about) =>
+            loadLoop().then((l) => l.beforeGeneration({ owner: previousUidRef.current, projectId: openReportId.current, ...about, first: about.first && houseStyleOn })),
+          /*
+           * House style from the library, only from files the user has
+           * ticked, and never while Local AI designs (2026-11-24, KEYREV-3):
+           * the search sends the request's words to Google, and nothing
+           * leaves a local AI.
+           */
+          ...(houseStyleOn && canonicalSources.size > 0
+            ? {
+                houseStyle: async (repx: string, words: string, settings: ReportConfig, s: AbortSignal) => {
+                  if (!librarySearchable(settings)) return '';
+                  const { retrieveHouseStyle } = await loadLibrary();
+                  return retrieveHouseStyle(repx, words, await getLibraryDeps(), {
+                    apiKey: settings.customApiKey?.trim() ?? '',
+                    signal: s,
+                    where: (entry) => canonicalSources.has(entry.chunk.source),
+                  });
+                },
+              }
+            : {}),
+          // A shared database's likeliest objects, and its source written from the answer (batch DE).
+          ...(schema
+            ? {
+                database: async (words: string) => {
+                  const db = await import('./lib/databaseAi');
+                  return {
+                    section: db.designSection(schema, { query: activeQuery, words }),
+                    write: (xml: string, dataQuery: unknown, version: string) => db.writeFromAnswer(xml, schema, { query: activeQuery, dataQuery, version }),
+                    chosen: setActiveQuery,
+                  };
+                },
+              }
+            : {}),
+        },
+      );
+      // Stopped: the Stop said so.
+      if (!made) return;
 
-      /**
-       * House style, retrieved only on a refinement and only from files the
-       * user has ticked.
-       *
-       * `result` being present is what makes this a refinement: the draft is
-       * the query, which is the whole reason retrieval waits for the second
-       * pass rather than running on the screenshot (see lib/houseStyle.ts).
-       *
-       * Failure is swallowed to a warning on purpose. This is an enhancement to
-       * a request that works perfectly well without it, and an empty library, a
-       * blocked IndexedDB or a refused embedding must not cost the user the
-       * generation they actually asked for.
-       */
-      let houseStyle = '';
-      // Never while Local AI designs (2026-11-24, KEYREV-3): the search sends
-      // the request's words to Google, and nothing leaves a local AI.
-      if (houseStyleOn && open?.repxContent && canonicalSources.size > 0 && librarySearchable(config)) {
-        try {
-          const { retrieveHouseStyle } = await loadLibrary();
-          houseStyle = await retrieveHouseStyle(
-            open.repxContent,
-            currentPrompt,
-            await getLibraryDeps(),
-            {
-              apiKey: config.customApiKey?.trim() ?? '',
-              signal,
-              where: (entry) => canonicalSources.has(entry.chunk.source),
-            },
-          );
-        } catch (error) {
-          console.warn('House style could not be retrieved; generating without it.', error);
+      if (!made.ok) {
+        const err: any = made.error;
+        const friendlyMessage = friendlyOf(err);
+        /*
+         * A quicker version Forma made stands in for the AI that could not
+         * answer (lib/formaTeam.ts), rather than the request ending in an
+         * error; the core says when one can (not over a report the person
+         * had or brought). The provider's own words when the error carries
+         * them (agent audit item 15), read for one of a few plain reasons.
+         */
+        if (made.standIn && !isMissingApiKey(err)) {
+          const fallbackReply = await import('./lib/formaTeam').then((m) => m.fallbackReply).catch((draftError) => {
+            console.warn("Forma's own draft could not be made either.", draftError);
+            return null;
+          });
+          if (fallbackReply) {
+            if (signal.aborted) return;
+            const drafted: DesignResult = made.standIn.result;
+            setResult(drafted);
+            // Named by what it is to the person (2026-11-11, the full audit's CV-07): "Forma's own draft" until then.
+            recordRevision('First version', drafted);
+            if (!open) setActiveTab('print');
+            setMessages(prev => [...prev, {
+              id: nextMessageId(),
+              role: 'assistant',
+              text: fallbackReply(aiName, err?.cause?.message || err?.message || friendlyMessage, made.standIn!.source === 'offline'),
+              result: drafted,
+            }]);
+            return;
+          }
         }
-      }
-
-      // The user's remembered preferences (lib/memory.ts), as their own block
-      // ahead of the request, never mixed into the words they typed; on a
-      // first report, after the house style switch, the kept report nearest
-      // it as an example (2026-11-11, D3; lib/learningLoop.ts).
-      const { remembered, kept } = await loadLoop()
-        .then((l) => l.beforeGeneration({ owner: previousUidRef.current, projectId: openReportId.current, first: !open && houseStyleOn && !startedFromReport, drafting: Boolean(team.correct && !describeRequest), shape: team.shape, words: currentPrompt, description: describeRequest?.description }))
-        .catch(() => ({ remembered: '', kept: null }));
-      // A shared database's likeliest objects and sample values, in place of "assume the procedure" (batch DE).
-      const db = databaseShared && activeDatabase ? await import('./lib/databaseAi') : null;
-      const database = db ? db.designSection(activeDatabase!, { query: activeQuery, words: [currentPrompt, team.brief, ...currentTexts.map((t) => t.text)].join('\n') }) : undefined;
-      const askAi = (asked: ReportConfig) => {
-        budget = { left: REQUEST_BUDGET };
-        return analyzeReportDesign(
-          // Passed through empty when the user typed nothing. It used to become
-          // "Generate a professional DevExpress report layout based on these
-          // visuals." here, which handed the model an instruction nobody gave and
-          // then told it to apply that as a modification. See lib/userInstructions.ts.
-          currentPrompt,
-          attachmentParts,
-          asked,
-          open ? { repxContent: open.repxContent, houseStyle } : undefined,
-          signal,
-          handleStreamProgress,
-          {
-            ...(describeRequest ? { description: describeRequest } : {}),
-            remembered,
-            formaBrief: team.brief,
-            evidence: team.evidence,
-            // Forma drafts and the AI corrects, on a first generation from a
-            // picture (2026-11-05); the service designs as before otherwise.
-            draft: open ? null : team.correct ?? null,
-            database,
-            extras,
-            readings: currentTexts.flatMap((t) => (t.readByReader ? [t.text] : [])),
-            fields,
-            budget,
-          },
-        );
-      };
-      /*
-       * The free chain (2026-11-10, the AI accuracy programme, batch AF;
-       * lib/fallbackChain.ts): when the AI chosen has reached its limit, the
-       * next one the person set up answers, and the reply says so. Only on a
-       * limit; when every one gives out, the catch below hands over to Forma's
-       * own draft as before.
-       */
-      const { askWithChain } = await import('./lib/fallbackChain');
-      const chained = await askWithChain(config, askAi, signal);
-      let response = chained.value;
-      const answering = chained.config;
-      const switched = chained.note;
-
-      if (signal.aborted) {
-        console.debug('Generation aborted/paused by user.');
+        failed(err, friendlyMessage);
         return;
       }
 
-      /*
-       * The fix loop (lib/printCheck.ts, `fixUntilPrints`), moved out of here
-       * on 2026-11-11 and opened to every run (the full audit's CC-01): any
-       * audit ERROR on a report designed from words, as DevExpress's
-       * Prompt-to-Report retries a layout the model got wrong, and on every
-       * run what printing it with the page's own records shows, an expression
-       * DevExpress cannot read, and a grid drawn as loose texts (PL-11b). The
-       * model is told exactly which, with the report as the thing to fix.
-       * The grid is the one warning that sends it back; no other does, and a
-       * run that started from a report (the open one, or a .repx attached)
-       * keeps its own expressions. One more answer at most, from this
-       * click's allowance (PL-20); the better is kept, and a fix that fails
-       * keeps the report so far (batch AG item 23).
-       */
-      const fixed = await import('./lib/printCheck').then((m) => m.fixUntilPrints(response, {
-        described: Boolean(describeRequest),
-        fields,
-        fromReport: startedFromReport,
-        spent: response.usage ?? null,
-        left: () => budget.left,
-        aborted: () => signal.aborted,
-        // With the texts the person attached, not the report it is built on (R2-06): a field the data has is named in them.
-        ask: (instruction, repxContent) => analyzeReportDesign(instruction, toAttachmentParts([], currentTexts.filter((t) => !isReportFile(t))), answering, { repxContent }, signal, handleStreamProgress, { description: describeRequest, database, fields, budget, evidence: team.evidence }),
-        draftText: team.correct?.text,
-      }));
-      if (!fixed) return;
-      response = fixed.answer;
+      let response = made.response;
       /** The file the print findings were found in; a later change to it makes them stale. */
-      const printed = response.repxContent;
+      const printed = made.printed;
       /** Every answer this report cost, the repairs' too (agent audit item 79). */
-      const spent = fixed.spent;
-
-      /*
-       * The data source, written by Forma from what the AI named (batch DE,
-       * lib/databaseAi.ts): the query chosen on the Data tab, the AI's
-       * <?forma-query?>, or the object holding most of what it bound. The
-       * Mockup and the Spec are read again, since a detail band may be added.
-       */
-      let dataNote = '';
-      if (db && response.repxContent) {
-        const out = db.writeFromAnswer(response.repxContent, activeDatabase!, { query: activeQuery, dataQuery: response.dataQuery, version: config.version });
-        dataNote = out.note;
-        if (out.query) {
-          const views = await import('./lib/repxViews');
-          const title = response.layout.title;
-          response = { ...response, repxContent: out.xml, markdown: views.specFromRepx(out.xml, title), layout: views.layoutFromRepx(out.xml, title) };
-          setActiveQuery(out.query);
-        }
-      }
+      const spent = made.spent;
+      const { repxContent, translated, kept, dataNote } = made;
 
       console.log('Successfully received response from Gemini API.');
       console.debug(`Generated Layout Title: ${response.layout.title}`);
       console.debug(`Generated REPX length: ${response.repxContent.length} characters`);
 
-      /*
-       * A language the words name, carried out on a first report (2026-11-11,
-       * the full audit's CV-14): "Make this report in German" with a picture
-       * built the report in the picture's language and said it had been
-       * updated. Translated before the reply, so the reply says what is so;
-       * a translation that fails leaves the report as built, and says nothing
-       * of the language.
-       */
-      let translated: { xml: string; language: string; bilingual: boolean } | null = null;
-      // Not when the report already reads in it (R2-01): the design request carried the same words.
-      const asked = currentPrompt || describeRequest?.description || '';
-      const tr = !open && response.repxContent ? await import('./lib/repxTranslate').catch(() => null) : null;
-      const askedLanguage = tr?.languageToTranslate(response.repxContent, asked) ?? null;
-      if (askedLanguage) {
-        try {
-          // With the settings the answer came from (R2-01), a limit's switch included.
-          const done = await translateXml(response.repxContent, askedLanguage, signal, currentPrompt, answering);
-          if (signal.aborted) return;
-          translated = { xml: done.xml, language: askedLanguage, bilingual: done.bilingual };
-        } catch (translateError) {
-          if (signal.aborted) return;
-          console.warn(`The report could not be translated into ${askedLanguage}; it stays as built.`, translateError);
-        }
-      }
-      if (translated && translated.xml !== response.repxContent) {
-        const views = await import('./lib/repxViews');
-        const title = response.layout.title;
-        response = { ...response, repxContent: translated.xml, markdown: views.specFromRepx(translated.xml, title), layout: views.layoutFromRepx(translated.xml, title) };
-      }
-
-      // The prompt asks for right to left, positions as the page shows them;
-      // this turns them and makes sure of it (PL-04b). Only for a report made
-      // from pages or words: one the AI changed from a report (the open one,
-      // or a .repx attached) keeps that report's positions, which are already
-      // laid out right to left, and turning them again would print it back
-      // to front if the answer left out RightToLeftLayout (the PIPE1 review).
-      // Asked in Arabic from a left-to-right page, whoever wrote the Arabic (R2-04).
-      const repxContent = await asConfigured(tr ? tr.rightToLeftFor(response.repxContent, asked, effectiveConfig().rtl) : response.repxContent, !startedFromReport);
-      if (signal.aborted) return;
       const found = response.evidenceFindings ?? [];
       const newResult = {
         content: response.markdown,
@@ -4186,7 +3914,7 @@ export default function App() {
         repxContent,
         usage: spent,
         coverage: response.coverage ?? null,
-        ...(found.length ? { evidence: { findings: found, on: (await loadIntake()).pictureKey(repxContent) } } : {}),
+        ...(made.evidence ? { evidence: made.evidence } : {}),
       };
 
       // The reply is the result (2026-11-10, the full audit, the owner's
@@ -4214,20 +3942,23 @@ export default function App() {
             ])
             .catch(() => ['', '', ''])
         : ['', '', ''];
+      // Every text the request carried, the pages read later included.
+      const sentTexts = made.texts;
       // What was made, and from what (2026-11-11, the full audit's UI2, `firstReply`).
       const kind: ReplyKind = describeRequest
         ? 'description'
         : open?.repxContent ? 'open'
-        : currentTexts.some(isReportFile) ? 'repx'
-        : currentTexts.some((t) => /\.pdf$/i.test(t.file ?? '')) ? 'pdf'
+        : sentTexts.some(isReportFile) ? 'repx'
+        : sentTexts.some((t) => /\.pdf$/i.test(t.file ?? '')) ? 'pdf'
         : currentPreviews.length ? 'picture' : 'description';
       // "Laid out like your Invoice report.", only when it visibly is (D3).
       const said = [firstReply(kind, Boolean(currentPrompt.trim()), translated?.language, translated?.bilingual), kept && (await loadLoop().then((l) => l.laidOutLike(repxContent, kept)).catch(() => ''))].filter(Boolean).join(' ');
-      const learnedAs = { id: recordLearning(null), ai: aiKindOf(chained.by) };
+      const learnedAs = { id: recordLearning(null), ai: aiKindOf(made.by) };
       const newAssistantMsg: ChatMessage = {
         id: nextMessageId(),
         role: 'assistant',
-        text: [switched, credits ? `${said} ${credits}` : said, dataNote, changed, checked, compared].filter(Boolean).join('\n\n'),
+        // The switch to another AI, when there was one, is the reply's first line.
+        text: [made.note, credits ? `${said} ${credits}` : said, dataNote, changed, checked, compared].filter(Boolean).join('\n\n'),
         result: newResult,
         learning: learnedAs,
       };
@@ -4267,8 +3998,8 @@ export default function App() {
         kind: 'generation',
         sourceCounts: {
           images: currentPreviews.length,
-          pdfs: currentTexts.filter((t) => /\.pdf$/i.test(t.file ?? '')).length,
-          repx: currentTexts.filter(isReportFile).length,
+          pdfs: sentTexts.filter((t) => /\.pdf$/i.test(t.file ?? '')).length,
+          repx: sentTexts.filter(isReportFile).length,
           words: Boolean(describeRequest) || Boolean(currentPrompt.trim()),
           database: Boolean(databaseShared && activeDatabase),
         },
@@ -4278,74 +4009,18 @@ export default function App() {
         prompt: currentPrompt,
         ms: Date.now() - turnStartedAt,
         // The page in numbers, kept here until the report is kept (D10).
-        reading: team.reading,
+        reading: made.team.reading,
       });
 
     } catch (err: any) {
+      // What failed here is the workspace's own step, the core's chunk among
+      // them: the core answers its own failures above.
       if (signal.aborted) {
         console.debug('Generation aborted/paused by user during error handling.');
         return;
       }
       console.error('Error during report generation:', err);
-
-      // No AI set up is a setup step, not a failure — send the user straight
-      // to the place they can fix it instead of showing a dead-end error.
-      if (isMissingApiKey(err)) {
-        // Once, on the request, or over the box when there is none (item 54).
-        if (messages.some((m) => m.role === 'user')) setMessages((prev) => markAskError(prev, SET_UP_AI, turnOf?.askId));
-        else setError(SET_UP_AI);
-        setIsConfigOpen(true);
-        return;
-      }
-
-      // A spent quota is not overridden here (2026-11-05): `classifyGeminiError`
-      // already says when it resets and what works meanwhile, and this said
-      // "check your plan and billing" over it, to a user of a free tool.
-      let friendlyMessage = err.message || 'An error occurred during analysis.';
-      if (friendlyMessage.includes('Failed to fetch')) {
-        friendlyMessage = 'Network error. Please check your internet connection.';
-      }
-
-      // A quicker version Forma makes stands in for the AI that could not
-      // answer (lib/formaTeam.ts), rather than the request ending in an error. Not
-      // over an open report (2026-11-07, agent audit item 21): a refinement
-      // that failed replaced the report the person had with an OCR draft of
-      // the picture they sent to change it. Nor over a .repx attached with a
-      // picture (the re-audit's R2-03): the draft is of the picture, and the
-      // report the person brought would be dropped for it.
-      if (team.draft && !startedFromReport && !open) {
-        try {
-          const made = await team.draft();
-          if (made && !signal.aborted) {
-            const { fallbackReply } = await import('./lib/formaTeam');
-            if (signal.aborted) return;
-            // A draft from the page is written as the page is seen; one from a description is not (PL-04b).
-            const drafted = { ...made.result, repxContent: await asConfigured(made.result.repxContent ?? '', made.source !== 'offline', true) };
-            if (signal.aborted) return;
-            setResult(drafted);
-            // Named by what it is to the person (2026-11-11, the full audit's CV-07): "Forma's own draft" until then.
-            recordRevision('First version', drafted);
-            if (!open) setActiveTab('print');
-            setMessages(prev => [...prev, {
-              id: nextMessageId(),
-              role: 'assistant',
-              // The provider's own words when the error carries them (agent
-              // audit item 15), read for one of a few plain reasons.
-              text: fallbackReply(aiName, err?.cause?.message || err?.message || friendlyMessage, made.source === 'offline'),
-              result: drafted,
-            }]);
-            return;
-          }
-        } catch (draftError) {
-          console.warn("Forma's own draft could not be made either.", draftError);
-        }
-      }
-      // On the request that failed (agent audit item 5): the log marks it
-      // failed and its card offers Try again, where it read as answered. Not
-      // over the box as well, where it was said a second time (item 54),
-      // unless there is no request of the person's to carry it.
-      if (messages.some((m) => m.role === 'user')) setMessages((prev) => markAskError(prev, friendlyMessage, turnOf?.askId));
-      else setError(friendlyMessage);
+      failed(err, friendlyOf(err));
     } finally {
       if (!signal.aborted) {
         // Done, before the half second the bar takes to finish (2026-11-06):
@@ -4820,7 +4495,7 @@ export default function App() {
      words with Forma's own model and images with
      OCR from 2026-11-02 (adccf55); `git log -S"const designOffline"` finds
      it. Forma's own model and OCR's build still stand in when the AI set up
-     fails to answer (`offlineDesign`, `prepareTeam`'s draft). */
+     fails to answer (`prepareTeam`'s draft, in lib/generationCore.ts). */
 
   /**
    * A picture read by Forma's vision model alone (2026-11-03, milestone 6 of
@@ -4856,7 +4531,7 @@ export default function App() {
     turnAbortRef.current = turn;
     let read: { meta: PreviewMeta; read: ReadPage }[] = [];
     try {
-      const { readSkeleton } = await import('./services/formaVision');
+      const [{ readSkeleton }, core] = await Promise.all([import('./services/formaVision'), loadCore()]);
       const vision = visionModelOf(config);
       // The pages' layout and their text are read at the same time, behind the
       // scenes, the message already in the thread (2026-11-03). The model's
@@ -4864,7 +4539,7 @@ export default function App() {
       // still being read is not an unhandled rejection. It reads the upload's
       // first page and, when it has more, its last (2026-11-04), whose footers
       // and totals the first does not show; mergePageSkeletons joins them.
-      const pagesToRead = visionPages(staged, stagedMeta);
+      const pagesToRead = core.visionPages(staged, stagedMeta);
       const looking = vision
         ? (async () => {
             const readings = [];
@@ -4874,7 +4549,7 @@ export default function App() {
         : Promise.resolve({ failed: new Error('no vision model is set up') });
       read = await readSentPages(stagedForOcr, turn.signal);
       if (turn.signal.aborted) return;
-      const fromPages = readSources(read);
+      const fromPages = core.readSources(read);
       detectFor({ metas: stagedMeta, pages: fromPages.pages, words: [message, fromPages.words].join('\n') });
       setIsChatting(true);
       const looked = await looking;
@@ -4910,7 +4585,7 @@ export default function App() {
         const { buildFromRead } = await import('./lib/ocrAttach');
         const { unit, pageSize } = effectiveConfig();
         const built = buildFromRead(read, unit, pageSize);
-        const banded = await readerBuild(read);
+        const banded = await loadCore().then((core) => core.readerBuild(read, pageSize, loadBoxReader)).catch(() => null);
         if (turn.signal.aborted) return;
         // Built from the page's text: the build says "Here is ..." itself, so
         // nothing more is said here (it said the page "could not be read the
@@ -5042,12 +4717,9 @@ export default function App() {
     const stagedImageMeta: PreviewMeta[] = again
       ? stagedImages.map((src, i) => resend?.imageMeta?.[i] ?? { uploadId: keyOf ? keyOf(src) : `again-${i}`, file: 'image' })
       : previewMeta;
+    // A page whose text came with it (a PDF's text layer, a queued one's when
+    // sent again) is not read twice: the core leaves it out (`readRequest`).
     const stagedTexts = again ? resend?.texts ?? [] : attachmentTexts;
-    // Sent again, a page whose text came with it (a queued PDF's text layer) is not read twice.
-    const againText = new Set(stagedTexts.map((t) => `${t.uploadId}#${t.page ?? 0}`));
-    const stagedOcr = again
-      ? stagedImages.flatMap((src, i) => (againText.has(`${stagedImageMeta[i].uploadId}#${stagedImageMeta[i].page ?? 0}`) ? [] : [{ src, meta: stagedImageMeta[i] }]))
-      : ocrPages;
     /** Clears the composer, unless this is a message sent again, which leaves it as it is. */
     const clearComposer = () => {
       if (again) return;
@@ -5194,17 +4866,10 @@ export default function App() {
 
     const currentPrompt = promptText;
     const currentPreviews = [...stagedImages];
-    // The staged pages whose text is read in the browser, captured before the
-    // composer is cleared below; their text joins the attachments after.
-    const stagedForOcr = stagedOcr;
-    // What Forma's own parts need for a picture (lib/formaTeam.ts), captured
-    // before the composer is cleared: the first page for the vision model,
-    // when it is an image rather than a PDF. The pages OCR reads join it
-    // once they are read, after the message is in the thread.
+    // Which upload and page each picture is, captured before the composer is
+    // cleared below; Forma's own parts read the first and last of them
+    // (lib/generationCore.ts `visionPages`) once the pages are read.
     const stagedMeta = [...stagedImageMeta];
-    const [firstAt, lastAt] = visionPages(currentPreviews, stagedMeta);
-    const firstImage = firstAt !== undefined ? { src: currentPreviews[firstAt], meta: stagedMeta[firstAt] } : undefined;
-    const lastImage = lastAt !== undefined ? { src: currentPreviews[lastAt], meta: stagedMeta[lastAt] } : undefined;
 
     // Add user message
     const newUserMsg: ChatMessage = {
@@ -5228,40 +4893,34 @@ export default function App() {
     const turn = new AbortController();
     turnAbortRef.current = turn;
 
-    // What OCR reads from the attached images goes with them, as a PDF's text
-    // layer does (2026-11-01). It is read now, behind the scenes, with the
-    // message already in the thread (2026-11-03).
-    // The page reader, when one is set up, reads the same pages on the local
-    // server while OCR reads them in the browser (2026-11-10, batch AF).
     /*
-     * Only what Forma's draft needs is read before the request (2026-11-11,
-     * the full audit's PL-23): a first report from pictures is a draft the AI
-     * corrects, and the draft is written from the first page and the last.
-     * An eight-page scan was read page by page, a few seconds each, before
-     * anything was asked; the pages between are read only when the AI designs
-     * the report instead (`readRest`), and the review reads them when opened.
+     * What OCR reads from the attached images goes with them, as a PDF's text
+     * layer does (2026-11-01). It is read now, behind the scenes, with the
+     * message already in the thread (2026-11-03), and the page reader, when
+     * one is set up, reads the same pages on the local server (2026-11-10,
+     * batch AF). Only what Forma's draft needs is read before the request
+     * (2026-11-11, the full audit's PL-23), the rest only when the AI designs
+     * the report instead, and the review reads them when opened. The rules
+     * are lib/generationCore.ts `readRequest`'s since 2026-11-24, which Batch
+     * reads by too; the pages go through this session's cache
+     * (`readSentPages`), so a retry reuses a page's reading, and the
+     * settings worked out from what was read are kept for the turn
+     * (`detectFor`). The core is warmed when the workspace is idle, so the
+     * reading starts with the message, as it did when it was this chunk's.
      */
-    const draftFirst = !base && stagedForOcr.length > 2 && !stagedTexts.some(isReportFile);
-    const restPages = draftFirst ? stagedForOcr.slice(1, -1) : [];
-    // The page reader too reads only those first, the rest with OCR's (R2-11).
-    const ends = draftFirst ? [stagedForOcr[0], stagedForOcr[stagedForOcr.length - 1]] : undefined;
-    const pageReading = pageReaderAttachments(ends ?? stagedForOcr, turn.signal);
-    const read = await readSentPages(stagedForOcr, turn.signal, ends);
+    const core = await loadCore();
     if (turn.signal.aborted) return;
-    const fromPages = readSources(read);
-    detectFor({ texts: stagedTexts, metas: stagedMeta, pages: fromPages.pages, words: [currentPrompt, fromPages.words].join('\n') });
-    const readByOcr = await ocrAttachments(read);
-    const readByReader = await pageReading;
-    // A PDF's strings in the unit worked out just above (2026-11-11, the full
-    // audit's PL-18): attached, they were written in the stored unit, and a
-    // report worked out as millimetres was told inch positions.
-    const { inUnit } = await loadIntake();
-    if (turn.signal.aborted) return;
-    const currentTexts = [...inUnit(stagedTexts, effectiveConfig().unit), ...readByOcr, ...readByReader];
-    if (readByOcr.length) console.debug(`Including the text of ${readByOcr.length} page(s) read by OCR.`);
-    if (readByReader.length) console.debug(`Including the text of ${readByReader.length} page(s) read by the page reader.`);
-    const readRest = restPages.length ? async (signal: AbortSignal) => (await Promise.all([readPages(restPages, undefined, signal).then((r) => ocrAttachments(r)), pageReaderAttachments(restPages, signal)])).flat() : undefined;
-    const teamInput: TeamInput | undefined = currentPreviews.length > 0 ? { read, firstImage, lastImage, ...(readRest ? { readRest } : {}) } : undefined;
+    const sent = await core.readRequest(
+      { images: currentPreviews, imageMeta: stagedMeta, texts: stagedTexts, words: currentPrompt, open: Boolean(base), config, settings: effectiveConfig(), signal: turn.signal },
+      {
+        detect: detectFor,
+        readPages: (pages, signal, _settings, now) => readSentPages(pages, signal, now),
+        readLater: (pages, signal) => readPages(pages, undefined, signal),
+        pageReader: pageReaderAttachments,
+      },
+    );
+    if (!sent) return;
+    const { texts: currentTexts, team: teamInput } = sent;
 
     /*
      * A reply to the questions a description is waiting on. Typed into the
@@ -5806,7 +5465,7 @@ export default function App() {
     setIsAnalyzing(true);
     activeDescribeRef.current = request;
     // The words are the whole source here, answers included ("on A4", "EXEC dbo.Sales").
-    detectFor({ words: [request.description, request.title, request.dataSchema, ...(request.answers ?? []).map((a) => a.answer)].filter(Boolean).join('\n') });
+    detectFor({ words: descriptionWords(request) });
     // The house style is the brief, and Forma's own model the stand-in (lib/formaTeam.ts).
     const teamInput: TeamInput = { read: [], described: request };
     setProgress(startProgress());
@@ -5981,14 +5640,15 @@ export default function App() {
    * A report's typed texts in another language (lib/repxTranslate.ts): one
    * request with every distinct text, the answers put back, the layout
    * untouched; beside the report's own language when the words ask for both
-   * (CP-06). Shared by a translation asked for in the chat (kept as a
-   * revision, with its Undo) and a first report whose words name a language
-   * (2026-11-11, the full audit's CV-14). Run at once, never offered. The
-   * asking lives in repxTranslate.ts since the re-audit (FIX2A), off this chunk;
-   * a Batch file's or a first report's own settings when given (lib/batchRun.ts, R2-01).
+   * (CP-06). A translation asked for in the chat, kept as a revision, with
+   * its Undo; a first report whose words name a language (2026-11-11, the full
+   * audit's CV-14) and a Batch file are translated by the generation core,
+   * with their own settings (lib/generationCore.ts, R2-01). Run at once, never
+   * offered. The asking lives in repxTranslate.ts since the re-audit (FIX2A),
+   * off this chunk.
    */
-  const translateXml = (xml: string, language: string, signal: AbortSignal, words: string, worked?: ReportConfig) =>
-    import('./lib/repxTranslate').then((m) => m.translateReportXml(xml, language, signal, words, worked ?? effectiveConfig()));
+  const translateXml = (xml: string, language: string, signal: AbortSignal, words: string) =>
+    import('./lib/repxTranslate').then((m) => m.translateReportXml(xml, language, signal, words, effectiveConfig()));
 
   const translateReport = async (named: string, replyId?: string | null) => {
     const open = result;
@@ -6222,10 +5882,16 @@ export default function App() {
    * were each fetched when first shown, so a pane flashed empty and the first
    * reply arrived plain before it was formatted. Idle comes long before a
    * first report, so whichever pane it opens on is already here.
+   *
+   * And the generation core (2026-11-24, lib/generationCore.ts), which every
+   * turn reads its pages through: in this chunk until then, so a turn's
+   * reading, and the dots that show it, started with the message; fetched
+   * at the first send instead, the dots waited for it (the wave-6 review's
+   * W6-BEH-1).
    */
   useEffect(() => {
     const warm = showWorkspace
-      ? () => [loadPreview, loadMarkdown, loadRepxViewer, loadMockup].forEach((load) => void load().catch(() => {}))
+      ? () => [loadPreview, loadMarkdown, loadRepxViewer, loadMockup, loadCore].forEach((load) => void load().catch(() => {}))
       : () => {
           void import('./components/FeaturesPage').catch(() => {});
           void import('./components/DocsPage').catch(() => {});
