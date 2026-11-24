@@ -1367,7 +1367,10 @@ describe('batch: a folder, one file at a time', () => {
     const ran = await cli(['batch', 'in', '--out', 'out', '--mock'], { cwd: dir, env: { ...GEMINI, ...NOWHERE }, hooks: NEVER_ASKED });
     expect(ran.code).toBe(EXIT.failed);
     expect(ran.err.split('\n').filter((line) => line.startsWith('forged line'))).toEqual([]);
-    expect(ran.err).toContain(`"${join('in', 'x?forged line.png')}"`);
+    // The run refuses the output name the input gives, which holds the line break, before the
+    // file is read (paths.ts refuses a control character in any path), and says so on one line
+    // with the break shown as '?' (measured on CI's Linux, 2026-11-24: the first run of this case).
+    expect(ran.err).toMatch(/x\?forged line\.generated\.repx" holds a control character/);
   });
 });
 
