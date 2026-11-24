@@ -8,6 +8,7 @@
  * read from disk but the installed packages.
  */
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { describe, expect, it, vi } from 'vitest';
 import { ingestFile } from '../lib/repxIntake';
@@ -76,7 +77,9 @@ describe('a file built from a path is typed as a browser types a dropped one', (
     expect(typeOfName('statement.pdf')).toBe('application/pdf');
     expect(typeOfName('invoice.repx')).toBe('');
     expect(typeOfName('rows.csv')).toBe('');
-    const file = fileFrom('C:\\Users\\someone\\scan.png', new Uint8Array([1, 2, 3]));
+    // A path in the platform's own form, as the server is given one: a Windows path on Linux is not
+    // a path there (a backslash is a character of the name), which CI's Linux found on 842f75b.
+    const file = fileFrom(join('someone', 'reports', 'scan.png'), new Uint8Array([1, 2, 3]));
     expect([file.name, file.type, file.size]).toEqual(['scan.png', 'image/png', 3]);
   });
 
