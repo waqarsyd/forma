@@ -51,7 +51,11 @@ runs it, and nothing of it is deployed. What it is built to hold:
   messages reach stdout; everything else goes to stderr, with keys taken out.
 - **Only the folders in effect**: `FORMA_MCP_ROOTS`, else the folders the host hands it, else
   `CLAUDE_PROJECT_DIR`. A whole drive, the home folder or a folder holding it, and a dot-folder
-  are refused as a folder for it.
+  are refused as a folder for it. Outside them the server writes only its own cache, in a
+  per-user folder of Forma's under the home folder (`AppData\Local\Forma`, `Library/Caches/Forma`
+  or `~/.cache/forma`): the OCR languages the AI tools read with, and the Gemini model chosen for
+  a key, filed by the key's 32-bit tag, never the key. tsx, which runs it, keeps its compile
+  cache in the system's temp folder.
 - **Full paths only, judged before the disk is touched.** A relative name, `~` and a Git Bash
   `/g/...` path are refused; a UNC path is refused on the raw string, before any file-system
   call could open an SMB connection; every link and junction is followed and the real path

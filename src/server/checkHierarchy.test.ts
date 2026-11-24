@@ -53,9 +53,9 @@ describe('project hierarchy', () => {
     expect(open(out, 'node-floor')).toEqual(['CONTRIBUTING.md', '.github/workflows/checks.yml', 'src/components/infoPages.tsx', 'CLAUDE.md']);
   });
 
-  it('a version waits for its release entry and the lockfile, and a dependency for the lockfile', () => {
+  it('a version waits for its release entry, the lockfile and the Docs page that clones it, and a dependency for the lockfile', () => {
     expect(open(check([edit('package.json')], { before: { version: '1.6.5' }, after: { version: '1.6.6' } }), 'version'))
-      .toEqual(['src/lib/releases.ts', 'package-lock.json']);
+      .toEqual(['src/lib/releases.ts', 'package-lock.json', 'src/components/DocsPage.tsx']);
     const dep = { before: { devDependencies: { vitest: '^5.1.1' } }, after: { devDependencies: { vitest: '^5.2.0' } } };
     expect(open(check([edit('package.json')], dep), 'dependencies')).toEqual(['package-lock.json']);
     expect(open(check([edit('package.json'), edit('package-lock.json')], dep), 'dependencies')).toEqual([]);

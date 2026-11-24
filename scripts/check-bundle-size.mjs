@@ -250,7 +250,11 @@ const BUDGETS = [
   { prefix: 'reportPreview-', ext: '.js', max: 66_000, note: 'the Preview engine, lazy (61,825 B at 93.7%, Vite 8)' },
   // Raised to 55,500 on 2026-11-12, at 51,921 B (102.8%): the 1.6.0 entry, the full audit's release note, in a visitor's words (DOCS, dc85c04). 93.6%.
   // Raised to 58,700 the same day, at 55,155 B (99.4%): the 1.6.1 entry, +1,096 B, the releases' own words. 94.0%.
-  { prefix: 'releases-', ext: '.js', max: 58_700, note: 'the changelog and What\'s new, lazy (55,155 B at 94.0%)' },
+  // Raised to 66,300 on 2026-11-24, at 62,330 B (106.2%, over): the 1.7.0 entry, +4,530 B measured in the built
+  // chunk (57,800 B at 98.5% before it, after 1.6.2 to 1.6.5): any AI of your own opening the workspace, the
+  // MCP server's tools with and without an AI, its Docs article, the terms and privacy policy, four security
+  // fixes and four other fixes, in a visitor's words. Copy, not code. 94.0%.
+  { prefix: 'releases-', ext: '.js', max: 66_300, note: 'the changelog and What\'s new, lazy (62,330 B at 94.0%, the 1.7.0 entry)' },
   { prefix: 'FeaturesPage-', ext: '.js', max: 49_000, note: 'the Features page, lazy (46,243 B at 94.4%, Vite 8)' },
   { prefix: 'DatabasePanel-', ext: '.js', max: 37_700, note: 'the Data tab\'s database, lazy (35,468 B at 94.1%)' },
   // The workspace itself (2026-11-08), lazy since the cut above, budgeted so

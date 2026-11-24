@@ -10,7 +10,11 @@
  * stderr only as "(a key)", forma_status must answer in both eras, the
  * process must leave by itself when stdin ends, and nothing may be written
  * into the folder it was started in. A key set in its environment (built at
- * run time, TST-10) must never appear in what it prints either.
+ * run time, TST-10) must never appear in what it prints either. With the home
+ * and the system's temp folder scratch ones, the AI tools write nothing but
+ * their reports, OCR's languages in Forma's folder, and tsx's compile cache
+ * (`tsx-<user>`) in the temp folder (wave 10's end-to-end probe found the
+ * last, which the MCP note had said nothing of).
  *
  * The process the host started must be the server itself, with no tsx CLI
  * between them (finding PS-8 of the wave-3 review: the CLI ran a second
@@ -23,11 +27,12 @@
  * given a minute for a cold tsx compile.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, describe, expect, it } from 'vitest';
+import { formaUserFolder } from './nodeGeneration';
 import { TOOL_LIST } from './toolList';
 
 const CLONE = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -111,6 +116,11 @@ function start(noise: string, more: Record<string, string | undefined> = {}): St
   const s: Started = { cwd, child, request, notify, exited, out: () => out, err: () => err };
   started.push(s);
   return s;
+}
+
+/** Every file under a folder, as a path relative to it. */
+function filesUnder(dir: string, under = ''): string[] {
+  return readdirSync(join(dir, under)).flatMap((name) => (statSync(join(dir, under, name)).isDirectory() ? filesUnder(dir, join(under, name)) : [join(under, name)]));
 }
 
 /** Every line the process wrote to stdout, each one a JSON-RPC 2.0 message. */
@@ -198,8 +208,10 @@ describe('the stdio server, started as a host starts it', () => {
 
   it("runs the AI tools in their own worker thread, the AI mocked: only JSON-RPC on stdout, rising progress, no key's value on either stream, and the reports written", { timeout: 240_000 }, async () => {
     // Wave 8 (2026-11-24): FORMA_MCP_MOCK, with a stand-in key (an AI must still be set up, OD6), and Forma's own folder in a scratch home.
+    // Wave 10: the system's temp folder a scratch one too, so what the server writes outside the folders in effect is all seen.
     const home = mkdtempSync(join(scratch, 'home-'));
-    const s = start('', { FORMA_MCP_MOCK: '1', USERPROFILE: home, HOME: home });
+    const temp = mkdtempSync(join(scratch, 'temp-'));
+    const s = start('', { FORMA_MCP_MOCK: '1', USERPROFILE: home, HOME: home, TEMP: temp, TMP: temp, TMPDIR: temp });
     await s.request(1, 'initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'smoke', version: '1' } });
     s.notify('notifications/initialized');
     const cwd = realpathSync.native(s.cwd);
@@ -220,8 +232,14 @@ describe('the stdio server, started as a host starts it', () => {
     expect(s.out() + s.err()).not.toContain(fakeNewerKey);
     expect(s.err()).toContain(`generate_report wrote ${JSON.stringify(join(cwd, 'invoice.repx'))}`);
     expect(readdirSync(s.cwd).sort()).toEqual(['invoice.repx', 'invoice.revised.repx']);
-    // Forma's folder is the scratch home's, never the user's own.
-    expect(readdirSync(home)).not.toEqual([]);
+    // Forma's folder is the scratch home's, never the user's own, and holds OCR's gathered languages alone (no model was probed, the AI mocked).
+    const forma = relative(home, formaUserFolder(home));
+    const inHome = filesUnder(home);
+    expect(inHome.length).toBeGreaterThan(0);
+    for (const file of inHome) expect(file.startsWith(join(forma, 'tessdata') + sep), file).toBe(true);
+    // In the temp folder only tsx's compile cache, the clone's own modules transformed (the end-to-end probe of wave 10 found it).
+    expect(readdirSync(temp).length).toBeGreaterThan(0);
+    for (const name of readdirSync(temp)) expect(name, name).toMatch(/^tsx-/);
   });
 
   it('refuses the AI tools in plain words with no AI set up, and still serves the rest', { timeout: 60_000 }, async () => {

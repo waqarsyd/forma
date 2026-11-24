@@ -168,8 +168,8 @@ export const RULES = [
   {
     id: 'version', kind: 'block',
     title: 'The release version changes (version in package.json)',
-    why: 'Every deploy of main is a numbered release: its notes are the newest entry of releases.ts, and the lockfile carries the version too.',
-    surfaces: ['releases', 'lockfile'],
+    why: 'Every deploy of main is a numbered release: its notes are the newest entry of releases.ts, the lockfile carries the version too, and so does the Docs page, whose MCP article clones v<version> (since 1.7.0, held by publicClaims.test.ts).',
+    surfaces: ['releases', 'lockfile', 'docs'],
     when: ({ pkg }) => (changed(pkg, 'version') ? ['package.json version'] : []),
   },
   {

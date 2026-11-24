@@ -688,7 +688,8 @@ src/
                        result, the model probe kept in Forma's own per-user
                        folder, the mock, its translation too, and the model
                        pin, text measured on @napi-rs/canvas, each stage
-                       told to the AI tools' progress), nodeIntake (files drawn on
+                       told to the AI tools' progress; since wave 10 the
+                       fidelity benchmark's parts too), nodeIntake (files drawn on
                        @napi-rs/canvas, a picture decoded only within a size
                        its header states, PDFs opened with pdf.js's legacy
                        build and stopped between pages, a File typed by its
@@ -824,7 +825,12 @@ scripts/               dev.mjs (npm run dev:log) and build-server.mjs; the
                        scripts/repx.ts audit|repair|pdf <file>`, the audit
                        exiting 1 on an error; the draft PDF is
                        src/lib/draftPdf.ts, which the MCP server shares);
-                       fidelity/, the benchmark's runner and cases; and
+                       fidelity/, the benchmark's runner, which makes each
+                       report through the generation core with
+                       src/mcp/nodeGeneration's parts, formaDraft.ts (Forma's
+                       own draft with no AI asked, which the runner and
+                       src/mcp/nodeMakeReport.test.ts both call), and its
+                       cases; and
                        model/, which learns Forma's own model and packs and
                        draws the vision model's training set (render.py needs
                        Python 3 and Pillow), with kaggle/train_vision.py, the

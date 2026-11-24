@@ -1285,7 +1285,11 @@ report.ExportToPdf("report.pdf");`}
                 AI, are held to src/mcp/toolList.ts, and the FORMA_* names to
                 src/mcp/aiSettings.ts, by publicClaims.test.ts; no page may
                 import src/mcp, so they are written out here. The chat answers
-                from this article, so it says only what the server does. */}
+                from this article, so it says only what the server does. The
+                clone line names the release this page ships in, package.json's
+                version, which publicClaims.test.ts holds it to (since 1.7.0,
+                2026-11-24: it said v<version>, a placeholder a person had to
+                fill in from the changelog), so each release changes it. */}
             <Article id="mcp" kicker="Output" title="Forma from your AI assistant" hidden={!matches('mcp')}>
               <p className={PROSE}>
                 Forma has an MCP server: a program you run on your own computer so an AI assistant, such as Claude
@@ -1312,7 +1316,7 @@ report.ExportToPdf("report.pdf");`}
                   <span className={`${KICKER} text-secondary`}>once</span>
                 </div>
                 <pre className="m-0 overflow-x-auto bg-[color:var(--code-bg)] p-4 font-code-sm text-[11.5px] leading-[1.75] text-[color:var(--code-ink)]">
-{`git clone --branch v<version> https://github.com/waqarsyd/forma.git
+{`git clone --branch v1.7.0 https://github.com/waqarsyd/forma.git
 cd forma
 npm ci`}
                 </pre>
@@ -1397,10 +1401,16 @@ npm ci`}
 
               <h3 className={H3}>What it does with your files</h3>
               <p className={`mt-2 ${PROSE}`}>
-                A tool reads and writes only inside the folders it is given, by full path, such as{' '}
+                A tool reads and writes your files only inside the folders it is given, by full path, such as{' '}
                 <code className="doc-code">{'G:\\Reports\\invoice.repx'}</code>: a relative name, ~ or a Git Bash
                 /g/ path is refused, with the full path where it can be worked out. It never writes into a dot-folder
-                or node_modules, and never replaces a file unless you ask repx_edit to. A database login stored in a
+                or node_modules, and never replaces a file unless you ask repx_edit to. Outside those folders the
+                server keeps only a cache of its own under your home folder, in{' '}
+                <code className="doc-code">{'AppData\\Local\\Forma'}</code> on Windows,{' '}
+                <code className="doc-code">Library/Caches/Forma</code> on macOS or{' '}
+                <code className="doc-code">.cache/forma</code> elsewhere: the OCR languages the two AI tools read
+                with, and which Gemini model answers your key, filed by a short tag of the key, never the key. tsx,
+                which runs it, keeps its compile cache in your system&apos;s temp folder. A database login stored in a
                 report is taken out before any tool reads the report, wherever the report keeps it. A file that is
                 not well-formed XML is refused, with the line where it breaks, and a report that takes more than 30
                 seconds to work through is stopped, costing that call and nothing else. A .vsrepx is read as the .repx

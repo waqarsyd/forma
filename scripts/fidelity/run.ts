@@ -38,11 +38,15 @@
  *                     the .repx files there as the house style and refine each
  *                     first pass with and without it (houseEvaluation, below;
  *                     scripts/fidelity/house holds made-up ones)
- *   --brief           send Forma's box reader's brief with each picture, as
- *                     the app has since 2026-11-04 (readerBriefFor, below)
- *   --draft           ask the AI to correct Forma's draft of each picture and
- *                     build the report from it, as the app has since
- *                     2026-11-05 (lib/draftText.ts)
+ *   --brief, --draft  kept so older command lines still run, and change
+ *                     nothing: since 2026-11-24 every run goes through the
+ *                     generation core, which sends Forma's box reader's brief
+ *                     with each picture (as the app has since 2026-11-04) and
+ *                     asks the AI to correct Forma's draft of it (since
+ *                     2026-11-05, lib/draftText.ts), as the app does. Until
+ *                     then a run sent neither unless asked, so a scorecard
+ *                     from before that date without these flags measured a
+ *                     request the app never made
  *   --local-model <name>
  *                     design with a model on Ollama or LM Studio instead of
  *                     Gemini (Local AI, lib/aiProvider.ts), as qwen3.5:9b; no
@@ -51,10 +55,12 @@
  *                     http://localhost:11434/v1, Ollama's; LM Studio's is
  *                     http://localhost:1234/v1)
  *   --forma           score Forma's own draft of each picture with no AI at all:
- *                     the box reader's report, or OCR's copy where it declines,
- *                     as the app stands in when every AI has given out
- *                     (lib/fallbackChain.ts, batch AF). No key, no request, no
- *                     quota; a case whose source is not a picture is skipped
+ *                     the generation core with an ask that refuses, so the
+ *                     box reader's report, or OCR's copy where it declines,
+ *                     stands in exactly as the app stands one in when every
+ *                     AI has given out (lib/fallbackChain.ts, batch AF). No
+ *                     key, no request, no quota; a case whose source is not a
+ *                     picture has no draft and scores 0
  *   --style <path>    with --forma, also design each case from its words with
  *                     Forma's own model, as the app stands one in for a
  *                     described report, without and then with a person's own
@@ -66,8 +72,9 @@
  *   --page-reader <name>
  *                     read each picture with a page reader on that server, as
  *                     glm-ocr, and send its text beside the picture as the app
- *                     does (lib/localModels.ts, 2026-11-10); with Gemini or a
- *                     local writer alike
+ *                     does (lib/pageReading.ts, handed to the core as its
+ *                     `pageReader`, 2026-11-10); with Gemini or a local writer
+ *                     alike
  *   --score <case> <file.repx>
  *                     score one file against one case, with no key, no
  *                     request and no results folder (2026-11-11, CC-02): the
@@ -109,14 +116,40 @@
  * prompt or model change and the scorecard is quoted in the commit message --
  * the same way check:size records a budget.
  *
- * It calls the real `analyzeReportDesign` with the arguments App.tsx passes for
- * a first generation, so every repair pass and the audit run exactly as they do
- * in the product. Two differences from the browser are deliberate and recorded
- * here rather than papered over: the key arrives from the environment because
- * there is no Settings dialog, and an image is sent as-is because the browser's
- * MAX_IMAGE_EDGE downscale uses a canvas Node does not have. The runner reads
- * the PNG header and warns when the long edge exceeds that limit, so a case
- * whose source is too large is a known difference rather than a silent one.
+ * Each report is made through the generation core (src/lib/generationCore.ts
+ * `makeReport`, 2026-11-24, the MCP work's wave 10 and finding NODE-9 of its
+ * design audit), the one way the workspace, Batch and the MCP server's
+ * generate_report make one, with the Node parts that tool runs it with
+ * (src/mcp/nodeGeneration.ts) and an injected ask: geminiService's real
+ * `analyzeReportDesign`, recording what each request carried. So the picture
+ * is taken in as the app takes it (lib/repxIntake.ts: straightened when it
+ * lies turned, drawn again past MAX_IMAGE_EDGE or a weight worth sending),
+ * its text read by OCR (PaddleOCR where vendor/paddle holds its pinned models,
+ * Tesseract otherwise), the settings worked out from what the page shows,
+ * Forma's team prepares the box reader's brief and draft,
+ * the AI corrects the draft, the print check sends back what does not print,
+ * and every repair pass and the audit run as they do in the product. Until
+ * that day this file was a third copy of the pipeline (its own OCR, box
+ * reader and brief, `readerBriefFor`), which sent neither the brief nor the
+ * draft unless asked and sent the image as it was: `git log -S
+ * "readerBriefFor"` finds it.
+ *
+ * What still differs from the browser, deliberately and recorded here rather
+ * than papered over, is what differs for the MCP server (docs/notes/mcp.md,
+ * *What Node makes a report with*, finding NODE-11): the key arrives from the
+ * environment because there is no Settings dialog; text is measured on
+ * @napi-rs/canvas (lib/textMeasure.ts `measureOn`) where the browser measures
+ * on its own canvas, the two held to DevExpress's widths within 0.04 units in
+ * Arial, Times New Roman and Trebuchet MS, and in whatever face the machine
+ * has where those fonts are missing; PaddleOCR's picture is enlarged with
+ * `resizeRgb` where the browser's canvas smooths it; no handwriting is read;
+ * the paper follows the page and the words, with no locale behind them, so a
+ * page that says nothing is laid on Letter, as in a browser set to en-US; and
+ * nothing of a person's is used: no memory, kept reports, report library,
+ * house style, shared database (a case's own `database` aside), vision model
+ * or learning event. The house evaluation's refines (`--house`) still call
+ * `analyzeReportDesign` directly, as a refinement of an open report in words
+ * does in the chat.
  *
  * A case is a directory holding `case.json` and a source. The source is a
  * `.png`/`.jpg`/`.webp` image, a `.repx` file, or an `.html` page that the
@@ -135,32 +168,39 @@
  *     "expect": { ...FidelityExpectations, see src/lib/fidelity.ts... }
  *   }
  *
+ * A case's `config` is the stored settings a run begins from, as the
+ * workspace's are, and the core lays what it works out over them: the paper
+ * from the page's shape or the words, always, and the version and unit from
+ * an attached .repx. So its `pageSize` changes no run; it is the paper
+ * `--measure-source` assumes the render stands for. Each record keeps both:
+ * `caseConfig`, and `config`, the settings the report was made with (the
+ * wave-10 review's R5: a record said A4 for a report made on Letter).
+ *
  * The key never touches disk. It is read from FORMA_BENCH_KEY, passed as
  * `config.customApiKey` the way the Settings dialog would, and the results
- * written out carry the config with that field removed. Do not add a .env
+ * written out carry the settings with their keys removed. Do not add a .env
  * fallback: CLAUDE.md's rule that .env holds no Gemini key is the correction
- * to a real leak.
+ * to a real leak. The core's Node parts write only to Forma's own folder
+ * (OCR's gathered languages, the model chosen by the key's tag, never the
+ * key: src/mcp/nodeGeneration.ts `formaUserFolder`) and to the results folder.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { analyzeReportDesign, type DraftRequest, type ReportConfig } from '../../src/services/geminiService';
-import type { AnalysisResponse, AttachmentPart, ReportLayout } from '../../src/lib/reportTypes';
+import { analyzeReportDesign, type ReportConfig } from '../../src/services/geminiService';
+import type { AnalysisResponse } from '../../src/lib/reportTypes';
 import { readCachedModel } from '../../src/lib/modelCache';
 import { importReports, retrieveHouseStyle } from '../../src/services/library';
 import { embedEntries, embedTexts } from '../../src/services/embeddings';
 import type { LibraryEntry } from '../../src/lib/embedStore';
-import { readsTheseFeatures, type BoxReaderModel } from '../../src/lib/boxReader';
-import { buildFromRead, buildWithReader, sourceLayoutOf } from '../../src/lib/ocrAttach';
-import { draftBrief } from '../../src/lib/formaTeam';
-import { draftToText } from '../../src/lib/draftText';
-import { readWithOcr } from '../model/ocrPages';
-import { readPictureAsTheApp } from '../model/paddleOcr';
 import { captionsOfDraft, readCoverage, worthAnotherTry, type ReadCoverage } from '../../src/lib/readCoverage';
 import { readDatabaseText } from '../../src/lib/sqlSchema';
 import { designSection, writeFromAnswer } from '../../src/lib/databaseAi';
-import { pageReaderText } from '../../src/lib/localModels';
-import { readPageText } from '../../src/services/pageReader';
+import { readerAttachments } from '../../src/lib/pageReading';
+import { makeReport, type DatabaseStep, type GenerationDeps, type IntakeDeps } from '../../src/lib/generationCore';
+import { nodeGeneration, type NodeGeneration } from '../../src/mcp/nodeGeneration';
+import { fileFrom } from '../../src/mcp/nodeIntake';
+import { capturingConsole, formaDraftOf, settingsOf, watched, type FormaDraft, type Seen } from './formaDraft';
 import {
   checkFidelity,
   measureReport,
@@ -175,35 +215,24 @@ import {
 } from '../../src/lib/fidelity';
 import { layoutFromRepx } from '../../src/lib/repxViews';
 import { paperInches } from '../../src/lib/reportGeometry';
-import { repairRepx } from '../../src/lib/repairChain';
-import { parseTrueType } from '../../src/lib/trueType';
-import { faceWidthsFrom, measureFacesWith } from '../../src/lib/ocrLayout';
 import { generateOffline, type OfflineRequest } from '../../src/lib/offlineGenerator';
 import { keptStyleOf, preferencesOf, rememberKept, type MemoryState } from '../../src/lib/memory';
 import type { FormaModel } from '../../src/lib/formaModel';
 
 /*
- * Text measured in its face's own widths, as the browser's canvas measures it
- * (2026-11-11, the full audit's CC-08 and CC-07): a page's sizes read from the
- * letters' widths, and a print where text grows. Node has no canvas, so the
- * Liberation files the PDF export embeds stand in, metric-compatible with
- * Arial and Times New Roman. Without this every size here came from the rough
- * width table the browser no longer uses.
+ * Text is measured where the core's Node parts measure it: nodeGeneration
+ * hands lib/textMeasure.ts an @napi-rs/canvas (`measureOn`), so a page's sizes
+ * read from the letters' widths (lib/ocrLayout.ts, the full audit's CC-08),
+ * the box reader's control widths and OCR's copy are measured as the MCP
+ * server measures them, on the machine's own Arial and Times New Roman. From
+ * 2026-11-11 until the move to the core this file measured a page's sizes in
+ * the Liberation files the PDF export embeds (`measureFacesWith`), the only
+ * widths Node had, and the box reader's widths not at all (the rough 0.6 em a
+ * letter). The move's parity gate (2026-11-24, `--forma` on pictures drawn
+ * from the public .repx files, before and after) measured both: the canvas's
+ * sizes gave the Liberation files' reports exactly, and the measured widths
+ * moved five drafts' controls by a few bytes' worth with no score changed.
  */
-{
-  const face = (file: string) => parseTrueType(new Uint8Array(readFileSync(join('assets/pdf-fonts', file))));
-  measureFacesWith(
-    faceWidthsFrom([
-      { face: { family: 'Arial', bold: false }, font: face('LiberationSans-Regular.ttf') },
-      { face: { family: 'Arial', bold: true }, font: face('LiberationSans-Bold.ttf') },
-      { face: { family: 'Times New Roman', bold: false }, font: face('LiberationSerif-Regular.ttf') },
-      { face: { family: 'Times New Roman', bold: true }, font: face('LiberationSerif-Bold.ttf') },
-    ]),
-  );
-}
-
-/** The browser downsizes anything longer than this on its long edge (App.tsx). */
-const MAX_IMAGE_EDGE = 2048;
 
 /**
  * Where a run's results go unless --out names a folder: beside the repository,
@@ -256,7 +285,16 @@ interface RunRecord {
   startedAt: string;
   elapsedMs: number;
   model: string | null;
-  config: Omit<ReportConfig, 'customApiKey'>;
+  /**
+   * The settings the report was made with, its keys left out: since
+   * 2026-11-24 (the wave-10 review's R5) the ones the core worked out from
+   * the page, the words and an attached .repx (the answering AI's, when one
+   * answered), where it had written the case's own, which a picture's paper
+   * then overrode unseen. Before the core works them out, the case's own.
+   */
+  config: Omit<ReportConfig, 'customApiKey' | 'openRouterKey'>;
+  /** The stored settings the run began from: the runner's defaults with the case's `config` over them (since 2026-11-24; older records have none, and their `config` is this). */
+  caseConfig?: Omit<ReportConfig, 'customApiKey' | 'openRouterKey'>;
   prompt: string;
   response: AnalysisResponse | null;
   error: string | null;
@@ -279,23 +317,6 @@ interface RunRecord {
    * runs failed on output limits and the only record was the one-line error.
    */
   log: string[];
-}
-
-/** Run `fn` with the console captured into `lines`, still echoed to the real one. */
-async function capturingConsole<T>(lines: string[], fn: () => Promise<T>): Promise<T> {
-  const methods = ['log', 'warn', 'error', 'debug', 'info'] as const;
-  const original = Object.fromEntries(methods.map((m) => [m, console[m]])) as Record<(typeof methods)[number], (...args: unknown[]) => void>;
-  for (const m of methods) {
-    console[m] = (...args: unknown[]) => {
-      lines.push(`[${m}] ${args.map((a) => (typeof a === 'string' ? a : a instanceof Error ? a.message : JSON.stringify(a))).join(' ')}`);
-      original[m](...args);
-    };
-  }
-  try {
-    return await fn();
-  } finally {
-    for (const m of methods) console[m] = original[m];
-  }
 }
 
 function parseArgs(argv: string[]) {
@@ -452,82 +473,66 @@ function readKey(fromClipboard: boolean): string {
   return '';
 }
 
-/** Width and height from a PNG's IHDR chunk, or null for anything else. */
-function pngDimensions(bytes: Buffer): { width: number; height: number } | null {
-  const signature = '89504e470d0a1a0a';
-  if (bytes.length < 24 || bytes.subarray(0, 8).toString('hex') !== signature) return null;
-  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+/**
+ * The file a case sends: its picture, its report, or for an .html source the
+ * picture it renders to, rendered first when `render` is on and none is there
+ * yet (or `rerender` asks). With `render` off, an .html source with no picture
+ * yet is null: a replay reads what is there and starts no browser.
+ */
+function sourcePathOf(c: LoadedCase, render: boolean, rerender = false): string | null {
+  const path = join(c.dir, c.file.source);
+  if (extname(path).toLowerCase() !== '.html') return path;
+  const png = path.replace(/\.html$/i, '.png');
+  if (render && (rerender || !existsSync(png))) {
+    console.log(`[${c.name}] rendering ${basename(path)} -> ${basename(png)}`);
+    renderHtml(path, png, c.file.render);
+  }
+  return existsSync(png) ? png : null;
 }
 
-const MIME: Record<string, string> = {
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp',
-};
+/** Whether a source is a picture the core reads with OCR, which Forma's draft is made from. */
+const isPicture = (path: string) => /\.(png|jpe?g|webp)$/i.test(path);
 
-function attachmentFor(c: LoadedCase, rerender: boolean): AttachmentPart[] {
-  let sourcePath = join(c.dir, c.file.source);
-  const ext = extname(sourcePath).toLowerCase();
-
-  if (ext === '.html') {
-    const png = sourcePath.replace(/\.html$/i, '.png');
-    if (rerender || !existsSync(png)) {
-      console.log(`[${c.name}] rendering ${basename(sourcePath)} -> ${basename(png)}`);
-      renderHtml(sourcePath, png, c.file.render);
-    }
-    sourcePath = png;
-  }
-
-  const sourceExt = extname(sourcePath).toLowerCase();
-  if (sourceExt === '.repx') {
-    return [{ text: readFileSync(sourcePath, 'utf8') }];
-  }
-  const mimeType = MIME[sourceExt];
-  if (!mimeType) throw new Error(`${sourcePath}: unsupported source type ${sourceExt}`);
-  const bytes = readFileSync(sourcePath);
-  const dims = pngDimensions(bytes);
-  if (dims && Math.max(dims.width, dims.height) > MAX_IMAGE_EDGE) {
-    console.warn(
-      `[${c.name}] ${basename(sourcePath)} is ${dims.width}x${dims.height}; the browser would downscale it to ${MAX_IMAGE_EDGE} on the long edge and this runner does not.`,
-    );
-  }
-  return [{ inlineData: { data: bytes.toString('base64'), mimeType } }];
+/**
+ * What the core takes in for a case: its source as the file a person drops,
+ * typed by its extension (src/mcp/nodeIntake.ts `fileFrom`) and named after
+ * the case, as the runner named the page it read before 2026-11-24, under the
+ * case's name as its upload.
+ */
+function filesFor(c: LoadedCase, path: string): { file: File; uploadId: string }[] {
+  return [{ file: fileFrom(`${c.name}${extname(path).toLowerCase()}`, readFileSync(path)), uploadId: c.name }];
 }
 
 /**
- * Forma's box reader's brief for a picture, as prepareTeam passes it with
- * every upload since 2026-11-04 (in App.tsx until 2026-11-24, then in
- * src/lib/generationCore.ts, which this runner does not call yet) (`--brief`): the page read by OCR as the
- * app reads it (scripts/model/ocrPages.ts), the box reader run over that
- * reading, and `draftBrief` of what it built. '' when the case is not a PNG or
- * the reader declines the page, which the product would answer the same way.
- * The OCR works in the results folder, so no case directory gains files.
+ * Node's parts for the generation core, assembled once for the run, as the
+ * MCP server's AI tools assemble them (src/mcp/nodeGeneration.ts): OCR,
+ * Forma's box reader and own model from assets/model, text measured on
+ * @napi-rs/canvas, and the model Gemini answers with kept in Forma's folder by
+ * the key's tag. Its lines go to the console, which a run captures.
  */
-async function readerBriefFor(c: LoadedCase, unit: string, paper: string, outDir: string): Promise<{ brief: string; evidence: ReportLayout | null; draft: DraftRequest | null; own?: AnalysisResponse | null }> {
-  let source = join(c.dir, c.file.source);
-  if (extname(source).toLowerCase() === '.html') source = source.replace(/\.html$/i, '.png');
-  if (extname(source).toLowerCase() !== '.png' || !existsSync(source)) return { brief: '', evidence: null, draft: null };
-  const work = join(outDir, 'ocr');
-  mkdirSync(work, { recursive: true });
-  const name = `${c.name}.png`;
-  writeFileSync(join(work, name), readFileSync(source));
-  // As the app reads a picture since 2026-11-10: PaddleOCR when the models are
-  // fetched and the page is in its script, Tesseract otherwise.
-  const ocr = (await readPictureAsTheApp(join(work, name), join(work, 'paddle.json'))) ?? (await readWithOcr(work, [name], join(work, 'ocr.json'), 1, false))[name];
-  const model = JSON.parse(readFileSync('assets/model/boxReader.json', 'utf8')) as BoxReaderModel;
-  if (!readsTheseFeatures(model)) throw new Error('assets/model/boxReader.json is not one this version reads.');
-  const pages = [{ meta: { uploadId: c.name, file: name }, read: { ocr, flagged: 0, lines: ocr.lines.length } }];
-  const built = buildWithReader(pages, model, paper);
-  // OCR's own layout is the audit's evidence, as prepareTeam passes it (2026-11-05).
-  const evidence = sourceLayoutOf(pages, unit, paper);
-  // Forma's draft for the AI to correct, as prepareTeam writes it (--draft, 2026-11-05).
-  const draft = built ? { text: draftToText(built.skeleton, built.used), texts: built.texts, title: built.title } : null;
-  // Forma's own report, as the app stands one in when no AI answers (--forma): the box reader's, or OCR's copy.
-  const copy = built ? null : buildFromRead(pages, unit, paper);
-  const own = built ? { markdown: built.markdown, layout: built.layout, repxContent: built.repxContent } : copy ? { markdown: copy.markdown, layout: copy.layout, repxContent: copy.repxContent } : null;
-  return { brief: built ? draftBrief(built.skeleton, built.layout, unit, 'reader') : '', evidence, draft, own };
+let generation: Promise<NodeGeneration> | null = null;
+const nodeParts = () => (generation ??= nodeGeneration({ log: (line) => console.warn(line) }));
+
+/** What stood in, in the words the scorecard's log has used since 2026-11-10. */
+const DRAFT_WORDS: Record<string, string> = { reader: 'the box reader', ocr: "OCR's copy", vision: "Forma's vision model", offline: "Forma's own model, from the words" };
+
+/**
+ * Forma's own draft of a case, with no AI (`--forma`, and the reading a
+ * replay's coverage needs): scripts/fidelity/formaDraft.ts, with the MCP
+ * server's Node parts, the case's source as its file and its words.
+ */
+async function formaDraftFor(c: LoadedCase, path: string, config: ReportConfig, log: string[]): Promise<FormaDraft> {
+  return formaDraftOf(await nodeParts(), { files: filesFor(c, path), words: c.file.prompt ?? '', config }, log);
 }
+
+/** A run's settings as they are written out: never a key. */
+function withoutKey(config: ReportConfig): Omit<ReportConfig, 'customApiKey' | 'openRouterKey'> {
+  const { customApiKey: _key, openRouterKey: _openRouter, ...rest } = config;
+  return rest;
+}
+
+/** Settings as the log writes them: version, unit, paper and direction. */
+const settingsLine = (s: ReportConfig) => `${s.version}, ${s.unit}, ${s.pageSize}${s.rtl ? ', right to left' : ''}`;
 
 /**
  * A person's own preferences for `--style` (2026-11-11, D1): a folder of the
@@ -601,11 +606,6 @@ function configFor(c: LoadedCase, key: string, opts: ReturnType<typeof parseArgs
   return config;
 }
 
-function withoutKey(config: ReportConfig): Omit<ReportConfig, 'customApiKey'> {
-  const { customApiKey: _dropped, ...rest } = config;
-  return rest;
-}
-
 async function generate(c: LoadedCase, run: number, key: string, opts: ReturnType<typeof parseArgs>, outDir: string): Promise<RunRecord> {
   const config = configFor(c, key, opts);
   const prompt = c.file.prompt ?? '';
@@ -616,7 +616,9 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
     startedAt: startedAt.toISOString(),
     elapsedMs: 0,
     model: null,
+    // The case's own until the core has worked the request's out (below).
     config: withoutKey(config),
+    caseConfig: withoutKey(config),
     prompt,
     response: null,
     error: null,
@@ -624,12 +626,16 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
     checks: [],
     log: [],
   };
+  // The draft the AI was asked to correct, for the coverage: what the request carried.
+  let draftText: string | null = null;
   try {
-    const parts = attachmentFor(c, opts.rerender && run === 1);
-    // Forma's own draft, no AI (--forma, 2026-11-10).
+    const path = sourcePathOf(c, true, opts.rerender && run === 1) as string;
+    // Forma's own draft, no AI (--forma, 2026-11-10), as the core stands it in since 2026-11-24.
     if (opts.forma) {
-      const team = await readerBriefFor(c, config.unit ?? 'HundredthsOfAnInch', config.pageSize ?? 'Letter', outDir);
-      record.log.push(`[runner] Forma's own draft: ${team.own ? (team.draft ? 'the box reader' : 'OCR\'s copy') : 'none (not a picture)'}`);
+      const own = await formaDraftFor(c, path, config, record.log);
+      record.config = withoutKey(own.settings);
+      record.log.push(`[runner] the core worked out ${settingsLine(own.settings)}`);
+      record.log.push(`[runner] Forma's own draft: ${own.standIn ? DRAFT_WORDS[own.standIn.source] ?? own.standIn.source : 'none (not a picture)'}`);
       // A person's own style on Forma's design from words, before and after (--style, D1).
       if (opts.style) {
         for (const line of styleComparison(c, loadStyle(opts.style))) {
@@ -637,54 +643,76 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
           console.log(`[${c.name}] ${line}`);
         }
       }
-      if (!team.own) record.error = 'Forma makes no draft without a picture';
+      if (!own.standIn) record.error = own.pictures ? "Forma's own draft could not be made from the picture" : 'Forma makes no draft without a picture';
+      // The parity the move to the core was held to: the draft scored before the chain must be the one that stood in.
+      if (own.sameAsStandIn === false) record.error = "Forma's draft taken again before the repair chain is not the one that stood in, so the before-the-chain score would be of another report";
       record.elapsedMs = Date.now() - startedAt.getTime();
       record.model = 'forma-draft';
       /*
-       * Through the repair chain, as App's asConfigured puts every report Forma
-       * builds itself since 2026-11-11 (ARCH-1b, lib/repairChain.ts), and
-       * scored before and after it, so the chain's effect on Forma's own
-       * drafts is measured rather than assumed (the CCC batch of wave 6).
+       * Through the repair chain, as the core puts every report Forma builds
+       * itself (`asConfigured`, ARCH-1b, lib/repairChain.ts), and scored before
+       * and after it, so the chain's effect on Forma's own drafts is measured
+       * rather than assumed (the CCC batch of wave 6).
        */
-      if (team.own) {
-        const raw: RunRecord = { ...record, response: team.own };
+      if (own.raw) {
+        const raw: RunRecord = { ...record, response: own.raw };
         score(raw, c);
         const s = scoreChecks(raw.checks);
         const failed = raw.checks.filter((k) => !k.pass).map((k) => k.id);
         record.log.push(`[runner] before the repair chain: ${s.passed}/${s.total}${failed.length ? ` (failed ${failed.join(', ')})` : ''}`);
         console.log(`[${c.name}] Forma's own draft before the repair chain: ${s.passed}/${s.total}${failed.length ? `, failed ${failed.join(', ')}` : ''}`);
-        // The layout read again off the repaired file, as the app reads its views: the draft's own was read before the chain.
-        const repaired = repairRepx(team.own.repxContent, { version: config.version }).xml;
-        record.response = { ...team.own, repxContent: repaired, layout: layoutFromRepx(repaired) };
       }
+      // The layout read again off the configured file, as the app reads its views: the draft's own was read before the chain.
+      if (own.standIn) record.response = { markdown: own.raw?.markdown ?? '', repxContent: own.standIn.repxContent, layout: layoutFromRepx(own.standIn.repxContent) };
       score(record, c);
       return record;
     }
-    // The page reader's text beside the picture, as the app sends it (2026-11-10).
-    if (opts.pageReader) {
-      const picture = parts.flatMap((p) => ('inlineData' in p ? [p.inlineData] : []))[0];
-      const read = picture ? await readPageText({ baseUrl: opts.localUrl, model: opts.pageReader }, `data:${picture.mimeType};base64,${picture.data}`) : '';
-      const text = pageReaderText(basename(c.file.source), 1, opts.pageReader, read);
-      record.log.push(`[runner] page reader ${opts.pageReader}: ${text ? `read ${read.length} characters` : 'nothing'}`);
-      if (text) parts.push({ text });
-    }
-    const team = opts.brief || opts.draft ? await readerBriefFor(c, config.unit ?? 'HundredthsOfAnInch', config.pageSize ?? 'Letter', outDir) : { brief: '', evidence: null, draft: null };
-    const { brief: formaBrief, evidence } = team;
-    const draft = opts.draft ? team.draft : null;
-    if (opts.draft) console.log(`[${c.name}] Forma's draft: ${draft ? `${draft.text.split('\n').length} lines, ${draft.text.length} characters` : 'none (not a PNG, or the reader declined the page)'}`);
-    if (opts.brief) console.log(`[${c.name}] box reader brief: ${formaBrief ? `${formaBrief.split('\n').length} lines` : 'none (not a PNG, or the reader declined the page)'}`);
-    // The case's database, shared as the app shares an attached one (2026-11-09).
+    // The AI's design, as the core asks it, with what each request carried kept to say below.
+    const sent: NonNullable<Parameters<typeof analyzeReportDesign>[6]>[] = [];
+    const ask: NonNullable<GenerationDeps['ask']> = (words, parts, asked, previous, signal, onProgress, options) => {
+      if (options) sent.push(options);
+      return analyzeReportDesign(words, parts, asked, previous, signal, onProgress, options);
+    };
+    // The case's database, shared as the app shares an attached one (2026-11-09): App's own step, without the Data tab's query.
     const schema = c.file.database ? readDatabaseText(readFileSync(join(c.dir, c.file.database), 'utf8'), basename(c.file.database).replace(/\.[^.]+$/, '')) : null;
     const layout = schema?.kind === 'schema' ? schema.schema : null;
-    const database = layout ? designSection(layout, { words: [prompt, formaBrief].join('\n') }) : undefined;
-    record.response = await capturingConsole(record.log, () =>
-      analyzeReportDesign(prompt, parts, config, undefined, undefined, undefined, formaBrief || draft || database ? { formaBrief, evidence, draft, database } : undefined),
-    );
-    if (layout && record.response?.repxContent) {
-      const out = writeFromAnswer(record.response.repxContent, layout, { dataQuery: record.response.dataQuery, version: config.version });
-      record.log.push(`[runner] database: ${out.note}`);
-      if (out.query) record.response = { ...record.response, repxContent: out.xml };
+    const database = layout
+      ? async (words: string): Promise<DatabaseStep> => ({
+          section: designSection(layout, { words }),
+          write: (xml, dataQuery, version) => writeFromAnswer(xml, layout, { dataQuery, version }),
+          chosen: () => undefined,
+        })
+      : undefined;
+    // The page reader's reading of each page beside OCR's, as the app sends it (2026-11-10).
+    const reader = opts.pageReader ? { baseUrl: opts.localUrl, model: opts.pageReader } : null;
+    const seen: Seen = { read: [], detected: null };
+    const deps: GenerationDeps & IntakeDeps = {
+      ...watched((await nodeParts()).deps(config), seen),
+      ask,
+      ...(database ? { database } : {}),
+      ...(reader ? { pageReader: (pages: Parameters<NonNullable<GenerationDeps['pageReader']>>[0], signal: AbortSignal) => readerAttachments(reader, pages, signal) } : {}),
+    };
+    const made = await capturingConsole(record.log, () => makeReport({ files: filesFor(c, path), words: prompt, config, signal: new AbortController().signal }, deps));
+    // The settings the request was made with: the answering AI's when one answered, else the ones the core worked out.
+    record.config = withoutKey(made?.ok ? made.answering : settingsOf(config, seen));
+    const first = sent[0];
+    const brief = first?.formaBrief ?? '';
+    const draft = first?.draft ?? null;
+    console.log(`[${c.name}] Forma's draft: ${draft ? `${draft.text.split('\n').length} lines, ${draft.text.length} characters` : 'none (not a picture, or the reader declined the page)'}`);
+    console.log(`[${c.name}] box reader brief: ${brief ? `${brief.split('\n').length} lines` : 'none (not a picture, or the reader declined the page)'}`);
+    if (reader) record.log.push(`[runner] page reader ${reader.model}: ${first?.readings?.length ? `read ${first.readings.length} page(s)` : 'nothing'}`);
+    if (!made) throw new Error('The run was stopped.');
+    if (!made.ok) {
+      // As the app would show it: Forma's draft in place of the AI's report. The scorecard measures the AI, so the run fails.
+      if (made.standIn) record.log.push(`[runner] every AI failed; the app would show Forma's own draft in its place (${DRAFT_WORDS[made.standIn.source] ?? made.standIn.source})`);
+      throw made.error;
     }
+    record.log.push(`[runner] the core worked out ${settingsLine(made.answering)}; ${made.note || `answered by ${made.by}`}`);
+    for (const notice of made.notices) record.log.push(`[runner] ${notice}`);
+    if (made.dataNote) record.log.push(`[runner] database: ${made.dataNote}`);
+    // The report as it goes to the person: turned right to left where its source is, its views read again when that changed it.
+    record.response = made.repxContent === made.response.repxContent ? made.response : { ...made.response, repxContent: made.repxContent, layout: layoutFromRepx(made.repxContent) };
+    draftText = made.team.correct?.text ?? null;
   } catch (error: any) {
     record.error = error?.message ?? String(error);
     // The service attaches what it could not parse. Kept as its own file so
@@ -704,15 +732,27 @@ async function generate(c: LoadedCase, run: number, key: string, opts: ReturnTyp
   const answered = [...record.log].reverse().map((line) => /Generation timing .*\(model: ([^,)]+)/.exec(line)?.[1]).find(Boolean);
   record.model = answered ?? readCachedModel();
   score(record, c);
-  record.coverage = await coverageFor(c, record, outDir);
+  record.coverage = await coverageFor(c, record, draftText);
   return record;
 }
 
-/** What the report kept of the captions and titles Forma read on the case's page (`readCoverage`). */
-async function coverageFor(c: LoadedCase, record: RunRecord, outDir: string): Promise<ReadCoverage | null> {
+/**
+ * What the report kept of the captions and titles Forma read on the case's
+ * page (`readCoverage`): from the draft the request carried, or, on a replay,
+ * the draft the core makes of the page today with no AI asked. Null with no
+ * picture, an .html source not rendered yet (a replay starts no browser), or
+ * a page the reader declined.
+ */
+async function coverageFor(c: LoadedCase, record: RunRecord, draftText?: string | null): Promise<ReadCoverage | null> {
   if (!record.response?.repxContent) return null;
-  const team = await readerBriefFor(c, record.config.unit ?? 'HundredthsOfAnInch', record.config.pageSize ?? 'Letter', outDir);
-  return team.draft ? readCoverage(captionsOfDraft(team.draft.text), record.response.repxContent) : null;
+  let text = draftText ?? null;
+  if (draftText === undefined) {
+    const path = sourcePathOf(c, false);
+    if (!path || !isPicture(path)) return null;
+    // The stored settings the run began from: a record written before 2026-11-24's review kept them as its `config`.
+    text = (await formaDraftFor(c, path, { ...(record.caseConfig ?? record.config), customApiKey: '' }, [])).correctText;
+  }
+  return text ? readCoverage(captionsOfDraft(text), record.response.repxContent) : null;
 }
 
 /*
@@ -1081,7 +1121,7 @@ async function main(): Promise<number> {
       // A record kept with its report alone (scripts/fidelity/replay) has its layout read off the file, as the app reads one.
       if (record.response?.repxContent && !record.response.layout) record.response = { ...record.response, layout: layoutFromRepx(record.response.repxContent) };
       score(record, c);
-      record.coverage = await coverageFor(c, record, outDir);
+      record.coverage = await coverageFor(c, record);
       if (opts.probe) record.probe = probeRecord(c, record, outDir);
       records.push(record);
     }

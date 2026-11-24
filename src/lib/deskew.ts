@@ -14,7 +14,24 @@
  * quarter degrees, about the page's centre.
  *
  * A page on its side scores far higher with its columns than its rows, which
- * is how a sideways page is found. Which side it lies on cannot come from that
+ * is how a sideways page is found. A straight form whose short labels stand
+ * in one column scores higher sideways too, since that column turned is one
+ * dense band, but not by as much, and it makes a line a label only as it
+ * stands: so a score less than CLEARLY_SIDEWAYS times higher turns the page
+ * only when turning it back leaves it no fewer lines than it has as it lies
+ * (2026-11-24, found when the fidelity benchmark moved to the generation
+ * core: the intake laid a straight form of 24 labels on its side, and OCR
+ * lost its title). The count is the score's check, never its replacement: a
+ * frame, a page's dark edge or a box that runs through every row both ways
+ * makes one line each way, and the score then stands, as it did before the
+ * check. Its first form required more lines and kept such pages on their
+ * side; measured on the benchmark's parity-gate pictures, as the intake
+ * samples them, upright, turned both ways, noisy and framed (the wave-10
+ * review, 2026-11-24), report pages on their
+ * side scored 4.7 to 29 times higher, a screenshot of the workspace 6.1 to
+ * 7.3, and the form 2.5 to 2.6. A frame drawn round a report page brought
+ * most of them under twice, where no form of the rule finds them: a known
+ * limit, the same before the check. Which side it lies on cannot come from the
  * score, which is the same both ways, so it is read from the margin: the
  * lines of a page start together and end ragged, so of the two ways back, the
  * one whose line starts line up better is the right way up. A page that
@@ -102,6 +119,17 @@ export function lineScore(ink: Ink, degrees: number): number {
   return score;
 }
 
+/** How many lines the ink falls into once turned back by `degrees`: runs of rows that hold ink, between rows that hold none. */
+export function lineCount(ink: Ink, degrees: number): number {
+  let lines = 0;
+  let inLine = false;
+  for (const n of rowSums(ink, degrees)) {
+    if (n > 0 && !inLine) lines++;
+    inLine = n > 0;
+  }
+  return lines;
+}
+
 /**
  * How well the lines start together, against how well they end together,
  * once the ink is turned back by `degrees`: below 1 when the starts line up
@@ -148,6 +176,8 @@ export function marginRatio(ink: Ink, degrees: number): number {
 const MIN_POINTS = 200;
 /** A page on its side scores at least this much higher across its columns. */
 const SIDEWAYS = 2;
+/** Past this much higher it is on its side whatever its lines say; below it, its lines must agree (see the top of this file). */
+const CLEARLY_SIDEWAYS = 4;
 /** A turn that does not sharpen the lines by this much is noise, not a turn. */
 const SHARPER = 1.02;
 /** A turn smaller than this is left alone: redrawing would cost more than it fixes. */
@@ -177,15 +207,32 @@ export function pageShaped(width: number, height: number): boolean {
  */
 export function pageTurn(ink: Ink, sideways = true): number {
   if (ink.points.length / 2 < MIN_POINTS) return 0;
-  // Each way's best within the range, whole degrees: a page on its side and
-  // two degrees off scores little better exactly sideways than upright.
+  // Each way's best within the range, whole degrees, and where it is: a page
+  // on its side and two degrees off scores little better exactly sideways
+  // than upright, and its lines are counted where they run straightest.
   const near = (base: number) => {
     let top = 0;
-    for (let d = -6; d <= 6; d++) top = Math.max(top, lineScore(ink, base + d));
-    return top;
+    let at = base;
+    for (let d = -6; d <= 6; d++) {
+      const score = lineScore(ink, base + d);
+      if (score > top) {
+        top = score;
+        at = base + d;
+      }
+    }
+    return { top, at };
   };
   let base = 0;
-  if (sideways && near(90) > near(0) * SIDEWAYS) {
+  const upright = near(0);
+  const onSide = sideways ? near(90) : null;
+  // Clearly on its side by the score alone, or on its side by the score and
+  // no fewer lines turned back than as it is (2026-11-24, `lineCount`): a
+  // straight form whose short labels stand in one column scores higher
+  // sideways, since the column is one dense band, but turned it holds a few
+  // bands where upright it held a line a label. A frame makes one line each
+  // way, which leaves the score's verdict standing.
+  const clearly = onSide !== null && onSide.top > upright.top * CLEARLY_SIDEWAYS;
+  if (onSide && onSide.top > upright.top * SIDEWAYS && (clearly || lineCount(ink, onSide.at) >= lineCount(ink, upright.at))) {
     base = marginRatio(ink, 90) <= marginRatio(ink, 270) ? 90 : 270;
   }
   const level = lineScore(ink, base);

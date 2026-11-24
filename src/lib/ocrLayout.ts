@@ -94,9 +94,10 @@ export interface LayoutOptions {
   minConfidence?: number;
   /**
    * How wide a text is in a face (`FaceWidth`), for a size measured from the
-   * letters' own widths (CC-08). By default the browser's canvas, or what a
-   * script set with `measureFacesWith`; where neither measures, the rough
-   * table of `fontFromWidth`.
+   * letters' own widths (CC-08). By default a canvas (the browser's, or the
+   * @napi-rs/canvas Node hands lib/textMeasure.ts with `measureOn`), or what a
+   * test set with `measureFacesWith`; where neither measures, the rough table
+   * of `fontFromWidth`.
    */
   widthOf?: FaceWidth;
 }
@@ -124,15 +125,15 @@ const FACES: readonly WidthFace[] = [
   { family: 'Times New Roman', bold: true },
 ];
 
-/** Widths from the browser's canvas, unkerned as DevExpress draws; null in Node and under jsdom. */
+/** Widths from a canvas, unkerned as DevExpress draws: the browser's, or in Node the one handed to lib/textMeasure.ts (`measureOn`); null without one and under jsdom. */
 const canvasFaceWidth: FaceWidth = (text, face) => {
   const at100 = lineWidthPt(text, { family: face.family, sizePt: 100, bold: face.bold, italic: face.italic ?? false });
   return at100 === null ? null : at100 / 100;
 };
 
 /**
- * Widths from TrueType files' own advance widths, for Node, where there is no
- * canvas: `assets/pdf-fonts`'s Liberation Sans and Serif, which are
+ * Widths from TrueType files' own advance widths, for a test, or Node with no
+ * canvas handed in: `assets/pdf-fonts`'s Liberation Sans and Serif, which are
  * metric-compatible with Arial and Times New Roman, each given with the face
  * it stands for. Unkerned, as DevExpress draws. A face not given is measured
  * in the first one given of the same weight.
@@ -155,9 +156,12 @@ export function faceWidthsFrom(fonts: readonly { face: WidthFace; font: TrueType
 let defaultWidths: FaceWidth = canvasFaceWidth;
 
 /**
- * Where a page's sizes are measured when the caller names nothing: a script
- * in Node passes `faceWidthsFrom` over the Liberation files (scripts/fidelity
- * `--forma`), and null puts the canvas back.
+ * Where a page's sizes are measured when the caller names nothing: a test
+ * passes `faceWidthsFrom` over the Liberation files, so its sizes do not hang
+ * on the machine's fonts, and null puts the canvas back. scripts/fidelity
+ * passed them too until 2026-11-24, when it moved onto the generation core,
+ * whose Node parts measure on @napi-rs/canvas as the MCP server does; the
+ * move's parity gate found the same reports either way.
  */
 export function measureFacesWith(widths: FaceWidth | null): void {
   defaultWidths = widths ?? canvasFaceWidth;

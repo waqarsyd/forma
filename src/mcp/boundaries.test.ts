@@ -146,13 +146,23 @@ const STDOUT_BYPASSES: [RegExp, string][] = [
 const stdoutBypassesOf = (source: string) => STDOUT_BYPASSES.filter(([re]) => re.test(source)).map(([, why]) => why);
 
 /**
- * The one import of src/mcp from outside it (2026-11-24, the MCP work's wave
- * 7, finding NODE-5): PaddleOCR's Node reader, which the measuring scripts
- * and the MCP server share so neither keeps a copy (nodePaddle.ts says so).
- * A script is Node too, so nothing reaches the browser through it; anything
- * else that imports src/mcp still fails here.
+ * The imports of src/mcp from outside it, each a script, which is Node too, so
+ * nothing reaches the browser through one; anything else that imports src/mcp
+ * still fails here:
+ *
+ * - PaddleOCR's Node reader (2026-11-24, the MCP work's wave 7, finding
+ *   NODE-5), which the measuring scripts and the MCP server share so neither
+ *   keeps a copy (nodePaddle.ts says so).
+ * - The generation core's Node parts and the File a path becomes (wave 10,
+ *   finding NODE-9): the fidelity benchmark makes each report as the MCP
+ *   server's generate_report does, so it measures what that tool ships,
+ *   rather than keeping a third copy of the pipeline.
  */
-const SHARED_WITH_SCRIPTS = ['scripts/model/paddleOcr.ts -> ../../src/mcp/nodePaddle'];
+const SHARED_WITH_SCRIPTS = [
+  'scripts/fidelity/run.ts -> ../../src/mcp/nodeGeneration',
+  'scripts/fidelity/run.ts -> ../../src/mcp/nodeIntake',
+  'scripts/model/paddleOcr.ts -> ../../src/mcp/nodePaddle',
+];
 
 describe('the import boundaries', () => {
   it('reads every shape of import it is meant to', () => {
@@ -184,7 +194,7 @@ describe('the import boundaries', () => {
     expect(resolveRelative(join(CLONE, 'src', 'mcp', 'run.mjs'), './stdio.ts')).toBe(join(CLONE, 'src', 'mcp', 'stdio.ts'));
   });
 
-  it('nothing outside src/mcp imports it, tests aside and the one Node reader a script shares, and nothing outside it imports the MCP SDK', () => {
+  it('nothing outside src/mcp imports it, tests aside and the imports the scripts share (SHARED_WITH_SCRIPTS), and nothing outside it imports the MCP SDK', () => {
     const offenders = [...SRC.filter((f) => !inMcp(f) && !isTest(f)), ...SCRIPTS.filter((f) => !isTest(f)), ...ROOT].flatMap((file) =>
       specifiersOf(text(file))
         .filter((spec) => spec.startsWith('@modelcontextprotocol/') || (resolveRelative(file, spec) !== null && inMcp(resolveRelative(file, spec) as string)))

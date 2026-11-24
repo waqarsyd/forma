@@ -5,7 +5,9 @@
  * part the browser owns. The MCP server's AI tools (aiTools.ts, wave 8)
  * call `nodeGeneration` once in their worker thread (genJobs.ts) and `make`
  * for each request, its hooks hearing each stage for their progress; this
- * file registers no tool.
+ * file registers no tool. The fidelity benchmark (scripts/fidelity/run.ts,
+ * wave 10, NODE-9) hands `deps` to the core with its own `ask`, so it scores
+ * the reports these parts make.
  *
  * `make` must never run on the thread that answers the protocol. pdf.js
  * parses and draws a PDF on the thread that calls it, and the wave-7 review

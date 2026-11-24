@@ -11,9 +11,15 @@
  * expected here: CI has no models, so it reads with Tesseract), and the case
  * checks the engine that read it from what the reading said, since a
  * PaddleOCR that fails gives the page to Tesseract with only a line in the
- * log (the wave-7 review's W7R-3); a PDF's text layer goes as it is; nothing
- * is written outside the test's own folder; and no storage is touched, as
- * Node 26 would throw on a read (TST-12).
+ * log (the wave-7 review's W7R-3); a PDF's text layer goes as it is; with
+ * every AI failing, the draft that stands in is the one the core's own
+ * `prepareTeam` makes again over the pages read and the settings worked out,
+ * the paper the page's, and the refused request carried that draft, its brief
+ * and OCR's evidence (wave 10, NODE-9: the fidelity benchmark's `--forma`
+ * scores that stand-in and its draft before the repair chain, through
+ * scripts/fidelity/formaDraft.ts, which this case calls); nothing is
+ * written outside the test's own folder; and no storage is touched, as Node 26
+ * would throw on a read (TST-12).
  */
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -217,6 +223,34 @@ describe('a report made in Node, with only the AI stood in', () => {
     expect(parts.some((p) => p.text?.includes('READ BY OCR'))).toBe(false);
     expect(options.draft).toBeNull();
   }, 120_000);
+
+  it("stands Forma's draft in when every AI fails, the draft prepareTeam makes again over the pages read and the settings worked out", async () => {
+    // The fidelity benchmark's --forma runs exactly this since 2026-11-24 (wave 10, NODE-9; the wave-10 review's R3 moved it out of run.ts to be called here).
+    const { formaDraftOf } = await import('../../scripts/fidelity/formaDraft');
+    const stored = { ...CONFIG, pageSize: 'Letter' } as ReportConfig;
+    const log: string[] = [];
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const own = await formaDraftOf(gen, { files: [{ file: fileFrom('stand-in.png', invoicePage().toBuffer('image/png')), uploadId: 'u5' }], words: '', config: stored }, log);
+      expect(own).toMatchObject({ pictures: 1, standIn: { source: 'reader' } });
+      // The paper is the page's (an A4 drawing), over the stored Letter; the version and unit stay the stored ones.
+      expect(own.settings).toMatchObject({ pageSize: 'A4', version: '23.2', unit: 'HundredthsOfAnInch' });
+      // Taken again and configured as the core configures a stand-in, it is the report that stood in.
+      expect(own.sameAsStandIn).toBe(true);
+      expect(own.raw?.repxContent).toContain('<XtraReportsLayoutSerializer');
+      // The refused request carried that draft, and OCR's evidence (the box reader's brief beside it).
+      expect(own.carried).toHaveLength(1);
+      expect(own.carried[0].draft?.text).toBe(own.correctText);
+      expect(own.correctText).toBeTruthy();
+      expect(own.carried[0].formaBrief).toBeTruthy();
+      expect((own.carried[0].evidence as { sections: { elements: unknown[] }[] } | undefined)?.sections.flatMap((s) => s.elements).length).toBeGreaterThan(0);
+      // The refusal is no AI failing, so neither the log nor the console hears it as one (the review's R6).
+      expect(log.some((line) => line.includes('no AI is asked'))).toBe(false);
+      expect(errors.mock.calls.some((args) => args.some((a) => String(a instanceof Error ? a.message : a).includes('no AI is asked')))).toBe(false);
+    } finally {
+      errors.mockRestore();
+    }
+  }, 180_000);
 
   it('reads with Tesseract alone when PaddleOCR is not asked for, from the language data gathered into its own folder', async () => {
     const tesseract = await nodeGeneration({ userFolder: folder, paddleModels: null, log, ask: async (...args: unknown[]) => (asked.push(args), MOCK_INVOICE_RESPONSE) });

@@ -610,4 +610,34 @@ describe("the Docs page and the README say what Forma's MCP server offers, as to
     expect(adds.length).toBeGreaterThan(0);
     for (const add of adds) expect(add).toMatch(/ -- node <clone>\/src\/mcp\/run\.mjs$/);
   });
+
+  /*
+   * Since 1.7.0 (2026-11-24): the article clones the release the page ships
+   * in, which scripts/deploy.mjs tags as v<package.json's version>, so a
+   * person copies a line that works. It said `v<version>`, a placeholder to
+   * fill in from the changelog. A version raised without this line fails here.
+   */
+  it("clones the release this page ships in, package.json's version", () => {
+    const { version } = JSON.parse(readFileSync('package.json', 'utf8')) as { version: string };
+    const clones = [...article('mcp').matchAll(/git clone --branch (\S+) https:\/\/github\.com\/waqarsyd\/forma\.git/g)].map((m) => m[1]);
+    expect(clones).toEqual([`v${version}`]);
+  });
+
+  /*
+   * Since the wave-10 review (2026-11-24, R2): outside the folders in effect
+   * the server keeps a cache of its own, OCR's languages and the model chosen
+   * for a key's tag, and the README, the Docs article and the PRD say where,
+   * as formaUserFolder makes it on each system; stdio.test.ts holds that
+   * nothing else lands in the home or the temp folder but tsx's cache.
+   */
+  it("names the server's own cache folder as formaUserFolder makes it, on each system", async () => {
+    const { formaUserFolder } = await import('../mcp/nodeGeneration');
+    const prd = readFileSync('docs/PRD.md', 'utf8');
+    // The Docs page writes a backslash as JSX's escaped one.
+    const docsMcp = article('mcp').replace(/\\\\/g, '\\');
+    for (const [platform, sep] of [['win32', '\\'], ['darwin', '/'], ['linux', '/']] as const) {
+      const folder = formaUserFolder('HOME', platform).split(/[\\/]/).slice(1).join(sep);
+      for (const [name, src] of [['README', section()], ['Docs', docsMcp], ['PRD', prd]] as const) expect(src, `${name} names ${folder}`).toContain(folder);
+    }
+  });
 });

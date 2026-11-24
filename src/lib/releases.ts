@@ -75,6 +75,30 @@ export const REPO_URL = 'https://github.com/waqarsyd/forma';
 
 export const RELEASES: Release[] = [
   {
+    id: '2026-11-24-your-own-ai-and-assistants',
+    date: '2026-11-24',
+    version: '1.7.0',
+    title: 'Any AI of your own, and Forma in your AI assistant',
+    summary:
+      'Any AI of your own now opens the workspace: a Gemini or OpenRouter key, or a model on your own computer. Forma’s MCP server, which you run on your own computer from a copy of Forma’s code, is made for an AI assistant such as Claude Code to check, repair and edit your .repx files, and make or change a report with your own AI.',
+    announce: true,
+    changes: [
+      { kind: 'changed', area: 'workspace', text: 'Any AI of your own now opens the workspace: a Gemini or OpenRouter key, or a model on your own computer through Ollama or LM Studio. OpenRouter and a local model no longer need a Gemini key beside them. A Gemini key beside OpenRouter still lets the report library find your reports; while a model on your own computer designs, the library stays shut.' },
+      { kind: 'security', area: 'workspace', text: 'While a model on your own computer designs, the report library is no longer searched with a Gemini key set up beside it, which sent your request’s words to Google. A local AI or OpenRouter chosen with no model now asks for one, where a Gemini key beside it used to answer instead.' },
+      { kind: 'fixed', area: 'generation', text: 'A local AI or OpenRouter that stays busy is now named as the one that is busy, where Forma said Google’s servers were.' },
+      { kind: 'new', area: 'generation', text: 'Forma’s MCP server, a program you run on your own computer from a copy of Forma’s code, not part of the website, made for an AI assistant that speaks MCP: it checks, outlines, repairs and edits your .repx files and draws one as a draft PDF, with no AI and no key. The Docs and the README set it up for Claude Code, Visual Studio’s Copilot, VS Code and Claude Desktop as each one’s own documentation describes; no assistant has run it yet. It opens no network port, reads and writes your files only in the folders you or your assistant give it, writes a new file unless asked to replace one, and takes a database login stored in a report out before reading it.' },
+      { kind: 'new', area: 'generation', text: 'With an AI of your own set up for it, the same server makes a report from a description, pictures, scans, PDFs, a .repx, a Word or Excel template or an SSRS or FastReport report, and changes a .repx as you ask in words, as the workspace and its chat do, each written to a new file. It takes your AI from your assistant’s settings for it, a Gemini or OpenRouter key or a model it reaches only on your own computer. The text of pictures and scans is read on your computer, then the pages go with it to that AI, along with your words, any data files and the report. One report is made at a time, stopping one writes nothing, and your key is kept out of everything it returns and logs.' },
+      { kind: 'new', area: 'site', text: 'The Docs have an article, Forma from your AI assistant: how to set the server up, its tools, and where your key is kept when you use it. The FAQ, the security page and the page on running Forma yourself say what it does and what it needs.' },
+      { kind: 'changed', area: 'site', text: 'The terms say any AI of your own opens the workspace, and the privacy policy has a section on Forma’s MCP server: what its tools send, to which AI, and where your key is then kept. Its paragraph on your key now says it is about the website.' },
+      { kind: 'security', area: 'data', text: 'A database login in a .repx you attach is now taken out wherever DevExpress stored it, a subreport’s own data source and one assigned to the report in code included, which went to the AI with their login. A report whose login cannot be taken out cleanly is not sent at all, and Forma says why.' },
+      { kind: 'security', area: 'data', text: 'A connection string’s password in a data file you attach, such as a text file or a SQL script, is taken out before its text goes to the AI, as one in a .repx or an SSRS report already was.' },
+      { kind: 'security', area: 'workspace', text: 'Error reports and Report this problem now take a bearer token out too, and Report this problem takes out every kind of key an error report does.' },
+      { kind: 'fixed', area: 'preview', text: 'A .repx in which DevExpress 22.2 or later wrote its fonts in their newer form, DXFont, shows them in the Preview and to the chat, where its text was taken as Times New Roman at 9.75 points. The accessibility check now finds its small text, and a font change from the chat replaces its font rather than adding a second one.' },
+      { kind: 'fixed', area: 'ocr', text: 'A straight form whose short labels stand in one column is no longer laid on its side before it is read.' },
+      { kind: 'fixed', area: 'site', text: 'The FAQ says how a report from Forma reaches a Visual Studio project, through the report’s smart tag, Open/Import, since DevExpress says its newer Visual Studio designer no longer opens a .repx file by itself.' },
+    ],
+  },
+  {
     id: '2026-11-22-easier-to-find',
     date: '2026-11-22',
     version: '1.6.5',

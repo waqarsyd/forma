@@ -1,8 +1,9 @@
 /**
  * One way a report is made (2026-11-24, the MCP work's wave 6; the design
  * audit's NODE-4 and NODE-8): the workspace and Batch call this, the MCP
- * server's AI tools call it, and a later command line is to, so a report is
- * made the same way everywhere. The Node versions of the parts
+ * server's AI tools call it, the fidelity benchmark (scripts/fidelity/run.ts,
+ * since wave 10, NODE-9) calls it with the MCP server's Node parts, and a
+ * later command line is to, so a report is made the same way everywhere. The Node versions of the parts
  * handed in are src/mcp/nodeGeneration.ts's (2026-11-24, wave 7), which
  * runs `makeReport` in Node for the MCP server's generate_report and
  * revise_report (src/mcp/genJobs.ts, wave 8).
