@@ -205,7 +205,7 @@ src/
                        same as DevExpress's, entry for entry),
                        draftPdf (a report drawn as a draft PDF with no
                        browser, laid out by the Preview's engine with no
-                       data, in the standard fonts: what scripts/repx.ts
+                       data, in the standard fonts: what the command line's
                        pdf and the MCP server's repx_pdf write),
                        pdfCrypto (that PDF encrypted under the report's own
                        passwords, AES-128, RC4 or AES-256 as DevExpress
@@ -633,9 +633,10 @@ src/
                        into the client; server.ts is the only importer outside
                        the tests (hostingConfig.test.ts holds firebase.json's
                        headers to them)
-  mcp/                 Forma's MCP server (2026-11-24), Node only like
-                       server/, run on stdio from a clone through tsx, never
-                       bundled and never in dist/: run.mjs (the launcher a
+  mcp/                 Forma's MCP server (2026-11-24) and, since the CLI
+                       and Forma Designer work's wave 4, its command line,
+                       Node only like server/, run from a clone through tsx,
+                       never bundled and never in dist/: run.mjs (the launcher a
                        host runs with plain node: registers tsx's loader in
                        one process, then loads the entry), stdio.ts (the
                        entry: the stdout guard first, then serveStdio serving
@@ -660,8 +661,9 @@ src/
                        command line: a refusal in plain words, the longest
                        string read from a file a result carries, the one
                        way a result is made safe to show, keys out and then
-                       the clip, and whose voice the words are in; no zod,
-                       no SDK), paths
+                       the clip, and whose voice the words are in, a path
+                       quoted as JSON for a model and plainly for a person;
+                       no zod, no SDK), paths
                        (which path a tool may read or write: full paths only,
                        the corrected path handed back, roots held as spelled
                        and as they really are, checked before and after links
@@ -691,12 +693,22 @@ src/
                        never replacing a file unless asked and an edit never
                        into a .vsrepx whose Designer file loses a name),
                        pipeline (the tools' work, run in a worker thread:
-                       the report opened, then the web app's module),
+                       the report opened, then the web app's module; and
+                       the copy the command line's batch writes of a report
+                       its words left as it was),
                        worker.mjs (that thread's entry: registers tsx, runs
                        pipeline; outside coverage, as run.mjs is),
                        workerPool (starts it with a memory bound and a
                        deadline, ends it on either or on a cancellation, and
-                       keeps one idle), skillResource (the REPX skill served
+                       keeps one idle), layoutCalls (since the CLI and Forma
+                       Designer work's wave 4, the five report tools' steps
+                       on the thread that answers, which the command line
+                       makes too: the report read, the work on the pipeline,
+                       the notices, the file written by the caller's rule
+                       for a taken name; and convert, an SSRS or FastReport
+                       report made into a .repx with no AI, in the pipeline's
+                       thread, and the batch's write of a report as it
+                       reads or as converted), skillResource (the REPX skill served
                        as a resource, with a preface telling a model to send
                        full paths), testFs and testClient (a file system and
                        a client in memory, and a pipeline in the test's own
@@ -767,7 +779,31 @@ src/
                        kept in a file in Forma's folder by the key's tag as
                        each limit happens, so a thread started afresh asks
                        none of them again; and the soonest the key can be
-                       asked again when every model it can call is parked).
+                       asked again when every model it can call is parked,
+                       which the command line's batch reads before each
+                       file; Forma's per-user folder named here too).
+                       Since the CLI and Forma Designer work's wave 4, the
+                       command line, a second entry: cli.mjs (the launcher a
+                       person or a CI step runs with plain node, in run.mjs's
+                       form, the clone's tsconfig named), cliEntry.ts (the
+                       entry, in stdio.ts's order: the stdout guard with the
+                       command line's options, the AI's environment taken
+                       and its keys deleted, then main; it and cli.mjs are
+                       outside coverage, running only in a spawned process),
+                       commandLine (main(argv, io): the arguments, every
+                       command, the AI gate for generate and revise, the
+                       results on stdout or as JSON Lines, the exit codes, a
+                       stop on Ctrl+C, and the batch's loop: one file at a
+                       time, the gate only when a route asks the AI, a
+                       minute's limit waited out, the day's stopping the
+                       rest, each file it leaves listed as not started),
+                       cliCommands (the commands in their order, each
+                       needing an AI, not, or by route, and the launcher's
+                       path: a pure list, no import) and folderBatch (the
+                       batch's plan, decided before a file is read: the
+                       folder walked level by level with no link followed,
+                       each file's route by its kind, every name it writes,
+                       and what a limit does).
                        Tests beside them: stdoutGuard, toolShape, paths,
                        roots, formaServer and reportTools each have one
                        (formaServer's drives forma_status in both eras and
@@ -783,7 +819,7 @@ src/
                        stood in: the refusal, the queue, progress, a
                        cancellation, the switch note, no key in any result),
                        and so does reportCalls (the same calls as the
-                       command line is to make them: a working folder, a
+                       command line makes them: a working folder, a
                        person's words, a taken name refused), and modelParks
                        (the file, and a park one thread records honoured by
                        the next, in fresh modules and in real worker
@@ -792,6 +828,14 @@ src/
                        server's words, read from the source of every module
                        it runs and heard from its calls;
                        stdio.test.ts spawns the exact command a host runs;
+                       commandLine.test.ts calls the command line in its own
+                       thread, every command and exit code, convert and the
+                       batch on a folder of every kind it meets, and spawns
+                       the exact command a person runs, from outside the
+                       clone; folderBatch.test.ts holds the batch's walk (on
+                       both platforms' path rules, and on the real disk with
+                       a junction or link out of the folder), its routes,
+                       names and limit rule;
                        boundaries.test.ts holds src/mcp and src/server
                        apart from the browser code
   fonts/               the three self-hosted typefaces as variable woff2, their
@@ -841,8 +885,8 @@ docs/                  PRD.md, project-structure.md (this tree),
                        the measured DevExpress parity table), skills/devexpress-repx
                        (what Forma measured about the REPX format, written for
                        a person or a coding assistant editing a .repx by hand;
-                       scripts/repx.ts is its command line, and the MCP
-                       server serves it as a resource) and audit/README.md (a one-line index of the
+                       Forma's command line, src/mcp/cli.mjs, runs its audit
+                       and repair, and the MCP server serves it as a resource) and audit/README.md (a one-line index of the
                        2026-08-27 findings, whose IDs are cited throughout the
                        code — a dated record; read notes/ for what is current)
   media/               images the documentation links to, and the only place a
@@ -884,11 +928,12 @@ scripts/               dev.mjs (npm run dev:log) and build-server.mjs; the
                        picture reader's models, SHA-256 pinned);
                        package-designer.ts and companion-scripts.ts (Forma
                        Designer's zip, and the layout script it runs);
-                       repx.ts (Forma's audit, repair chain and a draft PDF
-                       of a .repx from the command line: `npx tsx
-                       scripts/repx.ts audit|repair|pdf <file>`, the audit
-                       exiting 1 on an error; the draft PDF is
-                       src/lib/draftPdf.ts, which the MCP server shares);
+                       repx.ts (since the CLI and Forma Designer work's wave
+                       4 a forwarder to Forma's command line's entry,
+                       src/mcp/cliEntry.ts, so `npx tsx scripts/repx.ts
+                       audit|repair|pdf <file>` keeps working from the clone,
+                       a second argument to repair and pdf handed on as
+                       --out; the command line is src/mcp/cli.mjs);
                        fidelity/, the benchmark's runner, which makes each
                        report through the generation core with
                        src/mcp/nodeGeneration's parts, formaDraft.ts (Forma's

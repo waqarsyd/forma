@@ -116,7 +116,10 @@
  * below the drive otherwise, so only the folder the command runs in may
  * itself be one: the person chose it. The refusals speak to a person
  * (`Voice`): "give" where a model is told "send", and "Forma" where it is
- * told "this server".
+ * told "this server"; and a path is quoted in plain double quotes, never as
+ * JSON, so a Windows path reads with single backslashes and can be copied
+ * back to a shell (caller.ts `quoted`; the wave-4 review's U8), any control
+ * character in it shown as `?`.
  *
  * Pure ASCII, as everything an MCP server may print.
  */
@@ -124,7 +127,7 @@ import { constants, copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, re
 import { homedir } from 'node:os';
 import { posix, win32, type PlatformPath } from 'node:path';
 import { fileURLToPath as nodeFileURLToPath } from 'node:url';
-import type { Voice } from './caller';
+import { quoted, type Voice } from './caller';
 
 /** A refusal's words, sent to the host's model as they are. */
 export type PathVerdict = { ok: true; path: string } | { ok: false; reason: string };
@@ -205,6 +208,7 @@ export const voiceOf = (scope: PathScope): Voice => (inFolder(scope) ? 'cli' : '
 /** The few words a refusal says differently to a host's model and to a person at a command line (CLI-10). */
 const WORDS = {
   mcp: {
+    voice: 'mcp',
     give: 'send',
     Give: 'Send',
     full: 'full ',
@@ -217,6 +221,7 @@ const WORDS = {
     nodeAside: '',
   },
   cli: {
+    voice: 'cli',
     give: 'give',
     Give: 'Give',
     full: '',
@@ -232,7 +237,8 @@ const WORDS = {
 type Words = (typeof WORDS)[Voice];
 
 const isWin = (p: PlatformPath) => p.sep === '\\';
-const shown = (raw: string) => JSON.stringify(raw.length > 200 ? `${raw.slice(0, 200)}...` : raw);
+/** A path as `w`'s refusals quote it (caller.ts `quoted`), cut at 200 characters. */
+const shown = (raw: string, w: Words) => quoted(raw.length > 200 ? `${raw.slice(0, 200)}...` : raw, w.voice);
 
 /** Windows' reserved device names, which open a device whatever the folder or extension. */
 const DEVICE = /^(con|prn|aux|nul|com[0-9]|lpt[0-9]|conin\$|conout\$)$/i;
@@ -308,9 +314,9 @@ function readRaw(raw: unknown, path: PlatformPath, home: string | undefined, w: 
   const no = (reason: string): PathVerdict => ({ ok: false, reason });
   if (typeof raw !== 'string' || raw === '') return no(`${w.Give} the ${w.full}path to the file.`);
   const win = isWin(path);
-  if (/^["'].*["']$/s.test(raw.trim())) return no(`${shown(raw)} is in quotes; ${w.give} the path without them.`);
-  if (raw.trim() !== raw) return no(`${shown(raw)} starts or ends with a space; ${w.give} the path without it.`);
-  if (/[\u0000-\u001f\u007f]/.test(raw)) return no(`${shown(raw)} holds a control character; ${w.give} the path as the file system spells it.`);
+  if (/^["'].*["']$/s.test(raw.trim())) return no(`${shown(raw, w)} is in quotes; ${w.give} the path without them.`);
+  if (raw.trim() !== raw) return no(`${shown(raw, w)} starts or ends with a space; ${w.give} the path without it.`);
+  if (/[\u0000-\u001f\u007f]/.test(raw)) return no(`${shown(raw, w)} holds a control character; ${w.give} the path as the file system spells it.`);
   if (/^file:/i.test(raw)) {
     let fixed = '';
     try {
@@ -318,48 +324,48 @@ function readRaw(raw: unknown, path: PlatformPath, home: string | undefined, w: 
     } catch {
       /* no corrected path to offer */
     }
-    return no(`${shown(raw)} is a URL; ${w.give} a path${fixed ? `, ${shown(fixed)}` : ''}.`);
+    return no(`${shown(raw, w)} is a URL; ${w.give} a path${fixed ? `, ${shown(fixed, w)}` : ''}.`);
   }
   if (/^[\\/]{2}/.test(raw)) {
-    if (!win) return no(`${shown(raw)} starts with two slashes; ${w.give} it with one.`);
+    if (!win) return no(`${shown(raw, w)} starts with two slashes; ${w.give} it with one.`);
     // \\?\C:\... and \\.\C:\... name a file on this computer's drive C:, in the long and device forms tools print for long
     // names: refused all the same, still before any file-system call, with the plain path to give instead (the CLI work's
     // wave-2 review, SEC-W2-6: until then the refusal said the path was on another computer, which it is not).
     const long = /^[\\/]{2}[?.][\\/]([A-Za-z]):[\\/](.*)$/s.exec(raw);
-    if (long) return no(`${shown(raw)} is the long form of a path on drive ${long[1].toUpperCase()}:; ${w.give} it as ${shown(`${long[1].toUpperCase()}:\\${long[2].replace(/\//g, '\\')}`)}.`);
+    if (long) return no(`${shown(raw, w)} is the long form of a path on drive ${long[1].toUpperCase()}:; ${w.give} it as ${shown(`${long[1].toUpperCase()}:\\${long[2].replace(/\//g, '\\')}`, w)}.`);
     const drive = /^[\\/]{2}([A-Za-z])[\\/](.*)$/.exec(raw);
-    const hint = drive ? ` If you meant drive ${drive[1].toUpperCase()}:, ${w.give} ${shown(`${drive[1].toUpperCase()}:\\${drive[2].replace(/\//g, '\\')}`)}.` : '';
-    return no(`${shown(raw)} names a path on another computer, which ${w.never}.${hint}`);
+    const hint = drive ? ` If you meant drive ${drive[1].toUpperCase()}:, ${w.give} ${shown(`${drive[1].toUpperCase()}:\\${drive[2].replace(/\//g, '\\')}`, w)}.` : '';
+    return no(`${shown(raw, w)} names a path on another computer, which ${w.never}.${hint}`);
   }
   if (/^~(?:[\\/]|$)/.test(raw)) {
     const fixed = home ? path.join(home, raw.slice(2)) : '';
-    return no(`${shown(raw)} starts with ~; ${w.give} the full path of the home folder${fixed ? `, ${shown(fixed)}` : ''}.`);
+    return no(`${shown(raw, w)} starts with ~; ${w.give} the full path of the home folder${fixed ? `, ${shown(fixed, w)}` : ''}.`);
   }
   if (win) {
     const msys = /^\/([A-Za-z])(?:\/(.*))?$/.exec(raw) ?? /^\/mnt\/([A-Za-z])(?:\/(.*))?$/.exec(raw);
     if (msys) {
       const fixed = `${msys[1].toUpperCase()}:\\${(msys[2] ?? '').replace(/\//g, '\\')}`;
-      return no(`${shown(raw)} is a Git Bash or WSL path; ${w.give} ${shown(fixed)}.`);
+      return no(`${shown(raw, w)} is a Git Bash or WSL path; ${w.give} ${shown(fixed, w)}.`);
     }
-    if (/^\//.test(raw)) return no(`${shown(raw)} is a Unix path; ${w.give} the full Windows path, with its drive letter.`);
-    if (/^\\/.test(raw)) return no(`${shown(raw)} starts at the root of whichever drive is current; ${w.give} it with its drive letter.`);
-    if (/^[A-Za-z]:(?![\\/])/.test(raw)) return no(`${shown(raw)} is relative to the current folder of drive ${raw[0].toUpperCase()}:; ${w.give} the full path, for example ${raw[0].toUpperCase()}:\\folder\\${raw.slice(2) || 'file'}.`);
+    if (/^\//.test(raw)) return no(`${shown(raw, w)} is a Unix path; ${w.give} the full Windows path, with its drive letter.`);
+    if (/^\\/.test(raw)) return no(`${shown(raw, w)} starts at the root of whichever drive is current; ${w.give} it with its drive letter.`);
+    if (/^[A-Za-z]:(?![\\/])/.test(raw)) return no(`${shown(raw, w)} is relative to the current folder of drive ${raw[0].toUpperCase()}:; ${w.give} the full path, for example ${raw[0].toUpperCase()}:\\folder\\${raw.slice(2) || 'file'}.`);
     const relative = !/^[A-Za-z]:[\\/](?![\\/])/.test(raw);
-    if (relative && base === undefined) return no(`${shown(raw)} is not a full path; ${w.notFull}.`);
+    if (relative && base === undefined) return no(`${shown(raw, w)} is not a full path; ${w.notFull}.`);
     if (relative ? raw.includes(':') : raw.indexOf(':', 2) !== -1) {
-      return no(`${shown(raw)} has a ':'${relative ? '' : ' after the drive letter'}, which names a hidden stream of a file; ${w.give} a plain file path.`);
+      return no(`${shown(raw, w)} has a ':'${relative ? '' : ' after the drive letter'}, which names a hidden stream of a file; ${w.give} a plain file path.`);
     }
     const segments = (relative ? raw : raw.slice(3)).split(/[\\/]/);
     for (const s of segments) {
-      if (WIN_BAD.test(s)) return no(`${shown(raw)} holds a character Windows does not allow in a file name.`);
-      if (s !== '.' && s !== '..' && /[ .]$/.test(s)) return no(`${shown(raw)} has a name ending in a space or a dot, which Windows cannot open; ${w.give} the name without it.`);
-      if (DEVICE.test(s.split('.')[0])) return no(`${shown(raw)} names a Windows device (${s.split('.')[0].toUpperCase()}), not a file.`);
+      if (WIN_BAD.test(s)) return no(`${shown(raw, w)} holds a character Windows does not allow in a file name.`);
+      if (s !== '.' && s !== '..' && /[ .]$/.test(s)) return no(`${shown(raw, w)} has a name ending in a space or a dot, which Windows cannot open; ${w.give} the name without it.`);
+      if (DEVICE.test(s.split('.')[0])) return no(`${shown(raw, w)} names a Windows device (${s.split('.')[0].toUpperCase()}), not a file.`);
     }
     if (relative) return { ok: true, path: path.resolve(base as string, raw) };
   } else {
-    if (/^[A-Za-z]:[\\/]/.test(raw)) return no(`${shown(raw)} is a Windows path, and ${w.runs} on another system; ${w.give} a ${w.full}path such as /home/me/report.repx.`);
+    if (/^[A-Za-z]:[\\/]/.test(raw)) return no(`${shown(raw, w)} is a Windows path, and ${w.runs} on another system; ${w.give} a ${w.full}path such as /home/me/report.repx.`);
     if (!raw.startsWith('/')) {
-      if (base === undefined) return no(`${shown(raw)} is not a full path; ${w.notFull}.`);
+      if (base === undefined) return no(`${shown(raw, w)} is not a full path; ${w.notFull}.`);
       return { ok: true, path: path.resolve(base, raw) };
     }
   }
@@ -479,14 +485,14 @@ function linkOutOf(target: string, base: string, sys: PathSystem): string | null
 function nameRefusal(target: string, below: string, path: PlatformPath, forWrite: boolean, w: Words): string | null {
   const segments = path.relative(below, target).split(path.sep).filter(Boolean);
   const base = path.basename(target);
-  if (CREDENTIAL.some((re) => re.test(base))) return `${shown(target)} is named as a file of credentials, which ${w.who} never opens.`;
+  if (CREDENTIAL.some((re) => re.test(base))) return `${shown(target, w)} is named as a file of credentials, which ${w.who} never opens.`;
   const dot = segments.find((s) => s.startsWith('.'));
-  if (dot) return `${shown(target)} is inside ${shown(dot)}; ${w.who} never ${forWrite ? 'writes into' : 'reads from'} a dot-folder or a dot-file${w.aside}.`;
-  if (forWrite && segments.some((s) => s.toLowerCase() === 'node_modules')) return `${shown(target)} is inside node_modules; ${w.who} never writes there${w.nodeAside}.`;
+  if (dot) return `${shown(target, w)} is inside ${shown(dot, w)}; ${w.who} never ${forWrite ? 'writes into' : 'reads from'} a dot-folder or a dot-file${w.aside}.`;
+  if (forWrite && segments.some((s) => s.toLowerCase() === 'node_modules')) return `${shown(target, w)} is inside node_modules; ${w.who} never writes there${w.nodeAside}.`;
   return null;
 }
 
-const outside = (raw: string) => `${shown(raw)} is outside the folders this server may use; forma_status lists them.`;
+const outside = (target: string) => `${shown(target, WORDS.mcp)} is outside the folders this server may use; forma_status lists them.`;
 
 export interface TargetOptions {
   /** The extensions this tool reads or writes, lower case with the dot; any when absent. */
@@ -508,10 +514,10 @@ export function resolveReadPath(raw: unknown, scope: PathScope, sys: PathSystem,
   const w = WORDS[voiceOf(scope)];
   const named = nameRefusal(real, below, path, false, w);
   if (named) return { ok: false, reason: named };
-  if (!fs.lexists(real)) return { ok: false, reason: `There is no file at ${shown(target)}.` };
+  if (!fs.lexists(real)) return { ok: false, reason: `There is no file at ${shown(target, w)}.` };
   const stat = fs.stat(real);
-  if (!stat.isFile()) return { ok: false, reason: `${shown(target)} is not a file.` };
-  if (options.maxBytes !== undefined && stat.size > options.maxBytes) return { ok: false, reason: `${shown(target)} is ${stat.size} bytes, more than the ${options.maxBytes} ${w.reads}.` };
+  if (!stat.isFile()) return { ok: false, reason: `${shown(target, w)} is not a file.` };
+  if (options.maxBytes !== undefined && stat.size > options.maxBytes) return { ok: false, reason: `${shown(target, w)} is ${stat.size} bytes, more than the ${options.maxBytes} ${w.reads}.` };
   return { ok: true, path: real };
 }
 
@@ -529,10 +535,35 @@ export function resolveWritePath(raw: unknown, scope: PathScope, sys: PathSystem
   const { target, real, root, below } = found;
   const { path, fs } = sys;
   const w = WORDS[voiceOf(scope)];
-  if (path.relative(root, real) === '') return { ok: false, reason: `${shown(target)} is a folder${inFolder(scope) ? ', not a file' : ' this server may use, not a file in it'}.` };
+  if (path.relative(root, real) === '') return { ok: false, reason: `${shown(target, w)} is a folder${inFolder(scope) ? ', not a file' : ' this server may use, not a file in it'}.` };
   const named = nameRefusal(real, below, path, true, w);
   if (named) return { ok: false, reason: named };
-  if (fs.lexists(real) && !fs.stat(real).isFile()) return { ok: false, reason: `${shown(target)} is a folder, not a file.` };
+  if (fs.lexists(real) && !fs.stat(real).isFile()) return { ok: false, reason: `${shown(target, w)} is a folder, not a file.` };
+  return { ok: true, path: real };
+}
+
+/**
+ * A folder the command line may list (since the CLI and Forma Designer
+ * work's wave 4, 2026-11-24: its audit of a folder): judged as a file to
+ * read is, the string before any file-system call, the links on the way
+ * walked so none to another computer is followed, and the folder it must
+ * really be in, so no link the working folder holds leads out of it; then
+ * an existing folder, not a dot-folder below the working folder. Returns its
+ * real path. Nothing in it is admitted by this: each file a listing finds is
+ * judged on its own, by `resolveReadPath`. Never `fs.stat` on a path before
+ * this: a stat follows a junction to a share, which sends the Windows
+ * sign-in (GAP2-2, PS-6).
+ */
+export function resolveFolderPath(raw: unknown, scope: PathScope, sys: PathSystem): PathVerdict {
+  const found = located(raw, scope, sys, {});
+  if (!found.ok) return found;
+  const { target, real, below } = found;
+  const { path, fs } = sys;
+  const w = WORDS[voiceOf(scope)];
+  const named = nameRefusal(real, below, path, false, w);
+  if (named) return { ok: false, reason: named };
+  if (!fs.lexists(real)) return { ok: false, reason: `There is no folder at ${shown(target, w)}.` };
+  if (!fs.stat(real).isDirectory()) return { ok: false, reason: `${shown(target, w)} is not a folder.` };
   return { ok: true, path: real };
 }
 
@@ -545,7 +576,7 @@ function located(raw: unknown, scope: PathScope, sys: PathSystem, options: Targe
   if (!target.ok) return target;
   const { path } = sys;
   const w = WORDS[voiceOf(scope)];
-  const remote = (p: string) => `${shown(p)} goes through a link to another computer, which ${w.never}.`;
+  const remote = (p: string) => `${shown(p, w)} goes through a link to another computer, which ${w.never}.`;
   let real: string;
   let base: string | null = null;
   let folder: string | null = null;
@@ -553,10 +584,10 @@ function located(raw: unknown, scope: PathScope, sys: PathSystem, options: Targe
     if (isWin(path)) {
       const why = linksOnTheWay(target.path, sys);
       if (why === 'remote') return { ok: false, reason: remote(target.path) };
-      if (why === 'too many') return { ok: false, reason: `${shown(target.path)} goes through more than ${MAX_LINKS} links; ${w.give} the file's real path.` };
+      if (why === 'too many') return { ok: false, reason: `${shown(target.path, w)} goes through more than ${MAX_LINKS} links; ${w.give} the file's real path.` };
       // The working folder is walked as any path is before its real path is asked for: a junction to a share is never followed.
       const baseWhy = target.base === null ? null : linksOnTheWay(target.base, sys);
-      if (baseWhy) return { ok: false, reason: `Forma cannot use the folder the command is run in: ${baseWhy === 'remote' ? remote(target.base as string) : `${shown(target.base as string)} goes through more than ${MAX_LINKS} links.`}` };
+      if (baseWhy) return { ok: false, reason: `Forma cannot use the folder the command is run in: ${baseWhy === 'remote' ? remote(target.base as string) : `${shown(target.base as string, w)} goes through more than ${MAX_LINKS} links.`}` };
     }
     real = realTarget(target.path, sys);
     if (target.base !== null) {
@@ -564,12 +595,12 @@ function located(raw: unknown, scope: PathScope, sys: PathSystem, options: Targe
       // Whether a path is in the working folder is where it really is, never how it was spelled (SEC-W2-2): no link that is
       // really in the working folder may lead out of it, and a path whose folder is really in it must land in it.
       const out = linkOutOf(target.path, base, sys);
-      if (out !== null) return { ok: false, reason: `${shown(target.path)} leads through a link to ${shown(isInside(real, base, path) ? out : real)}, outside the folder the command is run in; Forma follows no link out of it.` };
+      if (out !== null) return { ok: false, reason: `${shown(target.path, w)} leads through a link to ${shown(isInside(real, base, path) ? out : real, w)}, outside the folder the command is run in; Forma follows no link out of it.` };
       const named = realTarget(path.dirname(target.path), sys);
       folder = isInside(named, base, path) ? base : named;
     }
   } catch {
-    return { ok: false, reason: `${shown(target.path)} could not be resolved on this computer.` };
+    return { ok: false, reason: `${shown(target.path, w)} could not be resolved on this computer.` };
   }
   let root: string;
   let below: string;
@@ -581,13 +612,13 @@ function located(raw: unknown, scope: PathScope, sys: PathSystem, options: Targe
     // Named inside the working folder, it must really be there; named outside it, in the folder it is named in.
     if (!isInside(real, folder, path)) {
       const where = folder === base ? 'the folder the command is run in' : 'the folder it is named in';
-      return { ok: false, reason: `${shown(target.path)} leads through a link to ${shown(real)}, outside ${where}; Forma follows no link out of it.` };
+      return { ok: false, reason: `${shown(target.path, w)} leads through a link to ${shown(real, w)}, outside ${where}; Forma follows no link out of it.` };
     }
     root = folder;
     below = isInside(real, base, path) ? base : path.parse(real).root;
   }
   const wrongKind = extensionRefusal(real, path, options);
-  if (wrongKind) return { ok: false, reason: `${shown(target.path)} leads to ${shown(real)}, which ${wrongKind}` };
+  if (wrongKind) return { ok: false, reason: `${shown(target.path, w)} leads to ${shown(real, w)}, which ${wrongKind}` };
   return { ok: true, target: target.path, real, root, below };
 }
 
@@ -607,7 +638,7 @@ function checked(raw: unknown, scope: PathScope, sys: PathSystem, options: Targe
   const parsed = base ? readRaw(raw, sys.path, sys.home, WORDS.cli, base.path) : parseToolPath(raw, sys.path, sys.home);
   if (!parsed.ok) return parsed;
   const wrongKind = extensionRefusal(parsed.path, sys.path, options);
-  if (wrongKind) return { ok: false, reason: `${shown(parsed.path)} ${wrongKind}` };
+  if (wrongKind) return { ok: false, reason: `${shown(parsed.path, WORDS[voiceOf(scope)])} ${wrongKind}` };
   if (base) return { ok: true, path: parsed.path, base: base.path };
   const roots = scope as readonly Root[];
   if (!roots.length) return { ok: false, reason: 'No folder is set for this server to use; forma_status says how to set one.' };

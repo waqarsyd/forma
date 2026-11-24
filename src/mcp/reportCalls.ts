@@ -4,7 +4,7 @@
  * findings CLI-2 and SEC-4 of its design audit,
  * `DevFiles/forma-audit/cli-designer-2026-11-24-findings.md`): the MCP
  * server's generate_report and revise_report (aiTools.ts), and the command
- * line's generate and revise, which that work's wave 4 builds on this. Until
+ * line's generate and revise (commandLine.ts, since that work's wave 4). Until
  * this wave every step was a closure inside `aiTools()`, bound to the MCP's
  * ToolContext, zod and defineTool, so a second caller could only have copied
  * them, and with them two rules whose order is their security: a failure's
@@ -45,7 +45,20 @@
  * though a report was written (genJobs.ts, *What a failure carries, and who
  * answered*), each as data and never in a phrase, as `ai` names a provider
  * and only `answeredBy` words it; and `planGenerate` takes `standIn: false`
- * (`GenerateHow`), with which nothing stands in for the AI.
+ * (`GenerateHow`), with which nothing stands in for the AI. Since its wave 4
+ * (the command line, OC5): `GenerateHow`'s `draft`, a second target that
+ * Forma's draft is written to when it stands in, so the command line's
+ * `--allow-stand-in` writes `<name>.draft.repx` and never a draft under the
+ * report's own name; and `planRevise` takes `editsOnly`, with which a
+ * request that would take a redesign of the whole report is declined and
+ * nothing written (GAP1-3). And since that wave's review (SEC-W4-2), under
+ * a policy that replaces (the command line's `--force`): a generate is
+ * refused before the AI is asked when its output, or its draft's, is one of
+ * the files it is made from, and a revise writes over its report only when
+ * nothing was taken out of its connection (reportFile.ts
+ * `overInputRefusal`), so the login a reading removes never leaves the
+ * person's own file. The server's policy never replaces, so it never meets
+ * either.
  *
  * Only a refusal's quoted failure has its keys out here (`failureSaid`).
  * Every string in a returned result is unscrubbed: `fromFile.aiError` is the
@@ -77,12 +90,12 @@ import { MAX_ATTACHMENTS, MAX_FILE_BYTES } from '../lib/attachmentBudget';
 import type { AiLimit } from '../lib/aiLimit';
 import { reportFileKind } from '../lib/vsReport';
 import { notReadyMessage, type AiSettings } from './aiSettings';
-import { AiFailure, CallStopped, ToolRefusal, type Voice } from './caller';
+import { AiFailure, CallStopped, ToolRefusal, quoted, type Voice } from './caller';
 import type { Answerer, GenDone, GenEvent, InputFile, Printed, ReviseAction } from './genJobs';
 import type { Generator, JobSource } from './generator';
 import { nodeWriteFs, parsePath, resolveReadPath, resolveWritePath, type IfExists, type PathScope, type PathSystem, type PlacedStatus, type WriteFs, type WriteStatus } from './paths';
 import type { Audited } from './pipeline';
-import { besideName, codeRefusal, outputPath, readReport, writeReport, type LayoutKind, type ReportFile, type Written } from './reportFile';
+import { besideName, codeRefusal, outputPath, overInputRefusal, readReport, sameFile, writeReport, type LayoutKind, type ReportFile, type Written } from './reportFile';
 
 /** Pictures the intake reads. */
 export const PICTURE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.tif', '.tiff', '.heic', '.heif', '.avif'] as const;
@@ -103,6 +116,7 @@ const STAND_IN_WORDS: Record<string, string> = {
 const SAY = {
   mcp: {
     nothing: 'Send a description of the report, files to make it from (files), or both.',
+    overSource: (file: string) => `${file} is one of the files the report is made from; name another output.`,
     tooMany: (n: number) => `Send at most ${MAX_ATTACHMENTS} files in one call, as the workspace takes; ${n} were sent.`,
     noOutput: 'Name output, the full path of the .repx to write, since there is no file to write it beside.',
     noRequest: 'Send the request: what to change in the report, or what to ask about it, in words.',
@@ -112,6 +126,7 @@ const SAY = {
   },
   cli: {
     nothing: 'Give a description of the report, files to make it from, or both.',
+    overSource: (file: string) => `${file} is one of the files the report is made from, which Forma never writes over; name another file with --out.`,
     tooMany: (n: number) => `Give at most ${MAX_ATTACHMENTS} files at once, as the workspace takes; ${n} were given.`,
     noOutput: 'Name where to write the report, a .repx, since there is no file to write it beside.',
     noRequest: 'Give the request: what to change in the report, or what to ask about it, in words.',
@@ -178,7 +193,8 @@ export interface PathPolicy<W extends IfExists = IfExists> {
 /** What a write under `W` can say: `exists` only where the policy refuses a taken name. */
 export type WrittenBy<W extends IfExists> = Written<W extends 'refuse' ? WriteStatus : PlacedStatus>;
 
-const scopeOf = async (policy: PathPolicy): Promise<PathScope> => (typeof policy.scope === 'function' ? policy.scope() : policy.scope);
+/** The policy's scope, the server's roots asked for when the policy holds a question for them. */
+export const scopeOf = async (policy: PathPolicy): Promise<PathScope> => (typeof policy.scope === 'function' ? policy.scope() : policy.scope);
 
 /** A file judged for reading: where it really is, its name for the intake, and the path as the caller spelled it, resolved. */
 export interface Judged {
@@ -210,9 +226,9 @@ export async function readJudged(judged: readonly Judged[], voice: Voice): Promi
     try {
       bytes = ownBytes(await readFile(file.path));
     } catch {
-      throw new ToolRefusal(SAY[voice].gone(JSON.stringify(file.spelled)));
+      throw new ToolRefusal(SAY[voice].gone(quoted(file.spelled, voice)));
     }
-    if (bytes.byteLength > MAX_FILE_BYTES) throw new ToolRefusal(SAY[voice].grew(JSON.stringify(file.spelled), bytes.byteLength));
+    if (bytes.byteLength > MAX_FILE_BYTES) throw new ToolRefusal(SAY[voice].grew(quoted(file.spelled, voice), bytes.byteLength));
     files.push({ name: file.name, bytes });
   }
   return files;
@@ -253,13 +269,15 @@ export interface GenerateInput {
   output?: string;
 }
 
-/** A generate call judged: its words, its files (sources first, then data), the output, the policy it was judged by, and whether Forma's draft may stand in. */
+/** A generate call judged: its words, its files (sources first, then data), the output, the policy it was judged by, and whether Forma's draft may stand in, and where. */
 export interface GeneratePlan<W extends IfExists = IfExists> {
   words: string;
   inputs: readonly Judged[];
   target: string;
   policy: PathPolicy<W>;
   standIn: boolean;
+  /** Where Forma's draft is written when it stands in, apart from the report's name (`GenerateHow`'s `draft`); null: under `target`, the server's way. */
+  draftTarget: string | null;
 }
 
 /**
@@ -267,10 +285,20 @@ export interface GeneratePlan<W extends IfExists = IfExists> {
  * `standIn` false and nothing stands in when every AI fails (the core's
  * `standIn: false`, OC5), the failure refused as an `AiFailure` with the
  * limit it met. The server leaves it out, so Forma's draft stands in, as
- * before; the command line's batch is to set it (its wave 4).
+ * before; the command line sets it unless the person gives
+ * `--allow-stand-in` (its wave 4).
+ *
+ * `draft`, since the command line's wave 4 (OC5, left open by wave 3): the
+ * path Forma's draft is written to when it stands in, apart from the
+ * report's own name, so a draft is never taken for the AI's report by name:
+ * the command line's `<name>.draft.repx`. It is judged with the output,
+ * before the call waits, so a refused path costs no request; left out, a
+ * draft that stands in is written under the report's name, as the server
+ * writes it.
  */
 export interface GenerateHow {
   standIn?: boolean;
+  draft?: string;
 }
 
 /** Judges a generate call, its words and then every path, before it waits. Throws a `ToolRefusal`. */
@@ -288,7 +316,17 @@ export async function planGenerate<W extends IfExists>(input: GenerateInput, pol
   if (!input.output && !first) throw new ToolRefusal(say.noOutput);
   const target = resolveWritePath(input.output || besideName(first.spelled, '.generated.repx', sys), scope, sys, { extensions: ['.repx'] });
   if (!target.ok) throw new ToolRefusal(target.reason);
-  return { words, inputs, target: target.path, policy, standIn: how.standIn !== false };
+  const draft = how.draft ? resolveWritePath(how.draft, scope, sys, { extensions: ['.repx'] }) : null;
+  if (draft && !draft.ok) throw new ToolRefusal(draft.reason);
+  // A report made from a file is never written over that file, whatever replaces (the wave-4 review's SEC-W4-2): a
+  // report to start from would lose what it was, its login included. Only a policy that replaces can reach it.
+  if (policy.ifExists === 'replace') {
+    for (const written of [target.path, ...(draft?.ok ? [draft.path] : [])]) {
+      const over = inputs.find((i) => sameFile(written, i.path, sys));
+      if (over) throw new ToolRefusal(say.overSource(quoted(over.path, policy.voice)));
+    }
+  }
+  return { words, inputs, target: target.path, policy, standIn: how.standIn !== false, draftTarget: draft ? draft.path : null };
 }
 
 /** generate_report's output object: the file written, who answered, what stood in, the notices, the audit and what printing found. */
@@ -334,7 +372,8 @@ export async function runGenerate<W extends IfExists>(plan: GeneratePlan<W>, run
   }));
   if (done.kind !== 'generate') throw new Error('the generator answered another call');
   if (!done.xml) throw new AiFailure(`No report was made: ${failureSaid(done.failure, run.redact)} Nothing was written.`, done.limit);
-  const written = writeMade(plan.target, done.xml, run.signal, policy);
+  // Forma's draft, standing in, goes to its own name when the caller gave one (GenerateHow's draft).
+  const written = writeMade(done.standIn && plan.draftTarget ? plan.draftTarget : plan.target, done.xml, run.signal, policy);
   const audit = done.audit;
   const notices = [...done.notices, ...(done.note ? [done.note] : [])];
   if (done.standIn) notices.push(SAY[policy.voice].standIn(STAND_IN_WORDS[done.standIn] ?? 'a quicker version'));
@@ -368,14 +407,17 @@ export interface ReviseInput {
   path: string;
   request: string;
   output?: string;
+  /** No redesign of the whole report, only edits in place (genJobs.ts `ReviseJob`'s `editsOnly`): the command line's `--edits-only`. */
+  editsOnly?: boolean;
 }
 
-/** A revise call judged: the request, the report read (its text not yet opened), the output, and the policy. */
+/** A revise call judged: the request, the report read (its text not yet opened), the output, the policy, and whether only edits may be made. */
 export interface RevisePlan<W extends IfExists = IfExists> {
   request: string;
   report: ReportFile;
   target: string;
   policy: PathPolicy<W>;
+  editsOnly: boolean;
 }
 
 /** Judges a revise call, its request and then its paths, reading the report before it waits (it is judged by its text). Throws a `ToolRefusal`. */
@@ -385,7 +427,7 @@ export async function planRevise<W extends IfExists>(input: ReviseInput, policy:
   const scope = await scopeOf(policy);
   const report = readReport(input.path, scope, policy.sys);
   const target = outputPath(input.output, report, '.revised.repx', ['.repx'], scope, policy.sys);
-  return { request, report, target, policy };
+  return { request, report, target, policy, editsOnly: input.editsOnly === true };
 }
 
 /** revise_report's output object: the report read, what was done, the file written (or null), who answered, the notices, and the audit when written. */
@@ -423,7 +465,15 @@ export interface ReviseResult<W extends IfExists = IfExists> {
 /** Runs a judged revise call: the AI shown the report, its answer carried out, a change written to a new file. Throws a `ToolRefusal`, or `CallStopped`. */
 export async function runRevise<W extends IfExists>(plan: RevisePlan<W>, run: CallRun): Promise<ReviseResult<W>> {
   const { report, policy } = plan;
-  const done = await asked(run, { kind: 'revise', voice: policy.voice, config: run.ai.settings.config, request: plan.request, name: report.spelled, text: report.text });
+  const done = await asked(run, {
+    kind: 'revise',
+    voice: policy.voice,
+    config: run.ai.settings.config,
+    request: plan.request,
+    name: report.spelled,
+    text: report.text,
+    ...(plan.editsOnly ? { editsOnly: true } : {}),
+  });
   if (done.kind !== 'revise') throw new Error('the generator answered another call');
   if (done.failure && !done.xml) throw new AiFailure(`No change was made: ${failureSaid(done.failure, run.redact)} Nothing was written.`, done.limit);
   const notices = [...done.report.notices, ...done.notices, ...(done.note ? [done.note] : [])];
@@ -448,6 +498,8 @@ export async function runRevise<W extends IfExists>(plan: RevisePlan<W>, run: Ca
   };
   const answered = { model: done.model, fixModel: done.fixModel, limit: done.limit };
   if (!done.xml) return { data: { ...base, written: null, ...answered }, fromFile, auditWords: null };
+  // Written over the report itself only when nothing was taken out of its connection, as an edit (SEC-W4-2).
+  if (policy.ifExists === 'replace' && sameFile(plan.target, report.path, policy.sys) && done.report.connectionsChanged) throw overInputRefusal(report.path, done.report.loginRemoved, policy.voice);
   const written = writeMade(plan.target, done.xml, run.signal, policy);
   return {
     data: { ...base, written, ...(done.audit?.data ?? {}), ...answered },

@@ -119,6 +119,31 @@ describe('installStdoutGuard', () => {
     expect(s.err.join('')).toMatch(/^forma-mcp: an uncaught exception; the server stops\. Error: \(hidden\) broke/);
   });
 
+  it("the command line's options: its prefix, a rejection that fails the run, and its own exit code after either; the server's words unchanged without them", () => {
+    // 2026-11-24, CLI-11 and CLI-7 of the command line's design audit: its 1 means a report written with audit errors.
+    const s = standIn();
+    const guard = installStdoutGuard({ target: s.target, holder: s.holder, prefix: 'forma: ', onRejection: 'fail', fatalExitCode: 70 });
+    const ran: string[] = [];
+    guard.atFatalExit(() => ran.push('cleaned'));
+    guard.log('a line');
+    s.fire('unhandledRejection', new Error('lost promise'));
+    expect(s.exits).toEqual([70]);
+    expect(ran).toEqual(['cleaned']);
+    s.fire('uncaughtException', new Error('broke'));
+    expect(s.exits).toEqual([70, 70]);
+    const said = s.err.join('');
+    expect(said).toMatch(/^forma: a line\nforma: an unhandled rejection; the run stops\. Error: lost promise/);
+    expect(said).toContain('forma: an uncaught exception; the run stops. Error: broke');
+    expect(said).not.toMatch(/forma-mcp|server/);
+    // Only the prefix given: a rejection still goes on, and the exit code is still the server's.
+    const t = standIn();
+    installStdoutGuard({ target: t.target, holder: t.holder, prefix: 'x: ' });
+    t.fire('unhandledRejection', new Error('lost'));
+    t.fire('uncaughtException', new Error('broke'));
+    expect(t.exits).toEqual([1]);
+    expect(t.err.join('')).toMatch(/^x: an unhandled rejection; the server goes on\./);
+  });
+
   it("hands a failure of the real stdout to the protocol's stream", async () => {
     const s = standIn();
     const guard = installStdoutGuard({ target: s.target, holder: s.holder });

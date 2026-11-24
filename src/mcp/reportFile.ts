@@ -4,9 +4,10 @@
  * GAP1-3 and PROTO-5 of the 2026-11-23 design audit). Every path goes
  * through paths.ts's `resolveReadPath` and `resolveWritePath`, every write
  * through its `writeOutput`, never around them. Since the CLI and Forma
- * Designer work's wave 2 (2026-11-24, SEC-4) the command line is to read and
- * write through the same functions (reportCalls.ts calls them for both), with
- * its working folder where the server has its roots (paths.ts `PathScope`).
+ * Designer work's wave 2 (2026-11-24, SEC-4) the command line reads and
+ * writes through the same functions (reportCalls.ts and, since its wave 4,
+ * layoutCalls.ts call them for both), with its working folder where the
+ * server has its roots (paths.ts `PathScope`).
  *
  * Reading is in two halves, since the wave-4 review (REV4-3): `readReport`
  * judges the path and reads the file on the thread that answers the host,
@@ -66,7 +67,7 @@ import { readFileSync } from 'node:fs';
 import { MAX_FILE_BYTES } from '../lib/attachmentBudget';
 import { withoutStoredLogin } from '../lib/repxSqlDataSource';
 import { codeReportClass, codeReportMessage, reportFileKind } from '../lib/vsReport';
-import { MAX_FILE_TEXT, ToolRefusal, type Voice } from './caller';
+import { MAX_FILE_TEXT, ToolRefusal, quoted, type Voice } from './caller';
 import { parsePath, resolveReadPath, resolveWritePath, voiceOf, writeOutput, type IfExists, type PathScope, type PathSystem, type PlacedStatus, type WriteFs, type WriteStatus } from './paths';
 
 /** What a report tool reads and writes. */
@@ -81,12 +82,16 @@ const WORDS = {
     loginLeft: (name: string) =>
       `${name} keeps a database login in a data source Forma could not read cleanly, so no tool reads it and nothing is written from it. Save the report with its connection stored by name only, then send it again.`,
     give: 'send',
+    overInput: 'Leave overwrite off to write a new file.',
+    vsrepxTarget: 'Name a .repx output.',
   },
   cli: {
     loginRemoved: 'This report kept a database login. Forma removed it before reading the report: nothing Forma prints or writes carries it, and the file you named is unchanged.',
     loginLeft: (name: string) =>
       `${name} keeps a database login in a data source Forma could not read cleanly, so Forma does not read it and writes nothing from it. Save the report with its connection stored by name only, then run the command again.`,
     give: 'give',
+    overInput: 'Name another file with --out to write a new one.',
+    vsrepxTarget: 'Name a .repx with --out.',
   },
 } as const satisfies Record<Voice, Record<string, unknown>>;
 
@@ -99,6 +104,20 @@ export const loginRemovedNotice = (voice: Voice): string => WORDS[voice].loginRe
 /** Said when a written report's connection, kept with more than its name but no login, is now stored by name only. */
 export const CONNECTION_BY_NAME =
   "The file written stores its data source's connection by name only, as Forma writes every connection; the application's configuration supplies the rest.";
+
+/**
+ * Why a report whose connection was stored with more than its name is never
+ * written over in place (the header): what Forma took out of it before
+ * reading it would be taken out of the person's own file too. repx_edit's
+ * `overwrite` met it first; since the CLI work's wave-4 review (SEC-W4-2)
+ * the command line's `--force` over its own input meets it as well, for
+ * edit, repair and revise alike. Thrown as a `ToolRefusal` before the write.
+ */
+export function overInputRefusal(path: string, loginRemoved: boolean, voice: Voice): ToolRefusal {
+  return new ToolRefusal(
+    `${quoted(path, voice)} ${loginRemoved ? 'kept a database login' : "stores its data source's connection with more than its name"}, which Forma removes before reading a report, so writing over it would take that out of your file. ${WORDS[voice].overInput}`,
+  );
+}
 
 /** A report file as the thread that answers the host reads it: judged by its path, its text not yet opened. */
 export interface ReportFile {
@@ -122,7 +141,6 @@ export interface OpenedReport {
   notices: string[];
 }
 
-const shown = (p: string) => JSON.stringify(p);
 const readText = (p: string) => readFileSync(p, 'utf8');
 const isSpace = (c: string | undefined) => c === ' ' || c === '\t' || c === '\r' || c === '\n';
 
@@ -229,9 +247,9 @@ export function xmlShapeProblem(text: string): string | null {
  */
 export function openReport(text: string, name: string, voice: Voice = 'mcp'): OpenedReport {
   const problem = xmlShapeProblem(text);
-  if (problem) throw new ToolRefusal(`${shown(name)} is not well-formed XML, so Forma does not read it: ${problem}.`);
+  if (problem) throw new ToolRefusal(`${quoted(name, voice)} is not well-formed XML, so Forma does not read it: ${problem}.`);
   const clean = withoutStoredLogin(text);
-  if (clean.loginLeft) throw new ToolRefusal(WORDS[voice].loginLeft(shown(name)));
+  if (clean.loginLeft) throw new ToolRefusal(WORDS[voice].loginLeft(quoted(name, voice)));
   return { xml: clean.xml, loginRemoved: clean.hadLogin, connectionsChanged: clean.xml !== text, notices: clean.hadLogin ? [WORDS[voice].loginRemoved] : [] };
 }
 
@@ -248,7 +266,8 @@ export function codeRefusal(spelled: string, scope: PathScope, sys: PathSystem):
   const cls = codeReportClass(spelled);
   const sibling = path.join(dir, `${cls}.vsrepx`);
   const layout = resolveReadPath(sibling, scope, sys, { extensions: ['.vsrepx'] }).ok ? sibling : null;
-  return codeReportMessage(spelled, layout, path.join(dir, `${cls}.repx`), WORDS[voiceOf(scope)].give);
+  const voice = voiceOf(scope);
+  return codeReportMessage(spelled, layout, path.join(dir, `${cls}.repx`), WORDS[voice].give, (p) => quoted(p, voice));
 }
 
 /**
@@ -265,9 +284,35 @@ export function readReport(raw: unknown, scope: PathScope, sys: PathSystem, read
   if (!found.ok) throw new ToolRefusal(found.reason);
   const text = read(found.path);
   if (!/<XtraReportsLayoutSerializer\b/.test(text)) {
-    throw new ToolRefusal(`${shown(parsed.path)} is not the XML layout DevExpress writes (it has no XtraReportsLayoutSerializer element), so Forma cannot read it.`);
+    throw new ToolRefusal(`${quoted(parsed.path, voiceOf(scope))} is not the XML layout DevExpress writes (it has no XtraReportsLayoutSerializer element), so Forma cannot read it.`);
   }
   return { path: found.path, spelled: parsed.path, kind: reportFileKind(found.path) === 'vsrepx' ? 'vsrepx' : 'repx', text };
+}
+
+/** An SSRS report definition (.rdl, .rdlc) or a FastReport report (.frx): XML of another program's, which Forma converts with no AI. */
+export const FOREIGN_EXTENSIONS = ['.rdl', '.rdlc', '.frx'] as const;
+
+/** An SSRS or FastReport report read for its conversion: where it really is, the path as the caller spelled it, resolved, and its text. */
+export interface ForeignFile {
+  path: string;
+  spelled: string;
+  text: string;
+}
+
+/**
+ * Reads the SSRS or FastReport report at the path a caller gave, for its
+ * conversion (since the CLI and Forma Designer work's wave 4, GAP1-1):
+ * judged by paths.ts as every file read is, one of `FOREIGN_EXTENSIONS` of
+ * at most the web app's file size, its byte order mark dropped. Its text is
+ * opened only in the worker, by `openReport` and the converter. Throws a
+ * `ToolRefusal` in plain words.
+ */
+export function readForeign(raw: unknown, scope: PathScope, sys: PathSystem, read: (p: string) => string = readText): ForeignFile {
+  const parsed = parsePath(raw, scope, sys);
+  if (!parsed.ok) throw new ToolRefusal(parsed.reason);
+  const found = resolveReadPath(raw, scope, sys, { extensions: FOREIGN_EXTENSIONS, maxBytes: MAX_FILE_BYTES });
+  if (!found.ok) throw new ToolRefusal(found.reason);
+  return { path: found.path, spelled: parsed.path, text: read(found.path).replace(/^\u{feff}/u, '') };
 }
 
 /** A path beside `spelled`, its extension replaced by `suffix`. */
@@ -289,10 +334,10 @@ export function outputPath(output: string | undefined, report: ReportFile, suffi
 }
 
 /** What a written report is, by the name it is written under; a `.vsrepx` only from a `.vsrepx`. */
-export function targetKind(target: string, report: ReportFile): LayoutKind {
+export function targetKind(target: string, report: ReportFile, voice: Voice = 'mcp'): LayoutKind {
   const kind: LayoutKind = reportFileKind(target) === 'vsrepx' ? 'vsrepx' : 'repx';
   if (kind === 'vsrepx' && report.kind !== 'vsrepx') {
-    throw new ToolRefusal(`${shown(target)} is a .vsrepx, the layout file of a report class in a Visual Studio project; a .repx is written as a .repx. Name a .repx output.`);
+    throw new ToolRefusal(`${quoted(target, voice)} is a .vsrepx, the layout file of a report class in a Visual Studio project; a .repx is written as a .repx. ${WORDS[voice].vsrepxTarget}`);
   }
   return kind;
 }

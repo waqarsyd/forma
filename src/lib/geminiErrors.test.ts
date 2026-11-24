@@ -218,6 +218,19 @@ describe('classifyGeminiError', () => {
       for (const e of [unreachable, router]) expect(e.message).not.toMatch(/Gemini|Google/);
     });
 
+    // The CLI work's wave-4 review, U5 (2026-11-24): Node's fetch says "fetch failed", its cause naming why; the command line and
+    // the MCP server were told only "The local AI ...: fetch failed", with nothing to do next, and no page's CORS advice applies.
+    it("says a Local AI that Node's fetch cannot reach is not running there, with the address to set, never the browser's CORS advice", () => {
+      const local = { provider: 'local' as const, where: 'http://127.0.0.1:1/v1', model: 'forma-test-model' };
+      const refused = new TypeError('fetch failed', { cause: Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:1'), { code: 'ECONNREFUSED' }) });
+      const said = classifyGeminiError(refused, local).message;
+      expect(said).toBe('Forma could not reach the local AI at http://127.0.0.1:1/v1: is Ollama or LM Studio running there? Set FORMA_LOCAL_URL if it listens elsewhere.');
+      expect(said).not.toMatch(/OLLAMA_ORIGINS|CORS|this site/);
+      // The cause alone is enough, as an error that kept only it would say; OpenRouter is told in its own words.
+      for (const code of ['ENOTFOUND', 'ECONNRESET']) expect(classifyGeminiError(Object.assign(new Error('request failed'), { cause: { code } }), local).message).toMatch(/^Forma could not reach the local AI/);
+      expect(classifyGeminiError(refused, { provider: 'openrouter', model: 'm:free' }).message).toBe('Forma could not reach OpenRouter. Check the connection and try again in a minute.');
+    });
+
     // Batch AF, item 19 (2026-11-10): a free model the account's privacy settings rule out is not a missing model.
     it('says where to change it when OpenRouter refuses a free model for the account’s data policy', () => {
       const refused = sdkError(404, 'OpenRouter answered 404: No endpoints found matching your data policy (Free model training). Configure: https://openrouter.ai/settings/privacy');

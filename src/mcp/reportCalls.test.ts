@@ -1,5 +1,5 @@
 /**
- * The calls that ask an AI, as the command line is to make them (2026-11-24,
+ * The calls that ask an AI, as the command line makes them (2026-11-24,
  * the CLI and Forma Designer work's wave 2; findings CLI-2, CLI-3, CLI-6 and
  * SEC-4 of its design audit): reportCalls.ts's `planGenerate`,
  * `runGenerate`, `planRevise` and `runRevise` with a working-folder policy
@@ -56,7 +56,7 @@ const SETUP: GenSetup = { mock: true, userFolder: join(scratch, 'forma-user'), p
 
 const system = nodeSystem();
 const geminiKey = ['AI', 'za', 'Sy'].join('') + 'C'.repeat(33);
-/** The settings as the command line's entry is to read them: its environment taken in its voice, the mock its --mock flag. */
+/** The settings as the command line's entry reads them: its environment taken in its voice, the mock its --mock flag. */
 const settings: AiSettings = readAiSettings(takeAiEnv({ FORMA_GEMINI_KEY: geminiKey }, 'cli').aiEnv, { voice: 'cli', mock: true });
 const redact = redactorFor(settings.secrets, FORMA_KEYS);
 
@@ -65,7 +65,7 @@ const MODEL_WORDS = /\bsend\b|this server|forma_status|\ba tool\b/i;
 
 let mock: Generator;
 beforeAll(() => {
-  // The pipeline logs freely, as in the browser; the command line will send that to stderr.
+  // The pipeline logs freely, as in the browser; the command line sends that to stderr.
   for (const level of ['log', 'info', 'warn', 'debug', 'error'] as const) vi.spyOn(console, level).mockImplementation(() => {});
   mock = inThreadGenerator(SETUP, { log: () => {} });
 });
@@ -190,7 +190,7 @@ describe('generate, as the command line calls it', () => {
     put(at('gone', 'page.png'), 'not really a picture');
     const plan = await planGenerate({ description: 'An invoice', files: [join('gone', 'page.png')] }, policy());
     unlinkSync(at('gone', 'page.png'));
-    expect(await refusal(runGenerate(plan, run().r))).toBe(`${JSON.stringify(at('gone', 'page.png'))} could not be read when its turn came: it was moved, removed or locked meanwhile. Nothing was written.`);
+    expect(await refusal(runGenerate(plan, run().r))).toBe(`"${at('gone', 'page.png')}" could not be read when its turn came: it was moved, removed or locked meanwhile. Nothing was written.`);
     expect(readdirSync(at('gone'))).toEqual([]);
   });
 
@@ -266,14 +266,14 @@ describe('revise, as the command line calls it', () => {
 /*
  * What a failure and an answer carry (2026-11-24, the CLI and Forma Designer
  * work's wave 3; GAP3-2, GAP3-3, GAP3-4, GAP3-5 and the owner's OC5), read
- * the way the command line's batch is to read them in its wave 4: the limit
+ * the way the command line's batch reads them (its wave 4): the limit
  * the AI met on an `AiFailure` or in the data, worked out in the work's
  * thread from the error itself; the model that answered; and nothing standing
  * in when the command asked for none. The AI is a stub that throws the
  * service's own classified errors, or, through the real worker thread, a
  * stand-in OpenAI-compatible server on this computer that answers 429.
  */
-describe('what a failure and an answer carry, as the command line is to read them', () => {
+describe('what a failure and an answer carry, as the command line reads them', () => {
   /** Google's own 429 under the service's classified error, as analyzeReportDesign throws it. */
   const googleLimit = (quotaId: string, retryDelay?: string) =>
     classifyGeminiError(

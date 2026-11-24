@@ -96,7 +96,12 @@ export default defineConfig({
        * not follow either; the work it runs, `pipeline.ts`, is measured where
        * the tests run it in their own thread. So is `src/mcp/genWorker.mjs`
        * (2026-11-24, wave 8), the AI tools' worker thread, whose work,
-       * `genJobs.ts`, the tests run in their own thread too. So are
+       * `genJobs.ts`, the tests run in their own thread too. So are the
+       * command line's entry and launcher, `src/mcp/cliEntry.ts` and
+       * `src/mcp/cli.mjs` (2026-11-24, the CLI and Forma Designer work's
+       * wave 4), which run only in the process `commandLine.test.ts` spawns; what
+       * the command line does is `commandLine.ts`'s, which the tests call in their
+       * own thread, and is measured. So are
        * `src/mcp/testFs.ts` and `src/mcp/testClient.ts` (2026-11-24), the
        * tests' in-memory file system and client: they are test code, which
        * the tests exercise in full, so counting them would raise the number
@@ -116,6 +121,9 @@ export default defineConfig({
         'src/mcp/run.mjs',
         'src/mcp/worker.mjs',
         'src/mcp/genWorker.mjs',
+        // The command line's entry and launcher, exercised only in a spawned process (above).
+        'src/mcp/cliEntry.ts',
+        'src/mcp/cli.mjs',
         // The MCP tests' in-memory file system and client: test code, not the server's (above).
         'src/mcp/testFs.ts',
         'src/mcp/testClient.ts',

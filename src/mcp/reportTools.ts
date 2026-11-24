@@ -18,6 +18,13 @@
  * audit message naming a control, an edit's reason) is returned only under
  * `fromFile` (SEC-6).
  *
+ * Since the CLI and Forma Designer work's wave 4 (2026-11-24, CLI-2's rule
+ * for the two calls that ask an AI, kept for these five) the steps on the
+ * thread that answers are layoutCalls.ts's, which the command line calls
+ * too; this file keeps what is the server's own: the schemas, the
+ * descriptions, the folders asked for (a policy whose scope is
+ * `tc.requireRoots`), and the summary sentence.
+ *
  * Here, on the thread that answers the host, a handler only judges paths,
  * reads the file, writes the output and shapes the result. Everything that
  * costs time or memory in proportion to the report (the shape check, the
@@ -35,11 +42,11 @@ import * as z from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
 import type { AgentEdit } from '../lib/agentEdit';
 import { EDIT_LANGUAGE, EDIT_OPS, GROUP_EDIT } from '../lib/editLanguage';
-import { describePath, nodeWriteFs, type PathSystem, type Root, type WriteFs } from './paths';
-import type { DesignerText, Dropped, ReportRead } from './pipeline';
-import { CONNECTION_BY_NAME, LAYOUT_EXTENSIONS, designerFor, outputPath, readReport, sameFile, targetKind, writeReport, type ReportFile } from './reportFile';
+import { NO_EDIT_MADE, auditLayout, editLayout, outlineLayout, pdfLayout, repairLayout } from './layoutCalls';
+import { describePath, nodeWriteFs, type PathSystem, type WriteFs } from './paths';
+import type { PathPolicy } from './reportCalls';
 import type { ToolEntry, ToolName } from './toolList';
-import { ToolRefusal, defineTool, type ToolContext, type ToolDeps, type ToolHints } from './toolShape';
+import { defineTool, type ToolContext, type ToolDeps, type ToolHints } from './toolShape';
 import { PIPELINE_LIMITS, type Pipeline } from './workerPool';
 
 /** The sentence in the description of every report tool that needs no AI; formaServer.test.ts holds it to toolList.ts. */
@@ -59,22 +66,10 @@ export const WRITTEN = z.looseObject({ path: z.string(), status: z.enum(['writte
 /** A finding's severity and code, its message under fromFile. */
 export const FINDING = z.looseObject({ severity: z.enum(['error', 'warning']), code: z.string() });
 
-/** What every result says of the report read: the file's own path and kind, and what opening it found. */
-const read = (report: ReportFile, found: ReportRead) => ({ path: report.path, kind: report.kind, loginRemoved: found.loginRemoved, notices: [...found.notices] });
-
-/** Nothing is written once the call is cancelled (PROTO-4). */
-const stillWanted = (tc: ToolContext) => {
-  if (tc.signal.aborted) throw new Error('cancelled');
-};
-
 const WROTE: Record<string, string> = { written: 'Wrote', unchanged: 'Found the same file already at', replaced: 'Replaced', beside: 'Another file held the name, so wrote' };
 /** What a result's summary says of a file written. */
 export const wroteWords = (w: { path: string; status: string }) => `${WROTE[w.status] ?? 'Wrote'} ${JSON.stringify(w.path)}.`;
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-
-/** What a result says when a written `.vsrepx` lost names its Designer file looks up (GAP1-3). */
-const droppedNotice = (d: Dropped) =>
-  `${JSON.stringify(d.file)} looks up ${plural(d.names.length, 'name')} by Name that the new layout no longer has (fromFile.designerLooksUp); its fields for them would be null when the report runs.`;
 
 /** The ops the edit tool takes: the chat's, but `data`, which needs a database layout this server does not hold. */
 const EDIT_OP = z.enum(EDIT_OPS).exclude(['data']);
@@ -129,22 +124,9 @@ type Registrar = (server: McpServer, deps: ToolDeps, entry: ToolEntry) => void;
 export function reportTools(sys: PathSystem, pipeline: Pipeline, wfs: WriteFs = nodeWriteFs): Record<Exclude<ToolName, 'forma_status' | 'generate_report' | 'revise_report'>, Registrar> {
   const pathArg = z.string().describe(describePath(sys.path, 'The report: a DevExpress report layout, a .repx or .vsrepx file.'));
   const readOnly = (entry: ToolEntry): ToolHints => ({ readOnlyHint: entry.readOnly, destructiveHint: false, idempotentHint: true, openWorldHint: false });
-  const open = async (raw: string, tc: ToolContext) => {
-    const roots = await tc.requireRoots();
-    return { roots, report: readReport(raw, roots, sys) };
-  };
-  /**
-   * The Designer file a written `.vsrepx` is checked against (GAP1-3): the
-   * one beside the file written, which loads it, else the one beside the
-   * input; none for a `.repx`.
-   */
-  const designersFor = (report: ReportFile, target: string, roots: readonly Root[]): DesignerText[] => {
-    for (const [layout, besideTarget] of [[target, true], [report.spelled, false]] as const) {
-      const found = designerFor(layout, roots, sys);
-      if (found) return [{ ...found, besideTarget }];
-    }
-    return [];
-  };
+  /** The server's way with paths: a model's words, the folders in effect asked for, a taken name written beside unless the call says replace. */
+  const policy = <W extends 'beside' | 'replace' = 'beside'>(tc: ToolContext, ifExists: W = 'beside' as W): PathPolicy<W> => ({ voice: 'mcp', sys, scope: () => tc.requireRoots(), ifExists, wfs });
+  const run = (tc: ToolContext) => ({ pipeline, signal: tc.signal });
 
   return {
     repx_audit: (server, deps, entry) =>
@@ -160,13 +142,8 @@ export function reportTools(sys: PathSystem, pipeline: Pipeline, wfs: WriteFs = 
           output: { ...REPORT_READ, errors: z.number(), warnings: z.number(), summary: z.string(), findings: z.array(FINDING) },
         },
         async (args, tc) => {
-          const { report } = await open(args.path, tc);
-          const done = await pipeline.run({ tool: 'audit', voice: 'mcp', name: report.spelled, text: report.text }, tc.signal);
-          return {
-            summary: `Audited ${JSON.stringify(report.path)}: ${done.audit.words}.`,
-            data: { ...read(report, done.report), ...done.audit.data },
-            fromFile: { findings: done.audit.lines },
-          };
+          const done = await auditLayout(args.path, policy(tc), run(tc));
+          return { summary: `Audited ${JSON.stringify(done.data.path)}: ${done.words}.`, data: done.data, fromFile: done.fromFile };
         },
       ),
 
@@ -183,13 +160,12 @@ export function reportTools(sys: PathSystem, pipeline: Pipeline, wfs: WriteFs = 
           output: { ...REPORT_READ, bands: z.number(), controls: z.number(), fields: z.number(), parameters: z.number(), dataSources: z.number() },
         },
         async (args, tc) => {
-          const { report } = await open(args.path, tc);
-          const done = await pipeline.run({ tool: 'outline', voice: 'mcp', name: report.spelled, text: report.text }, tc.signal);
-          const counts = done.counts;
+          const done = await outlineLayout(args.path, policy(tc), run(tc));
+          const counts = done.data;
           return {
-            summary: `Outlined ${JSON.stringify(report.path)}: ${plural(counts.bands, 'band')}, ${plural(counts.controls, 'control')}, ${plural(counts.fields, 'field')} printed, ${plural(counts.parameters, 'parameter')} and ${plural(counts.dataSources, 'SQL data source')}.`,
-            data: { ...read(report, done.report), ...counts },
-            fromFile: { outline: done.outline, dataSources: done.dataSources },
+            summary: `Outlined ${JSON.stringify(counts.path)}: ${plural(counts.bands, 'band')}, ${plural(counts.controls, 'control')}, ${plural(counts.fields, 'field')} printed, ${plural(counts.parameters, 'parameter')} and ${plural(counts.dataSources, 'SQL data source')}.`,
+            data: done.data,
+            fromFile: done.fromFile,
           };
         },
       ),
@@ -210,22 +186,12 @@ export function reportTools(sys: PathSystem, pipeline: Pipeline, wfs: WriteFs = 
           output: { ...REPORT_READ, written: WRITTEN, repairs: z.array(z.string()), errors: z.number(), warnings: z.number(), summary: z.string(), findings: z.array(FINDING) },
         },
         async (args, tc) => {
-          const { roots, report } = await open(args.path, tc);
-          const target = outputPath(args.output, report, '.repaired.repx', LAYOUT_EXTENSIONS, roots, sys);
-          const kind = targetKind(target, report);
-          const designers = kind === 'vsrepx' ? designersFor(report, target, roots) : [];
-          // The developer's own code is kept (GAP1-3, SE-02b), in pipeline.ts.
-          const done = await pipeline.run({ tool: 'repair', voice: 'mcp', name: report.spelled, text: report.text, target: kind, designers }, tc.signal);
-          const notices = [...done.report.notices];
-          if (done.report.connectionsChanged && !done.report.loginRemoved) notices.push(CONNECTION_BY_NAME);
-          // A repair writes even where its Designer looks up a name it lost, and says which (GAP1-3).
-          if (done.dropped) notices.push(droppedNotice(done.dropped));
-          stillWanted(tc);
-          const written = writeReport(target, done.xml, wfs, sys);
+          const done = await repairLayout(args.path, args.output, policy(tc), run(tc));
+          const { written, repairs } = done.data;
           return {
-            summary: `${wroteWords(written)} ${done.repairs.length ? `Repaired: ${done.repairs.join(', ')}.` : 'Nothing needed repairing.'} The result has ${done.audit.words}.`,
-            data: { ...read(report, done.report), notices, written, repairs: done.repairs, ...done.audit.data },
-            fromFile: { repairs: done.said, findings: done.audit.lines, ...(done.dropped ? { designerLooksUp: done.dropped.names } : {}) },
+            summary: `${wroteWords(written)} ${repairs.length ? `Repaired: ${repairs.join(', ')}.` : 'Nothing needed repairing.'} The result has ${done.words}.`,
+            data: done.data,
+            fromFile: done.fromFile,
           };
         },
       ),
@@ -252,48 +218,21 @@ export function reportTools(sys: PathSystem, pipeline: Pipeline, wfs: WriteFs = 
           output: { ...REPORT_READ, written: WRITTEN.nullable(), applied: z.number(), declined: z.number(), notWritten: z.string().optional() },
         },
         async (args, tc) => {
-          if (!args.edits.length) throw new ToolRefusal('Send at least one edit.');
-          const { roots, report } = await open(args.path, tc);
           const overwrite = args.overwrite === true;
-          const ext = report.kind === 'vsrepx' ? '.vsrepx' : '.repx';
-          const target = outputPath(args.output ?? (overwrite ? report.spelled : undefined), report, `.edited${ext}`, LAYOUT_EXTENSIONS, roots, sys);
-          const kind = targetKind(target, report);
-          const inPlace = overwrite && sameFile(target, report.path, sys);
-          const designers = kind === 'vsrepx' ? designersFor(report, target, roots) : [];
-          const done = await pipeline.run({ tool: 'edit', voice: 'mcp', name: report.spelled, text: report.text, target: kind, edits: args.edits, designers }, tc.signal);
-          if (inPlace && done.report.connectionsChanged) {
-            throw new ToolRefusal(
-              `${JSON.stringify(report.path)} ${done.report.loginRemoved ? 'kept a database login' : "stores its data source's connection with more than its name"}, which Forma removes before reading a report, so writing over it would take that out of your file. Leave overwrite off to write a new file.`,
-            );
-          }
-          const counts = { applied: done.applied.length, declined: done.declined.length };
-          const said = { applied: done.applied, declined: done.declined };
-          const notices = [...done.report.notices];
-          if (!done.changed) {
+          const done = await editLayout(args.path, args.edits, { output: args.output, overInput: overwrite }, policy(tc, overwrite ? 'replace' : 'beside'), run(tc));
+          const { data } = done;
+          if (!data.written) {
+            const at = JSON.stringify(data.path);
             return {
-              summary: `No edit was made to ${JSON.stringify(report.path)}, so nothing was written; fromFile.declined says why.`,
-              data: { ...read(report, done.report), written: null, ...counts, notWritten: 'no edit was made' },
-              fromFile: said,
+              summary: data.notWritten === NO_EDIT_MADE ? `No edit was made to ${at}, so nothing was written; fromFile.declined says why.` : `Nothing was written: ${data.notWritten}`,
+              data,
+              fromFile: done.fromFile,
             };
           }
-          if (done.unmarked) notices.push("Visual Studio's working-file mark was neutralised, because the file written is a .repx (DevExpress says it refuses a marked .repx from 20.2.4 on).");
-          if (done.report.connectionsChanged && !done.report.loginRemoved) notices.push(CONNECTION_BY_NAME);
-          const dropped = done.dropped;
-          // The Designer beside the file written loads that file: a name it lost is a null field (GAP1-3).
-          if (dropped?.besideTarget) {
-            return {
-              summary: `Nothing was written: ${droppedNotice(dropped)}`,
-              data: { ...read(report, done.report), notices, written: null, ...counts, notWritten: droppedNotice(dropped) },
-              fromFile: { ...said, designerLooksUp: dropped.names },
-            };
-          }
-          if (dropped) notices.push(droppedNotice(dropped));
-          stillWanted(tc);
-          const written = writeReport(target, done.xml, wfs, sys, overwrite ? 'replace' : 'beside');
           return {
-            summary: `${wroteWords(written)} ${plural(counts.applied, 'edit')} made${counts.declined ? `, ${counts.declined} declined` : ''}.`,
-            data: { ...read(report, done.report), notices, written, ...counts },
-            fromFile: { ...said, ...(dropped ? { designerLooksUp: dropped.names } : {}) },
+            summary: `${wroteWords(data.written)} ${plural(data.applied, 'edit')} made${data.declined ? `, ${data.declined} declined` : ''}.`,
+            data,
+            fromFile: done.fromFile,
           };
         },
       ),
@@ -314,18 +253,8 @@ export function reportTools(sys: PathSystem, pipeline: Pipeline, wfs: WriteFs = 
           output: { ...REPORT_READ, written: WRITTEN, pages: z.number() },
         },
         async (args, tc) => {
-          const { roots, report } = await open(args.path, tc);
-          const target = outputPath(args.output, report, '.pdf', ['.pdf'], roots, sys);
-          const done = await pipeline.run({ tool: 'pdf', voice: 'mcp', name: report.spelled, text: report.text, title: sys.path.basename(report.spelled) }, tc.signal);
-          const drawn = done.drawn;
-          if (!drawn) throw new ToolRefusal(`No band could be read from ${JSON.stringify(report.path)}, so there is nothing to draw; repx_audit says what is wrong with it.`);
-          stillWanted(tc);
-          const written = writeReport(target, drawn.bytes, wfs, sys);
-          return {
-            summary: `${wroteWords(written)} ${plural(drawn.pages, 'page')}.`,
-            data: { ...read(report, done.report), written, pages: drawn.pages },
-            ...(drawn.problems.length ? { fromFile: { notes: drawn.problems } } : {}),
-          };
+          const done = await pdfLayout(args.path, args.output, policy(tc), run(tc));
+          return { summary: `${wroteWords(done.data.written)} ${plural(done.data.pages, 'page')}.`, data: done.data, ...(done.fromFile ? { fromFile: done.fromFile } : {}) };
         },
       ),
   };

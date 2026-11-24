@@ -29,7 +29,7 @@
  *   skipped by name. An entry in ALLOWED that no longer matches a hit fails
  *   the suite.
  * - **Said.** What the command line's voice says, from the real calls made
- *   the way the command line is to make them (its working folder, its
+ *   the way the command line makes them (its working folder, its
  *   voice, its settings with the mock as its flag): the AI not set up in
  *   every way it can be, a Local AI address refused, a reference left
  *   unexpanded, a C# report refused, a login taken out or left in, the
@@ -347,7 +347,7 @@ const SETUP = { mock: false, userFolder: join(scratch, 'forma-user'), paddleMode
 
 const system = nodeSystem();
 const geminiKey = ['AI', 'za', 'Sy'].join('') + 'E'.repeat(33);
-/** The settings the command line's entry is to read: its environment taken in its voice, the mock its flag. */
+/** The settings the command line's entry reads: its environment taken in its voice, the mock its flag. */
 const cliSettings = (env: AiEnv, mock = false): AiSettings => readAiSettings(takeAiEnv(env, 'cli').aiEnv, { voice: 'cli', mock });
 const redact = redactorFor([geminiKey], FORMA_KEYS);
 const policy = <W extends IfExists = 'refuse'>(ifExists: W = 'refuse' as W): PathPolicy<W> => ({ voice: 'cli', sys: system, scope: { base: work }, ifExists });

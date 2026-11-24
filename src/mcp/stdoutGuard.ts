@@ -37,6 +37,20 @@
  *   is not safe to resume after one. A host restarts or reconnects the
  *   server.
  *
+ * The command line's entry (cliEntry.ts, since the CLI and Forma Designer
+ * work's wave 4, 2026-11-24; finding CLI-11 of its design audit,
+ * `DevFiles/forma-audit/cli-designer-2026-11-24-findings.md`) installs the
+ * same guard with three options, the server's defaults unchanged: its own
+ * prefix on the guard's lines (`forma: ` where the server's is
+ * `forma-mcp: `); an unhandled rejection that fails the run (`onRejection:
+ * 'fail'`), since a command that goes on past a promise that failed unseen
+ * could report success over work it never did, where a server must keep
+ * serving; and its own exit code after either (`fatalExitCode`, 70 there,
+ * CLI-7), since the command line's 1 means a report written with audit
+ * errors, which a crash must never be read as. Its results go to stdout
+ * through `protocolOut`, as the server's protocol does, so with `--json`
+ * stdout carries only its JSON Lines whatever a module logs.
+ *
  * What it cannot cover: anything that writes to file descriptor 1 without
  * going through process.stdout. A synchronous write to the descriptor
  * itself, and a child process that inherits this one's stdout (spawned with
@@ -82,11 +96,37 @@ export interface StdoutGuard {
 
 const asText = (chunk: unknown) => (typeof chunk === 'string' ? chunk : chunk instanceof Uint8Array ? Buffer.from(chunk).toString('utf8') : String(chunk));
 
+/** What an unhandled rejection does: the server goes on serving; a command line's run fails (the header). */
+export type OnRejection = 'go on' | 'fail';
+
+/** How the guard is installed; every field is optional, and left out each is the MCP server's. */
+export interface GuardOptions {
+  /** The process the guard takes over; for tests. */
+  target?: GuardTarget;
+  /** What holds the console; for tests. */
+  holder?: { console: unknown };
+  /** A scrubber of the caller's own, run after the key patterns and the values handed over. */
+  redact?: (text: string) => string;
+  /** What begins each of the guard's own lines on stderr: `forma-mcp: `, the server's, by default. */
+  prefix?: string;
+  /** 'go on', the server's default, logs an unhandled rejection and keeps serving; 'fail' logs it and exits as after an uncaught exception. */
+  onRejection?: OnRejection;
+  /** The exit code after an uncaught exception, or a rejection under 'fail': 1, the server's, by default. */
+  fatalExitCode?: number;
+}
+
+/** What the guard says on stderr when it takes over a failure, by what a rejection does: the server's words exactly as they were, and a run's. */
+const SAID: Record<OnRejection, { rejection: string; exception: string }> = {
+  'go on': { rejection: 'an unhandled rejection; the server goes on.', exception: 'an uncaught exception; the server stops.' },
+  fail: { rejection: 'an unhandled rejection; the run stops.', exception: 'an uncaught exception; the run stops.' },
+};
+
 /**
- * Takes stdout away from everything but the protocol. Call it once, first,
- * in the entry; `target` and `holder` are for tests.
+ * Takes stdout away from everything but the protocol, or the command line's
+ * results. Call it once, first, in the entry; `target` and `holder` are for
+ * tests, and the rest are the command line's (`GuardOptions`).
  */
-export function installStdoutGuard(options: { target?: GuardTarget; holder?: { console: unknown }; redact?: (text: string) => string } = {}): StdoutGuard {
+export function installStdoutGuard(options: GuardOptions = {}): StdoutGuard {
   const target = options.target ?? (process as unknown as GuardTarget);
   const holder = options.holder ?? (globalThis as unknown as { console: unknown });
   const secrets: (string | null | undefined)[] = [];
@@ -120,14 +160,16 @@ export function installStdoutGuard(options: { target?: GuardTarget; holder?: { c
   });
   holder.console = new Console({ stdout: toStderr, stderr: toStderr });
 
+  const prefix = options.prefix ?? 'forma-mcp: ';
+  const onRejection = options.onRejection ?? 'go on';
+  const said = SAID[onRejection];
   const log = (...parts: unknown[]) => {
-    errWrite(`${redact(`forma-mcp: ${format(...parts)}`)}\n`);
+    errWrite(`${redact(`${prefix}${format(...parts)}`)}\n`);
   };
   const fatal: (() => void)[] = [];
-
-  target.on('unhandledRejection', (reason) => log('an unhandled rejection; the server goes on.', reason));
-  target.on('uncaughtException', (error) => {
-    log('an uncaught exception; the server stops.', error);
+  /** Logs why, runs what was asked for before leaving, and exits with the fatal code. */
+  const stop = (words: string, cause: unknown) => {
+    log(words, cause);
     for (const fn of fatal) {
       try {
         fn();
@@ -135,8 +177,11 @@ export function installStdoutGuard(options: { target?: GuardTarget; holder?: { c
         /* the exit matters more */
       }
     }
-    target.exit(1);
-  });
+    target.exit(options.fatalExitCode ?? 1);
+  };
+
+  target.on('unhandledRejection', (reason) => (onRejection === 'fail' ? stop(said.rejection, reason) : log(said.rejection, reason)));
+  target.on('uncaughtException', (error) => stop(said.exception, error));
 
   const addSecrets = (values: readonly (string | null | undefined)[]) => {
     secrets.push(...values);

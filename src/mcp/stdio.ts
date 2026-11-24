@@ -24,7 +24,7 @@
  *      before anything else is loaded (static imports are evaluated before
  *      the body, so everything else is imported dynamically after it).
  *   2. The environment is touched here and nowhere else in src/mcp but the
- *      command line's own entry, to come (boundaries.test.ts): the roots'
+ *      command line's own entry, cliEntry.ts (boundaries.test.ts): the roots'
  *      two variables, and since wave 8 the AI's (aiSettings.ts names them:
  *      FORMA_GEMINI_KEY, FORMA_PROVIDER, OpenRouter's and Local AI's, the
  *      model pin, the locale and the mock switch). Since the CLI and Forma

@@ -81,7 +81,10 @@
  *   when nothing could be made in place, a redesign from the words, as the
  *   chat starts one;
  * - rebuild: a redesign through `makeReport` with the report open, so the
- *   AI changes this report rather than making another;
+ *   AI changes this report rather than making another; with the job's
+ *   `editsOnly` (the command line's `--edits-only`, its wave 4) no redesign
+ *   is made, neither here nor where an edit could not be made in place, and
+ *   nothing is written;
  * - new: a different report, said so for generate_report, nothing written.
  *
  * The chat's parts with no MCP equivalent are dropped: an export, the
@@ -143,6 +146,13 @@ export interface GenSetup {
   userFolder?: string;
   /** PaddleOCR's models; the clone's vendor/paddle by default, null for Tesseract alone. */
   paddleModels?: string | null;
+  /**
+   * Whose words the Node parts' own errors are in, those that say how to
+   * start again once a clone is mended (nodeGeneration.ts, nodeOcr.ts): the
+   * server's by default, the command line's when it starts the thread (the
+   * CLI and Forma Designer work's wave 4, CLI-10).
+   */
+  voice?: Voice;
 }
 
 /** The chat's answer, as geminiService's `chatReply` gives it. */
@@ -191,6 +201,15 @@ export interface ReviseJob {
   name: string;
   /** The report's text as it is on disk: `openReport` takes its login out first. */
   text: string;
+  /**
+   * True: a request that would take a redesign of the whole report is
+   * declined rather than made, nothing written (the command line's
+   * `--edits-only`, the CLI and Forma Designer work's wave 4, GAP1-3), so a
+   * change asked of many reports never rewrites one wholesale. The action is
+   * still `rebuild`, with nothing to write and no failure, and a notice says
+   * why. The server never asks it.
+   */
+  editsOnly?: boolean;
 }
 
 export type GenJob = GenerateJob | ReviseJob;
@@ -366,6 +385,12 @@ function measuredInStandIns(gen: NodeGeneration, xml: string, notices: string[],
   return families;
 }
 
+/** What a revise job that may only edit says when the request would take a redesign (the job's `editsOnly`): the command line's alone. */
+const EDITS_ONLY = {
+  redesign: 'The request asks for a redesign of the whole report, which --edits-only declines, so nothing was written.',
+  inPlace: 'That could not be changed in place, and --edits-only declines a redesign, so nothing was written.',
+} as const;
+
 /** A tool the chat brought that has no equivalent here, said in plain words and the caller's own (the header); '' for one dropped without a word. */
 function notHere(tool: AgentTool, voice: Voice): string {
   const w = WORDS[voice];
@@ -397,6 +422,7 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
       ...(setup.locale ? { locale: setup.locale } : {}),
       ...(setup.userFolder ? { userFolder: setup.userFolder } : {}),
       ...(setup.paddleModels !== undefined ? { paddleModels: setup.paddleModels } : {}),
+      ...(setup.voice ? { voice: setup.voice } : {}),
       ...(hooks.ask ? { ask: hooks.ask } : {}),
       log,
     }).catch((error: unknown) => {
@@ -603,8 +629,16 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
       };
     };
 
+    /** With `editsOnly`, a redesign declined and nothing written, said why (the job's `editsOnly`, GAP1-3). */
+    const noRedesign = (why: string, declined: readonly string[] = []): ReviseDone => {
+      notices.push(why);
+      return { ...answered, action: 'rebuild', reply: fileLines([reply]), declined: fileLines([...declined]), by, note: [...notes].join(' ') };
+    };
+
     if (outcome.action === 'new') return { ...answered, action: 'new', reply: fileLines([reply]), brief: fileLines([designWords]), by, note: [...notes].join(' ') };
-    if (outcome.action === 'rebuild' || (outcome.wantsReport && outcome.action !== 'edit')) return redesign();
+    if (outcome.action === 'rebuild' || (outcome.wantsReport && outcome.action !== 'edit')) {
+      return job.editsOnly ? noRedesign(EDITS_ONLY.redesign) : redesign();
+    }
 
     if (outcome.action === 'edit') {
       const hooks = { fields: (xml: string) => factsLib.dataFieldsOf(xml) };
@@ -667,7 +701,8 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
       }
       // The report already reads that way: said so, nothing written.
       if (done.applied.length) return { ...answered, ...second, action: 'unchanged', reply: fileLines([reply]), applied: fileLines(done.applied), declined: fileLines([...done.declined, ...declinedTools]), by, note: [...notes].join(' ') };
-      // Nothing could be made in place: a redesign from the words, as the chat starts one.
+      // Nothing could be made in place: a redesign from the words, as the chat starts one, unless only edits may be made.
+      if (job.editsOnly) return noRedesign(EDITS_ONLY.inPlace, done.declined);
       notices.push('That could not be changed in place, so the report was redesigned from the request.');
       const remade = await redesign();
       return remade && { ...remade, declined: fileLines(done.declined) };

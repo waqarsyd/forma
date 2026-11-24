@@ -28,8 +28,8 @@
  *   is a Node one (2026-11-24, the wave-4 review's REV4-3): workerPool.ts
  *   starts worker.mjs, which loads only tsx's loader and pipeline.ts, and the
  *   walk below reads both as files of src/mcp.
- * - Each entry's order (`ENTRIES`: stdio.ts, and the command line's
- *   cliEntry.ts once its wave 4 writes it): the stdout guard is its only
+ * - Each entry's order (`ENTRIES`: stdio.ts, and since the CLI and Forma
+ *   Designer work's wave 4 the command line's cliEntry.ts): the stdout guard is its only
  *   static import and is installed before its first lazy import, which is
  *   aiSettings.ts, a module that loads no package at all; the AI's
  *   environment is taken there (`takeAiEnv`), in the entry's own voice, and
@@ -40,8 +40,17 @@
  *   wave-2 review; stdio.test.ts shows the keys reaching the guard, with a
  *   key in a shape no pattern knows). The guard imports only Node
  *   built-ins and the key scrubber the web app shares (lib/keyRedact.ts
- *   since wave 8), which imports nothing; the launcher, run.mjs, loads only
- *   tsx's loader and the entry. The AI tools' worker thread (genWorker.mjs,
+ *   since wave 8), which imports nothing; each launcher, run.mjs and the
+ *   command line's cli.mjs, loads only tsx's loader and its entry. And the
+ *   command line's entry is wired as its header says (`cliWiringProblems`,
+ *   the wave-4 review's SEC-W4-4: with the guard's options cut back, or
+ *   `main` handed a scrubber that takes nothing out, or a copy of the
+ *   environment made before the keys were deleted, every case still
+ *   passed): the guard's exact options, `main` handed the guard's
+ *   scrubber, log and `protocolOut`, and no reference to the environment
+ *   before the keys are deleted but `takeAiEnv`'s; commandLine.test.ts shows
+ *   a key reaching neither stream, and a rejection ending the run with 70,
+ *   in the process it spawns. The AI tools' worker thread (genWorker.mjs,
  *   wave 8) is a Node one of worker.mjs's shape, started only by
  *   generator.ts.
  * - Never the v1 SDK, @modelcontextprotocol/sdk: it is in the tree (through
@@ -90,13 +99,13 @@ const SCRIPTS = filesUnder('scripts');
  * environment, each held to the same order below and to taking its
  * environment in its own voice, the one given here (2026-11-24, findings
  * CLI-9 and TEST-2 of the command line's design audit, and SEC-W2-1 of that
- * work's wave-2 review): the MCP server's, and, once the command line's wave
- * 4 writes it, its own, which joins this map as one more line,
- * 'src/mcp/cliEntry.ts': 'cli'. Until then a cliEntry.ts that touched the
- * environment would fail the environment case, as any other file would, and
- * one that copied stdio.ts's line, voice and all, would fail the voice.
+ * work's wave-2 review): the MCP server's, and since that work's wave 4 the
+ * command line's (2026-11-24, CLI-1), which joined this map as one line. A
+ * third file that touched the environment would fail the environment case,
+ * as any other file would, and an entry that copied the other's line, voice
+ * and all, would fail the voice.
  */
-const ENTRIES: Record<string, Voice> = { 'src/mcp/stdio.ts': 'mcp' };
+const ENTRIES: Record<string, Voice> = { 'src/mcp/stdio.ts': 'mcp', 'src/mcp/cliEntry.ts': 'cli' };
 const ROOT = ['server.ts', 'vite.config.ts', 'vitest.config.ts', 'vitest.rules.config.ts'].map((f) => join(CLONE, f)).filter(existsSync);
 const inMcp = (abs: string) => rel(abs).startsWith('src/mcp/');
 const inServer = (abs: string) => rel(abs).startsWith('src/server/');
@@ -183,11 +192,16 @@ const stdoutBypassesOf = (source: string) => STDOUT_BYPASSES.filter(([re]) => re
  *   finding NODE-9): the fidelity benchmark makes each report as the MCP
  *   server's generate_report does, so it measures what that tool ships,
  *   rather than keeping a third copy of the pipeline.
+ * - The command line's entry (2026-11-24, the CLI and Forma Designer work's
+ *   wave 4, CLI-1): scripts/repx.ts, the command line until then, forwards
+ *   to it, so its documented form keeps working with the entry's order, the
+ *   guard first and the environment taken there, never in the script.
  */
 const SHARED_WITH_SCRIPTS = [
   'scripts/fidelity/run.ts -> ../../src/mcp/nodeGeneration',
   'scripts/fidelity/run.ts -> ../../src/mcp/nodeIntake',
   'scripts/model/paddleOcr.ts -> ../../src/mcp/nodePaddle',
+  'scripts/repx.ts -> ../src/mcp/cliEntry',
 ];
 
 describe('the import boundaries', () => {
@@ -226,7 +240,8 @@ describe('the import boundaries', () => {
         .filter((spec) => spec.startsWith('@modelcontextprotocol/') || (resolveRelative(file, spec) !== null && inMcp(resolveRelative(file, spec) as string)))
         .map((spec) => `${rel(file)} -> ${spec}`),
     );
-    expect([...new Set(offenders)]).toEqual(SHARED_WITH_SCRIPTS);
+    // Sorted: the order a folder is listed in is the file system's, not the same on every OS.
+    expect([...new Set(offenders)].sort()).toEqual([...SHARED_WITH_SCRIPTS].sort());
   });
 
   it('only test files import testFs.ts and testClient.ts, the in-memory file system and client', () => {
@@ -289,11 +304,13 @@ describe('the import boundaries', () => {
     }
     expect(problems).toEqual([]);
     // The walk really happened: the launcher's and the entry's lazy imports were followed.
-    expect([...seen].map(rel)).toEqual(expect.arrayContaining(['src/mcp/run.mjs', 'src/mcp/stdio.ts', 'src/mcp/formaServer.ts', 'src/mcp/roots.ts', 'src/lib/keyRedact.ts', 'src/mcp/genWorker.mjs', 'src/mcp/genJobs.ts']));
+    expect([...seen].map(rel)).toEqual(
+      expect.arrayContaining(['src/mcp/run.mjs', 'src/mcp/stdio.ts', 'src/mcp/formaServer.ts', 'src/mcp/roots.ts', 'src/lib/keyRedact.ts', 'src/mcp/genWorker.mjs', 'src/mcp/genJobs.ts', 'src/mcp/cli.mjs', 'src/mcp/cliEntry.ts', 'src/mcp/commandLine.ts']),
+    );
   });
 
   it("the command line's layer loads neither the MCP SDK nor zod, nor any module only the server needs, through any import of Forma's own, static or lazy", () => {
-    // 2026-11-24, findings CLI-2 and SEC-4 of the command line's design audit: what the command line is to import on its
+    // 2026-11-24, findings CLI-2 and SEC-4 of the command line's design audit: what the command line imports on its
     // main thread (the calls, the path rules, reading and writing a report, the AI's settings, the two generators, the stdout
     // guard, Forma's version) and the work its two threads run (genJobs.ts, pipeline.ts). ToolRefusal lived in toolShape.ts,
     // which loads zod, so every one of them loaded zod until it moved to caller.ts. A package's own dependencies are not
@@ -302,7 +319,10 @@ describe('the import boundaries', () => {
     // file and walks from it, so whatever the layer loads has its words read. SERVER_ONLY names the server's own modules and
     // the tests' helpers, which the layer never reaches, toolList.ts (every MCP tool's name) among them since the wave-2
     // review (SEC-W2-4: an import of it from the layer passed here, and cliVoice.test.ts skipped it by name).
-    const CLI_LAYER = ['reportCalls.ts', 'paths.ts', 'reportFile.ts', 'caller.ts', 'version.ts', 'aiSettings.ts', 'generator.ts', 'workerPool.ts', 'stdoutGuard.ts', 'genJobs.ts', 'pipeline.ts'].map((f) => join(CLONE, 'src', 'mcp', f));
+    // Since wave 4 (2026-11-24) the command line itself is the head of its layer: its launcher, its entry, commandLine.ts, its
+    // table, and layoutCalls.ts, the report tools' steps it shares with the server; since that wave's second part folderBatch.ts,
+    // the batch's walk, routes and names, and modelParks.ts, whose kept parks the batch reads on its own thread.
+    const CLI_LAYER = ['cli.mjs', 'cliEntry.ts', 'commandLine.ts', 'cliCommands.ts', 'layoutCalls.ts', 'folderBatch.ts', 'modelParks.ts', 'reportCalls.ts', 'paths.ts', 'reportFile.ts', 'caller.ts', 'version.ts', 'aiSettings.ts', 'generator.ts', 'workerPool.ts', 'stdoutGuard.ts', 'genJobs.ts', 'pipeline.ts'].map((f) => join(CLONE, 'src', 'mcp', f));
     const SERVER_ONLY = ['toolShape.ts', 'formaServer.ts', 'aiTools.ts', 'reportTools.ts', 'statusTool.ts', 'roots.ts', 'skillResource.ts', 'toolList.ts', 'stdio.ts', 'run.mjs', 'testFs.ts', 'testClient.ts'].map((f) => `src/mcp/${f}`);
     const seen = new Set<string>(CLI_LAYER);
     const queue = [...CLI_LAYER];
@@ -325,6 +345,13 @@ describe('the import boundaries', () => {
     expect([...seen].map(rel)).toEqual(expect.arrayContaining(['src/mcp/nodeGeneration.ts', 'src/lib/generationCore.ts', 'src/lib/keyRedact.ts', 'src/services/geminiService.ts']));
     // And it would have caught the import it was written for.
     expect(runtimeSpecifiersOf(text(join(CLONE, 'src', 'mcp', 'toolShape.ts')))).toContain('zod');
+  });
+
+  it('no two modules of src/mcp share a name, so an import without an extension means one file to Vite, tsx and the walks here alike', () => {
+    // 2026-11-24, the command line's wave 4: beside cli.mjs, a cli.ts was what `import('./cli')` named to tsc and to the
+    // walks above, which try .ts first, while Vitest's resolver took the launcher, .mjs first, and ran it inside the test.
+    const names = SRC.filter((f) => inMcp(f)).map((f) => rel(f).replace(/\.[^./]+$/, ''));
+    expect(names.filter((name, i) => names.indexOf(name) !== i)).toEqual([]);
   });
 
   it('finds every shape of write to stdout that the guard cannot catch', () => {
@@ -398,6 +425,62 @@ function hardeningProblems(body: string, voice: Voice): string[] {
   if (/\bprocess\.env(?:\.\w+|\[[^\]]+\])\s*=[^=]/.test(body)) problems.push('it writes to the environment');
   return problems;
 }
+
+/**
+ * What is wrong with the command line's entry's wiring (cliEntry.ts's
+ * header, the wave-4 review's SEC-W4-4), `body` without its comments: the
+ * guard installed once with exactly the command line's options (its prefix,
+ * a rejection that fails the run, 70 after either); `main` called once and
+ * handed the guard's scrubber, its log for stderr and its `protocolOut` for
+ * stdout, nothing else under those names; and no reference to the
+ * environment before the keys are deleted but `takeAiEnv`'s argument, so no
+ * copy of it with the keys can be made for a worker or a child to inherit.
+ * Empty when it is right.
+ */
+function cliWiringProblems(body: string): string[] {
+  const problems: string[] = [];
+  if ((body.match(/\binstallStdoutGuard\s*\(/g) ?? []).length !== 1 || !/\binstallStdoutGuard\(\s*\{\s*prefix:\s*'forma: ',\s*onRejection:\s*'fail',\s*fatalExitCode:\s*70\s*,?\s*\}\s*\)/.test(body)) {
+    problems.push("the guard is not installed once with { prefix: 'forma: ', onRejection: 'fail', fatalExitCode: 70 }");
+  }
+  const calls = [...body.matchAll(/\bawait\s+main\s*\(/g)];
+  const at = calls[0]?.index ?? -1;
+  const end = at < 0 ? -1 : body.indexOf('\n});', at);
+  const call = at < 0 || end < 0 ? '' : body.slice(at, end);
+  if (calls.length !== 1 || (body.match(/\bmain\s*\(/g) ?? []).length !== 1) problems.push('main is not called once, awaited');
+  if ((call.match(/\bredact\s*:/g) ?? []).length !== 1 || !/\bredact\s*:\s*guard\.redact\s*,/.test(call)) problems.push("main is not handed the guard's scrubber, redact: guard.redact");
+  if ((call.match(/\berr\s*:/g) ?? []).length !== 1 || !/\berr\s*:\s*\(\s*line\s*\)\s*=>\s*guard\.log\(\s*line\s*\)\s*,/.test(call)) problems.push("main's stderr is not the guard's log, err: (line) => guard.log(line)");
+  if ((call.match(/\bout\s*:/g) ?? []).length !== 1 || !/\bout\s*:\s*\(\s*text\s*\)\s*=>\s*\{\s*guard\.protocolOut\.write\(\s*text\s*\);\s*\}\s*,/.test(call)) problems.push("main's stdout is not the guard's protocolOut alone");
+  const deleted = body.search(/\bfor\s*\(\s*const\s+(\w+)\s+of\s+remove\s*\)\s*delete\s+process\.env\[\s*\1\s*\]/);
+  const taken = body.search(/\btakeAiEnv\(\s*process\.env\s*,/);
+  const before = [...body.matchAll(/\bprocess\.env\b/g)].map((m) => m.index ?? -1).filter((i) => deleted < 0 || i < deleted);
+  if (before.some((i) => i !== body.indexOf('process.env', taken))) problems.push('the environment is referred to before its keys are deleted other than by takeAiEnv(process.env, ...)');
+  return problems;
+}
+
+describe("the command line's entry's wiring", () => {
+  it('is what its header says: the guard, main and the environment (SEC-W4-4)', () => {
+    expect(cliWiringProblems(code(text(join(CLONE, 'src', 'mcp', 'cliEntry.ts'))))).toEqual([]);
+  });
+
+  it('refuses the ways of breaking it the wave-4 review found every case passing: the guard cut back, a scrubber that takes nothing out, a copy of the environment with the keys, and the rest', () => {
+    const right = code(text(join(CLONE, 'src', 'mcp', 'cliEntry.ts')));
+    expect(cliWiringProblems(right)).toEqual([]);
+    const broken = (from: string | RegExp, to: string) => {
+      const changed = right.replace(from, to);
+      expect(changed, String(from)).not.toBe(right);
+      return cliWiringProblems(changed);
+    };
+    // M1: the guard with the server's defaults (a rejection goes on, 1 after a crash).
+    expect(broken("installStdoutGuard({ prefix: 'forma: ', onRejection: 'fail', fatalExitCode: 70 })", "installStdoutGuard({ prefix: 'forma: ' })")).not.toEqual([]);
+    expect(broken("fatalExitCode: 70", 'fatalExitCode: 1')).not.toEqual([]);
+    // M17: main handed a scrubber that takes nothing out, or stderr and stdout around the guard.
+    expect(broken('redact: guard.redact,', 'redact: (text: string) => text,')).not.toEqual([]);
+    expect(broken('err: (line) => guard.log(line),', 'err: (line) => console.error(line),')).not.toEqual([]);
+    expect(broken('guard.protocolOut.write(text);', 'process.stdout.write(text);')).not.toEqual([]);
+    // M15: a copy of the environment, keys and all, after takeAiEnv and before the delete.
+    expect(broken('guard.addSecrets(secrets);', 'guard.addSecrets(secrets);\nconst kept = { ...process.env };')).not.toEqual([]);
+  });
+});
 
 describe("the entry's order", () => {
   it.each(Object.keys(ENTRIES))('%s installs the stdout guard before anything else loads: its only static import, called before the first lazy import', (entryPath) => {
@@ -483,10 +566,13 @@ describe("the entry's order", () => {
     expect(specifiersOf(text(join(CLONE, 'src', 'lib', 'keyRedact.ts')))).toEqual([]);
   });
 
-  it("the launcher loads only tsx's loader and then the entry", () => {
-    const launcher = text(join(CLONE, 'src', 'mcp', 'run.mjs'));
+  it.each([
+    ['run.mjs', './stdio.ts'],
+    ['cli.mjs', './cliEntry.ts'],
+  ])("the launcher %s loads only tsx's loader and then its entry, %s", (file, entry) => {
+    const launcher = text(join(CLONE, 'src', 'mcp', file));
     expect(staticSpecifiersOf(launcher)).toEqual(['tsx/esm/api']);
-    expect(specifiersOf(launcher)).toEqual(['tsx/esm/api', './stdio.ts']);
+    expect(specifiersOf(launcher)).toEqual(['tsx/esm/api', entry]);
   });
 
   it("the tools' worker threads load only Node's worker module, tsx's loader and their work, and only workerPool.ts and generator.ts start them", () => {
@@ -510,7 +596,7 @@ describe("the entry's order", () => {
     // launchers do this; the report tools' thread names no package on start since the CLI work's wave 2, so no `paths`
     // reaches it, and this case is all that holds worker.mjs's pin (the wave-2 review's EQ-1).
     const launchers = SRC.filter((f) => inMcp(f) && !isTest(f) && specifiersOf(text(f)).includes('tsx/esm/api'));
-    expect(launchers.map(rel).sort()).toEqual(['src/mcp/genWorker.mjs', 'src/mcp/run.mjs', 'src/mcp/worker.mjs']);
+    expect(launchers.map(rel).sort()).toEqual(['src/mcp/cli.mjs', 'src/mcp/genWorker.mjs', 'src/mcp/run.mjs', 'src/mcp/worker.mjs']);
     for (const file of launchers) {
       const calls = [...code(text(file)).matchAll(/\bregister\s*\(([^)]*)\)/g)].map((m) => m[1].trim());
       expect(calls, rel(file)).toEqual(["{ tsconfig: import.meta.dirname + '/../../tsconfig.json' }"]);

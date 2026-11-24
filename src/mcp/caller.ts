@@ -2,8 +2,8 @@
  * What every caller of Forma's Node side is told, whoever it is (2026-11-24,
  * the CLI and Forma Designer work's wave 2; findings CLI-2 and CLI-10 of its
  * design audit, `DevFiles/forma-audit/cli-designer-2026-11-24-findings.md`):
- * the MCP server's host, through toolShape.ts, and the command line, which is
- * to come in that work's wave 4.
+ * the MCP server's host, through toolShape.ts, and the command line
+ * (commandLine.ts, since that work's wave 4).
  *
  * - `ToolRefusal`, a refusal whose words were written for whoever called,
  *   sent as they are (keys still taken out). It lived in toolShape.ts until
@@ -26,7 +26,8 @@
  *   whole key's shape. What reportCalls.ts returns is unscrubbed, the AI's
  *   failure and reply as they came from the work's thread, which has no
  *   scrubber; toolShape.ts's `shapeResult` passes every result through these
- *   two, and the command line is to, rather than keep a copy of the order.
+ *   two, and the command line does (commandLine.ts), rather than keep a copy
+ *   of the order.
  * - `Voice`, who the words are for: a host's model (`mcp`) or a person at a
  *   command line or a CI log (`cli`). The few phrases that differ are chosen
  *   by it (CLI-10): where to send a path and which program never opens a
@@ -40,6 +41,12 @@
  *   what Forma says is the same to both. The server's words are exactly what
  *   they were, and cliVoice.test.ts holds the command line's to none of the
  *   server's.
+ * - `quoted`, a path or a name as the words quote it, by the voice (since
+ *   that work's wave-4 review, U8 and SEC-W4-5): JSON for a host's model,
+ *   whose result is data, as before; plain double quotes for a person, so a
+ *   Windows path reads, and copies, with single backslashes, every control
+ *   character and mark that reorders a line shown as `?`, so no name can
+ *   begin a line of its own on a terminal or in a CI log.
  *
  * Pure ASCII.
  */
@@ -101,3 +108,11 @@ export function clippedFromFile(value: unknown, redact: (text: string) => string
 
 /** Who Forma's words are for: an MCP host's model, or a person at a command line. */
 export type Voice = 'mcp' | 'cli';
+
+/** Control characters, a line break and a tab among them, and the marks that reorder what a terminal shows. */
+export const UNSAFE_IN_LINE = /[\u{0}-\u{1f}\u{7f}-\u{9f}\u{202a}-\u{202e}\u{2066}-\u{2069}]/gu;
+
+/** A path or a name as Forma's words quote it, in the voice's way (the header): JSON for a host's model, plain quotes for a person. */
+export function quoted(text: string, voice: Voice): string {
+  return voice === 'mcp' ? JSON.stringify(text) : `"${text.replace(UNSAFE_IN_LINE, '?')}"`;
+}

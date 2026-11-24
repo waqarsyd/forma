@@ -24,7 +24,7 @@ import { keyTag, type ModelPark } from '../lib/modelCache';
 import type { ReportConfig } from '../services/geminiService';
 import { workerGenerator } from './generator';
 import type { GenerateDone, GenerateJob } from './genJobs';
-import { LONGEST_PARK_MS, PARKS_FILE, RENAME_TRIES, fileParks, limitAfterParks } from './modelParks';
+import { CHOICE_FILE, LONGEST_PARK_MS, PARKS_FILE, RENAME_TRIES, fileParks, formaUserFolder, keyParked, limitAfterParks, usableKept } from './modelParks';
 
 const CLONE = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const OWNER_WORK = resolve(CLONE, '..', 'forma-model-data-kept-not-in-git', 'forma-model-data', 'work');
@@ -504,5 +504,64 @@ import(${JSON.stringify(GEN_WORKER)});
     } finally {
       await gen.close();
     }
+  });
+});
+
+describe("before a batch's next file: the parks read on the command line's own thread (its wave 4)", () => {
+  const KEY = ['AI', 'za', 'Sy'].join('') + 'B'.repeat(33);
+  const NOW = Date.now();
+  /** The day's choice written as Forma writes it: modelCache.ts's own `cacheDailyModel`, into nodeGeneration.ts's own file storage, in fresh modules. */
+  async function choiceWritten(forma: string, key: string, usable: string[], at: number): Promise<void> {
+    vi.resetModules();
+    const cache = await import('../lib/modelCache');
+    const { fileStorage } = await import('./nodeGeneration');
+    cache.keepModelChoiceIn({ session: null, day: fileStorage(join(forma, CHOICE_FILE)) });
+    cache.cacheDailyModel(key, usable[0], usable, at);
+    vi.resetModules();
+  }
+
+  it("names Forma's folder on each system, and nodeGeneration.ts names the same", async () => {
+    const { formaUserFolder: named } = await import('./nodeGeneration');
+    for (const [home, platform] of [
+      ['C:\Users\someone', 'win32'],
+      ['/Users/someone', 'darwin'],
+      ['/home/someone', 'linux'],
+    ] as const) {
+      expect(named(home, platform)).toBe(formaUserFolder(home, platform));
+    }
+    expect(formaUserFolder('/home/someone', 'linux')).toBe(join('/home/someone', '.cache', 'forma'));
+  });
+
+  it("reads the models the key can call from the day's choice as Forma writes it; none for another key, a choice older than a day, or a damaged file", async () => {
+    const forma = folder();
+    expect(usableKept(forma, KEY, NOW)).toBeNull();
+    await choiceWritten(forma, KEY, ['model-a', 'model-b'], NOW - 1000);
+    expect(usableKept(forma, KEY, NOW)).toEqual(['model-a', 'model-b']);
+    expect(usableKept(forma, `${KEY}x`, NOW)).toBeNull();
+    expect(usableKept(forma, KEY, NOW + 25 * 3_600_000)).toBeNull();
+    writeFileSync(join(forma, CHOICE_FILE), '{ not json');
+    expect(usableKept(forma, KEY, NOW)).toBeNull();
+  });
+
+  it("says the key is spent for the day when every model it can call is parked for the day, waits for a minute's, and says nothing while one is free", async () => {
+    const forma = folder();
+    await choiceWritten(forma, KEY, ['model-a', 'model-b'], NOW - 1000);
+    const parks = fileParks(join(forma, PARKS_FILE));
+    const tag = keyTag(KEY);
+    expect(keyParked(forma, KEY, NOW)).toBeNull();
+    parks.add(tag, { model: 'model-a', kind: 'daily', until: NOW + 5 * 3_600_000 }, NOW);
+    // model-b is free: the next file is asked of it.
+    expect(keyParked(forma, KEY, NOW)).toBeNull();
+    parks.add(tag, { model: 'model-b', kind: 'daily', until: NOW + 4 * 3_600_000 }, NOW);
+    expect(keyParked(forma, KEY, NOW)).toEqual({ kind: 'daily', waitMs: 4 * 3_600_000, provider: 'gemini' });
+    // A model whose minute ends soonest is what the key can next be asked of: the batch waits, rather than stopping.
+    const other = folder();
+    await choiceWritten(other, KEY, ['model-a', 'model-b'], NOW - 1000);
+    fileParks(join(other, PARKS_FILE)).add(tag, { model: 'model-a', kind: 'daily', until: NOW + 5 * 3_600_000 }, NOW);
+    fileParks(join(other, PARKS_FILE)).add(tag, { model: 'model-b', kind: 'per-minute', until: NOW + 30_000 }, NOW);
+    expect(keyParked(other, KEY, NOW)).toEqual({ kind: 'per-minute', waitMs: 30_000, provider: 'gemini' });
+    // Another key's parks, or none known of the key's models today, say nothing.
+    expect(keyParked(forma, `${KEY}x`, NOW)).toBeNull();
+    expect(keyParked(folder(), KEY, NOW)).toBeNull();
   });
 });

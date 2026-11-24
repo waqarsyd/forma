@@ -56,15 +56,16 @@ export function codeReportClass(name: string): string {
  * report found beside it, or null; `repx` is where a saved .repx would go;
  * `give` is the verb for handing a file over, "send" to an AI host's model
  * and "give" to a person at Forma's command line (the CLI and Forma Designer
- * work's CLI-10).
+ * work's CLI-10); `quote` how a path is quoted, as JSON by default, in plain
+ * quotes for that person (its wave-4 review's U8).
  */
-export function codeReportMessage(shown: string, layout: string | null, repx: string, give: 'send' | 'give' = 'send'): string {
+export function codeReportMessage(shown: string, layout: string | null, repx: string, give: 'send' | 'give' = 'send', quote: (path: string) => string = JSON.stringify): string {
   const cls = codeReportClass(shown);
   const vb = /\.vb$/i.test(shown);
-  if (layout) return `${JSON.stringify(shown)} is code. Its report keeps its layout in ${JSON.stringify(layout)}, beside it, which Forma reads: ${give} that path instead.`;
+  if (layout) return `${quote(shown)} is code. Its report keeps its layout in ${quote(layout)}, beside it, which Forma reads: ${give} that path instead.`;
   const save = vb ? `New ${cls}().SaveLayoutToXml("${repx}")` : `new ${cls}().SaveLayoutToXml(@"${repx}")`;
   return (
-    `${JSON.stringify(shown)} is code: a report written as a C# or VB class keeps its layout as code in its Designer file, which Forma cannot read. ` +
+    `${quote(shown)} is code: a report written as a C# or VB class keeps its layout as code in its Designer file, which Forma cannot read. ` +
     `${give === 'give' ? 'Give' : 'Send'} a .repx of it instead. In Visual Studio, the report's smart tag saves its layout as a .repx (Save), and brings one back in (Open/Import); ` +
     `or, in the application, ${save} writes one.`
   );

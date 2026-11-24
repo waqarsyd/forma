@@ -11,7 +11,16 @@
  * Every job opens the report first (`openReport` in reportFile.ts: refused
  * unless it is well-formed XML, its stored login taken out and the result
  * read again), then runs the module the web app runs: the audit, the chat's
- * outline and edits, the repair chain, the draft PDF. Lines read from the
+ * outline and edits, the repair chain, the draft PDF, and since the CLI and
+ * Forma Designer work's wave 4 the conversion of an SSRS or FastReport
+ * report (`convert`; finding GAP1-1 of its design audit and the owner's
+ * decision OC7). That file is another program's XML and is opened the same
+ * way first, so the converter's own small reader never meets a file the
+ * shape check refuses, and one built to be slow or large costs its own
+ * thread, within the same bounds. Since that wave's review (U1), `copy`: a
+ * report as it reads once opened, for the command line's batch to write
+ * when its words changed nothing, so its output folder holds every report
+ * and a rerun with --skip-existing asks the AI nothing again. Lines read from the
  * file come back already folded by `fileLines`, for the result's `fromFile`.
  * Whatever a job returns crosses to the other thread by structured clone,
  * so it holds only data.
@@ -55,6 +64,10 @@ export interface Jobs {
   repair: { name: string; text: string; target: LayoutKind; designers: DesignerText[] };
   edit: { name: string; text: string; target: LayoutKind; edits: AgentEdit[]; designers: DesignerText[] };
   pdf: { name: string; text: string; title: string };
+  /** An SSRS (.rdl, .rdlc) or FastReport (.frx) report's text; `file` is its own name, which the converter reads its kind and the report's name from. */
+  convert: { name: string; text: string; file: string };
+  /** A report to write as it reads, once opened (since the CLI work's wave-4 review, U1): the batch's copy of a report its words left as it was. */
+  copy: { name: string; text: string; target: LayoutKind };
 }
 
 /** What each job returns, beside what reading the report found. */
@@ -68,6 +81,10 @@ export interface Results {
   repair: { xml: string; repairs: string[]; said: string[]; audit: Audited; dropped: Dropped | null };
   edit: { changed: boolean; xml: string; applied: string[]; declined: string[]; unmarked: boolean; dropped: Dropped | null };
   pdf: { drawn: { bytes: Uint8Array; pages: number; problems: string[] } | null };
+  /** The report made from it, repaired, with the converter's notices and its audit; null when it will not convert. */
+  convert: { converted: { xml: string; notices: string[]; audit: Audited } | null };
+  /** The report as opened (its login out), Visual Studio's working-file mark neutralised for a .repx, and its audit. */
+  copy: { xml: string; unmarked: boolean; audit: Audited };
 }
 
 export type JobName = keyof Jobs;
@@ -160,6 +177,28 @@ const WORK: { [T in JobName]: (job: Jobs[T], xml: string) => Promise<Results[T]>
     const { draftPdf } = await import('../lib/draftPdf');
     const drawn = await draftPdf(xml, job.title);
     return { drawn: drawn ? { bytes: drawn.bytes, pages: drawn.pages, problems: fileLines(drawn.problems) } : null };
+  },
+
+  convert: async (job, xml) => {
+    // The web app's own conversion (lib/repxIntake.ts `importedReport`: lib/importForeign.ts, then the repair chain at
+    // DevExpress 20.1, which it writes whatever version is asked). One that throws is one that will not convert, as the
+    // intake has it (the re-audit's R5-07); its message stays here, since a library's words can quote the file (REV4-2).
+    const { importedReport } = await import('../lib/repxIntake');
+    let made: Awaited<ReturnType<typeof importedReport>> = null;
+    try {
+      made = await importedReport(job.file, xml);
+    } catch {
+      made = null;
+    }
+    return { converted: made ? { xml: made.xml, notices: [...made.notices], audit: await audited(made.xml) } : null };
+  },
+
+  copy: async (job, xml) => {
+    // Nothing changed but what opening it takes out (its login) and, written as a .repx, the working-file mark (GAP1-2).
+    const { workingFileMark } = await import('../lib/repairChain');
+    const unmarked = job.target === 'repx' ? workingFileMark(xml, 'repx') : null;
+    const out = unmarked?.applied ? unmarked.xml : xml;
+    return { xml: out, unmarked: unmarked?.applied === true, audit: await audited(out) };
   },
 };
 

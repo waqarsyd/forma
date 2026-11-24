@@ -14,10 +14,20 @@ kept), or by printing; the linked headings hold the measurement.
 ## Check and repair from the command line
 
 ```powershell
-npx tsx scripts/repx.ts audit  report.repx            # findings, one a line; exit 1 on an error
-npx tsx scripts/repx.ts repair report.repx out.repx   # every repair Forma makes, then the audit; exit 1 on an error
-npx tsx scripts/repx.ts pdf    report.repx out.pdf    # the pages as Forma lays them out, a draft
+node <clone>/src/mcp/cli.mjs audit  report.repx                 # findings, one a line; exit 1 on an error
+node <clone>/src/mcp/cli.mjs repair report.repx --out out.repx  # every repair Forma makes, then the audit; exit 1 on an error
+node <clone>/src/mcp/cli.mjs pdf    report.repx --out out.pdf   # the pages as Forma lays them out, a draft
 ```
+
+That is Forma's command line, run with plain node from any folder after a full `npm ci` in the
+clone (since 2026-11-24; `--help` lists every command, `outline` and `edit` among them, and
+`convert`, which makes an SSRS `.rdl` or a FastReport `.frx` into a repaired `.repx` with no AI;
+`audit` takes a folder too, every report directly in it). It never replaces a file unless `--force`
+is given: a file already at the output with other content is left as it is, and the command exits 4,
+as it does when the file system refuses the write (a read-only folder, a full disk). Even with
+`--force` it never writes over a report whose stored login it took out. A usage error exits 2 and an
+internal error 70, so a gate can tell a bad report from a broken tool.
+In a shell in the clone, `npx tsx scripts/repx.ts audit|repair|pdf` still works, forwarding to it.
 
 Run `repair` on anything written by hand or by a model before it is opened in a designer: it is
 the same chain the web app runs on every generated report, in the same order. It keeps code the

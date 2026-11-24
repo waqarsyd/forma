@@ -10,8 +10,8 @@
  * Google states or until midnight Pacific for the day's allowance, and moves
  * to the next model the key can call (lib/modelCache.ts, *Overload
  * cooldown*). The park lived in memory alone, so it lasted only while one
- * thread did. The command line is to make each file of a batch in a thread of
- * its own (generator.ts `fresh`, OC2), and the MCP server's thread ends on a
+ * thread did. The command line makes each file of a batch in a thread of its
+ * own (generator.ts `fresh`, OC2; since its wave 4), and the MCP server's thread ends on a
  * cancellation, a deadline or a crash: each new thread began on the model the
  * last one had found spent, and asked it again, a request out of the file's
  * budget for every model already spent today (the audit measured five
@@ -39,8 +39,8 @@
  *
  * ## Two writers
  *
- * The MCP server and the fidelity benchmark share the file, and the command
- * line is to (its wave 4), so two processes can add a park at once. Each write reads the
+ * The MCP server and the fidelity benchmark share the file, and so does the
+ * command line since its wave 4, so two processes can add a park at once. Each write reads the
  * file just before it, adds its park, and writes the whole file under a name
  * of its own (the process and the thread), then renames it into place, so a
  * reader always reads one writer's whole file and never half of one. What
@@ -90,16 +90,50 @@
  * day's limit while another model's minute ends in half a minute waits that
  * half minute rather than stopping for the day (OC5).
  *
+ * ## Before a batch's next file (the command line's wave 4)
+ *
+ * `keyParked` reads the same two files on the command line's own thread,
+ * before its batch starts a file's thread: when every model the key can
+ * call is parked, the limit that lifts soonest, so a batch stops at the
+ * day's limit without spending a request Google would refuse, and waits a
+ * minute's out before asking. It reads; it never writes either file. Forma's
+ * folder (`formaUserFolder`) is named here since that wave, so that thread
+ * names it without loading the parts nodeGeneration.ts assembles.
+ *
  * Pure ASCII.
  */
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { threadId } from 'node:worker_threads';
 import { msUntilPacificReset, type AiLimit } from '../lib/aiLimit';
-import type { ModelPark, ParkStore } from '../lib/modelCache';
+import { DAILY_TTL_MS, keyTag, type ModelPark, type ParkStore } from '../lib/modelCache';
+
+/**
+ * Forma's own folder for this user, outside any repository and the user's
+ * project: AppData\Local\Forma on Windows, Library/Caches/Forma on macOS,
+ * .cache/forma elsewhere, under the user's home. In nodeGeneration.ts until
+ * the CLI and Forma Designer work's wave 4, which names it there too.
+ */
+export function formaUserFolder(home: string = homedir(), platform: string = process.platform): string {
+  if (platform === 'win32') return join(home, 'AppData', 'Local', 'Forma');
+  if (platform === 'darwin') return join(home, 'Library', 'Caches', 'Forma');
+  return join(home, '.cache', 'forma');
+}
 
 /** The file's name in Forma's folder, beside the model probe's `model-choice.json`. */
 export const PARKS_FILE = 'model-parks.json';
+
+/** The model probe's file in Forma's folder: the day's choice for a key's tag, and the models it can call (nodeGeneration.ts `fileStorage`). */
+export const CHOICE_FILE = 'model-choice.json';
+
+/**
+ * The entry lib/modelCache.ts keeps the day's choice under (its `DAILY_KEY`,
+ * which the browser's bundle keeps unexported): a JSON text of the key's tag,
+ * the model, the models it can call and when. modelParks.test.ts writes it
+ * through modelCache.ts's own `cacheDailyModel`, so a change there fails here.
+ */
+const DAY_ENTRY = 'geminiModel:day';
 
 /**
  * The longest a park is read: the day's allowance lifts at midnight Pacific,
@@ -218,4 +252,41 @@ export function limitAfterParks(limit: AiLimit | null, parks: readonly ModelPark
     if (!soonest || park.until < soonest.until) soonest = park;
   }
   return soonest ? { kind: soonest.kind, waitMs: soonest.until - now, provider: 'gemini' } : limit;
+}
+
+/**
+ * The models a Gemini key can call, as the model probe kept them for the day
+ * in `folder`'s `model-choice.json` (lib/modelCache.ts `readDailyModel` reads
+ * the same entry): null when the file is missing or damaged, the entry is
+ * another key's, or it is older than a day. Read, never written.
+ */
+export function usableKept(folder: string, apiKey: string, now: number = Date.now()): string[] | null {
+  try {
+    const all = JSON.parse(readFileSync(join(folder, CHOICE_FILE), 'utf8')) as Record<string, unknown> | null;
+    const raw = all && typeof all === 'object' ? all[DAY_ENTRY] : null;
+    const saved = typeof raw === 'string' ? (JSON.parse(raw) as { tag?: unknown; usable?: unknown; at?: unknown } | null) : null;
+    if (!saved || saved.tag !== keyTag(apiKey.trim()) || typeof saved.at !== 'number' || now - saved.at > DAILY_TTL_MS) return null;
+    return Array.isArray(saved.usable) && saved.usable.length && saved.usable.every((m) => typeof m === 'string') ? (saved.usable as string[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The limit `keyParked` lays the parks over: a stand-in that says nothing, so the parks' own answer is told apart from it. */
+const NO_LIMIT_YET: AiLimit = { kind: 'unknown', waitMs: null, provider: 'gemini' };
+
+/**
+ * When a Gemini key can next be asked, read before a batch's next file (the
+ * header's *Before a batch's next file*): when every model the key can call
+ * is parked in `folder`, the park that lifts soonest, as `limitAfterParks`
+ * lays it (`daily` and the batch stops; `per-minute` and it waits); null when
+ * one is free, or nothing is known of the key's models today. Only a Gemini
+ * key with no model pinned is parked, so the caller asks only then.
+ */
+export function keyParked(folder: string, apiKey: string, now: number = Date.now()): AiLimit | null {
+  const usable = usableKept(folder, apiKey, now);
+  if (!usable) return null;
+  const parks = fileParks(join(folder, PARKS_FILE)).read(keyTag(apiKey.trim()), now);
+  const found = limitAfterParks(NO_LIMIT_YET, parks, usable, now);
+  return found === NO_LIMIT_YET ? null : found;
 }

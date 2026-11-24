@@ -418,7 +418,8 @@ describe.each([
     const { at, sys, scope } = cliScene(path);
     // The working folder is inside .work, which the person chose: nothing below it is refused for that.
     expect(resolveReadPath('a.repx', scope, sys).ok).toBe(true);
-    expect(reason(resolveReadPath(`.git${sep}x.repx`, scope, sys))).toBe(`${q(at('home', '.work', 'proj', '.git', 'x.repx'))} is inside ".git"; Forma never reads from a dot-folder or a dot-file; only the folder the command is run in may be one.`);
+    // In plain quotes, as a person copies a path (the CLI work's wave-4 review, U8), never JSON's escapes.
+    expect(reason(resolveReadPath(`.git${sep}x.repx`, scope, sys))).toBe(`"${at('home', '.work', 'proj', '.git', 'x.repx')}" is inside ".git"; Forma never reads from a dot-folder or a dot-file; only the folder the command is run in may be one.`);
     expect(reason(resolveWritePath(`.claude${sep}x.repx`, scope, sys))).toMatch(/is inside "\.claude"; Forma never writes into a dot-folder/);
     expect(reason(resolveWritePath(`node_modules${sep}x.repx`, scope, sys))).toMatch(/is inside node_modules; Forma never writes there; only the folder the command is run in may be inside it\.$/);
     expect(reason(resolveReadPath(at('home', '.cache', 'x.repx'), scope, sys))).toMatch(/is inside "\.cache"/);
@@ -450,12 +451,13 @@ describe("the command line's refusals before the file system, Windows rules", ()
     ['\\\\host\\share\\x.repx', /another computer, which Forma never opens/],
     ['//host/share/x.repx', /another computer, which Forma never opens/],
     ['/\\host\\share\\x.repx', /another computer, which Forma never opens/],
-    ['//g/DevFiles/x.repx', /If you meant drive G:, give "G:\\\\DevFiles\\\\x\.repx"/],
-    ['\\\\?\\G:\\very\\long\\x.png', /^"\\\\\\\\\?\\\\G:\\\\very\\\\long\\\\x\.png" is the long form of a path on drive G:; give it as "G:\\\\very\\\\long\\\\x\.png"\.$/],
-    ['\\\\.\\G:\\x.png', /long form of a path on drive G:; give it as "G:\\\\x\.png"/],
-    ['/g/DevFiles/x.repx', /Git Bash or WSL path; give "G:\\\\DevFiles\\\\x\.repx"/],
+    // A path in plain quotes, single backslashes, as a person copies it back to a shell (the wave-4 review's U8).
+    ['//g/DevFiles/x.repx', /If you meant drive G:, give "G:\\DevFiles\\x\.repx"\.$/],
+    ['\\\\?\\G:\\very\\long\\x.png', /^"\\\\\?\\G:\\very\\long\\x\.png" is the long form of a path on drive G:; give it as "G:\\very\\long\\x\.png"\.$/],
+    ['\\\\.\\G:\\x.png', /long form of a path on drive G:; give it as "G:\\x\.png"/],
+    ['/g/DevFiles/x.repx', /Git Bash or WSL path; give "G:\\DevFiles\\x\.repx"/],
     ['~\\x.repx', /starts with ~; give the full path of the home folder/],
-    ['file:///G:/a/x.repx', /is a URL; give a path, "G:\\\\a\\\\x\.repx"/],
+    ['file:///G:/a/x.repx', /is a URL; give a path, "G:\\a\\x\.repx"/],
     ['x.repx:hidden', /has a ':', which names a hidden stream of a file; give a plain file path/],
     ['G:\\proj\\x.repx:ads', /after the drive letter/],
     ['G:x.repx', /relative to the current folder of drive G:; give the full path/],
@@ -481,7 +483,7 @@ describe("the command line's refusals before the file system, Windows rules", ()
     const fs = untouchable();
     const sys = { path: win32, fs };
     for (const raw of ['x.repx', 'G:\\proj\\x.repx']) {
-      expect(resolveReadPath(raw, { base: '\\\\host\\share\\work' }, sys)).toEqual({ ok: false, reason: expect.stringMatching(/^Forma cannot use the folder the command is run in: "\\\\\\\\host\\\\share\\\\work" names a path on another computer, which Forma never opens\.$/) });
+      expect(resolveReadPath(raw, { base: '\\\\host\\share\\work' }, sys)).toEqual({ ok: false, reason: expect.stringMatching(/^Forma cannot use the folder the command is run in: "\\\\host\\share\\work" names a path on another computer, which Forma never opens\.$/) });
     }
     expect(fs.calls).toEqual([]);
   });

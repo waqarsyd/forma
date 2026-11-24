@@ -243,8 +243,8 @@ export function lightModel(fallback: string): string {
  * Designer work's wave 3, GAP3-1): Node's, a file in Forma's own folder
  * (src/mcp/modelParks.ts). A limit is a fact about the key, for the minute
  * or until midnight Pacific; the MCP server's thread ends on a cancellation,
- * a deadline or a crash, and the command line is to make each file of a
- * batch in a thread of its own, so with memory alone a new thread began on
+ * a deadline or a crash, and the command line makes each file of a batch in
+ * a thread of its own (since its wave 4), so with memory alone a new thread began on
  * the model the last one had spent, a request each out of the file's budget.
  * Each one is kept as it happens, by the key's tag and never the key, and
  * laid into memory again whenever a model is resolved for that key

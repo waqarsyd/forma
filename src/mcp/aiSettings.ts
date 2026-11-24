@@ -7,8 +7,8 @@
  * in (findings CLI-9, CLI-10, SEC-3 and TEST-2 of that work's design audit,
  * `DevFiles/forma-audit/cli-designer-2026-11-24-findings.md`).
  *
- * An entry (stdio.ts, and the command line's cliEntry.ts once its wave 4
- * writes it) is the only kind of file in src/mcp that touches the
+ * An entry (stdio.ts, and since that work's wave 4 the command line's
+ * cliEntry.ts) is the only kind of file in src/mcp that touches the
  * environment, which boundaries.test.ts holds. Nothing loads a .env file (no
  * dotenv): a .env in the folder a host starts the server in, or a command
  * runs in, is never Forma's business, and a GEMINI_API_KEY or GOOGLE_API_KEY
@@ -116,7 +116,9 @@
  *
  * `secrets` are the literal values of the keys given, for the scrubber
  * (lib/keyRedact.ts `redactorFor`, SEC-7), which takes them out of every
- * result, error and log line by value.
+ * result, error and log line by value; never a reference nothing expanded,
+ * which is no key and which the refusal above must show (the CLI work's
+ * wave-4 review, U15: taken as a secret, it was said as "(a key)").
  *
  * Pure ASCII.
  */
@@ -175,7 +177,10 @@ export interface TakenAiEnv {
 export function takeAiEnv(source: Readonly<Record<string, string | undefined>>, voice: Voice): TakenAiEnv {
   const aiEnv: AiEnv = {};
   for (const name of NAMES_OF[voice]) aiEnv[name] = source[name];
-  const secrets = [...AI_KEY_NAMES, ...FOREIGN_KEY_NAMES].map((name) => source[name]).filter((value): value is string => typeof value === 'string' && value.trim() !== '');
+  // A reference nothing expanded is no key, and the refusal must show it, so the person sees what to set (the wave-4 review's U15).
+  const secrets = [...AI_KEY_NAMES, ...FOREIGN_KEY_NAMES]
+    .map((name) => source[name])
+    .filter((value): value is string => typeof value === 'string' && value.trim() !== '' && !UNEXPANDED.test(value.trim()));
   return { aiEnv, secrets, remove: [...FOREIGN_AI_ENV, ...AI_KEY_NAMES] };
 }
 
@@ -292,6 +297,20 @@ function valuesOf(env: AiEnv, problems: string[], voice: Voice): Record<AiEnvNam
   return values;
 }
 
+/**
+ * An AI half set up, named, when none is ready (the CLI work's wave-4
+ * review, U15): an OpenRouter key with no model, or a model with no key, and
+ * a Local AI address with no model, each saying what it still needs, where
+ * "No AI is set up" alone hid the one name left to set. Never a value.
+ */
+function halfSetUp(v: Record<AiEnvName, string>): string[] {
+  const said: string[] = [];
+  if (v.FORMA_OPENROUTER_KEY && !v.FORMA_OPENROUTER_MODEL) said.push('FORMA_OPENROUTER_KEY is set; OpenRouter also needs FORMA_OPENROUTER_MODEL, the model it answers with.');
+  if (v.FORMA_OPENROUTER_MODEL && !v.FORMA_OPENROUTER_KEY) said.push('FORMA_OPENROUTER_MODEL is set; OpenRouter also needs FORMA_OPENROUTER_KEY.');
+  if (v.FORMA_LOCAL_URL && !v.FORMA_LOCAL_MODEL) said.push('FORMA_LOCAL_URL is set; Local AI also needs FORMA_LOCAL_MODEL, the model your server answers with.');
+  return said;
+}
+
 /** The settings the AI tools, or the command line, are made with, from the values the entry copied (the header). */
 export function readAiSettings(env: AiEnv, options: ReadOptions = {}): AiSettings {
   const voice = options.voice ?? 'mcp';
@@ -327,7 +346,7 @@ export function readAiSettings(env: AiEnv, options: ReadOptions = {}): AiSetting
     if (provider === 'openrouter') problems.push(`FORMA_PROVIDER chooses OpenRouter, which needs ${[!openRouterKey && 'FORMA_OPENROUTER_KEY', !openRouterModel && 'FORMA_OPENROUTER_MODEL'].filter(Boolean).join(' and ')}.`);
     else if (provider === 'local') problems.push('FORMA_PROVIDER chooses Local AI, which needs FORMA_LOCAL_MODEL, the model your server answers with.');
     else if (asked) problems.push('FORMA_PROVIDER chooses Gemini, which needs FORMA_GEMINI_KEY.');
-    else problems.push(WORDS[voice].noAi);
+    else problems.push(WORDS[voice].noAi, ...halfSetUp(v));
   }
   const model = v.FORMA_MODEL;
   const locale = v.FORMA_LOCALE;

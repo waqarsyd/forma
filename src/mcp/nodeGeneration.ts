@@ -76,7 +76,6 @@
  * Pure ASCII.
  */
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCanvas } from '@napi-rs/canvas';
@@ -90,7 +89,8 @@ import { emptyMemory } from '../lib/memory';
 import { keepModelChoiceIn, type ModelStorage } from '../lib/modelCache';
 import { measureOn } from '../lib/textMeasure';
 import type { ReportConfig, StreamProgress } from '../services/geminiService';
-import { fileParks, PARKS_FILE } from './modelParks';
+import type { Voice } from './caller';
+import { CHOICE_FILE, fileParks, formaUserFolder, PARKS_FILE } from './modelParks';
 import { checkMeasuring, METRIC_FACES, standInFamilies, useMetricFonts, type MetricFace } from './nodeFonts';
 import { nodeDrawing } from './nodeIntake';
 import { nodeOcr } from './nodeOcr';
@@ -99,15 +99,12 @@ import { nodeOcr } from './nodeOcr';
 export const CLONE = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /**
- * Forma's own folder for this user, outside any repository and the user's
- * project: AppData\Local\Forma on Windows, Library/Caches/Forma on macOS,
- * .cache/forma elsewhere, under the user's home.
+ * Forma's own folder for this user (modelParks.ts, where it moved in the CLI
+ * and Forma Designer work's wave 4, so the command line's main thread can
+ * read the parks kept there before a batch's next file without loading the
+ * parts assembled here), named here too for the callers that assemble them.
  */
-export function formaUserFolder(home: string = homedir(), platform: string = process.platform): string {
-  if (platform === 'win32') return join(home, 'AppData', 'Local', 'Forma');
-  if (platform === 'darwin') return join(home, 'Library', 'Caches', 'Forma');
-  return join(home, '.cache', 'forma');
-}
+export { formaUserFolder };
 
 /**
  * Storage over one JSON file, for the model's choice of the day: what
@@ -150,20 +147,23 @@ export function fileStorage(path: string): ModelStorage {
   };
 }
 
-/** One of Forma's model files from the clone, or an error that names it and says how to restore it. */
-function modelFile(clone: string, name: string, what: string): () => Promise<unknown> {
+/** How a person starts again once a clone is mended, by whose words they are (caller.ts `Voice`, CLI-10). */
+const AGAIN: Record<Voice, string> = { mcp: 'start the server again', cli: 'run the command again' };
+
+/** One of Forma's model files from the clone, or an error that names it and says how to restore it, in the caller's words. */
+function modelFile(clone: string, name: string, what: string, voice: Voice): () => Promise<unknown> {
   return async () => {
     const path = join(clone, 'assets', 'model', name);
     let text: string;
     try {
       text = readFileSync(path, 'utf8');
     } catch {
-      throw new Error(`${what} is missing from this clone (${path}). It is committed with Forma: restore it with git, then start the server again.`);
+      throw new Error(`${what} is missing from this clone (${path}). It is committed with Forma: restore it with git, then ${AGAIN[voice]}.`);
     }
     try {
       return JSON.parse(text) as unknown;
     } catch {
-      throw new Error(`${what} in this clone (${path}) is not readable. Restore it with git, then start the server again.`);
+      throw new Error(`${what} in this clone (${path}) is not readable. Restore it with git, then ${AGAIN[voice]}.`);
     }
   };
 }
@@ -205,6 +205,8 @@ export interface NodeGenerationOptions {
   locale?: string;
   /** Where a line about the work goes: the server's log on stderr. */
   log?: (line: string) => void;
+  /** Whose words an error saying how to start again is in (caller.ts `Voice`); the server's by default. */
+  voice?: Voice;
   /** The canvas text is measured on: @napi-rs/canvas's by default, a test's own to see one that measures nothing refused. */
   canvas?: () => CanvasRenderingContext2D | null;
   /** The faces registered for the families the host lacks: nodeFonts.ts's table by default, a test's own to see them registered on a host that has the five. */
@@ -251,12 +253,13 @@ export async function nodeGeneration(options: NodeGenerationOptions = {}): Promi
   const folder = options.userFolder ?? formaUserFolder();
   const log = options.log ?? ((line: string) => console.error(line));
   // Read now, so a clone without them fails here, in words, and never makes a quieter report (NODE-3).
-  const reader = await boxReaderFrom(modelFile(clone, 'boxReader.json', "Forma's box reader"));
-  const model = await formaModelFrom(modelFile(clone, 'formaModel.json', "Forma's own model"));
-  const ocr = nodeOcr({ languages: join(folder, 'tessdata'), paddle: options.paddleModels === undefined ? join(clone, 'vendor', 'paddle') : options.paddleModels, log });
+  const voice = options.voice ?? 'mcp';
+  const reader = await boxReaderFrom(modelFile(clone, 'boxReader.json', "Forma's box reader", voice));
+  const model = await formaModelFrom(modelFile(clone, 'formaModel.json', "Forma's own model", voice));
+  const ocr = nodeOcr({ languages: join(folder, 'tessdata'), paddle: options.paddleModels === undefined ? join(clone, 'vendor', 'paddle') : options.paddleModels, log, voice });
   // OCR's language data too, needed in PaddleOCR's mode as well (another language, and Tesseract's turn): NODE7-OCR-QUIET.
   ocr.ready();
-  keepModelChoiceIn({ session: null, day: fileStorage(join(folder, 'model-choice.json')), parks: fileParks(join(folder, PARKS_FILE)) });
+  keepModelChoiceIn({ session: null, day: fileStorage(join(folder, CHOICE_FILE)), parks: fileParks(join(folder, PARKS_FILE)) });
   // The five families' own widths on any host, then a canvas that measures something (GAP2-1).
   useMetricFonts(clone, options.metricFaces ?? METRIC_FACES);
   const canvas =options.canvas ?? (() => createCanvas(1, 1).getContext('2d') as unknown as CanvasRenderingContext2D);

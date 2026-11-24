@@ -105,6 +105,17 @@ function classifyCompatError(error: any, context: FailureContext): Error {
   const name = local ? 'The local AI' : 'OpenRouter';
   const model = context.model ? ` ${context.model}` : '';
   if (isOffline()) return explained('You are offline. Forma needs a connection to reach OpenRouter; what you wrote is kept, so send it again once you are back online.', error);
+  // Node's fetch says "fetch failed", its cause naming why (2026-11-24, the CLI work's wave-4 review, U5): Forma's command
+  // line or MCP server, where no page's CORS stands in the way, so neither does a page's advice; the address is the
+  // environment's, FORMA_LOCAL_URL. The browser's "Failed to fetch" is the branch below.
+  if (unreachableInNode(error)) {
+    return explained(
+      local
+        ? `Forma could not reach the local AI at ${context.where ?? 'its address'}: is Ollama or LM Studio running there? Set FORMA_LOCAL_URL if it listens elsewhere.`
+        : 'Forma could not reach OpenRouter. Check the connection and try again in a minute.',
+      error,
+    );
+  }
   if (isTruncatedStreamMessage(message) && !/answered \d{3}/.test(message)) {
     return explained(
       local
@@ -138,6 +149,14 @@ function classifyCompatError(error: any, context: FailureContext): Error {
   if (status === 404) return explained(`${name} has no model${model}. Choose one it offers in Settings, under AI.`, error);
   if (isOverloadedError(error)) return explained(`${name}${model} is busy and could not take the request, even after retrying. Wait a minute and send it again.`, error);
   return explained(`${name}${model}: ${readableMessage(message) || 'the request failed'}`, error);
+}
+
+/** Why Node's fetch reaches no server, as its cause names it: nothing listening, no such host, the connection dropped or timed out. */
+const UNREACHABLE = ['ECONNREFUSED', 'ENOTFOUND', 'ECONNRESET', 'EHOSTUNREACH', 'ETIMEDOUT', 'EAI_AGAIN'];
+
+/** Node's fetch (undici) failing to reach a server: "fetch failed", or a cause with one of `UNREACHABLE`'s codes. */
+function unreachableInNode(error: any): boolean {
+  return error?.message === 'fetch failed' || UNREACHABLE.includes(error?.cause?.code);
 }
 
 /**

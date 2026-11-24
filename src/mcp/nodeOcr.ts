@@ -47,6 +47,10 @@
  * What this module writes is the gathered language data, into the folder it
  * is given, and nothing else, anywhere.
  *
+ * Its two errors that say how to start again are in the caller's words
+ * (caller.ts `Voice`, since the CLI and Forma Designer work's wave 4,
+ * finding CLI-10): the server is started again, a command is run again.
+ *
  * Pure ASCII.
  */
 import { createHash } from 'node:crypto';
@@ -62,18 +66,22 @@ import { OCR_LANGUAGES } from '../lib/ocrScript';
 import { inItsScript, rgbFromRgba, type PaddleReader } from '../lib/paddleOcr';
 import type { PixelBox } from '../lib/reportGeometry';
 import type { ReportConfig } from '../services/geminiService';
+import type { Voice } from './caller';
 import { notDrawn, releasePicture } from './nodeIntake';
 import { appReader, pinnedModelsIn, readAsTheApp } from './nodePaddle';
 
 const requireHere = createRequire(import.meta.url);
 
+/** How a person starts again once a clone is mended, by whose words they are (CLI-10). */
+const AGAIN: Record<Voice, string> = { mcp: 'start the server again', cli: 'run the command again' };
+
 /** The installed data file of one of OCR's languages: the files the browser build copies into dist/ocr. */
-export function installedLanguage(lang: string): string {
+export function installedLanguage(lang: string, voice: Voice = 'mcp'): string {
   let pkg: string;
   try {
     pkg = requireHere.resolve(`@tesseract.js-data/${lang}/package.json`);
   } catch {
-    throw new Error(`OCR's ${lang} data, the package @tesseract.js-data/${lang}, is not installed in this clone. Run npm ci in the clone, then start the server again.`);
+    throw new Error(`OCR's ${lang} data, the package @tesseract.js-data/${lang}, is not installed in this clone. Run npm ci in the clone, then ${AGAIN[voice]}.`);
   }
   return join(dirname(pkg), '4.0.0_best_int', `${lang}.traineddata.gz`);
 }
@@ -88,7 +96,7 @@ const sha256 = (path: string) => createHash('sha256').update(readFileSync(path))
  * A package missing, or a folder that cannot be written, throws an error
  * that names it.
  */
-export function gatherLanguages(into: string): string {
+export function gatherLanguages(into: string, voice: Voice = 'mcp'): string {
   const unwritable = (err: unknown) => new Error(`OCR's language data could not be written to ${into} (${String(err)}). That folder must be one this user can write.`);
   try {
     mkdirSync(into, { recursive: true });
@@ -96,7 +104,7 @@ export function gatherLanguages(into: string): string {
     throw unwritable(err);
   }
   for (const lang of OCR_LANGUAGES) {
-    const from = installedLanguage(lang);
+    const from = installedLanguage(lang, voice);
     const to = join(into, `${lang}.traineddata.gz`);
     const want = sha256(from);
     if (existsSync(to) && sha256(to) === want) continue;
@@ -130,6 +138,8 @@ export interface NodeOcrOptions {
   paddle: string | null;
   /** Where a line about the reading goes: the server's log on stderr. */
   log: (line: string) => void;
+  /** Whose words an error that says how to start again is in; the server's by default. */
+  voice?: Voice;
   /** tesseract.js, for its tests to stand in for. */
   tesseract?: () => Promise<Pick<typeof import('tesseract.js'), 'createWorker' | 'OEM'>>;
   /** PaddleOCR's reader over the models, for its tests to stand in for. */
@@ -194,7 +204,7 @@ export function nodeOcr(options: NodeOcrOptions): NodeOcr {
   async function engine(languages: string, stopped: () => void): Promise<TesseractWorker> {
     if (!worker) {
       // Checked again for each worker, as the header says: about 60 ms over a folder already whole.
-      const folder = gatherLanguages(options.languages);
+      const folder = gatherLanguages(options.languages, options.voice);
       workerLanguages = languages;
       worker = loadTesseract()
         // A failed job rejects its own promise; the errorHandler keeps tesseract.js from also throwing it where nothing can catch it.
@@ -386,7 +396,7 @@ export function nodeOcr(options: NodeOcrOptions): NodeOcr {
 
   return {
     english: paddleDir ? 'paddle' : 'tesseract',
-    ready: () => void gatherLanguages(options.languages),
+    ready: () => void gatherLanguages(options.languages, options.voice),
     recognize,
     readPages,
     close,

@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import { SET_UP_AI } from '../lib/aiProvider';
 import { fallbacksFor } from '../lib/fallbackChain';
+import { FORMA_KEYS, redactorFor } from '../lib/keyRedact';
 import { AI_ENV_NAMES, FOREIGN_AI_ENV, HOW_TO_SET_UP, howToSetUp, localUrlProblem, notReadyMessage, readAiSettings, takeAiEnv } from './aiSettings';
 
 const geminiKey = ['AI', 'za', 'Sy'].join('') + 'C'.repeat(33);
@@ -63,6 +64,18 @@ describe('readAiSettings', () => {
     expect(readAiSettings({ FORMA_PROVIDER: 'local' }).problems).toEqual(['FORMA_PROVIDER chooses Local AI, which needs FORMA_LOCAL_MODEL, the model your server answers with.']);
     expect(readAiSettings({ FORMA_PROVIDER: 'gemini' }).problems).toEqual(['FORMA_PROVIDER chooses Gemini, which needs FORMA_GEMINI_KEY.']);
     expect(readAiSettings({ FORMA_PROVIDER: 'claude', FORMA_GEMINI_KEY: geminiKey }).problems).toEqual(['FORMA_PROVIDER is not one of gemini, openrouter or local.']);
+  });
+
+  it('names the half of an AI set up that is missing when none is ready, in both voices, never a value (the CLI work\'s wave-4 review, U15)', () => {
+    for (const voice of ['mcp', 'cli'] as const) {
+      const noAi = voice === 'mcp' ? 'No AI is set up for this server.' : 'No AI is set up.';
+      expect(readAiSettings({ FORMA_OPENROUTER_KEY: openRouterKey }, { voice }).problems).toEqual([noAi, 'FORMA_OPENROUTER_KEY is set; OpenRouter also needs FORMA_OPENROUTER_MODEL, the model it answers with.']);
+      expect(readAiSettings({ FORMA_OPENROUTER_MODEL: 'm:free' }, { voice }).problems).toEqual([noAi, 'FORMA_OPENROUTER_MODEL is set; OpenRouter also needs FORMA_OPENROUTER_KEY.']);
+      expect(readAiSettings({ FORMA_LOCAL_URL: 'http://127.0.0.1:1234/v1' }, { voice }).problems).toEqual([noAi, 'FORMA_LOCAL_URL is set; Local AI also needs FORMA_LOCAL_MODEL, the model your server answers with.']);
+      expect(notReadyMessage(readAiSettings({ FORMA_OPENROUTER_KEY: openRouterKey }, { voice }))).not.toContain(openRouterKey.slice(0, 12));
+    }
+    // A working AI beside a half-set one is ready: the other half only answers on a limit.
+    expect(readAiSettings({ FORMA_GEMINI_KEY: geminiKey, FORMA_OPENROUTER_KEY: openRouterKey }).ready).toBe(true);
   });
 
   it('never repeats a value it refuses, so a key put under the wrong name is not said back (W8C-4)', () => {
@@ -160,6 +173,15 @@ describe('takeAiEnv, what an entry takes out of its environment (CLI-9, TEST-2)'
     expect(taken.remove).toEqual([...FOREIGN_AI_ENV, 'FORMA_GEMINI_KEY', 'FORMA_OPENROUTER_KEY']);
     expect([...FOREIGN_AI_ENV]).toEqual(['GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GOOGLE_GENAI_USE_VERTEXAI', 'GOOGLE_CLOUD_PROJECT', 'GOOGLE_CLOUD_LOCATION']);
     expect(takeAiEnv({}, 'mcp')).toEqual({ aiEnv: expect.any(Object), secrets: [], remove: taken.remove });
+  });
+
+  it('hands the scrubber no reference nothing expanded, which is no key, so the refusal shows what to set (the CLI work\'s wave-4 review, U15)', () => {
+    for (const voice of ['mcp', 'cli'] as const) {
+      const taken = takeAiEnv({ FORMA_GEMINI_KEY: '${GEMINI_KEY}', FORMA_OPENROUTER_KEY: '%OPENROUTER%', GEMINI_API_KEY: newer }, voice);
+      expect(taken.secrets, voice).toEqual([newer]);
+      const said = notReadyMessage(readAiSettings(taken.aiEnv, { voice }));
+      expect(redactorFor(taken.secrets, FORMA_KEYS)(said), voice).toContain('FORMA_GEMINI_KEY arrived as ${GEMINI_KEY}, a reference');
+    }
   });
 
   it("leaves the server's mock switch out for the command line, whose mock is its --mock flag, and takes and deletes the rest alike", () => {

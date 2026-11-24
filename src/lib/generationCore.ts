@@ -2,8 +2,10 @@
  * One way a report is made (2026-11-24, the MCP work's wave 6; the design
  * audit's NODE-4 and NODE-8): the workspace and Batch call this, the MCP
  * server's AI tools call it, the fidelity benchmark (scripts/fidelity/run.ts,
- * since wave 10, NODE-9) calls it with the MCP server's Node parts, and a
- * later command line is to, so a report is made the same way everywhere. The Node versions of the parts
+ * since wave 10, NODE-9) calls it with the MCP server's Node parts, and so,
+ * since the CLI and Forma Designer work's wave 4, does Forma's command line
+ * (src/mcp/commandLine.ts, through the server's own calls), so a report is
+ * made the same way everywhere. The Node versions of the parts
  * handed in are src/mcp/nodeGeneration.ts's (2026-11-24, wave 7), which
  * runs `makeReport` in Node for the MCP server's generate_report and
  * revise_report (src/mcp/genJobs.ts, wave 8).
@@ -76,9 +78,9 @@
  * Forma's draft is never made. The workspace and Batch never set it: the
  * workspace keeps its stand-in, Batch its `batchFile`. It is for a run that
  * must not take Forma's draft for the AI's report: the command line's batch,
- * which that work's wave 4 is to build, where a daily limit stops the run and
+ * which that work's wave 4 built, where a daily limit stops the run and
  * a rerun carries on from the files not yet written, so a draft written at
- * the limit would be kept for good. That batch is to make each file this way,
+ * the limit would be kept for good. That batch makes each file this way,
  * not as a Batch file (decided in wave 3), each of Batch's differences above
  * decided for the best report: the first and last pages read before the
  * request when Forma's draft is what the AI corrects, the rest only if the
