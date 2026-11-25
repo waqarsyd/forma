@@ -1298,9 +1298,10 @@ report.ExportToPdf("report.pdf");`}
                 database arguments and switches, repx_convert and
                 database_connections, the FORMA_DATABASE_* names held to
                 src/mcp/databaseTools.ts too. Forma Designer's command-line
-                verbs, which database_connections and a connection need, are in
-                no released Forma Designer yet, so this says "the next release
-                of Forma Designer" and never a version that is out. */}
+                verbs, which database_connections and a connection need, come
+                with Forma Designer 1.2.0, packed for release 1.7.0 (2026-11-25),
+                so this names it, as the command line's own refusal does
+                ("needs Forma Designer 1.2.0 or later"). */}
             <Article id="mcp" kicker="Output" title="Forma from your AI assistant" hidden={!matches('mcp')}>
               <p className={PROSE}>
                 Forma has an MCP server: a program you run on your own computer so an AI assistant, such as Claude
@@ -1381,8 +1382,8 @@ npm ci`}
                 connection by name only. repx_edit&apos;s data edit and repx_convert bind with no AI. Two things stay
                 yours to allow, in the server&apos;s entry, never on your assistant&apos;s word:{' '}
                 <code className="doc-code">FORMA_DATABASE_CONNECTIONS</code> lists the Forma Designer connections it
-                may read in place of a file (names separated by ;), which needs the next release of Forma Designer,
-                on Windows; and <code className="doc-code">FORMA_DATABASE_SAMPLES=1</code> lets sample rows go to
+                may read in place of a file (names separated by ;), which needs Forma Designer 1.2.0 or later, on
+                Windows; and <code className="doc-code">FORMA_DATABASE_SAMPLES=1</code> lets sample rows go to
                 your AI with the layout. Without it only names go, and a call that sends rows is refused.
               </p>
 
@@ -1422,8 +1423,8 @@ npm ci`}
                 </Def>
                 <Def t="database_connections">
                   Windows, with Forma Designer. The connections listed in FORMA_DATABASE_CONNECTIONS that Forma
-                  Designer keeps for you, by name and how each signs in, never a server or a password. It needs the
-                  next release of Forma Designer, which adds the commands it uses; until then it says so.
+                  Designer keeps for you, by name and how each signs in, never a server or a password. It needs Forma
+                  Designer 1.2.0 or later, which adds the commands it uses; with an older one it says so.
                 </Def>
                 <Def t="generate_report">
                   Needs an AI. A report from a description, files, or both, made as the workspace makes one: pictures,
@@ -1480,8 +1481,8 @@ npm ci`}
                 none it lacks, and which need an AI), the command to CLI_LAUNCHER with no npx or npm form, the
                 exit codes to commandLine.ts's EXIT, and the recipe's ref to package.json's version, as the mcp
                 article's clone line is held. Its setup is the mcp article's, so there is one clone line. Forma
-                Designer's verbs are in no released Forma Designer yet, so this says "the next release of Forma
-                Designer" and never a version that is out. */}
+                Designer's verbs come with Forma Designer 1.2.0, packed for release 1.7.0 (2026-11-25), so this
+                names it, as the command line's own refusal does. */}
             <Article id="cli" kicker="Output" title="Forma from the command line" hidden={!matches('cli')}>
               <p className={PROSE}>
                 The copy of Forma&apos;s source code that runs the MCP server is a command line too, for you at a
@@ -1538,7 +1539,7 @@ npm ci`}
                 </Def>
                 <Def t="connections">
                   Windows, with Forma Designer. The SQL Server connections Forma Designer keeps for you, by name, never
-                  a server or a password. It needs the next release of Forma Designer.
+                  a server or a password. It needs Forma Designer 1.2.0 or later.
                 </Def>
               </dl>
 
@@ -1600,7 +1601,7 @@ npm ci`}
                 bind with no AI; and{' '}
                 <code className="doc-code">--require-binding</code> fails a report written unbound. On Windows,{' '}
                 <code className="doc-code">--connection</code> reads a connection Forma Designer keeps in place of the
-                file; it and connections need the next release of Forma Designer.
+                file; it and connections need Forma Designer 1.2.0 or later.
               </p>
 
               <h3 className={H3}>In CI</h3>

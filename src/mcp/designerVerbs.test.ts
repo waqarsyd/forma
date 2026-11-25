@@ -378,7 +378,7 @@ describe('starting a verb', () => {
     expect([...calls(old), ...calls(unreadable)]).toEqual([]);
   });
 
-  it("starts FORMA_DESIGNER's copy built from source at 1.0.0 or later, since it says 1.1.0 until the owner packs it", async () => {
+  it("starts FORMA_DESIGNER's copy built from source at 1.0.0 or later, since one from before the owner's bump says 1.1.0", async () => {
     const source = install('source-build', fakePe([1, 1, 0, 0]));
     expect(await designerConnections(standIn(source, 'verbs', { from: 'override' }), CLI)).toHaveLength(2);
     calls(source);

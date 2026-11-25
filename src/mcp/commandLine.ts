@@ -99,7 +99,7 @@
  * Findings D2-1, D2-5, D2-6, D2-10, D2-11 and SEC-5, the owner's OC1 and
  * OC6. On Windows, Forma Designer keeps a person's SQL Server connections,
  * a login's secret encrypted for their Windows account, and from 1.2.0
- * (not yet released: the owner packs it) answers command-line verbs that
+ * (packed for release 1.7.0, 2026-11-25) answers command-line verbs that
  * designerVerbs.ts starts: `connections` lists the names it keeps, with
  * each one's database and how it signs in; `--connection <name>`, in place
  * of `--database` on generate, revise, batch, convert and bind, has it read

@@ -36,12 +36,12 @@ export interface DesignerRelease {
 
 // BEGIN designer release (scripts/package-designer.ts writes this block)
 export const DESIGNER_RELEASE: DesignerRelease = {
-  version: '1.1.0',
-  file: 'FormaDesigner-1.1.0-windows.zip',
-  bytes: 122301,
-  sha256: '3564abde6fa06127e649de97cbe98c62a98b57c62408b021b5f7a6dc4b575ea6',
-  date: '2026-11-12',
-  tag: 'v1.6.0',
+  version: '1.2.0',
+  file: 'FormaDesigner-1.2.0-windows.zip',
+  bytes: 142781,
+  sha256: 'e6e34b66f3325cc2592f32206eea8b36f2433c9b8eb9bf4ee79663e5dd05c07f',
+  date: '2026-11-25',
+  tag: 'v1.7.0',
 };
 // END designer release
 
@@ -127,8 +127,9 @@ export function packageProblems(names: readonly string[]): string[] {
  * given a verb it does not know would open it as a report path (it answers
  * the sentinel the verbs end with by printing `--check`'s JSON, and a build
  * older than 2026-11-09 has no `--check` at all). A copy built from source,
- * named by FORMA_DESIGNER, is not held to it, since its file says 1.1.0.0
- * until the owner's bump, but it is held to 1.0.0, the first with a file
+ * named by FORMA_DESIGNER, is not held to it, since its file said 1.1.0.0
+ * until the owner's bump (2026-11-25), as one from an older checkout still
+ * does, but it is held to 1.0.0, the first with a file
  * version and with `--check` (designerVerbs.ts `DESIGNER_CHECK_SINCE`).
  * designerRelease.test.ts holds it newer than 1.1.0, the last release
  * without the verbs, and not newer than the source's own version once the

@@ -36,7 +36,7 @@ the folder the command runs in, and `--help` lists every command and option. Eve
 | `revise` | Needs an AI. A report changed as `--words` asks, as Forma's chat does, by control name where it can; writes `<name>.revised.repx` |
 | `batch` | Needs an AI for some files. Every report source in a folder, one file at a time, each routed by its kind, under `--out` |
 | `sql-script` | Prints Forma's read-only script for a SQL Server database's layout, whose saved answer `--database` reads |
-| `connections` | Windows, with Forma Designer: the SQL Server connections it keeps for the user, by name. It and `--connection` need the next release of Forma Designer, which adds the command-line verbs they start; until then they say so |
+| `connections` | Windows, with Forma Designer: the SQL Server connections it keeps for the user, by name. It and `--connection` need Forma Designer 1.2.0 or later, which adds the command-line verbs they start; with an older one they say so |
 
 The commands that need an AI read the one set up in the environment the command runs in
 (`FORMA_GEMINI_KEY`, or the other `FORMA_*` names in
@@ -69,8 +69,8 @@ script the server serves as `forma://sql/layout-script`, saved as a file; or `co
 listed Forma Designer connection) binds a report: `repx_edit`'s `data` edit and `repx_convert`
 with no AI, the two AI tools with the AI choosing what the report reads unless `procedure`,
 `object` or `query` pins it (README.md, *Your database's layout*). `connection` and
-`database_connections` need Windows and the next release of Forma Designer, which adds the
-command-line verbs they start; until then they say so, and a layout file works everywhere. Every path is a full path,
+`database_connections` need Windows and Forma Designer 1.2.0 or later, which adds the
+command-line verbs they start; with an older one they say so, and a layout file works everywhere. Every path is a full path,
 never a relative name, `~` or a Git Bash `/g/...` path, which the tools refuse:
 
 ```json

@@ -43,7 +43,7 @@
  *   connection), and whether the person turned sample rows on. Registered
  *   on every platform, since the tool list never changes after start-up, and
  *   refusing in words off Windows, without a Forma Designer that has the
- *   verbs (1.2.0, which the owner packs), or with no name listed.
+ *   verbs (1.2.0, packed for release 1.7.0), or with no name listed.
  * - **The layout script as a resource** (`LAYOUT_SCRIPT_URI`, D1-6): Forma's
  *   read-only script (lib/sqlSchemaScript.ts `SCHEMA_SCRIPT`, the Data tab's
  *   and the command line's sql-script), so nobody copies it from the web
