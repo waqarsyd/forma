@@ -118,6 +118,26 @@ describe('errorResult', () => {
     const result = errorResult(new ToolRefusal('w'.repeat(5000)), 'A tool', live(), deps());
     expect((result.content as { text: string }[])[0].text).toHaveLength(MAX_ERROR_CHARS);
   });
+
+  /*
+   * Since the CLI and Forma Designer work's wave 7 (D1-10): a refusal about text read from a file or another program (a
+   * layout's names, SQL Server's words through Forma Designer) carries it apart; its words name none of it, and the error
+   * result gives it as a result's fromFile is given, keys out before the clip, under the note, within 2,000 characters,
+   * in its text alone: never as structured content, which must match the tool's output schema (W7-MCP-1).
+   */
+  it("gives a refusal's text read from a file under fromFile, keys out and clipped, beside the note, or says it was left out", () => {
+    const key = fakeKey();
+    const result = errorResult(new ToolRefusal('Forma Designer could not read it; what it answered is under fromFile.designer.', { designer: `Invalid object   name\nvSecret ${key}` }), 'A tool', live(), deps());
+    const text = (result.content as { text: string }[])[0].text;
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toBeUndefined();
+    expect(text.split('\n\n')).toEqual(['Forma Designer could not read it; what it answered is under fromFile.designer.', FROM_FILE_NOTE, JSON.stringify({ fromFile: { designer: 'Invalid object name vSecret (a key)' } }, null, 2)]);
+    expect(text).not.toContain(key);
+    // Too much to fit within the limit: the words alone, and a line saying what was left out.
+    const many = errorResult(new ToolRefusal('Refused.', { names: Array.from({ length: 40 }, (_, i) => `name ${i} `.repeat(30)) }), 'A tool', live(), deps());
+    expect(many.structuredContent).toBeUndefined();
+    expect((many.content as { text: string }[])[0].text).toBe(`Refused.\n\nWhat it read from the file was left out: with it, this error would have passed ${MAX_ERROR_CHARS} characters.`);
+  });
 });
 
 const META = { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': { roots: {} }, 'io.modelcontextprotocol/clientInfo': { name: 't', version: '1' } };
@@ -139,6 +159,10 @@ async function call(roots: RootsOutcome, name: string, era: 'modern' | 'legacy' 
     }));
     defineTool(s, d, { name: 'asks_itself', title: 'Asks', description: 'Asks the client.', annotations: hints, input: {}, output: {} }, async () => {
       throw new AskClient(inputRequired({ inputRequests: { roots: inputRequired.listRoots() } }));
+    });
+    // A result with a field its schema requires, refused with text from a file, as a database refusal is (W7-MCP-1).
+    defineTool(s, d, { name: 'refuses_from_file', title: 'Refuses', description: 'Refuses.', annotations: hints, input: {}, output: { written: z.string() } }, async () => {
+      throw new ToolRefusal('Forma Designer could not read it; what it answered is under fromFile.designer.', { designer: "Invalid column name '...' in the view vSecret." });
     });
     return s;
   };
@@ -185,5 +209,25 @@ describe('through a server', () => {
     const refused = await call({ kind: 'none', why: 'unused', notes: [] }, 'asks_itself', 'legacy');
     expect(refused).toMatchObject({ isError: true, content: [{ type: 'text', text: 'Asks needed an answer from the client that a 2025-11-25 connection cannot give.' }] });
     expect(refused?.resultType).not.toBe('input_required');
+  });
+
+  /*
+   * The wave-7 review's W7-MCP-1: an error result that carried { fromFile, fromFileNote } as structured content did not
+   * match the tool's output schema, which requires the result's fields, and the TypeScript SDK's client checks
+   * structured content on an error too (its callTool), so such a refusal reached a host on that client as a protocol
+   * error and its words never reached the model. The text alone carries it, in both eras.
+   */
+  it('gives a refusal carrying text from a file as an error with that text in its words alone, never as structured content', async () => {
+    for (const era of ['modern', 'legacy'] as const) {
+      const refused = await call({ kind: 'none', why: 'unused', notes: [] }, 'refuses_from_file', era);
+      expect(refused?.isError, era).toBe(true);
+      expect(refused?.structuredContent, era).toBeUndefined();
+      const text = refused?.content[0].text as string;
+      expect(text.split('\n\n'), era).toEqual([
+        'Forma Designer could not read it; what it answered is under fromFile.designer.',
+        FROM_FILE_NOTE,
+        JSON.stringify({ fromFile: { designer: "Invalid column name '...' in the view vSecret." } }, null, 2),
+      ]);
+    }
   });
 });

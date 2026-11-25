@@ -52,8 +52,23 @@
  */
 import type { AiLimit } from '../lib/aiLimit';
 
-/** A refusal whose words were written for whoever called: sent as they are (keys still taken out). */
-export class ToolRefusal extends Error {}
+/**
+ * A refusal whose words were written for whoever called: sent as they are
+ * (keys still taken out). `fromFile`, since the CLI and Forma Designer work's
+ * wave 7 (2026-11-25, D1-10): what the refusal is about that was read from a
+ * file or another program (a database layout's names, SQL Server's own words
+ * through Forma Designer), which the server returns only under `fromFile`,
+ * clipped and framed as data (toolShape.ts `errorResult`), never in the
+ * words; only the server's voice makes one, so a person at a command line
+ * reads every refusal whole in its words, as before.
+ */
+export class ToolRefusal extends Error {
+  readonly fromFile?: Record<string, unknown>;
+  constructor(message?: string, fromFile?: Record<string, unknown>) {
+    super(message);
+    if (fromFile) this.fromFile = fromFile;
+  }
+}
 
 /**
  * The refusal when the AI made nothing (2026-11-24, the CLI and Forma

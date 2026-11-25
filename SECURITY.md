@@ -24,8 +24,8 @@ browser** under a passphrase you choose (PBKDF2-SHA256, 310,000 iterations, per-
 salt and IV, then AES-GCM) and only the ciphertext is uploaded. The passphrase never
 leaves your machine, so a forgotten passphrase cannot be recovered — by anyone,
 including whoever runs a deployment. That is the design, not an oversight. Forma's MCP
-server, below, is a program you run yourself and keeps its key differently; its section says
-how.
+server and its command line, below, are programs you run yourself and keep their key
+differently; their sections say how.
 
 The interesting reports are therefore things like:
 
@@ -41,10 +41,11 @@ The interesting reports are therefore things like:
 
 ## Forma's MCP server
 
-`src/mcp` is the one part of Forma that runs as a program on your computer with access to
-your files: an AI assistant's host (Claude Code, Visual Studio, VS Code, Claude Desktop) starts
-it from a clone with `node <clone>/src/mcp/run.mjs`. It is not a backend: the website never
-runs it, and nothing of it is deployed. What it is built to hold:
+`src/mcp` is the part of Forma that runs as a program with access to your files, in two
+forms: this server, which an AI assistant's host (Claude Code, Visual Studio, VS Code, Claude
+Desktop) starts from a clone with `node <clone>/src/mcp/run.mjs`, and the command line, next
+below. Neither is a backend: the website never runs them, and nothing of them is deployed.
+What the server is built to hold:
 
 - **stdio only.** It talks to the host that started it over stdin and stdout and opens no
   port, so no other user of the computer, and no web page, can reach it. Only protocol
@@ -96,6 +97,17 @@ runs it, and nothing of it is deployed. What it is built to hold:
 - **One AI call at a time, and a stop that stops.** A second call waits for the first; a
   cancellation ends the work's thread at once, so nothing is sent after it and nothing is
   written.
+- **A database's layout on your terms** (since 2026-11-25). The AI tools, `repx_edit` and
+  `repx_convert` bind a report to a layout a call gives, as a file under the folders in effect
+  or, through `connection`, read by Forma Designer on your PC. Two things are yours to allow in
+  the server's entry, never a tool argument alone, since the host's model can be steered by a
+  file it read: `FORMA_DATABASE_CONNECTIONS` lists the Forma Designer connections it may read,
+  and `FORMA_DATABASE_SAMPLES=1` lets sample rows go to the AI. Forma Designer is started only
+  from the entry's full path to it, never through `PATH` or a share, with no shell, its output
+  piped, an environment of Windows' own variables with no key, a deadline and a byte cap, and
+  only a build new enough to have the verbs; it never prints the server, the login or the
+  password it keeps. Every name read from a layout, SQL Server's own words, and what a report
+  binds are returned only under `fromFile`; no sample value is put in a result.
 
 Worth reporting about it, then:
 
@@ -107,11 +119,18 @@ Worth reporting about it, then:
 - a report whose text reaches the assistant outside `fromFile`, or steers what the server does;
 - a stored database login that reaches a result or a written file;
 - a report that stops the server, or keeps it from answering other calls;
-- a network request made by a tool that needs no AI, or one an AI tool makes to anything but
+- a network request made by a tool that needs no AI (Forma Designer's own connection to a
+  SQL Server for a connection the entry lists aside), or one an AI tool makes to anything but
   the AI set up, a Local AI server off this computer included;
 - a key in a result, on stderr or in a file the server writes, or a key taken from a `.env`,
   a `GEMINI_API_KEY` or a `GOOGLE_API_KEY`;
-- a request sent, or a file written, after the call was cancelled.
+- a request sent, or a file written, after the call was cancelled;
+- a Forma Designer connection read that the entry does not list, sample values sent while
+  `FORMA_DATABASE_SAMPLES` is off, a sample value in a result, or a name read from a layout,
+  or SQL Server's words, outside `fromFile`;
+- Forma Designer started from anywhere but the path the entry worked out, handed another
+  connections file, an environment with a key in it, or an argument a name could turn into a
+  switch.
 
 Known and deliberate there: what a tool returns goes to the assistant and the AI behind it,
 under that assistant's own terms; what the AI tools send goes to the AI you set up, under that
@@ -124,17 +143,94 @@ server, decide which calls run without asking you; and a JSON data source's stor
 are not taken out yet, since whether DevExpress 20.1 writes them into a `.repx` is still to be
 measured.
 
+## Forma's command line
+
+The same clone is a command line (since 2026-11-24), `node <clone>/src/mcp/cli.mjs <command>`,
+which a person runs from any folder, on their own computer or on a CI runner they choose. It runs
+the server's own calls, through a second entry in `src/mcp` (`cliEntry.ts`) that keeps the
+server's order: the stdout guard first, then the environment read, the keys deleted before
+anything can load the Gemini SDK or start a thread. What it is built to hold, beyond what the
+server holds:
+
+- **The folder it runs in stands for the server's roots.** A relative path is read from it once;
+  every other form the server refuses is refused here too, a UNC path on the raw string, before
+  any file-system call. No link the folder holds may lead out of it, a directory link a checkout
+  carries included, and a path whose folder is elsewhere must land in that folder. A file named
+  as credentials (Forma Designer's own store of connections among them) or one in a dot-folder
+  below the folder it runs in is refused, and nothing is written into `node_modules`.
+- **A batch never follows a link.** `batch` lists its folder level by level with the entries'
+  own types, never Node's recursive readdir, which follows a junction out of the folder; a link
+  or a junction is counted as left out, and every file is judged again at its turn, so one
+  swapped for a link after the walk is refused then. Dot-folders, `node_modules`, the output
+  folder and Forma's own outputs are left out; a data file is read only when `--data` names it.
+- **Nothing replaced unless `--force`**, and never then a report whose stored login was taken
+  out, nor a file `generate` is made from. A write goes to a temporary name, then is linked to
+  its own, so a file that appears meanwhile is kept.
+- **stdout carries results only**, through the same guard; `--json` lines are built from named
+  fields, never a spread of the settings that hold the key. Every control character in a report's
+  text or a file's name is printed as `?`, so a name with a line break in it cannot forge a line
+  in a log a CI author reads. Keys are taken out of every line by their shapes and by the values
+  it was given.
+- **The key from the environment, under Forma's names, and nowhere else.** The same `FORMA_*`
+  names as the server, never a `.env`, a `GEMINI_API_KEY` or a `GOOGLE_API_KEY`, which it
+  deletes; never `FORMA_MCP_ROOTS` or `CLAUDE_PROJECT_DIR`, which a command run from an
+  assistant's session would inherit; and its mock is a flag, never a variable left set in CI. In
+  CI the key comes from the provider's store of secrets into the one step's environment, never
+  onto the command line, and never on `pull_request_target`, which runs a fork's changes with
+  the repository's secrets: the README's recipe gives the key only to a step that runs on a push.
+- **Requests only from the commands that make and change a report**, `generate`, `revise` and a
+  batch's files that ask the AI, and only to the AI set up, as the server's: the Gemini client
+  pinned to Gemini's address, a Local AI only on the computer it runs on. Every other command
+  makes none.
+- **Forma Designer's verbs are a new way in, and are started narrowly** (since 2026-11-25, for
+  `connections` and `--connection`, and the server's `database_connections` and `connection`).
+  Only from the full path the entry worked out, the per-user install or `FORMA_DESIGNER`, never
+  `PATH`, a bare name (which runs an exe planted in the folder a command runs in), a share or a
+  link; only once the file's own version, read without starting it, says it has the verbs, so an
+  older Forma Designer, which would open a window, is never started with one; every call ending
+  `--check --no-load`, which an older build answers with its check and exits; with no shell,
+  standard input closed, its output piped and capped at 64 MB, a deadline, a stop that kills it,
+  and an environment of Windows' own variables with no key in it. A connection's name is held to
+  Forma Designer's own rule and found among the names it lists before it is passed, so no name can
+  read as a switch, and another connections file is never passed. Its words carry SQL Server's
+  first line with the login, the account, the server and quoted values taken out.
+
+Worth reporting about it, then:
+
+- a file read or written that the person did not name, through a link the folder holds or a
+  checkout carries, by any spelling;
+- a batch that follows a link or a junction, or takes a file from outside its folder;
+- a file replaced without `--force`, or a report whose login was taken out written over at all;
+- anything but a result on stdout, a key or a stored login in any line, or a line forged by a
+  file name or a report's text;
+- a request from a command that needs no AI, or one an AI command makes to anything but the AI
+  set up;
+- a key taken from a `.env`, a `GEMINI_API_KEY` or a `GOOGLE_API_KEY`, or the AI's settings read
+  from anywhere but the environment the command runs in;
+- sample values sent without `--samples` or `--sample-objects`, or a sample value printed;
+- Forma Designer started from anywhere but the path the entry worked out, an older Forma Designer
+  started with a verb, an environment with a key in it, or a name turned into a switch.
+
+Known and deliberate there: on a CI runner, the computer is the CI provider's, so the files and the
+key are on it for the job, under that provider's terms; the key is stored wherever the person keeps
+it, their environment or their CI provider's secrets, and the command line only reads it; a mapped
+network drive is used as the person's own, over the share they mapped; a directory link on the way
+to a folder the person named outside the folder it runs in is followed as theirs; and on Windows a
+stop while a file that asks the AI is being made can end the process with 3221226505 in place of
+130, nothing written either way.
+
 ## Known and deliberate
 
 - **The `AIzaSy…` string in `firebase-applet-config.json` is not a secret.** It is a
   public Firebase project identifier, shipped in every Firebase web app by design.
   Access is controlled by `firestore.rules`, not by hiding that value. Please do not
   report it; do report a rule that fails to constrain it.
-- **Generation runs in the browser, or in Forma's MCP server on your own computer, never on
-  a server of this project's.** Moving it server-side is explicitly out of scope
-  (`docs/PRD.md` §6) — a server would mean Forma holding keys, which is the thing this design
-  exists to avoid. Forma's MCP server is not that: it is your own program on your own
-  computer, with no port, holding only your files and your own key.
+- **Generation runs in the browser, or in Forma's MCP server or its command line, programs you
+  run on your own computer or a CI runner you choose, never on a server of this project's.**
+  Moving it server-side is explicitly out of scope (`docs/PRD.md` §6) — a server would mean
+  Forma holding keys, which is the thing this design exists to avoid. Forma's MCP server and its
+  command line are not that: each is your own program, holding only your files and your own key,
+  and the server opens no port.
 - If you self-host, the Firebase project is yours. Restrict your own API key and deploy
   your own rules; see the setup walkthrough in `README.md`.
 

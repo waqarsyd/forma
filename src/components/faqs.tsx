@@ -79,10 +79,25 @@ export const FAQS: Array<{ q: string; a: ReactNode }> = [
       <p>
         Yes, from a copy of Forma&apos;s source code on your own computer. Its MCP server lets Claude Code, Visual
         Studio&apos;s Copilot, VS Code or Claude Desktop audit, outline, repair and edit the .repx files in your
-        projects and draw one as a draft PDF, with no AI; and, with your own AI set up in your assistant&apos;s
-        settings for it, make a report from a picture, a PDF or a description, or change one as you ask. The{' '}
+        projects, draw one as a draft PDF, convert an SSRS or FastReport report and bind a report to your
+        database&apos;s layout, with no AI; and, with your own AI set up in your assistant&apos;s settings for it,
+        make a report from a picture, a PDF or a description, or change one as you ask. The{' '}
         <a href="/docs#mcp" className="font-semibold text-secondary hover:underline">Docs</a> say how to set it up,
         and where your key is then kept.
+      </p>
+    ),
+  },
+  {
+    // 2026-11-25 (the CLI and Forma Designer work's wave 7, DOC-2, SEC-8): its command line, src/mcp/cli.mjs.
+    q: 'Can I run Forma from a terminal or in CI?',
+    a: (
+      <p>
+        Yes, from the same copy of the source code: its command line checks every report in a folder, repairs,
+        converts and binds reports with no AI, and, with your own AI set up in the environment it runs in, makes and
+        changes them, a folder at a time, one file after another. It runs on your computer or a CI runner you choose,
+        and on a runner your files and key are on your CI provider&apos;s computer for the job. The{' '}
+        <a href="/docs#cli" className="font-semibold text-secondary hover:underline">Docs</a> have its commands, its
+        exit codes and a GitHub Actions recipe.
       </p>
     ),
   },

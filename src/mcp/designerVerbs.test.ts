@@ -339,14 +339,16 @@ describe('starting a verb', () => {
     const started: Started[] = [];
     const setup = standIn(current, 'verbs', { started });
     const read = await designerRead(setup, 'formasample', { ...CLI, seconds: 300 });
-    expect(read).toEqual({ connection: 'FormaSample', layout: SCHEMA_EXPORT, samples: null, unread: [] });
+    expect(read).toEqual({ connection: 'FormaSample', layout: SCHEMA_EXPORT, samples: null, unread: [], notFound: [] });
     expect(started.map((s) => s.args)).toEqual([
       ['sql-list', ...DESIGNER_SENTINEL],
       ['sql-schema', '--connection', 'FormaSample', '--seconds', '300', ...DESIGNER_SENTINEL],
     ]);
     calls(current);
     const both = await designerRead(setup, 'Sales', CLI, { objects: [{ schema: 'dbo', name: 'Orders' }, { schema: 'Sales', name: 'Order Lines' }], rows: 3 });
-    expect(both).toEqual({ connection: 'Sales', layout: SCHEMA_EXPORT, samples: SAMPLE_EXPORT, unread: [] });
+    // The stand-in's rows hold dbo.Orders and no Sales.Order Lines, which Forma Designer leaves out with no word when its
+    // catalog lacks it: named as passed (the wave-7 review's W7-MCP-4).
+    expect(both).toEqual({ connection: 'Sales', layout: SCHEMA_EXPORT, samples: SAMPLE_EXPORT, unread: [], notFound: ['Sales.Order Lines'] });
     expect(started.slice(2).map((s) => s.args)).toEqual([
       ['sql-list', ...DESIGNER_SENTINEL],
       ['sql-schema', '--connection', 'Sales', '--seconds', '120', ...DESIGNER_SENTINEL],
@@ -478,6 +480,10 @@ describe('starting a verb', () => {
     const read = await designerRead(standIn(current, 'unread'), 'FormaSample', CLI, { objects: [{ schema: 'dbo', name: 'Customers' }, { schema: 'dbo', name: 'RvBad' }], rows: 2 });
     expect(read.samples).toBe(SAMPLE_EXPORT);
     expect(read.unread).toEqual([{ object: 'dbo.RvBad', number: 8134 }, { object: 'dbo.vGone', number: 208 }, { object: 'dbo.Odd', number: null }]);
+    // Neither among the rows nor unread: not in the database (W7-MCP-4), case aside for the rest.
+    expect(read.notFound).toEqual(['dbo.Customers']);
+    const cased = await designerRead(standIn(current, 'unread'), 'FormaSample', CLI, { objects: [{ schema: 'DBO', name: 'orders' }, { schema: 'dbo', name: 'rvbad' }], rows: 2 });
+    expect(cased.notFound).toEqual([]);
     calls(current);
   });
 
@@ -774,10 +780,13 @@ describe("the command line's connections and --connection", () => {
     const dir = folder();
     writeFileSync(join(dir, 'a.png'), titlePng('TOTALS'));
     const seen: (string | undefined)[] = [];
-    const ran = await cli(['generate', 'a.png', '--mock', '--connection', 'FormaSample', '--sample-objects', 'dbo.Orders,dbo.RvBad', '--object', 'dbo.vOrderTotals'], { cwd: dir, env: AI, designer: standIn(current, 'unread'), hooks: recording(seen) });
+    const ran = await cli(['generate', 'a.png', '--mock', '--connection', 'FormaSample', '--sample-objects', 'dbo.Orders,dbo.RvBad,dbo.NoSuch', '--object', 'dbo.vOrderTotals'], { cwd: dir, env: AI, designer: standIn(current, 'unread'), hooks: recording(seen) });
     expect(ran.code, ran.err).toBe(EXIT.done);
     expect(ran.err).toContain('SQL Server could not read sample rows of dbo.RvBad (its error 8134), so its rows were left out.');
     expect(ran.err).toContain('SQL Server could not read sample rows of dbo.Odd, so its rows were left out.');
+    // One the database does not have, which Forma Designer leaves out with no word (W7-MCP-4).
+    expect(ran.err).toContain('The database has no table or view named dbo.NoSuch, so no rows of it were read.');
+    expect(ran.err).not.toContain('named dbo.Orders');
     expect(seen[0]).toContain('Example Traders');
     calls(current);
   });

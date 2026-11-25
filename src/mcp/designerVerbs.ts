@@ -16,8 +16,10 @@
  * Origin are involved, and the caller is this Windows user by construction
  * (the owner chose this route over admitting a caller other than a page to
  * the `--serve` listener: OC1). The command line's `connections` and
- * `--connection` use it (commandLine.ts, *A database*); the MCP server's
- * `database_connections` is that work's wave 7.
+ * `--connection` use it (commandLine.ts, *A database*), and since that
+ * work's wave 7 the MCP server's `database_connections` and `connection`
+ * argument, for the names the person lists in its entry alone
+ * (databaseTools.ts).
  *
  * - **Where it is, worked out in the entry** (`designerPlace`, D2-11): the
  *   per-user install, `<LOCALAPPDATA>\Programs\Forma Designer\RepxDesigner.exe`
@@ -75,14 +77,17 @@
  *   gives; each table or view as `schema.name`, neither part beginning with
  *   `-` nor holding `.` or `,`, at most 20, which Forma Designer checks
  *   against its catalog again before quoting each.
- * - **Its words** reach a person (and, from wave 7, a host's model): Forma
+ * - **Its words** reach a person (and, since wave 7, a host's model): Forma
  *   Designer's own, which never carry the saved sign-in or the server (its
  *   `SqlCompanion.Explain`, D2-7), with every control character taken out
  *   here, and, where they are SQL Server's own first line (`sql`,
  *   `failed`), whatever they quote put as '...' here as Forma Designer puts
  *   it (`unquoted`), since a row's value can be quoted there (245's
  *   "converting the varchar value '...'"; the wave's review, N6-3); nothing
- *   else it prints is repeated. A table it could not sample (a view over a
+ *   else it prints is repeated. Those first lines can still name a table, a
+ *   view or a database outside quotes, so in the server's voice they are the
+ *   refusal's `fromFile.designer` (caller.ts `ToolRefusal`, since wave 7,
+ *   D1-10), never its words. A table it could not sample (a view over a
  *   table since dropped, a value that fails a computed column) is left out
  *   and named with SQL Server's number alone (`unread`, R6-2). The
  *   connection's name it gives back in its own case (`connection`) is what
@@ -270,8 +275,8 @@ export interface DesignerCall {
 export class DesignerRefusal extends ToolRefusal {
   readonly problem: string | null;
   readonly number: number | null;
-  constructor(message: string, problem: string | null = null, number: number | null = null) {
-    super(message);
+  constructor(message: string, problem: string | null = null, number: number | null = null, fromFile?: Record<string, unknown>) {
+    super(message, fromFile);
     this.problem = problem;
     this.number = number;
   }
@@ -584,6 +589,15 @@ const DOING: Record<DesignerVerb, (connection: string) => string> = {
 };
 
 /**
+ * A refusal's words when SQL Server's own words are carried apart, by whose they are (since the CLI work's wave 7, D1-10):
+ * the server's say where those words are; the command line's, null, prints them in its words, as a person reads them.
+ */
+const SQL_WORDS_APART: Record<Voice, ((doing: string, number: number | null) => string) | null> = {
+  mcp: (doing, number) => `Forma Designer could not ${doing}${number === null ? '' : ` (SQL Server's error ${number})`}; what it answered is under fromFile.designer.`,
+  cli: null,
+};
+
+/**
  * Starts one verb (the header) and returns its envelope, `ok` and with the
  * verb's own field; anything else is a `DesignerRefusal` in words, or a
  * `CallStopped` when the caller stopped it.
@@ -617,7 +631,12 @@ async function runVerb(setup: DesignerSetup, verb: DesignerVerb, options: readon
     const problem = typeof envelope.problem === 'string' ? said(envelope.problem) : null;
     if (problem === 'usage') throw new DesignerRefusal(`Forma Designer refused the call Forma made to ${doing}, which is Forma's mistake: ${said(envelope.error)}`, problem, number);
     // SQL Server's own first line can quote a row's value (N6-3): what it quotes is never repeated, whatever Forma Designer did.
-    const words = problem === 'sql' || problem === 'failed' ? said(unquoted(String(envelope.error ?? ''))) : said(envelope.error);
+    const sqls = problem === 'sql' || problem === 'failed';
+    const words = sqls ? said(unquoted(String(envelope.error ?? ''))) : said(envelope.error);
+    // It can still name a table, view or database outside quotes: the server's voice carries those words apart, as data
+    // under fromFile.designer, never in its own (the CLI work's wave 7, D1-10); a person reads them in the words.
+    const apart = SQL_WORDS_APART[call.voice];
+    if (sqls && words && apart) throw new DesignerRefusal(apart(doing, number), problem, number, { designer: words });
     throw new DesignerRefusal(`Forma Designer could not ${doing}: ${words || 'it gave no reason'}`, problem, number);
   }
   if (ended.code !== DESIGNER_EXIT.done) throw new DesignerRefusal(`Forma Designer said it could ${doing}, but ended with exit code ${ended.code}, so nothing it printed was read.`);
@@ -666,12 +685,18 @@ export interface DesignerUnread {
   number: number | null;
 }
 
-/** What `designerRead` read: the connection's name in Forma Designer's own case, its layout, its sample rows when asked for, and what of them could not be read. */
+/**
+ * What `designerRead` read: the connection's name in Forma Designer's own case, its layout, its sample rows when asked
+ * for, what of them could not be read, and the tables or views named that the database does not have (`notFound`, as
+ * passed: Forma Designer looks each up in the catalog first and leaves one it does not find out with no word, so they
+ * are the names neither among the rows nor unread; the wave-7 review's W7-MCP-4).
+ */
 export interface DesignerRead {
   connection: string;
   layout: string;
   samples: string | null;
   unread: DesignerUnread[];
+  notFound: string[];
 }
 
 /** Why a table or view cannot be passed to the sample verb, or null (the header): neither part beginning with -, holding . or , or a control character. */
@@ -690,7 +715,9 @@ function objectProblem(o: DesignerObject): string | null {
  * the name checked by Forma Designer's own rule and found among those it
  * keeps (SEC-2) before the layout is asked for under the name it keeps.
  * The sample rows only when the caller passes them, as the person's own act
- * (OC6). Each verb is given `call.seconds`.
+ * (OC6), with the tables or views named that SQL Server could not read
+ * (`unread`) and those the database does not have (`notFound`), each said by
+ * the caller. Each verb is given `call.seconds`.
  */
 export async function designerRead(setup: DesignerSetup, connection: string, call: DesignerCall, samples?: { objects: readonly DesignerObject[]; rows: number }): Promise<DesignerRead> {
   const { DESIGNER_NAME } = await import('../lib/databaseAi');
@@ -714,15 +741,28 @@ export async function designerRead(setup: DesignerSetup, connection: string, cal
   if (typeof schema.layout !== 'string' || !schema.layout || typeof schema.connection !== 'string') throw new DesignerRefusal(`Forma Designer's layout of the connection ${kept.name} is empty, so nothing was read.`);
   let rows: string | null = null;
   const unread: DesignerUnread[] = [];
+  const notFound: string[] = [];
   if (samples) {
-    const objects = samples.objects.map((o) => `${o.schema}.${o.name}`).join(',');
-    const sample = await runVerb(setup, 'sql-sample', ['--connection', kept.name, '--objects', objects, '--rows', String(samples.rows), ...time], call, kept.name);
+    const named = samples.objects.map((o) => `${o.schema}.${o.name}`);
+    const sample = await runVerb(setup, 'sql-sample', ['--connection', kept.name, '--objects', named.join(','), '--rows', String(samples.rows), ...time], call, kept.name);
     if (typeof sample.samples !== 'string' || !sample.samples) throw new DesignerRefusal(`Forma Designer's sample rows through the connection ${kept.name} are empty, so nothing was read.`);
     rows = sample.samples;
+    const answered = new Set<string>();
     // The tables SQL Server could not read, each left out (R6-2): named as passed, never with SQL Server's words.
     for (const u of Array.isArray(sample.unread) ? sample.unread : []) {
-      if (u && typeof u === 'object' && typeof u.object === 'string') unread.push({ object: said(u.object), number: typeof u.number === 'number' && Number.isInteger(u.number) ? u.number : null });
+      if (u && typeof u === 'object' && typeof u.object === 'string') {
+        unread.push({ object: said(u.object), number: typeof u.number === 'number' && Number.isInteger(u.number) ? u.number : null });
+        answered.add(u.object.toLowerCase());
+      }
+    }
+    // The ones the catalog has, among the rows under the name passed (Sql.cs Samples); any other was not found (W7-MCP-4).
+    // Rows that cannot be read are the layout reader's to refuse, so they name no table missing here.
+    const { readSampleExport } = await import('../lib/sqlSchema');
+    const read = readSampleExport(rows);
+    if (read) {
+      for (const key of Object.keys(read.samples)) answered.add(key.toLowerCase());
+      for (const name of named) if (!answered.has(name.toLowerCase())) notFound.push(said(name));
     }
   }
-  return { connection: schema.connection, layout: schema.layout, samples: rows, unread };
+  return { connection: schema.connection, layout: schema.layout, samples: rows, unread, notFound };
 }

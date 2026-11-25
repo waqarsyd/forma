@@ -42,7 +42,16 @@
  *      deleted too once copied, so no worker thread inherits them (each job
  *      carries its settings). The AI's values go to readAiSettings, which
  *      reads nothing itself. No dotenv: a .env in the host's working folder
- *      is never this server's business (SEC-9).
+ *      is never this server's business (SEC-9). Since the CLI and Forma
+ *      Designer work's wave 7 (2026-11-25; D2-11, the owner's OC6), once
+ *      the keys are deleted: LOCALAPPDATA and FORMA_DESIGNER, where Forma
+ *      Designer is (designerVerbs.ts `designerPlace`), the environment it is
+ *      started with, built from Windows' own variables by `designerEnvFrom`,
+ *      and the person's two switches, FORMA_DATABASE_CONNECTIONS and
+ *      FORMA_DATABASE_SAMPLES (databaseTools.ts `readDatabaseSettings`), as
+ *      the command line's entry reads Forma Designer's two; boundaries.test.ts
+ *      holds that the environment is referred to after the delete by these
+ *      and the roots' reads alone.
  *   3. serveStdio serves both eras from one factory: a 2026-07-28 client
  *      opens with server/discover, a 2025-era client with initialize. Its
  *      transport writes through the guard's `protocolOut`, the one Writable
@@ -112,8 +121,19 @@ if (!settings.ready) guard.log(`the AI tools refuse until an AI is set up: ${set
 const generator = settings.ready
   ? oneAtATime(workerGenerator({ setup: { mock: settings.mock, ...(settings.model ? { model: settings.model } : {}), ...(settings.locale ? { locale: settings.locale } : {}) }, log: (line) => guard.log(line) }))
   : null;
+// Forma Designer, which database_connections and a `connection` start (designerVerbs.ts): found by the two values read here,
+// and handed an environment of Windows' own variables, built only now that the keys are deleted, so no key of any program
+// reaches it; and the person's two database switches, the connections it may read and whether sample rows may go to the AI
+// (databaseTools.ts, the owner's OC6), said on stderr when either is wrong, never with its value.
+const { designerEnvFrom, designerPlace } = await import('./designerVerbs');
+const { readDatabaseSettings } = await import('./databaseTools');
+const database = {
+  settings: await readDatabaseSettings({ connections: process.env.FORMA_DATABASE_CONNECTIONS, samples: process.env.FORMA_DATABASE_SAMPLES }),
+  designer: { place: designerPlace({ platform: process.platform, localAppData: process.env.LOCALAPPDATA, override: process.env.FORMA_DESIGNER }), env: designerEnvFrom(process.env) },
+};
+for (const problem of database.settings.problems) guard.log(problem);
 
-serveStdio(() => createFormaServer({ envRoots, system, version, skills, pipeline, log: (line) => guard.log(line), redact: guard.redact, ai: { settings, generator } }), {
+serveStdio(() => createFormaServer({ envRoots, system, version, skills, pipeline, log: (line) => guard.log(line), redact: guard.redact, ai: { settings, generator }, database }), {
   transport: new StdioServerTransport(process.stdin, guard.protocolOut),
   onerror: (error) => guard.log('a protocol error:', error),
 });

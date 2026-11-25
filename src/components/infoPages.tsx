@@ -132,8 +132,8 @@ export const SECURITY: InfoDoc = {
             that started it, over its standard input and output, and opens no network port. Its tools read and write
             your files only in the folders they are given and only by full path (outside them the server keeps only
             a cache of its own under your home folder: OCR&apos;s languages, which Gemini model answers your key, and
-            which of its models have reached a limit and until when, filed by a short tag of it, never the key),
-            never replace a file unless asked, take a
+            which of its models have reached a limit and until when, filed by a short tag of it, never the key; tsx,
+            which runs it, keeps its compile cache in your temp folder), never replace a file unless asked, take a
             database login stored in a report out before reading it, and hand back what they read from a file as data,
             never as instructions. What a tool returns goes to your assistant and the AI behind it, under that
             assistant&apos;s terms.
@@ -147,6 +147,37 @@ export const SECURITY: InfoDoc = {
             computer, in its settings file or your own environment: keep it in a file of your own, never one a project
             commits. <a href={`${REPO}/blob/main/SECURITY.md`} className={A} {...ext}>SECURITY.md</a> says what is
             worth reporting about it.
+          </p>
+          <p className={P}>
+            A database&apos;s layout given to it binds a report: its names go to your AI only through those two tools,
+            and come back as data. Two things stay yours to allow in its settings, never your assistant&apos;s to
+            choose: which Forma Designer connections it may read, through Forma Designer on your PC, which keeps the
+            sign-in and never hands it over; and whether sample rows may go to your AI with a layout.
+          </p>
+        </>
+      ),
+    },
+    {
+      // Its command line (2026-11-25, the CLI and Forma Designer work's wave 7; SEC-8 and LEGAL-1 of its design audit).
+      heading: 'Forma’s command line',
+      body: (
+        <>
+          <p className={P}>
+            The same copy of the source code is a command line, which you run yourself, on your computer or on a CI
+            runner you choose; this site does not run it. It reads the files you name, a relative name from the folder
+            it runs in, writes beside them or where you say, never replacing a file unless you say, keeps nothing else
+            but the MCP server&apos;s own cache and the compile cache of tsx, which runs it, in your temp folder, and
+            never follows a link out of a folder it works through. Only its commands
+            that make and change a report send anything: what the report needs, from the computer it runs on straight
+            to the AI you set up, with your own key, never through Forma.
+          </p>
+          <p className={P}>
+            It reads your key from the environment it runs in: yours, or in CI your provider&apos;s secret store, handed
+            to the one step that needs it, never written on the command. On a CI runner your files and key are on your
+            provider&apos;s computer for the job, under its terms. Every line it prints has keys taken out, and sample
+            rows of your database go to your AI only from a file you pass or tables you name.{' '}
+            <a href={`${REPO}/blob/main/SECURITY.md`} className={A} {...ext}>SECURITY.md</a> says what is worth
+            reporting about it.
           </p>
         </>
       ),
@@ -539,12 +570,29 @@ npm run dev`}</pre>
           </p>
           <pre className={CODE}>{`node <clone>/src/mcp/run.mjs`}</pre>
           <p className={P}>
-            with the full path of the copy. Its tools audit, outline, repair and edit your .repx files and draw a draft
-            PDF with no AI, and two of them make and revise a report with the AI you set up in the assistant&apos;s
-            settings for it, a Gemini or OpenRouter key or a model on your own computer. Pictures are read there too:
+            with the full path of the copy. Its tools audit, outline, repair and edit your .repx files, draw a draft
+            PDF, convert an SSRS or FastReport report and bind a report to your database&apos;s layout with no AI, and
+            two of them make and revise a report with the AI you set up in the assistant&apos;s settings for it, a
+            Gemini or OpenRouter key or a model on your own computer. Pictures are read there too:
             an English page by PaddleOCR once <code className="doc-code">fetch:paddle</code> has run, anything else by
             Tesseract, with nothing downloaded while it works. The <a href="/docs#mcp" className={A}>Docs</a> and the README say how to add it
             to each assistant, and where your key is then kept.
+          </p>
+        </>
+      ),
+    },
+    {
+      // Forma's command line (2026-11-25, the CLI and Forma Designer work's wave 7, DOC-1, DOC-2). The command is held by publicClaims.test.ts.
+      heading: 'From a terminal or CI',
+      body: (
+        <>
+          <p className={P}>The same copy is a command line, run from any folder:</p>
+          <pre className={CODE}>{`node <clone>/src/mcp/cli.mjs <command>`}</pre>
+          <p className={P}>
+            It checks, repairs, converts and binds reports with no AI, and makes and changes them, a folder at a time,
+            with the AI set up in the environment it runs in. In CI, a step takes the key from a secret; a pull request
+            from a fork, given none, can still check the reports it brings. The <a href="/docs#cli" className={A}>Docs</a> and
+            the README have its commands, its exit codes and a GitHub Actions recipe.
           </p>
         </>
       ),

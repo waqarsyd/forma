@@ -8,10 +8,12 @@
  *
  * It is served with a preface of the server's own after its frontmatter
  * (`SKILL_PREFACE`), and the file itself is left as it is (GAP2-5). The
- * skill teaches the command line, whose relative names are right in a shell
- * in the clone; a model reading it through this server would copy them into
- * tool arguments, which take only full paths (paths.ts) and refuse anything
- * else. The preface says so, gives one Windows and one POSIX path, and says
+ * skill teaches the command line, `node <clone>/src/mcp/cli.mjs`, run from
+ * any folder, whose relative names are read from that folder (since the CLI
+ * and Forma Designer work's wave 7, DOC-1: it named `npx tsx scripts/repx.ts`,
+ * which only a shell in the clone could run); a model reading it through this
+ * server would copy them into tool arguments, which take only full paths
+ * (paths.ts) and refuse anything else. The preface says so, gives one Windows and one POSIX path, and says
  * where the skill's links to ../../notes/gemini.md and ../../../README.md
  * lead (the second since the wave-4 review's R12): the file's links stay
  * relative, so `npm run lint:links` keeps checking them (PROTO-11).
@@ -34,7 +36,7 @@ export const SKILL_URI = `skill://${SKILL_NAME}/SKILL.md`;
 /** What the server says ahead of the skill's own text. */
 export const SKILL_PREFACE = [
   "> **Served by Forma's MCP server.** Its tools take full paths only: G:\\Reports\\invoice.repx on Windows, /home/me/reports/invoice.repx elsewhere. A relative name, ~ or a Git Bash /g/... path is refused.",
-  '> repx_audit, repx_repair and repx_pdf do what the command lines below do; those lines are for a shell in a clone of Forma, where relative names are right. repx_repair, repx_edit and repx_pdf name the file they wrote; repx_audit and repx_outline write none.',
+  '> repx_audit, repx_repair, repx_pdf and repx_convert do what the command lines below do; those lines are for a person in a shell, where <clone> is the full path of a clone of Forma and a relative name is read from the folder the command runs in. repx_repair, repx_edit, repx_pdf and repx_convert name the file they wrote; repx_audit, repx_outline and database_connections write none.',
   '> The links to ../../notes/gemini.md and ../../../README.md lead to docs/notes/gemini.md and README.md in that clone.',
 ].join('\n');
 

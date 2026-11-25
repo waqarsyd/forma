@@ -1538,8 +1538,11 @@ MCP work's wave 8; owner decision OD6). Forma's MCP server's two AI tools,
 workspace does, from the server's environment instead of Settings
 (`FORMA_GEMINI_KEY`, `FORMA_OPENROUTER_KEY` and `FORMA_OPENROUTER_MODEL`,
 `FORMA_LOCAL_MODEL` and `FORMA_LOCAL_URL`, `FORMA_PROVIDER`), and refuse
-without it: there is no mode without an AI there either, and the six tools
-that need none are scripts' work, as `scripts/repx.ts` is. Another AI set up
+without it: there is no mode without an AI there either, and the tools
+that need none (eight since 2026-11-25) are scripts' work, as the no-AI
+commands of Forma's command line are, whose `generate`, `revise` and `batch`
+read the same names from the environment a command runs in (since
+2026-11-24, a CI's secrets included). Another AI set up
 beside the one chosen is the chain's next on a limit, never after Local AI,
 and the result carries the switch note. Two differences, both for the same
 reason, that nothing leaves a Local AI: with more than one set up and none

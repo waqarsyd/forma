@@ -100,6 +100,24 @@ import { APP_CHECK_SITE_KEY } from '../lib/appCheck';
  * OpenRouter set up for the server. legalDisclosure.test.ts now follows every
  * import src/mcp makes for a host, and holds the AI tools' paragraph to
  * toolList.ts.
+ *
+ * 2026-11-25 (the CLI and Forma Designer work's wave 7; D1-10, SEC-6, the
+ * owner's OC6): the server takes a database's layout with a request, and a
+ * Forma Designer connection only when the person lists it in its settings,
+ * whose layout Forma Designer reads on the person's computer; its sample
+ * values go to the AI only when the person turns them on there. The SQL
+ * Server paragraph and "Forma from an AI assistant" say both; the date was
+ * already this day's.
+ *
+ * The same day (that work's wave 7, its docs; SEC-8 and LEGAL-1 of its design
+ * audit): "Forma's command line", src/mcp/cli.mjs, a program the person runs
+ * from a clone on their own computer or a CI runner they choose: what its
+ * AI commands send and from where, where its key is kept (the person's
+ * environment or their CI provider's store of secrets), and that on a CI
+ * runner the files and the key are on the provider's computer under its
+ * terms. The keys paragraph and OpenRouter's line name it too.
+ * legalDisclosure.test.ts holds the section to cliCommands.ts while a command
+ * asks the AI, and walks the command line's modules with the server's.
  */
 const UPDATED = '25 November 2026';
 
@@ -194,7 +212,7 @@ const PRIVACY: Section[] = [
     heading: 'What the AI providers do with your requests',
     paragraphs: [
       'Your browser sends your files, your words and the report straight to the AI you chose, and that provider’s terms decide what happens to them next. Forma’s own server is never in the path. When you ask for a first report while “Learn the style of reports I keep” and the box’s house style are on, the parts of the kept report most like it go too, with every text, name, field, data source, expression and link in them replaced, as formatting to follow.',
-      'Your SQL Server database: its table, view, procedure and column names, and up to three sample values a column, go with your requests only if you share it with the AI, by attaching its layout in the chat or with “Send names and sample values to the AI” on the Data view, which also turns it off, or, for SQL written from a sentence there, by saying yes when Forma asks first; or, from Forma’s MCP server or its command line, by giving it the layout file with a request, or from its command line on Windows by naming a connection the Forma Designer app keeps for you, whose layout Forma Designer reads on your computer (sample values only from the command line, when you pass them with --samples, or name the tables with --sample-objects). Otherwise none of it is sent. Forma never asks for, stores or sends a connection string, a login or a password: a report names its connection, and your application supplies it.',
+      'Your SQL Server database: its table, view, procedure and column names, and up to three sample values a column, go with your requests only if you share it with the AI, by attaching its layout in the chat or with “Send names and sample values to the AI” on the Data view, which also turns it off, or, for SQL written from a sentence there, by saying yes when Forma asks first; or, from Forma’s MCP server or its command line, by giving it the layout file with a request, or on Windows by naming a connection the Forma Designer app keeps for you, which the MCP server reads only when you list it in its settings, and whose layout Forma Designer reads on your computer (sample values only when you pass them to the command line with --samples or name the tables with --sample-objects, or turn them on in the MCP server’s settings and give them with a request). Otherwise none of it is sent. Forma never asks for, stores or sends a connection string, a login or a password: a report names its connection, and your application supplies it.',
       'Google Gemini: on the free tier, Google’s terms say it may use what you send and what comes back to improve its products, and that people may read it to do so. Do not send confidential or personal information with a free-tier key. With billing turned on, Google says it does not use them that way.',
       'OpenRouter: its free models come from providers that may log and keep your requests.',
       'A local AI (Ollama or LM Studio on your computer): the request never leaves your machine. For a confidential report, this is the choice to make.',
@@ -214,7 +232,7 @@ const PRIVACY: Section[] = [
   {
     heading: 'Your API keys',
     paragraphs: [
-      'On this website, your Gemini key, and an OpenRouter key if you use one, are held in the Forma tabs you have open and erased when the last of them closes: a Forma tab you open while another is open gets them from it, inside this browser, unless you turn that off in Settings. Neither is written to disk in readable form or sent to any server belonging to Forma; each goes only to its own provider. Forma’s MCP server, a program you run yourself, keeps no key of its own: it reads yours from the settings your assistant starts it with, as “Forma from an AI assistant” below says.',
+      'On this website, your Gemini key, and an OpenRouter key if you use one, are held in the Forma tabs you have open and erased when the last of them closes: a Forma tab you open while another is open gets them from it, inside this browser, unless you turn that off in Settings. Neither is written to disk in readable form or sent to any server belonging to Forma; each goes only to its own provider. Forma’s MCP server and its command line, programs you run yourself, keep no key of their own: the server reads yours from the settings your assistant starts it with, as “Forma from an AI assistant” below says, and the command line from the environment it runs in, as “Forma’s command line” says.',
     ],
   },
   {
@@ -232,7 +250,7 @@ const PRIVACY: Section[] = [
     heading: 'Who else is involved',
     paragraphs: [
       'Google Firebase hosts the site, runs sign-in and holds the database. Google Gemini answers the requests you make with your key. Signed out, the database is reached only through a link to a shared report. Once you are signed in, your browser does talk to Google on every load, first to check your session is still valid and then to fetch your saved projects, and it holds a connection open so changes to them arrive as they happen.',
-      'OpenRouter answers your requests only if you chose it under Settings → AI, or set it up for Forma’s MCP server, with your own key.',
+      'OpenRouter answers your requests only if you chose it under Settings → AI, or set it up for Forma’s MCP server or its command line, with your own key.',
       // Said only once App Check is on (lib/appCheck.ts, site audit item 56).
       ...(APP_CHECK_SITE_KEY
         ? ['Google reCAPTCHA checks that requests to the database come from this site, through Firebase App Check. It runs only when the database is used — once you are signed in, or when you open a shared report — and Google sees your browser and the page while it does, and may set its own cookies on google.com.']
@@ -246,9 +264,17 @@ const PRIVACY: Section[] = [
   {
     heading: 'Forma from an AI assistant',
     paragraphs: [
-      'Forma’s source code includes an MCP server: a program you can run on your own computer, from a copy of the code, so that an AI assistant such as Claude Code can check, outline, repair and edit your report files, and make or change a report with an AI of your own. This website does not run it and it is no part of the site; you start it through your assistant, and it works only with files in the folders you or your assistant give it.',
-      'Its two tools that make and change a report, and only those, send what the report needs to the AI you set up for the server, with your own key: the pages of the files you give them, the text read from those pages on your computer, the data files you pass as data, your words and the report. Your computer sends them straight to Google Gemini or OpenRouter, never through Forma, or to a local AI, which the server reaches only on your own computer. That provider’s terms decide what happens to them next, as “What the AI providers do with your requests” above describes. If the AI you chose reaches its limit and you set up another, the other answers, never after a local AI, and the tool says so. The server reads your key from the settings your assistant starts it with, which keep it in readable form on your computer, in your assistant’s settings file or in your own environment; it sends the key only to its own provider and takes it out of everything it returns and logs.',
-      'Its other tools send nothing to any AI, to Forma or to anyone else, and the server sends no learning events and no error reports. What a tool returns goes to your assistant, and from there to the AI behind it, under that assistant’s own terms, which decide what happens to it next. A database login stored in a report is taken out before any tool reads the report, so it is never part of what goes back or of what goes to an AI.',
+      'Forma’s source code includes an MCP server: a program you can run on your own computer, from a copy of the code, so that an AI assistant such as Claude Code can check, outline, repair, edit and convert your report files, bind a report to your database’s layout, and make or change a report with an AI of your own. This website does not run it and it is no part of the site; you start it through your assistant, and it works only with files in the folders you or your assistant give it.',
+      'Its two tools that make and change a report, and only those, send what the report needs to the AI you set up for the server, with your own key: the pages of the files you give them, the text read from those pages on your computer, the data files you pass as data, a database layout given with a request (its names, and sample values only when you turned them on in the server’s settings), your words and the report. Your computer sends them straight to Google Gemini or OpenRouter, never through Forma, or to a local AI, which the server reaches only on your own computer. That provider’s terms decide what happens to them next, as “What the AI providers do with your requests” above describes. If the AI you chose reaches its limit and you set up another, the other answers, never after a local AI, and the tool says so. The server reads your key from the settings your assistant starts it with, which keep it in readable form on your computer, in your assistant’s settings file or in your own environment; it sends the key only to its own provider and takes it out of everything it returns and logs.',
+      'Its other tools send nothing to any AI, to Forma or to anyone else, and the server sends no learning events and no error reports. For a connection you list in its settings, the Forma Designer app reads your SQL Server on your computer, with the connection you gave Forma Designer, and gives the server the layout, never a login or a password. What a tool returns goes to your assistant, and from there to the AI behind it, under that assistant’s own terms, which decide what happens to it next. A database login stored in a report is taken out before any tool reads the report, so it is never part of what goes back or of what goes to an AI.',
+    ],
+  },
+  {
+    heading: 'Forma’s command line',
+    paragraphs: [
+      'Forma’s source code also includes a command line: a program you run yourself from a copy of the code, on your own computer or on a CI runner you choose, to check, repair, convert and bind your report files, and to make or change reports with an AI of your own, a folder at a time. This website does not run it and it is no part of the site; it works with the files you name.',
+      'Its commands that make and change a report, and only those, send what the report needs to the AI you set up for it, with your own key: the pages of the files you give it, the text read from those pages on the computer it runs on, the data files you pass, a database layout you give it (its names, and sample values only when you pass them with --samples or name the tables with --sample-objects), your words and the report. The computer it runs on sends them straight to Google Gemini or OpenRouter, never through Forma, or to a local AI, which it reaches only on that same computer; that provider’s terms decide what happens to them next. It reads your key from the environment it runs in, where you keep it — your own environment, or your CI provider’s store of secrets — sends the key only to its own provider and takes it out of everything it prints.',
+      'On a CI runner, the computer is your CI provider’s: your files and your key are on it for the job, under that provider’s terms. Its other commands send nothing to any AI, to Forma or to anyone else, and the command line sends no learning events and no error reports. For a connection you name on Windows, the Forma Designer app reads your SQL Server on your computer and gives the command line the layout, never a login or a password. A database login stored in a .repx report is taken out before any command reads it, and an SSRS report’s connection string is never read.',
     ],
   },
   {

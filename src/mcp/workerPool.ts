@@ -65,7 +65,7 @@ export const tooMuchMemory = (mb: number, voice: Voice = 'mcp') =>
 
 const WORKER_FILE = new URL('./worker.mjs', import.meta.url);
 
-type Reply = { id: number; ok: true; value: unknown } | { id: number; ok: false; refusal?: string; error?: string };
+type Reply = { id: number; ok: true; value: unknown } | { id: number; ok: false; refusal?: string; fromFile?: Record<string, unknown>; error?: string };
 
 /** A worker's output, a line at a time, to the server's log; generator.ts's worker's too. */
 export function toLog(stream: Readable | null, log: (line: string) => void): void {
@@ -144,7 +144,7 @@ export function workerPipeline(options: PipelineOptions): Pipeline {
         const onMessage = (reply: Reply) => {
           if (reply.id !== id) return;
           if (reply.ok) end(true, () => resolve(reply.value as Done<T>));
-          else if (reply.refusal !== undefined) end(true, () => reject(new ToolRefusal(reply.refusal)));
+          else if (reply.refusal !== undefined) end(true, () => reject(new ToolRefusal(reply.refusal, reply.fromFile)));
           else end(false, () => reject(workerError(reply.error)));
         };
         const onError = (error: Error & { code?: string }) =>

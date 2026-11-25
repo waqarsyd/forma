@@ -173,6 +173,9 @@ function scene(path: PlatformPath) {
       [at('proj', 'appsettings.Development.json')]: 10,
       [at('proj', 'local.settings.json')]: 10,
       [at('proj', 'connections.txt')]: 10,
+      [at('proj', 'connections.tsv')]: 10,
+      [at('proj', 'Connections.backup.tsv')]: 10,
+      [at('proj', 'orders.tsv')]: 10,
       [at('outside', 'secret.repx')]: 10,
     },
     links: { [at('proj', 'link')]: at('outside'), [at('proj', 'dead')]: at('nowhere'), [at('proj', 'alias.repx')]: at('proj', 'data.json'), [at('jroot')]: at('proj') },
@@ -214,6 +217,10 @@ describe.each([
     expect(reason(at('proj', 'service-account-x.json'))).toMatch(/credentials/);
     // The files a .NET project keeps its connection strings in (W8C-5).
     for (const name of ['appsettings.Development.json', 'local.settings.json', 'connections.txt']) expect(reason(at('proj', name)), name).toMatch(/credentials/);
+    // Forma Designer's own store of connections, each line a server and an encrypted sign-in, and a copy of it (W7-MCP-2);
+    // a data file of that extension is still read.
+    for (const name of ['connections.tsv', 'Connections.backup.tsv']) expect(reason(at('proj', name)), name).toMatch(/credentials/);
+    expect(reason(at('proj', 'orders.tsv'))).toBe('admitted');
     expect(reason(at('proj', 'a.pdf'), { extensions: ['.repx'] })).toMatch(/is not a \.repx file/);
     expect(reason(at('proj', 'big.repx'), { maxBytes: 5_000_000 })).toMatch(/9000000 bytes, more than the 5000000/);
     expect(resolveReadPath(at('proj', 'a.repx'), [], sys)).toEqual({ ok: false, reason: expect.stringMatching(/No folder is set/) });

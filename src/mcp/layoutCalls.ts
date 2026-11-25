@@ -9,17 +9,21 @@
  * part, GAP1-1 and the owner's OC7): an SSRS or FastReport report made into a
  * repaired `.repx` with no AI, by the conversion the web app's intake runs
  * (lib/repxIntake.ts `importedReport`), which the command line's convert and
- * its batch call, and the server's repx_convert is to (that work's wave 7).
+ * its batch call, and since that work's wave 7 the server's repx_convert.
  * And, since that wave's review (U1), `copyLayout` and `writeLayout`, with
  * which the batch writes a report its words changed nothing in, as it reads
  * or as converted, so no file it was given is missing from its output.
  * And since that work's wave 5 (D1-3, D1-7, D1-11, GAP1-5, OC7): `readLayout`,
  * a database's layout read with no report, so a caller says what it read
  * before any AI is asked; `bindLayout`, a report bound to a table, view,
- * procedure or query of a layout with no AI (the command line's bind, and
- * the server's repx_edit `data` edit is to use it in that work's wave 7);
- * and a database given to `convertLayout`, which binds the converted SSRS
- * report to what its own DataSet reads (nodeDatabase.ts `bindConverted`).
+ * procedure or query of a layout with no AI (the command line's bind; the
+ * server's repx_edit makes the chat's `data` edit on its edit job instead,
+ * since that work's wave 7, so a binding and the edits that print its new
+ * fields are one call, as in the chat); and a database given to
+ * `convertLayout`, which binds the converted SSRS report to what its own
+ * DataSet reads (nodeDatabase.ts `bindConverted`). Since that work's wave 7
+ * `editLayout` takes a database too, and both take one to be read once
+ * their paths are judged (`DatabaseGiven`: the server's `connection`).
  * Until this wave the steps were inside the tools'
  * handlers, bound to the MCP's ToolContext and zod, so the command line
  * could only have copied them, and with them rules whose order is their
@@ -199,10 +203,24 @@ export async function repairLayout<W extends IfExists>(raw: string, output: stri
   };
 }
 
-/** An edit's result: the file written, or null and why not, and the edits made and declined. */
+/**
+ * A database a call is given, or a way to have one read only once the
+ * call's paths are judged (since the CLI and Forma Designer work's wave 7):
+ * the server's `connection`, whose layout Forma Designer prints, so a wrong
+ * path costs no wait on it, as the AI tools judge every path first.
+ */
+export type DatabaseGiven = DatabaseInput | (() => Promise<DatabaseInput>);
+
+/** The database a call was given, read now when it is to be read once the paths are judged. */
+const databaseNow = async (given: DatabaseGiven | undefined): Promise<DatabaseInput | undefined> => (typeof given === 'function' ? given() : given);
+
+/**
+ * An edit's result: the file written, or null and why not, and the edits made and declined; with a database (the CLI
+ * work's wave 7), whether the report is bound to it (`bound`, as data) and what it reads or why not (fromFile.binding).
+ */
 export interface EditDone<W extends IfExists> {
-  data: LayoutRead & { written: WrittenBy<W> | null; applied: number; declined: number; notWritten?: string };
-  fromFile: { applied: string[]; declined: string[]; designerLooksUp?: string[] };
+  data: LayoutRead & { written: WrittenBy<W> | null; applied: number; declined: number; notWritten?: string; bound?: boolean };
+  fromFile: { applied: string[]; declined: string[]; designerLooksUp?: string[]; binding?: BindingText };
 }
 
 /** Said in an edit's data when no edit could be made, so nothing was written. */
@@ -224,8 +242,14 @@ export interface EditTarget {
  * the policy replaces. A report whose connection was stored with more than
  * its name is never written over in place, and a `.vsrepx` is not written
  * where the Designer beside it looks up a name the edits removed.
+ *
+ * With `database` (since the CLI and Forma Designer work's wave 7; D1-11,
+ * the owner's OC7): the chat's `data` edit binds the report to that layout
+ * with no AI (pipeline.ts's `edit` job), the files judged and read as a
+ * call reads a database's, never written over, and the result says whether
+ * the report is bound and, apart, what it reads.
  */
-export async function editLayout<W extends IfExists>(raw: string, edits: readonly AgentEdit[], where: EditTarget, policy: PathPolicy<W>, run: LayoutRun): Promise<EditDone<W>> {
+export async function editLayout<W extends IfExists>(raw: string, edits: readonly AgentEdit[], where: EditTarget, policy: PathPolicy<W>, run: LayoutRun, database?: DatabaseGiven): Promise<EditDone<W>> {
   const { sys, voice } = policy;
   if (!edits.length) throw new ToolRefusal(SAY[voice].noEdit);
   const { scope, report } = await opened(raw, policy);
@@ -235,23 +259,31 @@ export async function editLayout<W extends IfExists>(raw: string, edits: readonl
   const kind = targetKind(target, report, voice);
   const inPlace = replace && sameFile(target, report.path, sys);
   const designers = kind === 'vsrepx' ? designersFor(report, target, scope, sys) : [];
-  const done = await run.pipeline.run({ tool: 'edit', voice, name: report.spelled, text: report.text, target: kind, edits: [...edits], designers }, run.signal);
+  const given = await databaseNow(database);
+  const judged = given ? judgeDatabase(given, scope, sys) : null;
+  if (judged && replace && databaseFilesOf(judged).some((d) => sameFile(target, d.path, sys) && !sameFile(target, report.path, sys))) {
+    throw new ToolRefusal(`${quoted(target, voice)} is the database layout the report is bound with; ${voice === 'cli' ? 'name another --out' : 'name another output'}.`);
+  }
+  const files = judged ? await readDatabaseFiles(judged, voice) : null;
+  const done = await run.pipeline.run({ tool: 'edit', voice, name: report.spelled, text: report.text, target: kind, edits: [...edits], designers, ...(files ? { database: files } : {}) }, run.signal);
   if (inPlace && done.report.connectionsChanged) throw overInputRefusal(report.path, done.report.loginRemoved, voice);
   const counts = { applied: done.applied.length, declined: done.declined.length };
-  const said = { applied: done.applied, declined: done.declined };
-  const notices = [...done.report.notices];
-  if (!done.changed) return { data: { ...readOf(report, done.report), written: null, ...counts, notWritten: NO_EDIT_MADE }, fromFile: said };
+  const { bound, text: binding } = bindingParts(done.binding);
+  const boundData = bound === null ? {} : { bound };
+  const said = { applied: done.applied, declined: done.declined, ...(binding ? { binding } : {}) };
+  const notices = [...done.report.notices, ...done.notices];
+  if (!done.changed) return { data: { ...readOf(report, done.report), notices, written: null, ...counts, notWritten: NO_EDIT_MADE, ...boundData }, fromFile: said };
   if (done.unmarked) notices.push("Visual Studio's working-file mark was neutralised, because the file written is a .repx (DevExpress says it refuses a marked .repx from 20.2.4 on).");
   if (done.report.connectionsChanged && !done.report.loginRemoved) notices.push(CONNECTION_BY_NAME);
   const dropped = done.dropped;
   // The Designer beside the file written loads that file: a name it lost is a null field (GAP1-3).
   if (dropped?.besideTarget) {
-    return { data: { ...readOf(report, done.report), notices, written: null, ...counts, notWritten: droppedNotice(dropped, voice) }, fromFile: { ...said, designerLooksUp: dropped.names } };
+    return { data: { ...readOf(report, done.report), notices, written: null, ...counts, notWritten: droppedNotice(dropped, voice), ...boundData }, fromFile: { ...said, designerLooksUp: dropped.names } };
   }
   if (dropped) notices.push(droppedNotice(dropped, voice));
   stillWanted(run.signal);
   const written = writeReport(target, done.xml, policy.wfs ?? nodeWriteFs, sys, policy.ifExists as IfExists) as WrittenBy<W>;
-  return { data: { ...readOf(report, done.report), notices, written, ...counts }, fromFile: { ...said, ...(dropped ? { designerLooksUp: dropped.names } : {}) } };
+  return { data: { ...readOf(report, done.report), notices, written, ...counts, ...boundData }, fromFile: { ...said, ...(dropped ? { designerLooksUp: dropped.names } : {}) } };
 }
 
 /** A draft PDF's result: the file written and its pages, and what drawing it could not show. */
@@ -432,13 +464,14 @@ export interface ConvertDone<W extends IfExists> {
  * says why (`notConverted`); the converter's notices (a formula printed as
  * written, a chart left out) are the result's notices.
  */
-export async function convertLayout<W extends IfExists>(raw: string, output: string | undefined, policy: PathPolicy<W>, run: LayoutRun, database?: DatabaseInput): Promise<ConvertDone<W>> {
+export async function convertLayout<W extends IfExists>(raw: string, output: string | undefined, policy: PathPolicy<W>, run: LayoutRun, database?: DatabaseGiven): Promise<ConvertDone<W>> {
   const { sys, voice } = policy;
   const scope = await scopeOf(policy);
   const source = readForeign(raw, scope, sys);
   const target = resolveWritePath(output === undefined || output === '' ? besideName(source.spelled, '.converted.repx', sys) : output, scope, sys, { extensions: ['.repx'] });
   if (!target.ok) throw new ToolRefusal(target.reason);
-  const done = await converted(source, policy, run, await databaseFiles(database, policy));
+  // A connection's layout is read only now, once both paths are judged (the server's, since the CLI work's wave 7).
+  const done = await converted(source, policy, run, await databaseFiles(await databaseNow(database), policy));
   const base = { path: source.path, from: done.from, version: CONVERTED_VERSION };
   if (!done.report) {
     return {

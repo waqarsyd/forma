@@ -87,6 +87,11 @@ describe('DOCS_SECTIONS keys', () => {
       // Forma's MCP server, by the assistants that run it (2026-11-24, the MCP work's wave 5).
       ['claude code', 'mcp'],
       ['visual studio copilot', 'mcp'],
+      // Its command line, by the words a person at a terminal or in CI searches with (2026-11-25, DOC-3).
+      ['command line', 'cli'],
+      ['ci', 'cli'],
+      ['github actions', 'cli'],
+      ['exit code', 'cli'],
     ];
     for (const [query, id] of cases) expect(articleMatches(query, section(id)), `${query} -> ${id}`).toBe(true);
     // The signed-out projects are in the browser's own database, not local storage, since PR-15.

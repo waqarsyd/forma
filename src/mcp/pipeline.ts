@@ -26,7 +26,10 @@
  * `bind`, a report bound to the query a caller pinned with no AI (D1-11);
  * and a database given to `convert`, which binds the converted report
  * (GAP1-5): nodeDatabase.ts's work, here so a layout built to be slow or
- * large costs this thread, never the one that answers. Lines read from the
+ * large costs this thread, never the one that answers. Since that work's
+ * wave 7 (D1-11, the owner's OC7), a database given to `edit`, so the
+ * server's repx_edit makes the chat's `data` edit with no AI, through the
+ * chat's own hook, and says what the report then binds. Lines read from the
  * file come back already folded by `fileLines`, for the result's `fromFile`.
  * Whatever a job returns crosses to the other thread by structured clone,
  * so it holds only data.
@@ -40,7 +43,7 @@
 import type { AgentEdit } from '../lib/agentEdit';
 import type { QueryJson } from '../lib/databaseAi';
 import { ToolRefusal, type Voice } from './caller';
-import { bindConverted, bindReport, readDatabase, type Binding, type ChosenBy, type DatabaseJob, type DatabaseRead } from './nodeDatabase';
+import { bindConverted, bindReport, bindingOf, readDatabase, type Binding, type ChosenBy, type DatabaseJob, type DatabaseRead } from './nodeDatabase';
 import { fileLines, openReport, type LayoutKind } from './reportFile';
 
 /** A Designer file read beside a `.vsrepx`, for the names it looks up (GAP1-3). */
@@ -70,7 +73,12 @@ export interface Jobs {
   audit: { name: string; text: string };
   outline: { name: string; text: string };
   repair: { name: string; text: string; target: LayoutKind; designers: DesignerText[] };
-  edit: { name: string; text: string; target: LayoutKind; edits: AgentEdit[]; designers: DesignerText[] };
+  /**
+   * With `database` (the CLI work's wave 7, D1-11): a `data` edit binds to it through the chat's own hook (databaseAi.ts
+   * `dataEditHook`), at the report's own version, and what the report binds is read back; without one a `data` edit is
+   * declined in the caller's words, never the Data tab's, which agentEdit.ts says when no hook is given.
+   */
+  edit: { name: string; text: string; target: LayoutKind; edits: AgentEdit[]; designers: DesignerText[]; database?: DatabaseJob };
   pdf: { name: string; text: string; title: string };
   /**
    * An SSRS (.rdl, .rdlc) or FastReport (.frx) report's text; `file` is its own name, which the converter reads its kind and the report's name from.
@@ -105,7 +113,8 @@ export interface Results {
     dataSources: { name: string; connection: string; queries: string[] }[];
   };
   repair: { xml: string; repairs: string[]; said: string[]; audit: Audited; dropped: Dropped | null };
-  edit: { changed: boolean; xml: string; applied: string[]; declined: string[]; unmarked: boolean; dropped: Dropped | null };
+  /** With a database, what the report binds, read back from the report written (or, with nothing changed, the report read), and what the layout's files held that was not read; null and none without one. */
+  edit: { changed: boolean; xml: string; applied: string[]; declined: string[]; unmarked: boolean; dropped: Dropped | null; binding: Binding | null; notices: string[] };
   pdf: { drawn: { bytes: Uint8Array; pages: number; problems: string[] } | null };
   /**
    * The report made from it, repaired, with the converter's notices and its audit; null when it will not convert. With a
@@ -194,15 +203,37 @@ const WORK: { [T in JobName]: (job: Jobs[T], xml: string, voice: Voice) => Promi
     };
   },
 
-  edit: async (job, xml) => {
-    const [{ applyEdits }, { workingFileMark }] = await Promise.all([import('../lib/agentEdit'), import('../lib/repairChain')]);
-    const outcome = applyEdits(xml, job.edits);
+  edit: async (job, xml, voice) => {
+    const [{ applyEdits }, { workingFileMark, versionOf }] = await Promise.all([import('../lib/agentEdit'), import('../lib/repairChain')]);
+    // The layout first, so one that cannot be read is refused before any edit is made (nodeDatabase.ts); a `data` edit binds
+    // to it at the report's own version, as a repair writes it, through the chat's own hook (the CLI work's wave 7, D1-11).
+    const db = job.database ? await readDatabase(job.database, voice) : null;
+    const dbAi = db ? await import('../lib/databaseAi') : null;
+    const connectionName = job.database?.connectionName;
+    const hooks = {
+      data:
+        db && dbAi
+          ? dbAi.dataEditHook(db.schema, versionOf(xml), () => undefined, connectionName !== undefined ? { connectionName } : {})
+          : (unchanged: string) => ({ xml: unchanged, applied: false, reason: NO_DATABASE_EDIT[voice] }),
+    };
+    const outcome = applyEdits(xml, job.edits, hooks);
     const said = { applied: fileLines(outcome.applied), declined: fileLines(outcome.declined) };
-    if (!outcome.changed) return { changed: false, xml: '', ...said, unmarked: false, dropped: null };
+    const notices = [...(db?.notices ?? [])];
+    // What the report binds, read back from it as it will be written, or as it is when nothing changed (D1-9).
+    const bindingFor = async (read: string) => (db ? bindingOf(read, db.schema) : null);
+    if (!outcome.changed) return { changed: false, xml: '', ...said, unmarked: false, dropped: null, binding: await bindingFor(xml), notices };
     // Written as a .repx, Visual Studio's working-file mark is neutralised (GAP1-2).
     const unmarked = job.target === 'repx' ? workingFileMark(outcome.xml, 'repx') : null;
     const out = unmarked?.applied ? unmarked.xml : outcome.xml;
-    return { changed: true, xml: out, ...said, unmarked: unmarked?.applied === true, dropped: job.target === 'vsrepx' ? await droppedNames(xml, out, job.designers) : null };
+    return {
+      changed: true,
+      xml: out,
+      ...said,
+      unmarked: unmarked?.applied === true,
+      dropped: job.target === 'vsrepx' ? await droppedNames(xml, out, job.designers) : null,
+      binding: await bindingFor(out),
+      notices,
+    };
   },
 
   pdf: async (job, xml) => {
@@ -260,6 +291,17 @@ const WORK: { [T in JobName]: (job: Jobs[T], xml: string, voice: Voice) => Promi
   },
 };
 
+/**
+ * Why a `data` edit is declined when no database layout came with the edits (the edit job's `database`), in the
+ * caller's words. A decline is listed under fromFile.declined, beside the edit it declines, so the server's says a fact
+ * and no next step: repx_edit refuses such a call before the job, in its own words (reportTools.ts
+ * `DATA_NEEDS_DATABASE`, the wave-7 review's W7-MCP-3), so this is its fallback alone.
+ */
+const NO_DATABASE_EDIT: Record<Voice, string> = {
+  mcp: 'no database layout came with the edits, so what the report reads cannot change',
+  cli: 'no database layout was given, so what the report reads cannot change: the bind command binds a report with no AI',
+};
+
 /** What `bind` is told when no query was pinned: binding with no AI binds what the person names. */
 const BIND_NEEDS: Record<Voice, string> = {
   mcp: 'Name what the report reads: a stored procedure, a table or view, or a query as JSON. Nothing was written.',
@@ -290,9 +332,12 @@ export async function runJob<T extends JobName>(job: Extract<Job, { tool: T }>):
 /** Said when a report's parts nest past what a reading can follow; the shape check bounds the nesting first, so this is the backstop. */
 export const TOO_DEEP = 'Forma stopped working on this report: its parts nest more deeply than a reading can follow. Nothing was written.';
 
-/** How a job's failure crosses back to the thread that answers the host: a refusal's words, or an error's stack for the log. */
-export function jobFailure(error: unknown): { refusal: string } | { error: string } {
-  if (error instanceof ToolRefusal) return { refusal: error.message };
+/**
+ * How a job's failure crosses back to the thread that answers the host: a refusal's words, with what it carries for
+ * `fromFile` (since the CLI work's wave 7, plain data), or an error's stack for the log.
+ */
+export function jobFailure(error: unknown): { refusal: string; fromFile?: Record<string, unknown> } | { error: string } {
+  if (error instanceof ToolRefusal) return { refusal: error.message, ...(error.fromFile ? { fromFile: error.fromFile } : {}) };
   if (error instanceof RangeError && /call stack/i.test(error.message)) return { refusal: TOO_DEEP };
   return { error: error instanceof Error ? (error.stack ?? error.message) : String(error) };
 }

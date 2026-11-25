@@ -38,7 +38,7 @@ describe('the reader, and the query a caller pins', () => {
     ]);
     expect(read.schema.samples?.['dbo.Orders']).toHaveLength(3);
     await expect(readDatabase(job('just words'), 'cli')).rejects.toThrow(/^"formasample\.txt" is not a database layout: .* Nothing was asked of the AI, and nothing written\.$/);
-    await expect(readDatabase(job(SCHEMA_EXPORT, { connectionName: 'a=b' }), 'mcp')).rejects.toThrow(/^A connection name cannot hold ; or =.* Nothing was asked of the AI\.$/);
+    await expect(readDatabase(job(SCHEMA_EXPORT, { connectionName: 'a=b' }), 'mcp')).rejects.toThrow(/^A connection name cannot hold ; or =.* Nothing was asked of the AI, and nothing written\.$/);
     await expect(readDatabase(job(SCHEMA_EXPORT, { query: { table: 'dbo.Orders' } }), 'cli')).resolves.toMatchObject({ query: { kind: 'table', object: 'dbo.Orders' } });
   });
 
@@ -47,8 +47,41 @@ describe('the reader, and the query a caller pins', () => {
       /^Part of the query given is not in the layout, so it was not bound: left out the column "Nope": the query's tables have no such column; give another with --procedure, --query or --object\./,
     );
     await expect(pinnedQuery({ procedure: 'dbo.usp_TempTable' }, schema, 'mcp')).rejects.toBeInstanceOf(ToolRefusal);
-    await expect(pinnedQuery({}, schema, 'mcp')).rejects.toThrow(/^The query given cannot be bound: the query names no table, view, procedure or SQL; name another in the request\./);
+    await expect(pinnedQuery({}, schema, 'mcp')).rejects.toThrow(/^The query given cannot be bound: it cannot be held to the database layout given \(fromFile\.query says why\); name another with procedure, object or query\./);
     await expect(pinnedQuery({ name: 'Top', sql: 'SELECT TOP 5 CompanyName FROM dbo.Customers' }, schema, 'cli')).resolves.toMatchObject({ kind: 'custom', name: 'Top' });
+  });
+
+  /*
+   * The CLI work's wave 7 (D1-10, wave 5's leftover): a refusal in the server's voice names nothing the layout or the
+   * query holds, the database's name above all, and carries what it would have said as the refusal's fromFile, which
+   * toolShape.ts returns as data; the command line's words still name it, as a person reads a refusal whole.
+   */
+  it("names nothing from the layout in the server's refusals, and carries it apart as fromFile", async () => {
+    const refused = async (promise: Promise<unknown>) => {
+      const error = await promise.then(() => null, (e: unknown) => e);
+      expect(error).toBeInstanceOf(ToolRefusal);
+      return error as ToolRefusal;
+    };
+    const missing = await refused(pinnedQuery({ table: 'dbo.Nowhere' }, schema, 'mcp'));
+    expect(missing.message).not.toMatch(/FormaSample|Nowhere/);
+    expect(missing.fromFile).toEqual({ query: [expect.stringMatching(/Nowhere.*FormaSample/)] });
+    const part = await refused(pinnedQuery({ table: 'dbo.Orders', columns: ['Freight', 'Nope'] }, schema, 'mcp'));
+    expect(part.message).not.toMatch(/Nope|Orders/);
+    expect(part.fromFile).toEqual({ query: [expect.stringContaining('Nope')] });
+    const temp = await refused(pinnedQuery({ procedure: 'dbo.usp_TempTable' }, schema, 'mcp'));
+    expect(temp.message).toMatch(/^The layout does not say what the stored procedure given returns/);
+    expect(temp.message).not.toContain('usp_TempTable');
+    // The person's words name both, as before.
+    expect((await refused(pinnedQuery({ table: 'dbo.Nowhere' }, schema, 'cli'))).message).toMatch(/Nowhere.*FormaSample/);
+    expect((await refused(pinnedQuery({ procedure: 'dbo.usp_TempTable' }, schema, 'cli'))).message).toContain('dbo.usp_TempTable');
+    // Sample rows of another database: the two names apart for the server, in the words for a person.
+    const other = SAMPLE_EXPORT.replace('"database":"FormaSample"', '"database":"Payroll</database>"');
+    const mcp = await refused(readDatabase(job(SCHEMA_EXPORT, { samples: [{ name: 'rows.txt', bytes: bytes(other) }] }), 'mcp'));
+    expect(mcp.message).toBe('The sample rows in "rows.txt" are of another database than the layout\'s: give sample rows of the same database as the layout. Nothing was asked of the AI, and nothing written.');
+    expect(mcp.fromFile).toEqual({ databases: { samples: 'Payroll</database>', layout: 'FormaSample' } });
+    const cli = await refused(readDatabase(job(SCHEMA_EXPORT, { samples: [{ name: 'rows.txt', bytes: bytes(other) }] }), 'cli'));
+    expect(cli.message).toContain('Payroll</database>');
+    expect(cli.fromFile).toBeUndefined();
   });
 
   it('says where to choose a query in each caller\'s words, never the Data tab\'s', () => {

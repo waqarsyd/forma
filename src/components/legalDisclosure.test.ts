@@ -28,6 +28,7 @@ import { createHash } from 'node:crypto';
 import { FIRESTORE_CACHE_PREFIX, SIGNED_OUT_DATABASES, SIGNED_OUT_LOCAL_KEYS, SIGNED_OUT_LOCAL_PREFIXES } from '../lib/signOut';
 import { DEFAULT_LEARNING_SETTINGS, MAX_LOCAL } from '../lib/learning';
 import { TOOL_LIST } from '../mcp/toolList';
+import { CLI_COMMANDS } from '../mcp/cliCommands';
 import { localUrlProblem } from '../mcp/aiSettings';
 
 /** Vitest runs with the repo root as cwd — see the same note in routes.test.ts. */
@@ -314,6 +315,8 @@ const NOT_STORED: Record<string, string> = {
   'forma-repx': 'a link scheme',
   // lib/router.ts: the event a route change dispatches in the page.
   'forma:routechange': 'an event name',
+  // src/mcp/databaseTools.ts (the CLI work's wave 7): the MCP server's resource address for its layout script, no storage.
+  'forma://sql/layout-script': 'a resource address',
 };
 
 /** Every source file under src but the tests, as text. */
@@ -678,6 +681,9 @@ describe("the policy covers Forma's MCP server", () => {
   it('reads the server, its tools and what they load, so a scan that stopped finding them cannot pass empty', () => {
     const paths = files.map((f) => f.path);
     for (const p of ['src/mcp/run.mjs', 'src/mcp/stdio.ts', 'src/mcp/formaServer.ts', 'src/mcp/reportTools.ts', 'src/mcp/toolList.ts', 'src/mcp/aiTools.ts', 'src/mcp/genJobs.ts']) expect(paths).toContain(p);
+    // And its command line, a second entry in the same folder (2026-11-25, the CLI and Forma Designer work's wave 7, SEC-8):
+    // the walk starts from every file there, so the command line's own modules and every import they make are read too.
+    for (const p of ['src/mcp/cli.mjs', 'src/mcp/cliEntry.ts', 'src/mcp/commandLine.ts', 'src/mcp/folderBatch.ts', 'src/mcp/designerVerbs.ts', 'src/mcp/nodeDatabase.ts']) expect(paths).toContain(p);
     // The AI tools' path to the AI is followed into the web app's own modules.
     if (TOOL_LIST.some((t) => t.needsAi)) for (const p of ['src/lib/generationCore.ts', 'src/services/geminiService.ts', 'src/lib/genai.ts', 'src/lib/aiProvider.ts']) expect(paths).toContain(p);
   });
@@ -744,11 +750,51 @@ describe("the policy covers Forma's MCP server", () => {
       expect(policy).toMatch(/from Forma’s MCP server or its command line, by giving it the layout file with a request/);
       expect(policy).not.toMatch(/by saying yes when Forma asks first\. Otherwise none of it is sent/);
     }
-    if (cli.includes("'--samples'")) expect(policy).toMatch(/sample values only from the command line, when you pass them with --samples/);
+    if (cli.includes("'--samples'")) expect(policy).toMatch(/sample values only when you pass them to the command line with --samples/);
     // The CLI and Forma Designer work's wave 6 (2026-11-25, OC6): a layout read through a connection Forma Designer keeps, and
     // the sample rows of the tables the person names, are routes of their own.
-    if (cli.includes("'--connection'")) expect(policy).toMatch(/from its command line on Windows by naming a connection the Forma Designer app keeps for you, whose layout Forma Designer reads on your computer/);
-    if (cli.includes("'--sample-objects'")) expect(policy).toMatch(/or name the tables with --sample-objects\)\. Otherwise none of it is sent\./);
+    if (cli.includes("'--connection'")) expect(policy).toMatch(/or on Windows by naming a connection the Forma Designer app keeps for you, .*whose layout Forma Designer reads on your computer/);
+    if (cli.includes("'--sample-objects'")) expect(policy).toMatch(/or name the tables with --sample-objects/);
+    // That work's wave 7 (2026-11-25, OC6): the server reads a connection only when the person lists it in its settings, and
+    // sends sample values only when the person turns them on there (src/mcp/databaseTools.ts, read in stdio.ts alone).
+    const server = readFileSync(resolve(CLONE, 'src/mcp/databaseTools.ts'), 'utf8');
+    if (server.includes('FORMA_DATABASE_CONNECTIONS')) expect(policy).toMatch(/which the MCP server reads only when you list it in its settings/);
+    if (server.includes('FORMA_DATABASE_SAMPLES')) {
+      expect(policy).toMatch(/or turn them on in the MCP server’s settings and give them with a request\)\. Otherwise none of it is sent\./);
+      expect(policy).toMatch(/a database layout given with a request \(its names, and sample values only when you turned them on in the server’s settings\)/);
+      expect(policy).not.toMatch(/sample values only from the command line/);
+    }
+  });
+
+  /*
+   * Its command line (2026-11-25, the CLI and Forma Designer work's wave 7;
+   * SEC-8 and LEGAL-1 of its design audit). The server's section says "your
+   * computer" and "your assistant's settings", both still true of the server;
+   * the command line runs where the person runs it, a CI runner included,
+   * whose computer is the CI provider's, and reads its key from the
+   * environment it runs in, a CI secret's included. So it has a section of its
+   * own, held while a command asks the AI (cliCommands.ts), and the server's
+   * sentences stay as they are.
+   */
+  it('says where the command line sends, from which computer, and where its key is kept, while a command asks the AI', () => {
+    const asksAi = CLI_COMMANDS.filter((c) => c.needsAi).map((c) => c.name);
+    if (!asksAi.length) return;
+    expect(legal).toMatch(/heading: 'Forma’s command line'/);
+    expect(policy).toMatch(/a program you run yourself from a copy of the code, on your own computer or on a CI runner you choose/);
+    expect(policy).toMatch(/Its commands that make and change a report, and only those, send what the report needs to the AI you set up for it, with your own key/);
+    expect(policy).toMatch(/The computer it runs on sends them straight to Google Gemini or OpenRouter, never through Forma, or to a local AI, which it reaches only on that same computer/);
+    expect(policy).toMatch(/It reads your key from the environment it runs in, where you keep it — your own environment, or your CI provider’s store of secrets/);
+    expect(policy).toMatch(/On a CI runner, the computer is your CI provider’s: your files and your key are on it for the job, under that provider’s terms/);
+    expect(policy).toMatch(/the command line sends no learning events and no error reports/);
+    // What it sends of a database is the routes it has (cliCommands.ts), as the SQL Server paragraph says.
+    const cli = readFileSync(resolve(process.cwd(), 'src/mcp/cliCommands.ts'), 'utf8');
+    if (cli.includes("'--samples'")) expect(policy).toMatch(/sample values only when you pass them with --samples/);
+    if (cli.includes("'--sample-objects'")) expect(policy).toMatch(/or name the tables with --sample-objects\), your words and the report/);
+    // "Only on that same computer" is the code's, as for the server: the command line reads its AI through the same aiSettings.ts.
+    expect(localUrlProblem('http://192.168.1.20:11434/v1')).not.toBeNull();
+    // The keys paragraph and OpenRouter's line name it beside the server.
+    expect(policy).toMatch(/and the command line from the environment it runs in, as “Forma’s command line” says/);
+    expect(policy).toMatch(/or set it up for Forma’s MCP server or its command line, with your own key/);
   });
 });
 
@@ -942,8 +988,21 @@ describe('the legal copy and its date change together', () => {
      person's computer, and its --sample-objects the rows of the tables
      named, so the paragraph names that route and that act. Substantive, and
      already that day's date.
+
+     Moved again the same day (that work's wave 7, OC6): the MCP server takes
+     a database's layout with a request, a Forma Designer connection only
+     when the person lists it in its settings, and sample values only when
+     the person turns them on there, so the SQL Server paragraph and "Forma
+     from an AI assistant" say so. Substantive, and already that day's date.
+
+     Moved again the same day (that work's wave 7, its docs; SEC-8 and
+     LEGAL-1): "Forma's command line", a section of its own, says what its
+     AI commands send, from the computer it runs on, where its key is kept (the
+     person's environment or their CI provider's store of secrets), and that a
+     CI runner is the provider's computer; the keys paragraph and OpenRouter's
+     line name it. Substantive, and already that day's date.
      */
-  const EXPECTED_COPY_HASH = '5da72d14577c';
+  const EXPECTED_COPY_HASH = 'af39b50d5691';
   const EXPECTED_UPDATED = '25 November 2026';
 
   it('has not changed the terms or policy without moving the date', () => {

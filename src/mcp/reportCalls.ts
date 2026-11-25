@@ -65,7 +65,8 @@
  * files of sample rows the person passed, the query pinned, the connection's
  * name), judged with the rest before the call waits and read at its turn,
  * as the job's `database` (genJobs.ts *A database*); the command line's
- * `--database`, the server's tools taking none until that work's wave 7. A
+ * `--database`, and since that work's wave 7 the server's `database` and
+ * `connection` (databaseTools.ts). A
  * result made with one, or with a layout the core found among the data
  * files (D1-1), says whether the report is bound (`bound`) and, apart under
  * `fromFile.binding`, what it reads or why not: the names are the layout's
@@ -255,16 +256,19 @@ export async function readJudged(judged: readonly Judged[], voice: Voice, maxByt
  * wave 5; D1-2, D1-7, OC6): the layout file, the files of sample rows the
  * person passed (their values go to the AI: passing them is the person's
  * consent, OC6), the query pinned as JSON (databaseAi.ts `QueryJson`), and
- * the connection a report names when it names none. The MCP server's tools
- * take none until that work's wave 7; the command line's `--database`.
+ * the connection a report names when it names none: the command line's
+ * `--database`, and since that work's wave 7 the MCP server's `database`
+ * (databaseTools.ts), its sample rows only while the person's switch in the
+ * server's entry is on (OC6).
  *
  * Since that work's wave 6 (2026-11-25, D2-6) the layout and the sample rows
  * can also be text already read, as `LayoutBytes` (a name for what is said
- * of it, and its bytes): the command line's `--connection`, whose layout
- * Forma Designer printed (designerVerbs.ts) on the thread that called,
- * before the job, so the job is handed what a layout file's bytes would be
- * and no worker ever starts a program. Such text is no file: nothing judges
- * it, and no output can be written over it.
+ * of it, and its bytes): the command line's `--connection`, and since wave 7
+ * the server's `connection`, whose layout Forma Designer printed
+ * (designerVerbs.ts) on the thread that called, before the job, so the job
+ * is handed what a layout file's bytes would be and no worker ever starts a
+ * program. Such text is no file: nothing judges it, and no output can be
+ * written over it.
  */
 export interface DatabaseInput {
   layout: DatabaseSource;
@@ -329,8 +333,11 @@ export function bindingParts(binding: Binding | null): { bound: boolean | null; 
   return { bound, text };
 }
 
-/** What a host's model is told of a binding, the names apart under fromFile (D1-10); the command line prints the binding itself. */
-const BOUND_SAID = {
+/**
+ * What a host's model is told of a binding, the names apart under fromFile (D1-10); the command line prints the binding
+ * itself. Exported since the CLI work's wave 7, for repx_edit's and repx_convert's summaries (reportTools.ts).
+ */
+export const BOUND_SAID = {
   mcp: (bound: boolean) =>
     bound ? 'The report is bound to the database layout given; fromFile.binding says what it reads.' : 'The report is not bound to the database layout given; fromFile.binding says why.',
   cli: () => null,

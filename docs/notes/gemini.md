@@ -24,7 +24,7 @@ Because the key belongs to the user rather than to Forma, proxying generation th
 
 ## Where the user's key lives
 
-`src/services/keyVault.ts` holds the whole storage story of the web app. Three tiers, and the key is never persisted in plaintext anywhere the web app keeps it. Forma's MCP server is outside these tiers, and the pages say so rather than stretching this sentence to it: its key is in the server's entry wherever the user's AI host keeps it, readable, in the host's configuration file or, through a `${FORMA_GEMINI_KEY}` reference, the user's environment ([mcp.md](mcp.md) — *The AI tools make and revise a report with the user's own AI*).
+`src/services/keyVault.ts` holds the whole storage story of the web app. Three tiers, and the key is never persisted in plaintext anywhere the web app keeps it. Forma's MCP server and its command line are outside these tiers, and the pages say so rather than stretching this sentence to them. The server's key is in its entry wherever the user's AI host keeps it, readable, in the host's configuration file or, through a `${FORMA_GEMINI_KEY}` reference, the user's environment ([mcp.md](mcp.md) — *The AI tools make and revise a report with the user's own AI*). The command line's (since 2026-11-24) is wherever the person keeps it for the environment a command runs in: their own environment, or, on a CI runner, their CI provider's store of secrets, handed to the one step that needs it, on the provider's computer for the job (the CLI and Forma Designer work's SEC-8 and LEGAL-1; [mcp.md](mcp.md) — *The command line in CI*). Neither reads a `.env` or a key from its command.
 
 | Tier | Store | Lifetime |
 |---|---|---|

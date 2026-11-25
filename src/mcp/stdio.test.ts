@@ -53,7 +53,7 @@
  * given a minute for a cold tsx compile.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -406,4 +406,53 @@ describe('the stdio server, started as a host starts it', () => {
     expectOnlyJsonRpc(s.out());
     expect(s.err()).toContain('an uncaught exception; the server stops');
   });
+});
+
+/**
+ * A stand-in for Forma Designer's `sql-list`, for the server started as a host starts it (the CLI and Forma Designer work's
+ * wave 7, D2-11): on Windows the server is handed, through FORMA_DESIGNER, a copy of Node's own program named
+ * RepxDesigner.exe, a real Windows program whose file version (Node's) the server reads before it starts it, and which,
+ * started as `RepxDesigner.exe sql-list --check --no-load` in its own folder, runs this file, named `sql-list`, beside it.
+ * Written for either module system Node may read an extensionless file as: no import, no require.
+ */
+const STAND_IN_LIST = `const kept = [{ name: 'ShopLive', mode: 'windows', database: 'FormaSample' }, { name: 'Payroll', mode: 'login', database: 'HR_Private' }];
+const fine = process.argv.slice(2).join(' ') === '--check --no-load';
+process.stdout.write(JSON.stringify(fine ? { formaDesignerVerb: 1, verb: 'sql-list', version: '1.2.0', ok: true, connections: kept } : { formaDesignerVerb: 1, verb: 'sql-list', ok: false, problem: 'usage', error: 'no sentinel' }) + '\\n', () => process.exit(fine ? 0 : 2));
+`;
+
+describe("the server's database tools, as a host runs the server", () => {
+  it(
+    'lists the connections the person listed through a stand-in for Forma Designer on Windows and refuses in words elsewhere, serves the layout script, and refuses sample rows the person did not turn on',
+    { timeout: 120_000 },
+    async () => {
+      const designerFolder = mkdtempSync(join(scratch, 'designer-'));
+      const exe = join(designerFolder, 'RepxDesigner.exe');
+      if (process.platform === 'win32') {
+        copyFileSync(process.execPath, exe);
+        writeFileSync(join(designerFolder, 'sql-list'), STAND_IN_LIST);
+      }
+      const s = start('', { FORMA_MCP_MOCK: '1', FORMA_DATABASE_CONNECTIONS: 'shoplive;Gone', FORMA_DESIGNER: process.platform === 'win32' ? exe : 'C:\\Tools\\RepxDesigner.exe' });
+      const init = await s.request(1, 'initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'smoke', version: '1' } });
+      expect(init.result.instructions).toContain('database_connections');
+      s.notify('notifications/initialized');
+      const listed = await s.request(2, 'tools/call', { name: 'database_connections', arguments: {} }, 60_000);
+      if (process.platform === 'win32') {
+        expect(listed.result.isError, `${JSON.stringify(listed).slice(0, 600)}\n${s.err().slice(-1000)}`).toBeUndefined();
+        expect(listed.result.structuredContent).toMatchObject({ connections: [{ name: 'ShopLive', signIn: 'windows' }], notKept: ['Gone'], samplesAllowed: false, fromFile: { databases: [{ connection: 'ShopLive', database: 'FormaSample' }] } });
+        // A connection Forma Designer keeps that the person did not list is never said.
+        expect(JSON.stringify(listed)).not.toMatch(/Payroll|HR_Private/);
+      } else {
+        expect(listed.result.isError).toBe(true);
+        expect(listed.result.content[0].text).toMatch(/^Forma Designer runs on Windows, and this computer is not running Windows\. Send the database's layout as a file with database instead/);
+      }
+      const script = await s.request(3, 'resources/read', { uri: 'forma://sql/layout-script' });
+      expect(script.result.contents[0].text).toMatch(/^-- Forma: your database's layout, for designing reports\./);
+      const samples = await s.request(4, 'tools/call', { name: 'generate_report', arguments: { description: 'Orders', database: join(s.cwd, 'layout.txt'), samples: [join(s.cwd, 'rows.txt')], output: join(s.cwd, 'never.repx') } });
+      expect(samples.result.isError).toBe(true);
+      expect(samples.result.content[0].text).toMatch(/^Sample rows go to the AI only when the person turns them on for this server: FORMA_DATABASE_SAMPLES=1/);
+      expect(await leaves(s)).toBe(0);
+      expect(expectOnlyJsonRpc(s.out())).toBe(4);
+      expect(readdirSync(s.cwd)).toEqual([]);
+    },
+  );
 });

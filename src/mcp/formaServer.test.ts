@@ -15,6 +15,7 @@ import { posix } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { AI_TOOLS, FORMA_INSTRUCTIONS, NO_AI_TOOLS, createFormaServer, formaVersion, nodeSystem, type FormaServerOptions } from './formaServer';
 import { CALLS_AI } from './aiTools';
+import { LAYOUT_SCRIPT_URI } from './databaseTools';
 import { NO_AI } from './reportTools';
 import { noRootMessage, readEnvRoots, type EnvRoots } from './roots';
 import { SKILL_PREFACE, SKILL_URI, loadRepxSkill, skillText } from './skillResource';
@@ -218,7 +219,17 @@ describe('the tool list', () => {
       if (entry.name !== 'forma_status') expect(tools[i].description.includes(NO_AI), entry.name).toBe(!entry.needsAi);
       // A tool that calls an AI says so, and that it spends the user's own quota (wave 8).
       expect(tools[i].description.includes(CALLS_AI), entry.name).toBe(entry.needsAi);
-      expect(tools[i].annotations.openWorldHint, entry.name).toBe(entry.needsAi);
+      // Open-world as toolList.ts says (the CLI work's wave 7, MCP-1: it was pinned to needsAi, which left a tool that
+      // reaches a SQL Server through Forma Designer and calls no AI no honest hint), and never closed while it asks an AI.
+      expect(tools[i].annotations.openWorldHint, entry.name).toBe(entry.openWorld);
+      if (entry.needsAi) expect(entry.openWorld, entry.name).toBe(true);
+      // Every tool is named in the instructions a host's model reads first (the same wave).
+      expect(FORMA_INSTRUCTIONS, entry.name).toContain(entry.name);
+    }
+    // A tool that takes connection may reach a SQL Server, so it is open-world; one that takes none is not, the AI aside.
+    for (const [i, entry] of TOOL_LIST.entries()) {
+      const takesConnection = 'connection' in (tools[i].inputSchema.properties ?? {});
+      expect(entry.openWorld, entry.name).toBe(entry.needsAi || takesConnection);
     }
     // The instructions every host's model reads say no tool calls an AI exactly while none does (R11 of the wave-4 review),
     // and name each tool that does, once one does (wave 8).
@@ -234,7 +245,10 @@ describe('the tool list', () => {
     // Findings PROTO-11 and GAP2-5.
     const c = await legacy();
     const listed = (await c.request('resources/list')).result?.resources as Record<string, any>[];
-    expect(listed).toEqual([expect.objectContaining({ uri: SKILL_URI, name: 'devexpress-repx', mimeType: 'text/markdown' })]);
+    expect(listed).toEqual(
+      expect.arrayContaining([expect.objectContaining({ uri: SKILL_URI, name: 'devexpress-repx', mimeType: 'text/markdown' }), expect.objectContaining({ uri: LAYOUT_SCRIPT_URI })]),
+    );
+    expect(listed).toHaveLength(2);
     const contents = (await c.request('resources/read', { uri: SKILL_URI })).result?.contents as Record<string, any>[];
     const served: string = contents[0].text;
     const file = skillText();
@@ -248,6 +262,27 @@ describe('the tool list', () => {
     expect(targets.length).toBeGreaterThan(0);
     for (const target of targets) expect(SKILL_PREFACE, target).toContain(target);
     await c.close();
+  });
+
+  /*
+   * The CLI and Forma Designer work's wave 7 (D1-6): Forma's read-only layout script, whose saved answer every tool's
+   * database argument takes, served whole in both eras, so nobody copies it from the web page; the sample script is not
+   * served (databaseTools.ts says why).
+   */
+  it("serves Forma's database layout script as a resource, the Data tab's own, in both eras", async () => {
+    const { SCHEMA_SCRIPT } = await import('../lib/sqlSchemaScript');
+    const c = await legacy();
+    const listed = ((await c.request('resources/list')).result?.resources as Record<string, any>[]).find((r) => r.uri === LAYOUT_SCRIPT_URI);
+    expect(listed).toMatchObject({ name: 'sql-layout-script', mimeType: 'application/sql' });
+    expect(listed?.description).toMatch(/no rows of data, no logins/);
+    const contents = (await c.request('resources/read', { uri: LAYOUT_SCRIPT_URI })).result?.contents as Record<string, any>[];
+    expect(contents).toEqual([{ uri: LAYOUT_SCRIPT_URI, mimeType: 'application/sql', text: SCHEMA_SCRIPT }]);
+    await c.close();
+    const m = await modern();
+    const read = await m.request('resources/read', { uri: LAYOUT_SCRIPT_URI, _meta: meta() });
+    expect((read.result?.contents as Record<string, any>[])[0].text).toBe(SCHEMA_SCRIPT);
+    expect(JSON.stringify((await m.request('resources/list', { _meta: meta() })).result)).not.toMatch(/sample-script|sampleScript/);
+    await m.close();
   });
 
   it('sets every hint on every tool, takes an object, and keeps each description and the instructions within limits', async () => {

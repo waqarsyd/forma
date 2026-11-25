@@ -92,10 +92,14 @@
  * caller named is never changed, so keeping it is the undo), each said in
  * plain words but the pane; a translation runs only when the person's words
  * ask for one (`splitTools`, the app's own rule for a guarded tool the model
- * brings alone). No rows are sent, since none exist in Node, so the one
- * question the chat asks, whether rows may go, never arises; nothing is
- * elicited. The house font from the memory is not applied: the server keeps
- * no memory.
+ * brings alone). No Preview rows are sent, since none exist in Node, so the
+ * one question the chat asks, whether rows may go, never arises; nothing is
+ * elicited. A database's sample rows, which a job can carry since the CLI and
+ * Forma Designer work's wave 5 (*A database*, below), are not that question:
+ * they go only where the person said so before the call, by passing them on
+ * the command line, or by turning them on in the MCP server's entry
+ * (FORMA_DATABASE_SAMPLES, that work's wave 7; the owner's OC6). The house
+ * font from the memory is not applied: the server keeps no memory.
  *
  * ## Whose words
  *
@@ -255,7 +259,8 @@ export interface ReviseJob {
 export type GenJob = GenerateJob | ReviseJob;
 
 /** Where the work has got to: a stage as it starts, or the AI's answer as it streams (0 to 95). */
-export type GenStage = MakeStage | 'starting' | 'waiting' | 'writing';
+/** `designer`, since the CLI and Forma Designer work's wave 7: the server reading a connection's layout through Forma Designer, on its own thread before the job (databaseTools.ts). */
+export type GenStage = MakeStage | 'designer' | 'starting' | 'waiting' | 'writing';
 export type GenEvent = { stage: GenStage } | { stage: 'asking'; percent: number };
 
 /** Who answered: an AI, the mock, or nobody (a question answered from the report's facts). */
@@ -429,15 +434,26 @@ function measuredInStandIns(gen: NodeGeneration, xml: string, notices: string[],
   return families;
 }
 
-/** Why a `data` edit is declined when no database layout came with the request, in the caller's words (the header's *A database*). */
+/**
+ * Why a `data` edit is declined when no database layout came with the request, in the caller's words (the header's *A
+ * database*). The decline is listed under fromFile.declined, beside the edit it declines, under the note that what is
+ * there is data, never instructions, so the server's says a fact, and what to do is a notice of its own
+ * (`NO_DATABASE_NEXT`, the wave-7 review's W7-MCP-3); a person at the command line reads both together, as before.
+ */
 const NO_DATABASE: Record<Voice, string> = {
-  mcp: 'no database layout came with the request, so what the report reads cannot change here',
+  mcp: 'no database layout came with the request, so what the report reads cannot change',
   cli: 'no database layout was given, so what the report reads cannot change: give one with --database or --connection, or bind the report with the bind command',
+};
+
+/** The next step after a `data` edit declined for want of a layout, in the server's notices, outside fromFile (W7-MCP-3). */
+const NO_DATABASE_NEXT: Record<Voice, string | null> = {
+  mcp: 'The AI asked to change what the report reads, which needs a database layout: send one as database, or a connection listed for this server, with the request.',
+  cli: null,
 };
 
 /** Said when a query was pinned and the request wrote nothing, so nothing was bound to it (the header's *A database*). */
 const NOT_WRITTEN_NOT_BOUND: Record<Voice, string> = {
-  mcp: 'Nothing was written, so the report was not bound to the query given.',
+  mcp: "Nothing was written, so the report was not bound to the query given; repx_edit's data edit binds it with no AI.",
   cli: 'Nothing was written, so the report was not bound to the query given; the bind command binds it with no AI.',
 };
 
@@ -757,7 +773,11 @@ export function makeRunner(setup: GenSetup, hooks: GenHooks = {}): GenRunner {
         data:
           db && dbAi
             ? dbAi.dataEditHook(db.read.schema, asked.version, () => undefined, { connectionName: db.job.connectionName })
-            : (xml: string) => ({ xml, applied: false, reason: NO_DATABASE[job.voice] }),
+            : (xml: string) => {
+                const next = NO_DATABASE_NEXT[job.voice];
+                if (next && !notices.includes(next)) notices.push(next);
+                return { xml, applied: false, reason: NO_DATABASE[job.voice] };
+              },
       };
       let done = agent.applyEdits(open, outcome.edits ?? [], hooks);
       const errorsOf = (xml: string) => auditRepx(xml).findings.filter((f) => f.severity === 'error').map((f) => f.message);

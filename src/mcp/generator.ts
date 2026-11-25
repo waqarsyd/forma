@@ -130,7 +130,7 @@ const WORKER_NAME: Record<Voice, string> = { mcp: "the AI tools' worker", cli: "
 
 const GEN_WORKER_FILE = new URL('./genWorker.mjs', import.meta.url);
 
-type Reply = { id: number; event: GenEvent } | { id: number; ok: true; value: GenDone | null } | { id: number; ok: false; refusal?: string; error?: string };
+type Reply = { id: number; event: GenEvent } | { id: number; ok: true; value: GenDone | null } | { id: number; ok: false; refusal?: string; fromFile?: Record<string, unknown>; error?: string };
 
 export interface WorkerGeneratorOptions {
   setup: GenSetup;
@@ -210,7 +210,7 @@ export function workerGenerator(options: WorkerGeneratorOptions): Generator {
           if ('event' in reply) {
             if (!signal.aborted) tell(reply.event);
           } else if (reply.ok) end(true, () => resolve(reply.value));
-          else if (reply.refusal !== undefined) end(true, () => reject(new ToolRefusal(reply.refusal)));
+          else if (reply.refusal !== undefined) end(true, () => reject(new ToolRefusal(reply.refusal, reply.fromFile)));
           else end(false, () => reject(workerError(reply.error)));
         };
         const onError = (error: Error & { code?: string }) =>
@@ -297,6 +297,8 @@ export function oneAtATime(inner: Generator): Generator & { readonly busy: boole
 
 /** Each stage's part of 0 to 100, and what a progress notification says while it runs. */
 export const STAGES: Readonly<Record<GenStage, { from: number; to: number; message: string }>> = {
+  // Before the call takes its turn (the CLI work's wave 7): a connection's layout read through Forma Designer.
+  designer: { from: 0, to: 2, message: "Reading the database's layout through Forma Designer." },
   waiting: { from: 0, to: 2, message: 'Waiting for the report before it to finish.' },
   starting: { from: 2, to: 4, message: 'Starting.' },
   reading: { from: 4, to: 15, message: 'Reading the files.' },

@@ -105,16 +105,34 @@ repair pass or `thinkingBudget` should quote its scorecard before and after in t
 commit message.** *The fidelity benchmark* in `docs/notes/gemini.md` says what it
 measures and why.
 
-For one `.repx` on its own, `npx tsx scripts/repx.ts audit|repair|pdf <file.repx>` runs
-Forma's audit, its repair chain or a draft PDF from the command line, with no browser and
-no key; `audit` exits 1 on an error. It is a tool for working on a report, not one of the
-checks, and [`docs/skills/devexpress-repx/SKILL.md`](docs/skills/devexpress-repx/SKILL.md)
-says what each finding and repair means. Forma's MCP server offers the same to an AI
-assistant, with an outline and edits, and two tools that make and revise a report with the
-user's own AI ([`README.md`](README.md), *Forma from an AI assistant*); a change to
-`src/mcp` or `scripts/repx.ts` is a change to what [`docs/notes/mcp.md`](docs/notes/mcp.md)
-and the pages that describe it say. Their tests stand the AI in (`FORMA_MCP_MOCK`, or a
-test's own stand-in), since a real one spends the key's quota.
+For reports outside the browser, Forma's command line runs from any folder as
+`node <clone>/src/mcp/cli.mjs <command>`, `<clone>` being your clone's full path, and
+`node src/mcp/cli.mjs --help` in the clone lists its commands: `audit` (a report, or every
+report in a folder; exit 1 on an error), `outline`, `repair`, `pdf`, `edit`, `convert`, `bind`
+and `sql-script` with no browser and no key, `generate` and `revise` with an AI set up in the
+environment, `batch` for a folder, and `connections` through Forma Designer
+([`README.md`](README.md), *Forma from the command line*). It is a tool for working on
+reports, not one of the checks, and
+[`docs/skills/devexpress-repx/SKILL.md`](docs/skills/devexpress-repx/SKILL.md) says what each
+finding and repair means. `scripts/repx.ts`, the command line before 2026-11-24, only
+forwards to it. Forma's MCP server offers the same to an AI assistant, with an outline and
+edits, the conversion of an SSRS or FastReport report, a report bound to a database's layout,
+and two tools that make and revise a report with the user's own AI ([`README.md`](README.md),
+*Forma from an AI assistant*); a change to `src/mcp` or `scripts/repx.ts` is a change to what
+[`docs/notes/mcp.md`](docs/notes/mcp.md) and the pages that describe it say, and a command
+added, renamed or made to ask the AI is one to `src/mcp/cliCommands.ts`, which
+`publicClaims.test.ts` holds the Docs page, the README and the REPX skill to.
+
+To test the command line, run `npx vitest run src/mcp/commandLine.test.ts` (and
+`folderBatch.test.ts`, `cliDatabase.test.ts` and `designerVerbs.test.ts` beside it): they call
+`main` in the test's own thread and spawn the exact command above from a folder outside the
+clone. By hand, `--mock` gives the mock invoice in place of the AI's answer; an AI must still
+be set up, so point one at nothing (`FORMA_LOCAL_MODEL=x` and
+`FORMA_LOCAL_URL=http://127.0.0.1:1/v1` in the environment), and a slip sends no request.
+`--dry-run` shows a batch's plan, reading nothing. The tests stand the AI in (`FORMA_MCP_MOCK` for the server, `--mock`
+for the command line, or a test's own stand-in, the AI pointed at 127.0.0.1:1 so a slip sends
+nothing), since a real one spends the key's quota, and Forma Designer in (a Node script
+written at run time), since CI runs on Linux and no test starts the real one.
 
 This table deliberately does not say how many tests there are.
 [`docs/notes/testing.md`](docs/notes/testing.md) is the only place that number is
@@ -223,10 +241,11 @@ enforcement mechanisms was not earning its keep.
   `CLAUDE.md` carried the same wrong pair, corrected itself, and this copy was missed.)
 - `src/lib` is browser code. `src/server` is not. `server.ts` is the only importer of the
   latter.
-- `src/mcp`, Forma's MCP server, is Node only too: no browser code imports it, its entry is
-  `src/mcp/stdio.ts` (a host runs `node <clone>/src/mcp/run.mjs`, which loads it), and an
-  MCP tool goes there. `src/mcp/boundaries.test.ts` fails when either folder's rule is
-  broken.
+- `src/mcp`, Forma's MCP server and its command line, is Node only too: no browser code
+  imports it, its two entries are `src/mcp/stdio.ts` (a host runs
+  `node <clone>/src/mcp/run.mjs`, which loads it) and `src/mcp/cliEntry.ts` (a person runs
+  `node <clone>/src/mcp/cli.mjs`, which loads it), and an MCP tool or a command goes there.
+  `src/mcp/boundaries.test.ts` fails when either folder's rule is broken.
 - `PascalCase.tsx` for components, `camelCase.ts` for everything else.
 - Tests colocated as `*.test.ts`; `tests/` at the root is **only** for emulator tests, and
   that separation is what stops `npm test` starting a JVM.

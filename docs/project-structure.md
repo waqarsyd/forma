@@ -657,9 +657,10 @@ src/
                        the REPX skill attached), version (Forma's version
                        from package.json, for both entries, with no SDK),
                        toolList (the tools in their order, each read-only
-                       or not and needing an AI or not: a pure list, no
-                       SDK, which publicClaims.test.ts holds the Docs page
-                       and README to),
+                       or not, needing an AI or not and, since the CLI and
+                       Forma Designer work's wave 7, open-world or not: a
+                       pure list, no SDK, which publicClaims.test.ts holds
+                       the Docs page and README to),
                        toolShape (defineTool, the one wrapper every tool goes
                        through: every hint set, object schemas, plain isError
                        results, text read from a file framed as data), caller
@@ -692,7 +693,10 @@ src/
                        the web app's audit, outline, edits, repair chain
                        and draft PDF on a .repx or .vsrepx; the three that
                        write each writing a file, and all five returning a
-                       summary), reportFile (the one way they read a report,
+                       summary; since the CLI and Forma Designer work's wave
+                       7, repx_convert, an SSRS or FastReport report
+                       converted with no AI, and repx_edit's data edit with
+                       a database's layout), reportFile (the one way they read a report,
                        a C# or VB report refused, a file that is not
                        well-formed XML refused and its stored login taken
                        out first, wherever it is stored, and write one,
@@ -805,7 +809,10 @@ src/
                        rest, each file it leaves listed as not started),
                        cliCommands (the commands in their order, each
                        needing an AI, not, or by route, and the launcher's
-                       path: a pure list, no import) and folderBatch (the
+                       path: a pure list, no import, which since that
+                       work's wave 7 publicClaims.test.ts holds the
+                       README, the Docs page's cli article and the REPX
+                       skill to) and folderBatch (the
                        batch's plan, decided before a file is read: the
                        folder walked level by level with no link followed,
                        each file's route by its kind, every name it writes,
@@ -834,7 +841,16 @@ src/
                        deadline or a stop, the call ended soon after it
                        exits whoever holds its pipes; SQL Server's quoted
                        words never repeated), which the command line's
-                       connections and --connection run.
+                       connections and --connection run, and since wave 7
+                       the server's.
+                       Since that work's wave 7, databaseTools (the server's
+                       database arguments on its AI tools, repx_edit and
+                       repx_convert: a layout file, or a Forma Designer
+                       connection read on the thread that answers before the
+                       job; the person's two switches from its entry, the
+                       connections it may read and whether sample rows may go
+                       to the AI; database_connections; and Forma's layout
+                       script served as a resource).
                        Tests beside them: stdoutGuard, toolShape, paths,
                        roots, formaServer and reportTools each have one
                        (formaServer's drives forma_status in both eras and
@@ -875,7 +891,11 @@ src/
                        holds the verbs' helper and the command line's
                        connections and --connection against a Node stand-in
                        for the exe written at run time, so it runs on Linux
-                       too;
+                       too; databaseTools.test.ts holds the server's database
+                       arguments, repx_convert, repx_edit's data edit and
+                       database_connections in both eras, the person's two
+                       switches holding what a host's model may ask for, the
+                       same stand-in started through the helper's seam;
                        boundaries.test.ts holds src/mcp and src/server
                        apart from the browser code
   fonts/               the three self-hosted typefaces as variable woff2, their
@@ -976,10 +996,12 @@ scripts/               dev.mjs (npm run dev:log) and build-server.mjs; the
                        its SqlScripts.cs);
                        repx.ts (since the CLI and Forma Designer work's wave
                        4 a forwarder to Forma's command line's entry,
-                       src/mcp/cliEntry.ts, so `npx tsx scripts/repx.ts
-                       audit|repair|pdf <file>` keeps working from the clone,
-                       a second argument to repair and pdf handed on as
-                       --out; the command line is src/mcp/cli.mjs);
+                       src/mcp/cliEntry.ts, so a line written for it before
+                       then keeps working in a shell in the clone, a second
+                       argument to repair and pdf handed on as --out; the
+                       documented command is src/mcp/cli.mjs, from any
+                       folder, and no doc names this one since that work's
+                       wave 7, DOC-1);
                        fidelity/, the benchmark's runner, which makes each
                        report through the generation core with
                        src/mcp/nodeGeneration's parts, formaDraft.ts (Forma's

@@ -34,7 +34,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { EDIT_LANGUAGE, EDIT_OPS, GROUP_EDIT } from '../lib/editLanguage';
+import { DATA_EDIT, EDIT_LANGUAGE, EDIT_OPS, GROUP_EDIT } from '../lib/editLanguage';
 import { decodeBase64, encodeBase64 } from '../lib/repxSqlDataSource';
 import { createFormaServer, formaVersion, nodeSystem } from './formaServer';
 import { CONNECTION_BY_NAME, LOGIN_REMOVED, fileLines } from './reportFile';
@@ -381,16 +381,22 @@ describe('repx_edit', () => {
     expect(read(at('vsedit', 'Invoice.repx'))).toContain('<Item1 Ref="20" Key="Skip" Value="Skip" />');
   });
 
-  it("takes the chat's ops but data, each told in the chat's own words, as its schema and description say", async () => {
-    expect(EDIT_TOOL_OPS).toEqual(EDIT_OPS.filter((op) => op !== 'data'));
-    const words = `${EDIT_LANGUAGE}\n${GROUP_EDIT}`;
+  // Since the CLI and Forma Designer work's wave 7 (D1-11, OC7) the data edit too, with a database's layout given: its
+  // words the chat's own (editLanguage.ts DATA_EDIT), on its query field, since Claude Code caps a description at 4,096.
+  it("takes every op the chat makes, each told in the chat's own words, as its schema and description say", async () => {
+    expect(EDIT_TOOL_OPS).toEqual([...EDIT_OPS]);
+    const words = `${EDIT_LANGUAGE}\n${GROUP_EDIT}\n${DATA_EDIT}`;
     for (const op of EDIT_TOOL_OPS) expect(words, op).toMatch(new RegExp(`(^- |\\. )${op}:`, 'm'));
     const tools = (await client.request('tools/list')).result?.tools as Record<string, any>[];
     const edit = tools.find((t) => t.name === 'repx_edit')!;
     expect(edit.description).toContain(EDIT_LANGUAGE);
     expect(edit.description).toContain(GROUP_EDIT);
+    expect(edit.description).toMatch(/^- data: query, what the report reads, as its query field says\. With database, or a connection listed for this server, it binds the report with no AI/m);
+    expect(edit.inputSchema.properties.edits.items.properties.query.description).toBe(`For data alone. ${DATA_EDIT}`);
     expect(edit.inputSchema.properties.edits.items.properties.op.enum).toEqual(EDIT_TOOL_OPS);
-    expect(edit.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false });
+    for (const field of ['database', 'connection', 'connectionName']) expect(edit.inputSchema.properties, field).toHaveProperty(field);
+    // It may reach a SQL Server through Forma Designer when given a connection, so it is open-world (MCP-1).
+    expect(edit.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true });
   });
 });
 
@@ -491,17 +497,28 @@ describe('the hints say which tools write (REV4-6)', () => {
       repx_repair: { path },
       repx_edit: { path, edits: [{ op: 'text', control: 'title', text: 'Statement' }] },
       repx_pdf: { path },
+      // Since the CLI and Forma Designer work's wave 7 (GAP1-1): an SSRS report converted beside it.
+      repx_convert: {
+        path: put(
+          join(dir, 'r.rdl'),
+          '<Report xmlns="http://schemas.microsoft.com/sqlserver/reporting/2005/01/reportdefinition"><Body><ReportItems><Textbox Name="t1"><Value>Statement</Value><Top>0in</Top><Left>0in</Left><Height>0.25in</Height><Width>2in</Width></Textbox></ReportItems><Height>1in</Height></Body><PageHeight>11in</PageHeight><PageWidth>8.5in</PageWidth></Report>',
+        ),
+      },
     };
-    // Every tool that needs no AI; the two that call one (wave 8) are held to their hints in aiTools.test.ts.
-    expect(Object.keys(calls)).toEqual(TOOL_LIST.filter((t) => !t.needsAi).map((t) => t.name));
+    // Every tool that needs no AI, but database_connections, which writes nothing and is held where Forma Designer is
+    // stood in for (databaseTools.test.ts); the two that call one (wave 8) are held to their hints in aiTools.test.ts.
+    expect(Object.keys(calls)).toEqual(TOOL_LIST.filter((t) => !t.needsAi && t.name !== 'database_connections').map((t) => t.name));
+    expect(hints.database_connections).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
     for (const [name, args] of Object.entries(calls)) {
       const before = listing();
       expect((await call(name, args)).isError, name).toBeUndefined();
       expect(hints[name].readOnlyHint, name).toBe(listing() === before);
       expect(hints[name].destructiveHint, name).toBe(name === 'repx_edit');
-      expect(hints[name].openWorldHint, name).toBe(false);
+      // Open-world only where a connection, read through Forma Designer, may reach a SQL Server (MCP-1).
+      expect(hints[name].openWorldHint, name).toBe(name === 'repx_edit' || name === 'repx_convert');
     }
     for (const name of ['repx_repair', 'repx_pdf']) expect(hints[name], name).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+    expect(hints.repx_convert).toMatchObject({ readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true });
   });
 });
 

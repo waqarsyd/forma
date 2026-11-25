@@ -46,23 +46,25 @@ export const DOCS_SECTIONS: ReadonlyArray<{ id: string; n: string; title: string
   { id: 'repx', n: '11', title: 'The .repx file', keys: 'repx xml schema serializer band detail bands units grid coordinates export download audit warnings errors checks accessibility' },
   { id: 'designer', n: '12', title: 'Open in the DevExpress designer', keys: 'designer devexpress open in designer forma designer download windows install tray trial apps on device blocked local network smartscreen uninstall' },
   // Forma's MCP server, from an AI assistant (2026-11-24, the MCP work's wave 5, DOC-10).
-  { id: 'mcp', n: '13', title: 'Forma from your AI assistant', keys: 'mcp claude code claude desktop visual studio vs code copilot assistant agent tools stdio command line audit repair outline edit pdf vsrepx generate revise make report key environment' },
-  { id: 'config', n: '14', title: 'Settings and what is worked out', keys: 'config configure settings worked out version paper size letter a4 legal tabloid landscape rtl right to left stored procedure data model picker auto fast balanced local ai ollama lm studio openrouter unit units scale hundredths inch millimetre millimeter pixels locationfloat sizef' },
-  { id: 'saving', n: '15', title: 'Saving your work', keys: 'save saved projects account cloud browser storage sign out history limit how many' },
-  { id: 'share', n: '16', title: 'Sharing a report', keys: 'share sharing link restricted anyone people invite email verified stop sharing collaborate' },
+  { id: 'mcp', n: '13', title: 'Forma from your AI assistant', keys: 'mcp claude code claude desktop visual studio vs code copilot assistant agent tools stdio audit repair outline edit pdf vsrepx generate revise make report key environment' },
+  // Forma's command line (2026-11-25, the CLI and Forma Designer work's wave 7, DOC-3): found by the words a person at a terminal or in CI uses.
+  { id: 'cli', n: '14', title: 'Forma from the command line', keys: 'cli command line terminal shell console ci continuous integration github actions workflow pipeline build gate exit code json script automate folder batch migration audit repair convert bind generate revise' },
+  { id: 'config', n: '15', title: 'Settings and what is worked out', keys: 'config configure settings worked out version paper size letter a4 legal tabloid landscape rtl right to left stored procedure data model picker auto fast balanced local ai ollama lm studio openrouter unit units scale hundredths inch millimetre millimeter pixels locationfloat sizef' },
+  { id: 'saving', n: '16', title: 'Saving your work', keys: 'save saved projects account cloud browser storage sign out history limit how many' },
+  { id: 'share', n: '17', title: 'Sharing a report', keys: 'share sharing link restricted anyone people invite email verified stop sharing collaborate' },
   // 'learning learn train switch' since 2026-11-11 (the full audit's PS-06): the Learning section is described here.
-  { id: 'memory', n: '17', title: 'Memory and house style', keys: 'memory remember from now on forget house style library report library learn kept reports formatting learning train switch learned changes preferences' },
+  { id: 'memory', n: '18', title: 'Memory and house style', keys: 'memory remember from now on forget house style library report library learn kept reports formatting learning train switch learned changes preferences' },
   /* Batch and Revisions are two of the five rail panels and both shipped on
      2026-09-05, and neither appeared anywhere on this page or on Features
      until 2026-09-08 — on a page whose sibling is titled "Everything it does".
      Batch in particular is the migration story: it is the thing a
      prompt-driven competitor structurally cannot offer, and it was the one
      feature a visitor could not discover without opening the app. */
-  { id: 'batch', n: '18', title: 'Batch generation', keys: 'batch bulk many folder drop queue multiple files parallel two three zip archive migration legacy convert retry stop download all at once' },
-  { id: 'revisions', n: '19', title: 'Revision history', keys: 'revisions history versions restore undo diff changed previous rollback compare' },
-  { id: 'shortcuts', n: '20', title: 'Keyboard shortcuts', keys: 'keyboard shortcuts keys hotkeys ctrl cmd command' },
-  { id: 'trouble', n: '21', title: 'Troubleshooting', keys: 'trouble error 404 429 503 quota overload fail slow retired invalid problem draft local not answering context sign in login pop-up popup password' },
-  { id: 'faq', n: '22', title: 'FAQ', keys: 'faq questions common help cost price free billing visual studio photo' },
+  { id: 'batch', n: '19', title: 'Batch generation', keys: 'batch bulk many folder drop queue multiple files parallel two three zip archive migration legacy convert retry stop download all at once' },
+  { id: 'revisions', n: '20', title: 'Revision history', keys: 'revisions history versions restore undo diff changed previous rollback compare' },
+  { id: 'shortcuts', n: '21', title: 'Keyboard shortcuts', keys: 'keyboard shortcuts keys hotkeys ctrl cmd command' },
+  { id: 'trouble', n: '22', title: 'Troubleshooting', keys: 'trouble error 404 429 503 quota overload fail slow retired invalid problem draft local not answering context sign in login pop-up popup password' },
+  { id: 'faq', n: '23', title: 'FAQ', keys: 'faq questions common help cost price free billing visual studio photo' },
 ];
 
 /** Whether every word of `query` appears in the article. An empty query matches everything. */

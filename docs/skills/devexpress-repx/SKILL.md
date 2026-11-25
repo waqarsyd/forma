@@ -11,7 +11,7 @@ Every rule here was measured against the installed DevExpress 20.1 assemblies wi
 `tools/RepxProbe` (a console tool that asks the serializer what it writes and the loader what it
 kept), or by printing; the linked headings hold the measurement.
 
-## Check and repair from the command line
+## Forma's command line
 
 ```powershell
 node <clone>/src/mcp/cli.mjs audit  report.repx                 # findings, one a line; exit 1 on an error
@@ -19,17 +19,33 @@ node <clone>/src/mcp/cli.mjs repair report.repx --out out.repx  # every repair F
 node <clone>/src/mcp/cli.mjs pdf    report.repx --out out.pdf   # the pages as Forma lays them out, a draft
 ```
 
-That is Forma's command line, run with plain node from any folder after a full `npm ci` in the
-clone (since 2026-11-24; `--help` lists every command, `outline` and `edit` among them, and
-`convert`, which makes an SSRS `.rdl` or a FastReport `.frx` into a repaired `.repx` with no AI;
-`bind`, which writes a report's SQL data source for a table, view or stored procedure of a
-database's layout with no AI, the connection by name only, the layout being what `sql-script`'s
-read-only script answers; `audit` takes a folder too, every report directly in it). It never replaces a file unless `--force`
-is given: a file already at the output with other content is left as it is, and the command exits 4,
-as it does when the file system refuses the write (a read-only folder, a full disk). Even with
-`--force` it never writes over a report whose stored login it took out. A usage error exits 2 and an
-internal error 70, so a gate can tell a bad report from a broken tool.
-In a shell in the clone, `npx tsx scripts/repx.ts audit|repair|pdf` still works, forwarding to it.
+That is Forma's command line, run with plain node from any folder after a full `npm ci` in a clone
+of Forma (since 2026-11-24), `<clone>` being that clone's full path; a relative name is read from
+the folder the command runs in, and `--help` lists every command and option. Every command:
+
+| Command | What it does |
+|---|---|
+| `audit` | Checks a `.repx` or `.vsrepx`, or every report directly in a folder, and lists what is still wrong; writes nothing |
+| `outline` | The report as Forma's chat sees it: paper, bands, every control by the name `edit` takes, the fields, its data sources by connection name |
+| `repair` | Every repair Forma makes on a generated report, in the same order, then the audit; writes `<name>.repaired.repx` |
+| `pdf` | A draft PDF laid out by Forma's Preview engine with no data; writes `<name>.pdf` |
+| `edit` | The edits Forma's chat makes, by control name, given with `--edits` as JSON; writes `<name>.edited.repx` |
+| `convert` | An SSRS `.rdl` or `.rdlc` or a FastReport `.frx` made into a repaired `.repx` with no AI; writes `<name>.converted.repx` |
+| `bind` | A report's SQL data source written for a table, view or stored procedure of a database's layout (`--database`), the connection by name only, with no AI; writes `<name>.bound.repx` |
+| `generate` | Needs an AI. A report made as Forma's workspace makes one, from pictures, PDFs, a report or template and/or `--description`; writes `<first file>.generated.repx` |
+| `revise` | Needs an AI. A report changed as `--words` asks, as Forma's chat does, by control name where it can; writes `<name>.revised.repx` |
+| `batch` | Needs an AI for some files. Every report source in a folder, one file at a time, each routed by its kind, under `--out` |
+| `sql-script` | Prints Forma's read-only script for a SQL Server database's layout, whose saved answer `--database` reads |
+| `connections` | Windows, with Forma Designer: the SQL Server connections it keeps for the user, by name. It and `--connection` need the next release of Forma Designer, which adds the command-line verbs they start; until then they say so |
+
+The commands that need an AI read the one set up in the environment the command runs in
+(`FORMA_GEMINI_KEY`, or the other `FORMA_*` names in
+[README.md](../../../README.md), *Forma from the command line*),
+and exit 3 without one; the others never look. It never replaces a file
+unless `--force` is given: a file already at the output with other content is left as it is, and
+the command exits 4, as it does when the file system refuses the write (a read-only folder, a full
+disk). Even with `--force` it never writes over a report whose stored login it took out. A usage
+error exits 2 and an internal error 70, so a gate can tell a bad report from a broken tool.
 
 Run `repair` on anything written by hand or by a model before it is opened in a designer: it is
 the same chain the web app runs on every generated report, in the same order. It keeps code the
@@ -40,23 +56,32 @@ it removed them and exited 0 before).
 ## From Forma's MCP server
 
 With Forma's MCP server connected to your assistant ([README.md](../../../README.md), *Forma from an AI assistant*),
-the same three are tools, with two more: `repx_audit`, `repx_repair` and `repx_pdf`, and
-`repx_outline` (the report as Forma's chat sees it, every control by the name `repx_edit` takes) and
-`repx_edit` (the chat's edits, by control name). None of those calls an AI. Two more do, with
+the same three are tools, with more: `repx_audit`, `repx_repair` and `repx_pdf`, and
+`repx_outline` (the report as Forma's chat sees it, every control by the name `repx_edit` takes),
+`repx_edit` (the chat's edits, by control name), `repx_convert` (an SSRS or FastReport report made
+into a repaired `.repx`) and `database_connections` (the Forma Designer connections the user listed
+for the server). None of those calls an AI. Two more do, with
 the AI the user set up in the server's entry (README.md, *Your AI, and where its key is kept*):
 `generate_report` makes a report from a description and files as Forma's workspace makes one,
 and `revise_report` changes a report as a request in words asks, as Forma's chat does; each
-writes a new `.repx` and never replaces one. Every path is a full path, never a relative name,
-`~` or a Git Bash `/g/...` path, which the tools refuse:
+writes a new `.repx` and never replaces one. A database's layout (`database`, the answer of the
+script the server serves as `forma://sql/layout-script`, saved as a file; or `connection`, a
+listed Forma Designer connection) binds a report: `repx_edit`'s `data` edit and `repx_convert`
+with no AI, the two AI tools with the AI choosing what the report reads unless `procedure`,
+`object` or `query` pins it (README.md, *Your database's layout*). `connection` and
+`database_connections` need Windows and the next release of Forma Designer, which adds the
+command-line verbs they start; until then they say so, and a layout file works everywhere. Every path is a full path,
+never a relative name, `~` or a Git Bash `/g/...` path, which the tools refuse:
 
 ```json
 { "path": "G:\\Reports\\invoice.repx" }
 { "path": "/home/me/reports/invoice.repx", "output": "/home/me/reports/invoice.fixed.repx" }
 ```
 
-`repx_repair`, `repx_edit` and `repx_pdf` each write a new file (`repx_repair` beside the input as
-`<name>.repaired.repx` unless `output` says where), never replace one unless `repx_edit` is asked
-to, and name the file written in their result; `repx_audit` and `repx_outline` write nothing. A
+`repx_repair`, `repx_edit`, `repx_pdf` and `repx_convert` each write a new file (`repx_repair` beside
+the input as `<name>.repaired.repx` unless `output` says where), never replace one unless
+`repx_edit` is asked to, and name the file written in their result; `repx_audit`, `repx_outline`
+and `database_connections` write nothing. A
 stored database login is removed before any of them reads the report, and text read from the
 report comes back under `fromFile`, as data. A file that is not well-formed XML is refused, with
 the line where it breaks. `forma_status` lists the folders the tools may use.

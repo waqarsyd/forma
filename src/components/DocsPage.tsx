@@ -473,11 +473,14 @@ export default function DocsPage({
                 Where it is kept
               </h3>
               {/* Scoped to the website since 2026-11-24 (the MCP design audit's SEC-8 and DOC-3): Forma's MCP
-                  server reads its key from the assistant's settings, which keep it readable, and says so in #mcp. */}
+                  server reads its key from the assistant's settings, which keep it readable, and says so in #mcp;
+                  since 2026-11-25 (the CLI and Forma Designer work's wave 7, SEC-8) its command line reads one from
+                  the environment it runs in, a CI secret's included, and #cli says so. */}
               <p className={`mt-2 ${PROSE}`}>
-                On this website, the key is never written to disk in plaintext, on any tier. Forma&apos;s MCP server,
-                which you run yourself, keeps it elsewhere: <a href="#mcp" className={LINK}>Forma from your AI assistant</a>{' '}
-                says where.
+                On this website, the key is never written to disk in plaintext, on any tier. Forma&apos;s MCP server
+                and its command line, which you run yourself, keep it elsewhere:{' '}
+                <a href="#mcp" className={LINK}>Forma from your AI assistant</a> and{' '}
+                <a href="#cli" className={LINK}>Forma from the command line</a> say where.
               </p>
               <dl className="mt-4 border-t border-outline-variant">
                 <Def t="Working copy">
@@ -1289,14 +1292,23 @@ report.ExportToPdf("report.pdf");`}
                 clone line names the release this page ships in, package.json's
                 version, which publicClaims.test.ts holds it to (since 1.7.0,
                 2026-11-24: it said v<version>, a placeholder a person had to
-                fill in from the changelog), so each release changes it. */}
+                fill in from the changelog), so each release changes it. Since
+                the CLI and Forma Designer work's wave 7 (2026-11-25): its
+                database arguments and switches, repx_convert and
+                database_connections, the FORMA_DATABASE_* names held to
+                src/mcp/databaseTools.ts too. Forma Designer's command-line
+                verbs, which database_connections and a connection need, are in
+                no released Forma Designer yet, so this says "the next release
+                of Forma Designer" and never a version that is out. */}
             <Article id="mcp" kicker="Output" title="Forma from your AI assistant" hidden={!matches('mcp')}>
               <p className={PROSE}>
                 Forma has an MCP server: a program you run on your own computer so an AI assistant, such as Claude
                 Code, Visual Studio&apos;s Copilot, VS Code or Claude Desktop, can audit, outline, repair and edit the
-                .repx files in your own projects and draw one as a draft PDF, and, with an AI of your own set up for
-                it, make a report from a picture, a PDF or a description, or change one as you ask. Your assistant
-                starts it and talks to it directly; it opens no network port, and this site does not run it.{' '}
+                .repx files in your own projects, draw one as a draft PDF, convert an SSRS or FastReport report and
+                bind a report to your database&apos;s layout, and, with an AI of your own set up for it, make a report
+                from a picture, a PDF or a description, or change one as you ask. Your assistant starts it and talks
+                to it directly; it opens no network port, and this site does not run it. The same copy is a command
+                line too, for a terminal or a CI job: <a href="#cli" className={LINK}>Forma from the command line</a>.{' '}
                 <strong className="font-semibold text-on-surface">
                   Two of its tools need your own AI, as the workspace does; the rest need none.
                 </strong>
@@ -1359,6 +1371,20 @@ npm ci`}
                 only to its own AI and takes it out of everything it returns and logs.
               </Note>
 
+              <h3 className={H3}>Your database&apos;s layout</h3>
+              <p className={`mt-2 ${PROSE}`}>
+                generate_report, revise_report, repx_edit and repx_convert bind a report to your SQL Server database
+                when you give them its layout: the answer of Forma&apos;s read-only layout script, which the server
+                serves as <code className="doc-code">forma://sql/layout-script</code>, saved as a file, as{' '}
+                <code className="doc-code">database</code>. Forma writes the report&apos;s data source itself, its
+                connection by name only. repx_edit&apos;s data edit and repx_convert bind with no AI. Two things stay
+                yours to allow, in the server&apos;s entry, never on your assistant&apos;s word:{' '}
+                <code className="doc-code">FORMA_DATABASE_CONNECTIONS</code> lists the Forma Designer connections it
+                may read in place of a file (names separated by ;), which needs the next release of Forma Designer,
+                on Windows; and <code className="doc-code">FORMA_DATABASE_SAMPLES=1</code> lets sample rows go to
+                your AI with the layout. Without it only names go, and a call that sends rows is refused.
+              </p>
+
               <h3 className={H3}>The tools</h3>
               <dl className="mt-4 border-t border-outline-variant">
                 <Def t="forma_status">
@@ -1380,12 +1406,23 @@ npm ci`}
                 </Def>
                 <Def t="repx_edit">
                   The edits Forma&apos;s chat makes, by control name: text, place, size, font, colour, borders,
-                  bindings, page numbers, paper, margins and the rest, written to a new file unless you ask it to
-                  replace one.
+                  bindings, page numbers, paper, margins and the rest, and with your database&apos;s layout what the
+                  report reads, written to a new file unless you ask it to replace one.
                 </Def>
                 <Def t="repx_pdf">
                   A draft PDF: the report laid out by the Preview&apos;s engine with no data, for checking where things
                   fall. Export from the Preview for the real one.
+                </Def>
+                <Def t="repx_convert">
+                  An SSRS report (.rdl, .rdlc) or a FastReport one (.frx) made into a repaired .repx with no AI, as the
+                  workspace opens one; with your database&apos;s layout, bound to what its own SSRS DataSet reads when
+                  the layout has it, else to the table, view or procedure holding most of its fields. Its connection
+                  string is never read.
+                </Def>
+                <Def t="database_connections">
+                  Windows, with Forma Designer. The connections listed in FORMA_DATABASE_CONNECTIONS that Forma
+                  Designer keeps for you, by name and how each signs in, never a server or a password. It needs the
+                  next release of Forma Designer, which adds the commands it uses; until then it says so.
                 </Def>
                 <Def t="generate_report">
                   Needs an AI. A report from a description, files, or both, made as the workspace makes one: pictures,
@@ -1426,10 +1463,207 @@ npm ci`}
               <Note label="What leaves your computer" tone="safe">
                 Only through the two tools that need an AI: the pages of the files you give them, the text OCR read
                 from them on your computer, the data files you pass as data (a database layout among them: its table,
-                view, procedure and column names), your words and the report go from your computer to the AI you set
-                up, with your own key, never through Forma. The other tools send nothing, and the server sends no learning
-                events or error reports. What a tool returns goes to your assistant and to the AI behind it, under that
-                assistant&apos;s own terms, and what it read from a report goes as data, never as instructions.
+                view, procedure and column names), a database layout you give as database or read through a
+                connection (the same names, and sample values only when you allowed them), your words and the report
+                go from your computer to the AI you set up, with your own key, never through Forma. The other tools
+                send nothing; for a connection you listed, Forma Designer, on your PC, connects to the SQL Server it
+                names, as it does for the Data tab. The server sends no learning events or error reports. What a tool
+                returns goes to your assistant and to the AI behind it, under that assistant&apos;s own terms, and what
+                it read from a report or a database goes as data, never as instructions.
+              </Note>
+            </Article>
+
+            {/* Forma's command line (2026-11-25, the CLI and Forma Designer work's wave 7; DOC-1, DOC-2, DOC-3,
+                SEC-8 and LEGAL-1 of its design audit). No page may import src/mcp, so the commands are written
+                out here, and publicClaims.test.ts holds them to src/mcp/cliCommands.ts both ways (every command,
+                none it lacks, and which need an AI), the command to CLI_LAUNCHER with no npx or npm form, the
+                exit codes to commandLine.ts's EXIT, and the recipe's ref to package.json's version, as the mcp
+                article's clone line is held. Its setup is the mcp article's, so there is one clone line. Forma
+                Designer's verbs are in no released Forma Designer yet, so this says "the next release of Forma
+                Designer" and never a version that is out. */}
+            <Article id="cli" kicker="Output" title="Forma from the command line" hidden={!matches('cli')}>
+              <p className={PROSE}>
+                The copy of Forma&apos;s source code that runs the MCP server is a command line too, for you at a
+                terminal or for a CI job: check every report in a folder, repair, convert, edit or bind one, or make
+                and change reports with an AI of your own, a folder at a time. It runs where you run it, on your
+                computer or on a CI runner you choose; this site does not run it.{' '}
+                <strong className="font-semibold text-on-surface">
+                  generate and revise need your own AI, and batch needs it for the files it makes with one; the rest
+                  need none.
+                </strong>
+              </p>
+              <p className={`mt-3 ${PROSE}`}>
+                Set the copy up as <a href="#mcp" className={LINK}>Forma from your AI assistant</a> says, then run,
+                from any folder, <code className="doc-code">{'node <clone>/src/mcp/cli.mjs <command>'}</code> with the
+                copy&apos;s full path; <code className="doc-code">--help</code> lists every command and option. A
+                relative path is read from the folder you run it in.
+              </p>
+
+              <h3 className={H3}>The commands</h3>
+              <dl className="mt-4 border-t border-outline-variant">
+                <Def t="audit">
+                  Checks a .repx or .vsrepx, or every report directly in a folder, as Forma checks the reports it makes,
+                  and lists what is still wrong. It writes nothing, and exits 1 on an error, so it can gate a build.
+                </Def>
+                <Def t="outline">
+                  The report as Forma&apos;s chat sees it: the paper, every band, every control by the name edit takes,
+                  the fields it prints, and its data sources by connection name.
+                </Def>
+                <Def t="repair">Every repair Forma makes on the reports it generates, in the same order, then the checks.</Def>
+                <Def t="pdf">A draft PDF, laid out by the Preview&apos;s engine with no data, for checking where things fall.</Def>
+                <Def t="edit">The edits Forma&apos;s chat makes, by control name, given as JSON.</Def>
+                <Def t="convert">
+                  An SSRS (.rdl, .rdlc) or FastReport (.frx) report, or every one directly in a folder, made into a
+                  repaired .repx, as the workspace opens one.
+                </Def>
+                <Def t="bind">
+                  A report bound to a stored procedure, a table or view, or a query of your database&apos;s layout.
+                </Def>
+                <Def t="generate">
+                  Needs an AI. A report from pictures, PDFs, a report or template to start from, and words, made as the
+                  workspace makes one.
+                </Def>
+                <Def t="revise">
+                  Needs an AI. A report changed as you ask in words, as the chat changes one, by control name where it
+                  can; a question is answered and nothing written.
+                </Def>
+                <Def t="batch">
+                  Needs an AI for some files. Every report source in a folder and its subfolders: pictures and PDFs
+                  generated, SSRS and FastReport reports converted, reports revised with your words or repaired.
+                </Def>
+                <Def t="sql-script">
+                  Prints Forma&apos;s read-only script that reads a SQL Server database&apos;s layout, or one that reads a
+                  few rows of the tables you name. It opens no connection.
+                </Def>
+                <Def t="connections">
+                  Windows, with Forma Designer. The SQL Server connections Forma Designer keeps for you, by name, never
+                  a server or a password. It needs the next release of Forma Designer.
+                </Def>
+              </dl>
+
+              <h3 className={H3}>Your AI, from the environment</h3>
+              <p className={`mt-2 ${PROSE}`}>
+                The settings the MCP server reads, from the environment the command runs in:{' '}
+                <code className="doc-code">FORMA_GEMINI_KEY</code>; <code className="doc-code">FORMA_OPENROUTER_KEY</code>{' '}
+                and <code className="doc-code">FORMA_OPENROUTER_MODEL</code>;{' '}
+                <code className="doc-code">FORMA_LOCAL_MODEL</code>, with <code className="doc-code">FORMA_LOCAL_URL</code>{' '}
+                when your server is not at Ollama&apos;s usual address; and{' '}
+                <code className="doc-code">FORMA_PROVIDER</code> when you set up more than one. Never on the command
+                itself, which your shell&apos;s history keeps: set it once in your environment, or in CI from the
+                CI&apos;s secrets into the step&apos;s environment. With none, generate and revise say what to set and
+                stop. <code className="doc-code">--mock</code> answers with a mock invoice for a test, and an AI must
+                still be set up.
+              </p>
+
+              <h3 className={H3}>What it writes and prints</h3>
+              <p className={`mt-2 ${PROSE}`}>
+                A new file beside the input, such as invoice.repaired.repx, or where{' '}
+                <code className="doc-code">--out</code> says. A file already there is never replaced unless you add{' '}
+                <code className="doc-code">--force</code>, and never then if it is a report whose stored login was taken
+                out. When every AI fails, nothing is written, unless{' '}
+                <code className="doc-code">--allow-stand-in</code> asks for Forma&apos;s own draft, written as
+                invoice.draft.repx. Results go to standard output, a line each, or with{' '}
+                <code className="doc-code">--json</code> a JSON object for each input as it finishes, then a summary;
+                progress, notices and errors go to standard error, with keys taken out.
+              </p>
+              <p className={`mt-3 ${PROSE}`}>
+                Exit codes: 0 done; 1 a report with errors the checks found; 2 a mistake in the command; 3 no AI set up;
+                4 an input that failed, was refused or declined, or whose output is already there, a draft written in
+                place of the AI&apos;s report, or a report left unbound under{' '}
+                <code className="doc-code">--require-binding</code>; 5 stopped at an AI&apos;s limit; 70 something broke
+                inside Forma; 130 stopped with Ctrl+C. With several inputs, the run ends with the most serious.
+              </p>
+
+              <h3 className={H3}>A folder at a time</h3>
+              <p className={`mt-2 ${PROSE}`}>
+                batch makes one file at a time, as the workspace&apos;s Batch does by default, since your key carries the
+                quota. Each file that asks the AI runs on its own, with at most 15 minutes and 2 GB of memory, so one bad
+                file cannot end the batch. A minute&apos;s limit is waited out; the day&apos;s stops the files that need
+                the AI, each listed as not started, while conversions and repairs carry on, and the same command with{' '}
+                <code className="doc-code">--skip-existing</code> picks up once it lifts.{' '}
+                <code className="doc-code">--dry-run</code> shows what each file would become, reading nothing and asking
+                no AI. It never follows a link out of the folder, and a folder with more files to make than{' '}
+                <code className="doc-code">--max</code>, 500 unless you say, is refused before anything is read.
+              </p>
+
+              <h3 className={H3}>Your database&apos;s layout</h3>
+              <p className={`mt-2 ${PROSE}`}>
+                sql-script prints Forma&apos;s read-only layout script. Run it in SSMS on your database, save its one
+                result cell as a file, and give that file to generate, revise or batch as{' '}
+                <code className="doc-code">--database</code>: the AI binds the report to your tables, views or stored
+                procedures, and Forma writes the data source itself, its connection by name only. Only names go to your
+                AI, unless you also give <code className="doc-code">--samples</code>, a file of sample rows, which is
+                your consent. <code className="doc-code">--procedure</code>, <code className="doc-code">--object</code>{' '}
+                or <code className="doc-code">--query</code> pins what the report reads; bind and convert with{' '}
+                <code className="doc-code">--database</code> bind with no AI; and{' '}
+                <code className="doc-code">--require-binding</code> fails a report written unbound. On Windows,{' '}
+                <code className="doc-code">--connection</code> reads a connection Forma Designer keeps in place of the
+                file; it and connections need the next release of Forma Designer.
+              </p>
+
+              <h3 className={H3}>In CI</h3>
+              <p className={`mt-2 ${PROSE}`}>
+                A GitHub Actions job takes the copy at a release and keeps it in a dot-folder, which a batch never
+                walks. audit needs no key, so a pull request from a fork, which gets no secrets, still runs it: here on
+                the reports you commit directly in <code className="doc-code">reports</code>, skipped when there are
+                none. The key goes only to the step
+                that runs on a push, never on <code className="doc-code">pull_request_target</code>, which runs a
+                fork&apos;s changes with your secrets. A runner starts empty and is gone when the job ends, so the
+                reports a push makes are kept as the run&apos;s artifact, even when the batch step failed, and the
+                next run makes every file again.
+              </p>
+              <div className="mt-4 overflow-hidden rounded-[10px] border border-outline-variant">
+                <div className="flex items-center justify-between gap-3 border-b border-outline-variant bg-surface-container-low px-3.5 py-2.5">
+                  <span className={KICKER}>.github/workflows/reports.yml</span>
+                  <span className={`${KICKER} text-secondary`}>GitHub Actions</span>
+                </div>
+                <pre className="m-0 overflow-x-auto bg-[color:var(--code-bg)] p-4 font-code-sm text-[11.5px] leading-[1.75] text-[color:var(--code-ink)]">
+{`on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  reports:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: waqarsyd/forma
+          ref: v1.7.0
+          path: .forma
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+        working-directory: .forma
+      - if: github.event_name == 'push'
+        run: node .forma/src/mcp/cli.mjs batch designs --out made
+        env:
+          FORMA_GEMINI_KEY: \${{ secrets.FORMA_GEMINI_KEY }}
+      - if: github.event_name == 'push' && !cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: made
+      - if: hashFiles('reports/*.repx', 'reports/*.vsrepx') != '' && !cancelled()
+        run: node .forma/src/mcp/cli.mjs audit reports`}
+                </pre>
+              </div>
+              <Note label="What leaves the computer it runs on" tone="safe">
+                Only through generate, revise and the files a batch makes with the AI: the pages of your files, the
+                text OCR read from them there, data files, a database layout you give (its names, and sample values
+                only from a file you pass or tables you name), your words and the report go from the computer the
+                command runs on straight to the AI you set up, with your own key, never through Forma. On a CI runner
+                that computer is your CI provider&apos;s, under its terms. The other commands send nothing; with{' '}
+                <code className="doc-code">--connection</code>, Forma Designer, on your PC, connects to the SQL Server
+                it keeps. No learning events and no error reports.
+              </Note>
+              <Note label="Worth knowing">
+                On Linux, Arial, Times New Roman, Courier New, Calibri and Cambria measure as they do on Windows, with
+                faces that come with Forma; another font the machine lacks is measured in a stand-in, and the result
+                says which. On Windows, Ctrl+C while the AI works can end the run with 3221226505 in place of 130;
+                nothing is written either way.
               </Note>
             </Article>
 

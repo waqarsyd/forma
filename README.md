@@ -25,7 +25,7 @@ The AI writes only the `.repx`; Forma reads the mockup and the specification out
 
 Rebuilding an existing report in the DevExpress designer is mechanical work: read the layout, place the bands, set the units, repeat. Forma does the transcription pass so you start from a `.repx` that already has the right control types and geometry, and spend your time on the parts that need judgement.
 
-It is built around one constraint that shaped everything else: **the application owns no API key.** An earlier build inlined a build-time Gemini key into the shipped JavaScript, and Google's secret scanner found and revoked it. What replaced it is not a patch but an architecture — the browser calls the AI directly, Google or OpenRouter with a key the user supplies or a model on the user's own computer, and no server of Forma's is ever in the loop. (Forma's [MCP server](#forma-from-an-ai-assistant) is no exception: it is a program you run on your own computer, calling your AI just as directly.)
+It is built around one constraint that shaped everything else: **the application owns no API key.** An earlier build inlined a build-time Gemini key into the shipped JavaScript, and Google's secret scanner found and revoked it. What replaced it is not a patch but an architecture — the browser calls the AI directly, Google or OpenRouter with a key the user supplies or a model on the user's own computer, and no server of Forma's is ever in the loop. (Forma's [MCP server](#forma-from-an-ai-assistant) and its [command line](#forma-from-the-command-line) are no exception: they are programs you run yourself, on your own computer or a CI runner you choose, calling your AI just as directly.)
 
 ---
 
@@ -56,6 +56,7 @@ Both are real captures of the app at `localhost:3000`, not mockups, but from Sep
   - [Running locally](#running-locally)
 - [Usage](#usage)
 - [Forma from an AI assistant](#forma-from-an-ai-assistant)
+- [Forma from the command line](#forma-from-the-command-line)
 - [Using your own Firebase project](#using-your-own-firebase-project)
 - [Configuration](#configuration)
 - [Project structure](#project-structure)
@@ -72,7 +73,7 @@ Both are real captures of the app at `localhost:3000`, not mockups, but from Sep
 
 ## Bring your own AI
 
-**Forma ships no API key and no AI of its own, and it never will.** To start, it needs an AI of yours, any one of three: a Gemini key (the default), an OpenRouter key and model, or a model on your own computer through Ollama or LM Studio. Until the AI you chose is set up, the message box is locked, and there is no mode without an AI (the owner's rule; from 2026-11-05 until 2026-11-23 it had to be the Gemini key, whichever AI designed). A key goes from your browser straight to Google or OpenRouter — Forma's server is never in the loop and never sees a credential — and a local model needs no key and keeps every request on your computer. The table below is the website's; Forma's MCP server reads your key from your AI assistant's settings instead, and [its section](#your-ai-and-where-its-key-is-kept) says where that keeps it.
+**Forma ships no API key and no AI of its own, and it never will.** To start, it needs an AI of yours, any one of three: a Gemini key (the default), an OpenRouter key and model, or a model on your own computer through Ollama or LM Studio. Until the AI you chose is set up, the message box is locked, and there is no mode without an AI (the owner's rule; from 2026-11-05 until 2026-11-23 it had to be the Gemini key, whichever AI designed). A key goes from your browser straight to Google or OpenRouter — Forma's server is never in the loop and never sees a credential — and a local model needs no key and keeps every request on your computer. The table below is the website's; Forma's MCP server reads your key from your AI assistant's settings instead, and [its section](#your-ai-and-where-its-key-is-kept) says where that keeps it, and its command line from the environment it runs in ([its section](#your-ai-from-the-environment)).
 
 This is not an accident of design. An earlier build inlined a build-time key into the shipped JavaScript; Google's secret scanner found it and revoked it. The architecture that replaced it is deliberate:
 
@@ -145,7 +146,7 @@ There is no ESLint config, no state-management library, no date library, no HTTP
 ### Prerequisites
 
 - **Node 24.15.0 or later on 24, or 26+** (`^24.15.0 || >=26`; `node -v; npm -v` prints what you have). Node 22 is out since 2026-11-21: Firebase 13's own packages ask for Node 24.12 or later, and jsdom, which the tests run on, then needs 24.15.0 on that line. Node 20 reached end of life on 2026-04-30. The odd-numbered **25 is outside the range too**, even though it is newer: jsdom and Vitest both skip it.
-- **An AI of your own**: a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey), an OpenRouter key, or Ollama or LM Studio on your own computer — set up in the app at runtime, never in a file. (The MCP server is the one exception: its settings are its entry in your AI assistant, [below](#your-ai-and-where-its-key-is-kept).)
+- **An AI of your own**: a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey), an OpenRouter key, or Ollama or LM Studio on your own computer — set up in the app at runtime, never in a file. (The MCP server and the command line are the exceptions: the server's settings are its entry in your AI assistant, [below](#your-ai-and-where-its-key-is-kept), and the command line reads the environment it runs in, [below](#your-ai-from-the-environment).)
 - **A JRE** — only for `npm run test:rules`, which starts the Firestore emulator (a JVM process). A runtime is enough; no JDK.
 - **A Firebase project** — only if you want sign-in and cloud sync. Everything else works without one.
 
@@ -174,7 +175,7 @@ Contributors should use `npm ci` instead — it installs exactly what the lockfi
 | `HOST` | No | loopback in dev, all interfaces in production | Which interface the server binds. Set to `0.0.0.0` only to reach the dev server from another device — that publishes Vite's module graph to anything that can reach the machine. |
 | `HTTPS` | No | unset | Set to `"true"` **only where TLS actually terminates**, so the server sends HSTS. Never set it locally: a browser that receives HSTS on `http://localhost` refuses plain-HTTP localhost for a year afterwards, breaking every other project on the machine. |
 
-> **A `GEMINI_API_KEY` in `.env` does nothing.** `vite.config.ts` allowlists `VITE_*` only, so it reaches neither the server nor the browser. It just sits in your working tree waiting to be committed. The key belongs in the app's Settings dialog. The MCP server reads no `.env` either, and ignores a `GEMINI_API_KEY` wherever it is set: its key is `FORMA_GEMINI_KEY`, in its entry in your AI assistant.
+> **A `GEMINI_API_KEY` in `.env` does nothing.** `vite.config.ts` allowlists `VITE_*` only, so it reaches neither the server nor the browser. It just sits in your working tree waiting to be committed. The key belongs in the app's Settings dialog. The MCP server and the command line read no `.env` either, and ignore a `GEMINI_API_KEY` wherever it is set: their key is `FORMA_GEMINI_KEY`, in the server's entry in your AI assistant, or in the environment a command runs in.
 
 ### Running locally
 
@@ -226,7 +227,7 @@ npm run dev:log    # same server; output tee'd to dev-server.log (gitignored)
 
 ## Forma from an AI assistant
 
-Forma has an MCP server ([`src/mcp`](src/mcp), since 2026-11-24): a program you run on your own computer so an AI assistant — Claude Code, Visual Studio 2022's Copilot, VS Code, Claude Desktop or any other MCP client — can audit, outline, repair and edit the `.repx` files in your own projects and draw one as a draft PDF, and, with an AI of your own set up for it, make a report from a picture, a PDF, a template or a description, or revise one as you ask. Your assistant starts it and talks to it over stdin and stdout; it opens no port, and the website does not run it. **Six of its tools need no AI and no key; `generate_report` and `revise_report` need your own AI, as the workspace does.** The reasoning is [`docs/notes/mcp.md`](docs/notes/mcp.md).
+Forma has an MCP server ([`src/mcp`](src/mcp), since 2026-11-24): a program you run on your own computer so an AI assistant — Claude Code, Visual Studio 2022's Copilot, VS Code, Claude Desktop or any other MCP client — can audit, outline, repair and edit the `.repx` files in your own projects, draw one as a draft PDF, convert an SSRS or FastReport report and bind a report to your database's layout, and, with an AI of your own set up for it, make a report from a picture, a PDF, a template or a description, or revise one as you ask. Your assistant starts it and talks to it over stdin and stdout; it opens no port, and the website does not run it. **Eight of its tools need no AI and no key; `generate_report` and `revise_report` need your own AI, as the workspace does.** The reasoning is [`docs/notes/mcp.md`](docs/notes/mcp.md).
 
 ### What it needs
 
@@ -320,7 +321,7 @@ In JSON, write a Windows path with `/` or with each `\` doubled. None of these t
 | `FORMA_MODEL`, `FORMA_LOCALE` | Optional: a Gemini model to answer with, and the locale whose paper a report goes on when nothing else says |
 | `FORMA_MCP_MOCK` | `true` for the mock invoice in place of the AI's answer, for a test; an AI must still be set up |
 
-With none set up, both tools refuse and say what to set; the other six need none. A `GEMINI_API_KEY` or `GOOGLE_API_KEY` set for another tool is never used, and the server reads no `.env`. Another AI you set up beside the one chosen answers when it reaches a limit, never after a local model, and the result says so.
+With none set up, both tools refuse and say what to set; the other eight need none. A `GEMINI_API_KEY` or `GOOGLE_API_KEY` set for another tool is never used, and the server reads no `.env`. Another AI you set up beside the one chosen answers when it reaches a limit, never after a local model, and the result says so.
 
 **Where the key then lives is your host's, not the website's.** Your host keeps the server's entry readable on your computer: the key is in its settings file, or, written as `${FORMA_GEMINI_KEY}` where the host expands such a reference, in your own environment. Choose the reference where you can; keep the entry in a file of your own, never one your project commits (a solution's or workspace's `.mcp.json`, Claude Code's `--scope project`), since all three hosts that read one document it for source control; and do not type the key into a command line, which your shell's history and an assistant's transcript keep. The server sends the key only to its own AI, and takes it out of every result and every line it logs. These recipes follow each host's documentation and have not yet been run in it.
 
@@ -337,6 +338,22 @@ With none set up, both tools refuse and say what to set; the other six need none
 
 For OpenRouter or a local model, set its variables the same way in place of the key; a local model needs no key at all.
 
+### Your database's layout
+
+`generate_report`, `revise_report`, `repx_edit` and `repx_convert` bind a report to a SQL Server database when a call gives its layout, and Forma writes the report's SQL data source itself, DevExpress 20.1's shape, its connection by name only:
+
+- **`database`**: the answer of Forma's read-only layout script saved as a file (the server serves the script as the resource `forma://sql/layout-script`; run it in SSMS and save its one result cell as a file, or run the `sqlcmd` line the command line's `sql-script --sqlcmd` prints, which keeps the cell whole and every name in it), an SSMS "Generate Scripts" file, or a `.repx` whose data source is the part of the database it reads. `procedure`, `object` or `query` on the two AI tools pins what the report reads; `connectionName` names the connection a report that names none is written with. `repx_edit`'s `data` edit and `repx_convert` bind with no AI: a converted report to what its own SSRS DataSet reads when the layout has it, else to the table, view or procedure holding most of its fields, and a DataSet naming what the layout lacks leaves it unbound.
+- **`connection`**, in place of a file: a Forma Designer connection, its layout read by Forma Designer on your PC. Only a name you list in the server's entry is ever read, never one your assistant picks alone; `database_connections` lists those Forma Designer keeps. It needs Windows and the next release of Forma Designer, which adds the command-line verbs the server starts; until then the tool and the argument say so.
+- **Sample rows** go to your AI with the layout only when you turn them on in the entry: files of them as `samples` beside `database`, or tables read through a connection as `sampleObjects`. Without the switch a call that sends rows is refused, and the layout's names alone go. No sample value is ever put in a result.
+
+| Variable | What it sets |
+|---|---|
+| `FORMA_DATABASE_CONNECTIONS` | The Forma Designer connections the server may read, by name, separated by `;` |
+| `FORMA_DATABASE_SAMPLES` | `1` to let sample rows go to your AI with a layout; off when left out |
+| `FORMA_DESIGNER` | Optional: the full path of a `RepxDesigner.exe` built from this clone's source, in place of the per-user install |
+
+What binding did comes back as data: whether the report is bound (`bound`), and what it reads or why not under `fromFile.binding`, since every name in it is your database's or the report's.
+
 **How long a report takes, and one at a time.** A report can take minutes and several requests to your AI. One runs at a time in the server: a second call waits for the first, and says so to a host that asks for progress; the wait counts against a host's own limit on a call. The server reports its progress to a host that asks for it, and stopping the call stops the work at once and writes nothing. The server itself stops a report after 15 minutes. Claude Code waits for as long as the report takes; Claude Desktop on Windows reportedly ends any call after about four minutes, with no setting for it, which a report from several pages can pass, and then nothing is written. A host that stops waiting without cancelling still gets the file written, named in the server's log on stderr.
 
 ### The tools
@@ -347,12 +364,14 @@ For OpenRouter or a local model, set its variables the same way in place of the 
 | `repx_audit` | The web app's audit of a `.repx` or `.vsrepx`: what DevExpress would load or print differently from what the file says | Nothing |
 | `repx_outline` | The report as Forma's chat sees it: paper, bands, every control by name with its place and size, the fields it prints, its parameters, and each SQL data source by its connection's name | Nothing |
 | `repx_repair` | Every repair Forma makes on the reports it generates, in the same order, then the audit of the result | `<name>.repaired.repx` beside the report, or where you say |
-| `repx_edit` | The edits Forma's chat makes, by control name: text, place, size, font, colour, alignment, borders, lines, page numbers, formats, bindings, band heights, paper, margins, and a group with its total | `<name>.edited.repx` (or `.edited.vsrepx` for a `.vsrepx`) beside the report, or where you say; it replaces a file only when asked |
+| `repx_edit` | The edits Forma's chat makes, by control name: text, place, size, font, colour, alignment, borders, lines, page numbers, formats, bindings, band heights, paper, margins, a group with its total, and with a database's layout what the report reads (`data`, no AI) | `<name>.edited.repx` (or `.edited.vsrepx` for a `.vsrepx`) beside the report, or where you say; it replaces a file only when asked |
 | `repx_pdf` | A draft PDF, laid out by the engine of Forma's Preview with no data, in the standard PDF fonts: for checking where things fall | `<name>.pdf` beside the report, or where you say |
+| `repx_convert` | An SSRS (`.rdl`, `.rdlc`) or FastReport (`.frx`) report made into a repaired `.repx` with no AI, by the conversion the workspace runs, written as DevExpress 20.1 writes one; with a database's layout, bound to what its own SSRS DataSet reads when the layout has it, else to the object holding most of its fields (a DataSet naming what the layout lacks leaves it unbound). Its connection string is never read | `<name>.converted.repx` beside the report, or where you say |
+| `database_connections` | Windows, with Forma Designer: the connections listed in `FORMA_DATABASE_CONNECTIONS` that Forma Designer keeps for you, by name and how each signs in, the database each opens under `fromFile`, and whether sample rows are on. Never a server or a password | Nothing |
 | `generate_report` | **Needs an AI.** A report from a description, files, or both, made as the workspace makes one: pictures, scans and PDFs read with OCR, a `.repx` or `.vsrepx` to start from, a Word or Excel template, an SSRS or FastReport report, and data files passed apart, under `data`, their columns the report's fields. The result names the AI that answered, the audit and what printing it found; when every AI fails on a first report, Forma's own draft stands in and the result says so | `<first file>.generated.repx` beside the first file, or where you say (needed when there is no file) |
 | `revise_report` | **Needs an AI.** A `.repx` or `.vsrepx` changed as you ask in words, as Forma's chat changes the report open in it: edits by control name, or a redesign. A question about the report is answered, from its own facts with no AI where they answer it, and nothing is written | `<name>.revised.repx` beside the report, or where you say; the file you sent is never changed |
 
-`src/mcp/toolList.ts` is the list; a test holds this table and the Docs page to it. The server also offers what Forma measured about the REPX format, [`docs/skills/devexpress-repx/SKILL.md`](docs/skills/devexpress-repx/SKILL.md), as the resource `skill://devexpress-repx/SKILL.md`.
+`src/mcp/toolList.ts` is the list; a test holds this table and the Docs page to it. The server also offers what Forma measured about the REPX format, [`docs/skills/devexpress-repx/SKILL.md`](docs/skills/devexpress-repx/SKILL.md), as the resource `skill://devexpress-repx/SKILL.md`, and Forma's database layout script as `forma://sql/layout-script`.
 
 ### What it does with your files
 
@@ -363,16 +382,151 @@ For OpenRouter or a local model, set its variables the same way in place of the 
 - **A stored database login is removed before any tool reads a report**, and the result says so: it never reaches your assistant or a file the server writes, and the report you named is left as it is.
 - **Text read from a report comes back as data**, under `fromFile`, never as instructions: a report made by someone else controls its own words.
 - **A Visual Studio report**: a `.vsrepx` is read as the `.repx` it is. A repair or an edit written as a `.repx` has Visual Studio's working-file mark neutralised; a `.vsrepx` is written only from a `.vsrepx`; and an edit is not written into a `.vsrepx` whose Designer file looks up a control the edits removed (a repair writes, and names it). A report written as C# or VB code is refused, with how to save it as a `.repx`.
-- **What leaves your computer, and where to.** Only `generate_report` and `revise_report` send anything: the pages of the files you give them, the text OCR read from them on your computer, data files passed as data, your words and the report, from your computer straight to the AI you set up (Google's Gemini API or OpenRouter, with your own key, or a local model on this computer), never through Forma. The other tools make no request at all, and the server keeps no telemetry and sends no learning events or error reports. What a tool returns goes to your assistant, and from there to the AI behind it, under that assistant's own terms.
+- **What leaves your computer, and where to.** Only `generate_report` and `revise_report` send anything: the pages of the files you give them, the text OCR read from them on your computer, data files passed as data, a database's layout given with the call (its table, view, procedure and column names, and sample values only when you turned them on), your words and the report, from your computer straight to the AI you set up (Google's Gemini API or OpenRouter, with your own key, or a local model on this computer), never through Forma. The other tools make no request at all; for a connection you listed, Forma Designer, on your PC, connects to the SQL Server it names to read the layout, as it does for the Data tab, and gives the server the layout, never the server's name, the login or the password. The server keeps no telemetry and sends no learning events or error reports. What a tool returns goes to your assistant, and from there to the AI behind it, under that assistant's own terms.
 - **It reads no `.env`.** Its settings are its entry in your host.
 
 ### Limitations
 
-- **Less than the workspace knows.** The server keeps nothing of you: no memory or house style, no kept reports, no report library, no SQL Server database from the Data view, and no learning. It has no vision model or page reader on a local server, and reads no handwriting. `revise_report` does no exports, opens no designer and has no Undo: the file you sent is the undo.
+- **Less than the workspace knows.** The server keeps nothing of you: no memory or house style, no kept reports, no report library, no database shared on the Data tab (a layout comes with each call instead), and no learning. It has no vision model or page reader on a local server, and reads no handwriting. `revise_report` does no exports, opens no designer and has no Undo: the file you sent is the undo.
 - **A clone, not a package.** It needs the clone, a full `npm ci` and Node in the range above, and it runs the code you cloned: pull to update.
 - **Tested in process and as a host runs it, not yet in any host.** Its tests drive it in process in both protocol generations and spawn it with the exact command above, with the AI stood in for the two tools that need one; no host has run it yet, Claude Code included, and every recipe above, Claude Code's too, follows that host's own documentation.
 - **The PDF is a draft**: no data, the standard PDF fonts and the first line of each text. The Preview's export is the real one.
-- **`repx_edit` has no data edit**, which needs a database's layout the server does not hold.
+- **Forma Designer's connections wait for its next release.** `database_connections` and `connection` start Forma Designer's command-line verbs, which no released Forma Designer has yet, and run only on Windows; a layout file works everywhere.
+
+---
+
+## Forma from the command line
+
+The same clone is a command line ([`src/mcp/cli.mjs`](src/mcp/cli.mjs), since 2026-11-24), for you at a terminal or for a CI job: check every report in a folder, repair, convert, edit or bind one, or make and change reports with your own AI, a folder at a time, for a migration or a build. It runs where you run it, on your computer or on a CI runner you choose; the website does not run it. **`generate` and `revise` need your own AI, and `batch` needs it for the files it makes with one; the other commands need no AI and no key.** It runs the calls the MCP server runs, on the workspace's own generation path, and the reasoning is [`docs/notes/mcp.md`](docs/notes/mcp.md), from *The command line is a second entry beside the server* on.
+
+### Running it
+
+The clone [the MCP server's section](#what-it-needs) sets up (Node in the range [Prerequisites](#prerequisites) gives, a full `npm ci`, and `npm run fetch:paddle` once for OCR as good as the website's), then, from any folder:
+
+```bash
+node <clone>/src/mcp/cli.mjs <command> [options]
+node <clone>/src/mcp/cli.mjs --help
+```
+
+`<clone>` is the clone's full path. A relative path is read from the folder you run it in. Not `npx`, which outside the clone fetches a tsx nobody pinned, and not an npm script, whose banner npm prints on stdout ahead of `--json`'s lines; `scripts/repx.ts`, the command line before 2026-11-24, forwards to it, so an older line still runs in a shell in the clone, but this is the form to use.
+
+### The commands
+
+| Command | What it does | Writes |
+|---|---|---|
+| `audit` | Checks a `.repx` or `.vsrepx`, or every report directly in a folder, as Forma checks the reports it makes, and lists what is still wrong; exits 1 on an error, so it can gate a build | Nothing |
+| `outline` | The report as Forma's chat sees it: the paper, every band, every control by the name `edit` takes, the fields it prints, and its data sources by connection name only | Nothing |
+| `repair` | Every repair Forma makes on the reports it generates, in the same order, then the audit of the result | `<name>.repaired.repx` |
+| `pdf` | A draft PDF, laid out by the engine of Forma's Preview with no data | `<name>.pdf` |
+| `edit` | The edits Forma's chat makes, by control name, given with `--edits` as JSON or a `.json` file | `<name>.edited.repx` |
+| `convert` | An SSRS (`.rdl`, `.rdlc`) or FastReport (`.frx`) report, or every one directly in a folder, made into a repaired `.repx` with no AI, as DevExpress 20.1 writes one; with a database's layout, bound to what its own SSRS DataSet reads when the layout has it, else to the object holding most of its fields (a DataSet naming what the layout lacks leaves it unbound) | `<name>.converted.repx` |
+| `bind` | A report bound to a stored procedure, a table or view, or a query of a database's layout (`--procedure`, `--object` or `--query`), with no AI, its SQL data source written as DevExpress 20.1 writes one, the connection by name only | `<name>.bound.repx` |
+| `generate` | **Needs an AI.** A report made as the workspace makes one, from pictures, PDFs, a report or template to start from, and/or `--description`, with `--data` files whose columns become its fields | `<first file>.generated.repx`, or `--out` (needed with no file) |
+| `revise` | **Needs an AI.** A report changed as `--words` asks, as Forma's chat changes one, by control name where it can (`--edits-only` refuses a redesign); a question is answered and nothing written | `<name>.revised.repx` |
+| `batch` | **Needs an AI for some files.** Every report source in a folder and its subfolders, one file at a time: pictures and PDFs generated, SSRS and FastReport reports converted (and revised with `--words`), reports revised with `--words` or repaired with `--repair`; a summary at the end | One report per input under `--out`, the subfolders kept |
+| `sql-script` | Prints Forma's read-only script that reads a SQL Server database's layout, never a row, or with `--sample` the one that reads a few rows of the tables named; opens no connection | Nothing, or the script at `--out` |
+| `connections` | Windows, with Forma Designer: the SQL Server connections Forma Designer keeps for you, by name, with the database each opens and how it signs in, never a server or a password; opens no connection | Nothing |
+
+Each writes beside its input, or where `--out` says (a folder takes the usual name inside it). `src/mcp/cliCommands.ts` is the list, which `--help` prints; a test holds this table, the Docs page and the [REPX skill](docs/skills/devexpress-repx/SKILL.md) to it.
+
+### Your AI, from the environment
+
+`generate`, `revise` and a batch's AI files read the AI the MCP server reads, under the same names, from the environment the command runs in:
+
+| Variable | What it sets |
+|---|---|
+| `FORMA_GEMINI_KEY` | A Gemini key |
+| `FORMA_OPENROUTER_KEY`, `FORMA_OPENROUTER_MODEL` | An OpenRouter key and the model it answers with |
+| `FORMA_LOCAL_MODEL`, `FORMA_LOCAL_URL` | A model on your own computer, through Ollama or LM Studio; the address only when it is not Ollama's `http://localhost:11434/v1`, and only on this computer |
+| `FORMA_PROVIDER` | `gemini`, `openrouter` or `local`, when you set up more than one; left out with two set up, they refuse rather than guess |
+| `FORMA_MODEL`, `FORMA_LOCALE` | Optional: a Gemini model to answer with, and the locale whose paper a report goes on when nothing else says |
+
+With none set up, they exit 3 and say what to set; the other commands never look. `--mock` answers with the mock invoice in place of the AI, for a test, and an AI must still be set up. **The key lives where you put it**: in your environment, set once without typing it on a command line, which your shell's history and an assistant's transcript keep, or in your CI provider's secret store, handed to the one step that needs it. Never on the command itself, and never in a `.env`, which the command line does not read; a `GEMINI_API_KEY` or `GOOGLE_API_KEY` set for another tool is never used. Every line it prints has keys taken out, by their shapes and by the values it was given.
+
+### What it writes and prints
+
+- **A new file, never one replaced unless you say.** A file already at the output is left as it is and the input exits 4, unless `--force` replaces it; even then it never writes over a report whose stored login it took out, nor over a file `generate` is made from. A file system that refuses the write is a failed input, never Forma's error.
+- **When every AI fails, nothing is written**, and the run says which limit it met. `--allow-stand-in` writes Forma's own draft instead, as `<name>.draft.repx`, never under the report's name, and still exits 4: the report asked for was not made.
+- **stdout carries results only**: a line for each input, or with `--json` JSON Lines, an object for each input as it finishes (`"type": "input"`, its `status`, `exitCode`, the AI that answered, the limit met, and what it read from files apart, under `fileText`), then one summary (`"type": "summary"`). Progress, notices and errors go to stderr; the work's own log lines and the model that answered only with `--verbose`. A control character in a report's text or a file's name is printed as `?`, so every result is one line.
+- Exit codes: 0 done; 1 a report written or audited with audit errors (`--fail-on never` makes it 0); 2 a usage error; 3 no AI set up; 4 an input that failed, was refused or declined, or whose output was already there, Forma's draft written in place of the AI's report, or a report written but not bound under `--require-binding`; 5 stopped at an AI's limit; 70 an internal error; 130 interrupted. With several inputs the run ends with the highest in the order 130, 70, 5, 4, 1, 0.
+- **Ctrl+C stops it** and writes nothing for the file under way; the JSON line of every input already finished stands.
+
+### A folder at a time: `batch`
+
+```bash
+node <clone>/src/mcp/cli.mjs batch designs --out reports --skip-existing --json
+```
+
+- **What each file becomes is decided from its name before any file is read**, so `--dry-run` prints the plan, reading nothing and asking no AI: pictures and PDFs are generated (with `--description` when given, else made as Forma's draft the AI corrects), SSRS and FastReport reports converted with no AI (revised after with `--words`), `.repx` and `.vsrepx` reports revised with `--words` or repaired with `--repair`, and skipped otherwise. A data file is never a source of its own, only under `--data`.
+- **One file at a time**, as the workspace's Batch does by default, because your key carries the quota. Each file that asks the AI runs in a thread of its own, with at most 15 minutes and 2 GB of memory, so one bad file ends that file, not the batch; a conversion or a repair gets 30 seconds and 512 MB. There is no option to run several at once, by decision.
+- **Limits.** A minute's limit is waited out and the file made once more. The day's limit, or a second limit on one file, stops every file that asks the AI, each listed as not started (exit 5), while conversions and repairs carry on; the same command with `--skip-existing` picks up once it lifts. A key the AI refuses stops the files that need it too (exit 4).
+- **The walk never follows a link or a junction**, and leaves out dot-folders, `node_modules`, the `--out` folder and Forma's own outputs, so a rerun never takes the last run's reports for inputs, and a link a checkout carries cannot send a file from outside the folder to the AI. A folder with more files to make than `--max`, 500 unless you say, is refused before anything is read.
+- **Names are decided up front**: under `--out`, the subfolder kept, `<name>.generated.repx`, `.revised.repx`, `.converted.repx` or `.repaired.repx`; two inputs that would claim one name keep their extensions (`invoice.png.generated.repx`, `invoice.pdf.generated.repx`). An output already there is refused at no cost in quota, skipped with `--skip-existing`, or made again with `--force`.
+- **The summary** counts each status, names who answered and how many files each, the time, and why it stopped, with when a limit lifts; under `--json` it is the last line.
+
+### Your database's layout
+
+- **`--database <file>`** on `generate`, `revise` and `batch`: the answer of Forma's read-only layout script saved as a file (`sql-script` prints the script; run it in SSMS and save its one result cell, or with `--out layout.sql --sqlcmd <server> <database>` it also prints the `sqlcmd` line that runs it into a UTF-8 file), an SSMS "Generate Scripts" file, or a `.repx` whose data source is the part of the database it reads. The AI is shown the likeliest objects and names what the report reads; Forma writes the SQL data source itself, its connection by name only (`--connection-name`, else the name the report already has, else the database's own). It is read and said on stderr before any AI is asked, so a layout cut short or one whose names a code page mangled is refused at no cost in quota.
+- **`--samples <file>`**, a file of sample rows of the same database (`sql-script --sample dbo.Orders,dbo.Customers`'s answer): its values go to your AI with the layout, and passing the file is your consent. Without it only names go. Forma never prints a sample value it read, or puts one in a JSON line.
+- **`--procedure`, `--object` or `--query`** pins what the report reads, checked against the layout first; a stored procedure whose result the layout does not describe is refused before any AI is asked. **`bind`** binds a report to one with no AI, and **`convert --database`** binds a converted report with no AI to what its own SSRS DataSet reads when the layout has it, else to the table, view or procedure holding most of its fields; a DataSet naming what the layout lacks leaves it unbound, since the layout is then more likely the wrong one. **`--require-binding`** makes a report written but not bound a failed input, exit 4, so CI can gate on a binding; each result says what the report binds, read back from the file written.
+- **`--connection <name>`**, in place of a file, on Windows: Forma Designer reads that connection's layout on your PC, with the sign-in it keeps, and gives Forma the layout alone, never the server, the login or the password; `--sample-objects dbo.Orders` has it read a few rows of the tables you name, naming them being your consent; `connections` lists the names. They start Forma Designer's command-line verbs, which come with the next release of Forma Designer: until then `connections` and `--connection` say so. Forma looks for the one installed for your Windows user, or `FORMA_DESIGNER` names the full path of a `RepxDesigner.exe` built from [`tools/RepxDesigner`](tools/RepxDesigner/), and an install too old for the verbs is never started.
+
+### In CI
+
+A GitHub Actions workflow that checks the reports you commit in `reports` on every pull request and push, and on a push to `main` makes a report of each file in `designs` and keeps them as the run's artifact:
+
+```yaml
+name: reports
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  reports:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: waqarsyd/forma
+          ref: <tag>
+          path: .forma
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+        working-directory: .forma
+      - if: github.event_name == 'push'
+        run: node .forma/src/mcp/cli.mjs batch designs --out made --json
+        env:
+          FORMA_GEMINI_KEY: ${{ secrets.FORMA_GEMINI_KEY }}
+      - if: github.event_name == 'push' && !cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: made
+      - if: hashFiles('reports/*.repx', 'reports/*.vsrepx') != '' && !cancelled()
+        run: node .forma/src/mcp/cli.mjs audit reports
+```
+
+- **Forma at a release, in a dot-folder.** `<tag>` is the tag of a Forma release that has the command line, `v` and its version: the first is the one the [changelog](https://openforma.web.app/changelog) lists the command line under, and any after it will do. A tag, so a run never changes under you; `.forma` is a dot-folder, which `batch` never walks, so Forma's own files are never taken for your reports. Add `npm run fetch:paddle` after `npm ci` for OCR as good as the website's.
+- **A fork's pull request gets no secret, and needs none to be checked.** `audit`, `repair`, `convert`, `pdf`, `outline` and `bind` never look at the AI, so they run on every pull request; here `audit` checks the reports directly in `reports` (not its subfolders: give each folder a step of its own), and is skipped when there are none. The key goes only to the step that runs on a push, from a secret into that step's `env`, never onto the command line. **Never `pull_request_target` with a key**: it runs with your repository's secrets on a fork's changes. An environment with required reviewers makes a person approve each run that spends quota.
+- **What a push makes is kept as the run's artifact**, `reports`, which you download from the run's page and GitHub keeps for 90 days unless your repository's settings say otherwise; commit the reports to keep them for good. The upload runs even when the batch step failed, stopped at a limit or ended with a file that failed, so what it made is kept: the runner and everything on it go when the job ends.
+- **The runner is your CI provider's computer.** For the job, your files and your key are on it, under that provider's terms, and what `generate` sends goes from there straight to your AI, never through Forma.
+- **The exit code is the gate**: 1 on audit errors, 4 on an input that failed, 5 at a limit. After a limit the next run makes every file again, since the runner holds none of the last run's reports; `--skip-existing` carries on where it stopped only where the reports are still there, a folder you commit them to or a runner of your own. A step that wraps the command in a shell script should `exec` it, so the stop GitHub sends on a cancel reaches node.
+- **Fonts.** On a Linux runner Arial, Times New Roman, Courier New, Calibri and Cambria measure as they do on Windows, with metric-compatible faces that come with Forma; any other family the runner lacks is measured in a stand-in, and the result names it. Install that family on the runner where it matters.
+
+### What leaves your computer
+
+Only `generate`, `revise` and the files a batch makes with the AI send anything: the pages of the files you give them, the text OCR read from them on the computer the command runs on, data files passed with `--data`, a database's layout you give (its table, view, procedure and column names, and sample values only from `--samples` or `--sample-objects`), your words and the report, from that computer straight to the AI you set up (Google's Gemini API or OpenRouter, with your own key, or a local model on that computer), never through Forma. On a CI runner, that computer is your CI provider's. Every other command makes no request at all; with `--connection`, Forma Designer, on your PC, connects to the SQL Server it keeps, as it does for the Data tab. No telemetry, no learning events and no error reports.
+
+### Limitations
+
+- **One file at a time**, by decision: a batch of forty pictures takes forty reports' time, and a free key's daily limit can stop it partway, for `--skip-existing` to carry on where the reports it made are still there.
+- **Less than the workspace knows**, as with the MCP server: no memory or house style, no kept reports, no report library, no vision model or page reader on a local server, no handwriting.
+- **Fonts on Linux**: only the five families above measure exactly without being installed; another is measured in a stand-in, which the result names, and a report laid out in it can wrap where the printed one does not.
+- **On Windows, a stop while a file that asks the AI is being made can end the process with 3221226505** (0xC0000409, a fail-fast abort, not yet explained) in place of 130; nothing is written either way, and the lines printed say 130. A gate on Windows should read both as a stop.
+- **Tested as you run it, not yet in anyone's workflow.** Its tests spawn the exact command above from a folder outside the clone, on Windows here and on Linux in Forma's CI, with the AI stood in; the recipe above follows GitHub's documentation and has not been run as written.
 
 ---
 
@@ -425,7 +579,7 @@ The top level, in brief. The full tree, with a note on every file that needs one
 
 | Path | What it holds |
 |---|---|
-| `src/` | The app: `main.tsx` (the entry), `PublicSite.tsx` (every public page), `App.tsx` (the workspace), `components/`, `lib/` (the pure helpers, nearly all under test), `services/` (the AI calls and the key vault), `server/` (what `server.ts` imports) and `mcp/` (Forma's MCP server, run on stdio from a clone) |
+| `src/` | The app: `main.tsx` (the entry), `PublicSite.tsx` (every public page), `App.tsx` (the workspace), `components/`, `lib/` (the pure helpers, nearly all under test), `services/` (the AI calls and the key vault), `server/` (what `server.ts` imports) and `mcp/` (Forma's MCP server, run on stdio from a clone, and its command line) |
 | `server.ts` | Express: Vite in middleware mode in development, and `dist/` served statically by `npm start` |
 | `scripts/` | The checks, the build, the deploy and release scripts, the fidelity benchmark and Forma's own model tooling |
 | `tools/` | Forma Designer (`RepxDesigner/`), the optional Windows companion, and `RepxProbe/`, which asks DevExpress what a `.repx` contains |
@@ -465,7 +619,7 @@ The top level, in brief. The full tree, with a note on every file that needs one
 | `npm run mcp` | Forma's MCP server on stdio (`src/mcp`), for development from the clone. Not the command a host runs: npm prints its banner to stdout, which the protocol forbids, and a host starts the server in your project, where npm would run that project's own scripts. A host runs `node <clone>/src/mcp/run.mjs`, after a full `npm ci` in the clone |
 | `npm run clean` | Remove `dist/` |
 
-Not an npm script, and not a check: Forma's command line, `node <clone>/src/mcp/cli.mjs <command>` from any folder (since 2026-11-24; `--help` lists its commands), runs Forma's REPX audit, its repair chain or a draft PDF from the command line, for a person or a coding assistant working on a report outside the web app; `audit` takes a file or a folder and exits 1 on an error, so it can gate a build, and it needs no AI. `npx tsx scripts/repx.ts audit|repair|pdf <file.repx>`, the form since 2026-11-11, still works in a shell in the clone. What each finding and repair means is [`docs/skills/devexpress-repx/SKILL.md`](docs/skills/devexpress-repx/SKILL.md). An AI assistant gets the same three, with an outline and edits, as tools of Forma's MCP server ([Forma from an AI assistant](#forma-from-an-ai-assistant)).
+Not an npm script, and not a check: Forma's command line, `node <clone>/src/mcp/cli.mjs <command>` from any folder (since 2026-11-24; `--help` lists its commands), checks, repairs, converts and binds reports with no AI, and makes and revises them with yours, a folder at a time ([Forma from the command line](#forma-from-the-command-line)); `audit` takes a file or a folder and exits 1 on an error, so it can gate a build. What each finding and repair means is [`docs/skills/devexpress-repx/SKILL.md`](docs/skills/devexpress-repx/SKILL.md). An AI assistant gets the audit, the outline, the repair, the edit (and with it binding), the PDF, the conversion and the two AI tools, one report a call, as tools of Forma's MCP server ([Forma from an AI assistant](#forma-from-an-ai-assistant)).
 
 <sup>Two other files list these: [`CONTRIBUTING.md`](CONTRIBUTING.md)'s table of checks and [`CLAUDE.md`](CLAUDE.md)'s *Commands* block. Adding or renaming a script is a change to all three — this table is the one users read, so it lists every script rather than only the checks.</sup>
 
@@ -521,9 +675,9 @@ The roadmap is section 6 of [`docs/PRD.md`](docs/PRD.md), which is kept current 
 - **A password-strength indicator** at sign-up. The minimum of eight characters, the verification email and the verified address sharing needs are done.
 - **The report library, moved into the notes.** It was evaluated on a real report on 2026-11-09 ([`docs/proposals/rag.md`](docs/proposals/rag.md): a restyle with the house style matched the house font where none did without it), and since 2026-11-11 the reports you keep join it on their own; graduating its reasoning from the proposal into `docs/notes/` is the step left.
 
-- **Making reports from your AI assistant.** Forma's MCP server is in ([Forma from an AI assistant](#forma-from-an-ai-assistant)), with tools that need no AI and, since 2026-11-24, two that make and revise a report with your own AI on the workspace's own generation path; the command line's `generate`, `revise`, `batch` and `convert` on that path are in too (since 2026-11-24), and so is binding what it makes to a database's layout file (`--database`, with `bind` and `sql-script`, since 2026-11-24); a database argument of the MCP server's own is next, and then Forma Designer reading a layout.
+- **Making reports from your AI assistant and the command line.** Forma's MCP server is in ([Forma from an AI assistant](#forma-from-an-ai-assistant)), with tools that need no AI and, since 2026-11-24, two that make and revise a report with your own AI on the workspace's own generation path; the command line's `generate`, `revise`, `batch` and `convert` on that path are in too ([Forma from the command line](#forma-from-the-command-line), since 2026-11-24), and so is binding a report to a database's layout file, from both (since 2026-11-24 on the command line, 2026-11-25 in the server). What is left is Forma Designer reading a layout for them: its command-line verbs are written and come with the next release of Forma Designer, which the owner packs.
 
-Deliberately out of scope, each with its reasons in [`docs/PRD.md`](docs/PRD.md) §6: a server or a browser holding a customer's database credential, moving generation server-side (the MCP server is not that: it is your own program on your own computer, with no port), and replacing the direct Gemini call with MCP.
+Deliberately out of scope, each with its reasons in [`docs/PRD.md`](docs/PRD.md) §6: a server or a browser holding a customer's database credential, moving generation server-side (the MCP server and the command line are not that: each is your own program, run on your own computer, or on a CI runner you choose, with your own key, and the server opens no port), and replacing the direct Gemini call with MCP.
 
 ---
 

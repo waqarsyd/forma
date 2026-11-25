@@ -66,10 +66,13 @@
  *   hands it a proxy that fails on any read of a name it does not list. The
  *   other, since the CLI and Forma Designer work's wave 6 (2026-11-25,
  *   D2-11, SEC-5), is designerVerbs.ts's `designerEnvFrom`, which the
- *   command line's entry hands its environment once the keys are deleted,
- *   to build the one Forma Designer is started with from Windows' own
- *   variables; the case below hands it such a proxy too, and the command
- *   line's wiring case holds where it is called. Forma Designer, started
+ *   command line's entry, and since that work's wave 7 the server's, hands
+ *   its environment once the keys are deleted, to build the one Forma
+ *   Designer is started with from Windows' own variables; the case below
+ *   hands it such a proxy too, and each entry's wiring case holds where it
+ *   is called (`cliWiringProblems`, `serverWiringProblems`, the latter with
+ *   the server's other reads after the delete: the roots, its test-only
+ *   switch and the person's two database switches). Forma Designer, started
  *   from designerVerbs.ts alone, is the one program src/mcp starts, and its
  *   start is held as its header says (no shell, never synchronous, stdout
  *   piped). Outside src/mcp, the reads that exist are named below with
@@ -537,6 +540,75 @@ describe("the command line's entry's wiring", () => {
     expect(broken('env: designerEnvFrom(process.env),', 'env: designerEnvFrom(process.env),\n  ...{ env: { ...process.env } },')).not.toEqual([]);
     expect(broken('const { main, stopOnSignals }', "const home = process.env.USERPROFILE;\nconst { main, stopOnSignals }")).not.toEqual([]);
     expect(broken('if (process.env.FORMA_CLI_TEST_NOISE) makeTestNoise();', 'if (process.env.FORMA_CLI_TEST_NOISE || process.env.CI) makeTestNoise();')).not.toEqual([]);
+  });
+});
+
+/**
+ * What is wrong with the server's entry's wiring (stdio.ts's header, since the CLI and Forma Designer work's wave 7:
+ * D2-11, the owner's OC6, and the lesson of that work's wave-6 review, N6-4), `body` without its comments: Forma
+ * Designer's place worked out once from process.platform, LOCALAPPDATA and FORMA_DESIGNER; its environment built once by
+ * designerEnvFrom(process.env), only after the keys are deleted; the person's two switches read once, by
+ * readDatabaseSettings, from FORMA_DATABASE_CONNECTIONS and FORMA_DATABASE_SAMPLES; all three handed to the server
+ * (`database`); never another connections file (`store`); and the environment referred to before the delete by
+ * takeAiEnv's argument alone, after it by the delete, the roots' two reads, the test-only switch and those three calls
+ * alone, so no copy of it, keys and all, can reach Forma Designer or a worker. Empty when it is right.
+ */
+function serverWiringProblems(body: string): string[] {
+  const problems: string[] = [];
+  const deleted = body.search(/\bfor\s*\(\s*const\s+(\w+)\s+of\s+remove\s*\)\s*delete\s+process\.env\[\s*\1\s*\]/);
+  const taken = body.search(/\btakeAiEnv\(\s*process\.env\s*,/);
+  const before = [...body.matchAll(/\bprocess\.env\b/g)].map((m) => m.index ?? -1).filter((i) => deleted < 0 || i < deleted);
+  if (before.some((i) => i !== body.indexOf('process.env', taken))) problems.push('the environment is referred to before its keys are deleted other than by takeAiEnv(process.env, ...)');
+  const built = [...body.matchAll(/\bdesignerEnvFrom\(\s*process\.env\s*\)/g)];
+  if (built.length !== 1 || (body.match(/\bdesignerEnvFrom\b/g) ?? []).length !== 2) problems.push("Forma Designer's environment is not built once, by designerEnvFrom(process.env)");
+  if (built.length && (deleted < 0 || (built[0].index ?? -1) < deleted)) problems.push("Forma Designer's environment is built before the keys are deleted");
+  if ((body.match(/\bdesignerPlace\(/g) ?? []).length !== 1 || !/\bdesignerPlace\(\s*\{\s*platform:\s*process\.platform,\s*localAppData:\s*process\.env\.LOCALAPPDATA,\s*override:\s*process\.env\.FORMA_DESIGNER\s*\}\s*\)/.test(body)) {
+    problems.push("Forma Designer's place is not worked out once from process.platform, LOCALAPPDATA and FORMA_DESIGNER");
+  }
+  if ((body.match(/\breadDatabaseSettings\(/g) ?? []).length !== 1 || !/\breadDatabaseSettings\(\s*\{\s*connections:\s*process\.env\.FORMA_DATABASE_CONNECTIONS,\s*samples:\s*process\.env\.FORMA_DATABASE_SAMPLES\s*\}\s*\)/.test(body)) {
+    problems.push("the person's database switches are not read once, by readDatabaseSettings, from FORMA_DATABASE_CONNECTIONS and FORMA_DATABASE_SAMPLES");
+  }
+  if (!/\bcreateFormaServer\(\s*\{[^}]*\bdatabase\s*\}\s*\)/.test(body.replace(/\{\s*settings,\s*generator\s*\}/g, 'ai'))) problems.push('the server is not handed the database settings and Forma Designer (database)');
+  if (/\bstore\b/.test(body)) problems.push('the entry names another connections file for Forma Designer (store)');
+  const allowed = [
+    /\bdelete\s+(process\.env)\[\s*\w+\s*\]/g,
+    /\bconst\s+noise\s*=\s*(process\.env)\.FORMA_MCP_TEST_NOISE\b/g,
+    /\bFORMA_MCP_ROOTS:\s*(process\.env)\.FORMA_MCP_ROOTS\b/g,
+    /\bCLAUDE_PROJECT_DIR:\s*(process\.env)\.CLAUDE_PROJECT_DIR\b/g,
+    /\blocalAppData:\s*(process\.env)\.LOCALAPPDATA,/g,
+    /\boverride:\s*(process\.env)\.FORMA_DESIGNER\s*\}/g,
+    /\bdesignerEnvFrom\(\s*(process\.env)\s*\)/g,
+    /\bconnections:\s*(process\.env)\.FORMA_DATABASE_CONNECTIONS,/g,
+    /\bsamples:\s*(process\.env)\.FORMA_DATABASE_SAMPLES\s*\}/g,
+  ].map((shape) => [...body.matchAll(shape)].map((m) => (m.index ?? 0) + m[0].indexOf(m[1])));
+  if (allowed.some((at) => at.length !== 1)) problems.push('the environment is not referred to once each by the delete, the test-only switch, the roots, designerPlace, designerEnvFrom and readDatabaseSettings');
+  const known = new Set(allowed.flat());
+  const after = [...body.matchAll(/\bprocess\.env\b/g)].map((m) => m.index ?? -1).filter((i) => deleted >= 0 && i > deleted);
+  if (after.some((i) => !known.has(i))) problems.push('the environment is referred to after its keys are deleted other than by the delete, the test-only switch, the roots, designerPlace, designerEnvFrom and readDatabaseSettings');
+  return problems;
+}
+
+describe("the server's entry's wiring", () => {
+  it('is what its header says: Forma Designer and the database switches read once each, after the keys are deleted, and handed to the server', () => {
+    expect(serverWiringProblems(code(text(join(CLONE, 'src', 'mcp', 'stdio.ts'))))).toEqual([]);
+  });
+
+  it("refuses the ways of breaking it that the command line's entry was found open to (N6-4), and the server's own", () => {
+    const right = code(text(join(CLONE, 'src', 'mcp', 'stdio.ts')));
+    expect(serverWiringProblems(right)).toEqual([]);
+    const broken = (from: string | RegExp, to: string) => {
+      const changed = right.replace(from, to);
+      expect(changed, String(from)).not.toBe(right);
+      return serverWiringProblems(changed);
+    };
+    expect(broken('env: designerEnvFrom(process.env) }', 'env: { ...process.env } }')).not.toEqual([]);
+    expect(broken('env: designerEnvFrom(process.env) },\n};', 'env: designerEnvFrom(process.env) },\n};\nObject.assign(database.designer.env, process.env);')).not.toEqual([]);
+    const early = right.replace('guard.addSecrets(secrets);', 'guard.addSecrets(secrets);\nconst early = designerEnvFrom(process.env);').replace('env: designerEnvFrom(process.env) }', 'env: early }');
+    expect(serverWiringProblems(early)).not.toEqual([]);
+    expect(broken('samples: process.env.FORMA_DATABASE_SAMPLES }', 'samples: process.env.FORMA_DATABASE_SAMPLES ?? process.env.CI }')).not.toEqual([]);
+    expect(broken('const database = {', 'const home = process.env.USERPROFILE;\nconst database = {')).not.toEqual([]);
+    expect(broken(', database }), {', ' }), {')).not.toEqual([]);
+    expect(broken('env: designerEnvFrom(process.env) }', "env: designerEnvFrom(process.env), store: 'C:\\\\x.tsv' }")).not.toEqual([]);
   });
 });
 

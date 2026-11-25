@@ -246,7 +246,15 @@ const BUDGETS = [
   // need and its FORMA_* settings, where the key is then kept, one at a time and a stop, their two
   // definitions), reports that live in C# or VB code, and the key article's at-rest sentence scoped to
   // the website. Copy a visitor reads, not code. 94.1%.
-  { prefix: 'DocsPage-', ext: '.js', max: 97_500, note: 'the Docs page, lazy (91,761 B at 94.1%, the MCP article with its AI tools)' },
+  // Raised to 112,700 on 2026-11-25, at 105,940 B (108.7%, over): the CLI and Forma Designer work's wave 7
+  // (SIZE-1 of its design audit). Its first part grew the chunk to 94,661 B (97.1%) with the MCP article's
+  // database arguments, repx_convert and database_connections; its docs part +11,279 B with an article of
+  // its own, Forma from the command line (its twelve commands and which ask the AI, the AI's settings from
+  // the environment, what it writes and prints, its exit codes, a batch one file at a time and its limits,
+  // a database's layout, a GitHub Actions recipe, what leaves the computer it runs on and what is worth
+  // knowing on Linux and Windows), and the key article's and the MCP article's links to it. Copy a visitor
+  // reads, not code. 94.0%.
+  { prefix: 'DocsPage-', ext: '.js', max: 112_700, note: 'the Docs page, lazy (105,940 B at 94.0%, the command line\'s article)' },
   { prefix: 'reportPreview-', ext: '.js', max: 66_000, note: 'the Preview engine, lazy (61,825 B at 93.7%, Vite 8)' },
   // Raised to 55,500 on 2026-11-12, at 51,921 B (102.8%): the 1.6.0 entry, the full audit's release note, in a visitor's words (DOCS, dc85c04). 93.6%.
   // Raised to 58,700 the same day, at 55,155 B (99.4%): the 1.6.1 entry, +1,096 B, the releases' own words. 94.0%.
@@ -924,10 +932,21 @@ const isPaddle = (f) => f.path.startsWith(PADDLE_DIR) || f.name.startsWith('padd
  * privacy policy, and the wave-4 review's fixes added two sentences to the
  * article. The total was 897,185 B (98.9%) before them. Copy a visitor
  * reads, not drift; this is the raise wave 5 should have carried. 94.0%.
+ *
+ * Raised to 1,019,000 on 2026-11-25, at 957,697 B (98.7%, under but past the
+ * band): the CLI and Forma Designer work's wave 7 (SIZE-1). Its first part
+ * took the total to 933,557 B (96.2%) with the MCP article's database
+ * arguments and its two new tools on the Docs, FAQ, security and self-host
+ * pages and in the privacy policy; its docs part +24,140 B with Forma's
+ * command line on the public pages: a Docs article drawn into docs.html, an
+ * FAQ answer drawn into both the Docs and the FAQ pages, a section each on
+ * /security and /self-host, and one in the privacy policy. Raised now, not
+ * when it breaks, because the release wave's changelog entry would. Copy a
+ * visitor reads, not drift. 94.0%.
  */
 const isPage = (f) => f.name.endsWith('.html') && dirname(f.path) === DIST;
 const pagesTotal = files.filter(isPage).reduce((a, f) => a + f.size, 0);
-const PAGES_TOTAL_MAX = 970_000;
+const PAGES_TOTAL_MAX = 1_019_000;
 const total = files.filter((f) => !isOcr(f) && !isPdfFont(f) && !isModel(f) && !isHandwriting(f) && !isPaddle(f) && !isPage(f)).reduce((a, f) => a + f.size, 0);
 const paddleTotal = files.filter(isPaddle).reduce((a, f) => a + f.size, 0);
 // 13,082,453 B with the models (2026-11-10), so 94.0%.

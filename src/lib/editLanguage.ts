@@ -11,8 +11,9 @@
  * `GROUP_EDIT` is told to the chat only beside a shared database
  * (DATABASE_CHAT_RULES), where the instructions above would otherwise send a
  * group to a redesign; the MCP tool tells it always, since a group band needs
- * no database. The `data` edit is the database's alone and is told nowhere
- * here.
+ * no database. The `data` edit is the database's alone: `DATA_EDIT`, told to
+ * the chat beside a shared database and, since the CLI and Forma Designer
+ * work's wave 7, by repx_edit, which makes it with a database layout given.
  *
  * Pure ASCII, as everything the MCP server sends.
  */
@@ -57,3 +58,12 @@ export const EDIT_LANGUAGE = `The edits, by "op", and the fields each reads:
 On a table, font, color, align, border and format name a cell by row and cell, a whole row by row alone (a header row), a column by cell alone, and every cell with neither.`;
 
 export const GROUP_EDIT = `- group: field, and optionally total (a field to sum in the group's footer): a group band on that field, outside any group the report has.`;
+
+/**
+ * The `data` edit, as the chat is told it beside a shared database
+ * (geminiService.ts DATABASE_CHAT_RULES) and, since the CLI and Forma
+ * Designer work's wave 7 (2026-11-25), repx_edit with a database layout
+ * (D1-11): moved here from the chat's rules byte for byte, so the two read
+ * one copy.
+ */
+export const DATA_EDIT = `- data: query, what the report reads, as JSON: {"table":"dbo.Orders","joins":[{"table":"dbo.Customers","type":"LeftOuter","on":[{"from":"CustomerID","to":"CustomerID"}]}],"filter":"[Customers.Region] = ?Region","sort":[{"column":"dbo.Orders.OrderDate","descending":true}],"details":[{"table":"dbo.OrderLines","on":[{"from":"OrderID","to":"OrderID"}]}]}, or {"procedure":"dbo.usp_Name"}, or {"name":"Q","sql":"SELECT ..."}. Write the WHOLE query, starting from what the report reads now and changing what was asked. A join's "from" is the main table's column and "to" the joined one's; a filter's ?Name becomes a report parameter Forma adds. Then bind, or add and bind, the controls that print new fields.`;

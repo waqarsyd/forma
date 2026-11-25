@@ -65,7 +65,20 @@ export type LayoutRead =
       /** What the files held that was not read. */
       notices: string[];
     }
-  | { ok: false; reason: string };
+  | {
+      ok: false;
+      reason: string;
+      /**
+       * With `namesApart`, the databases' names the reason would have said, read from the files (since the CLI and
+       * Forma Designer work's wave 7, D1-10): the MCP server returns them as data, never in its words.
+       */
+      named?: { samples: string; layout: string };
+    };
+
+/** How `layoutFromFile` says what it refuses: `namesApart`, no name read from inside a file in the reason (the MCP server's). */
+export interface LayoutFileOptions {
+  namesApart?: boolean;
+}
 
 /** The file's own name, without the folders a path gives it. */
 const fileName = (name: string) => name.replace(/^.*[\\/]/, '');
@@ -95,9 +108,10 @@ const SQL_ERROR_WORDS = "holds an error from sqlcmd or SQL Server rather than th
  * beside it (the header). Refused, in words naming the file and the fix: a
  * file that is not a layout, Forma's export cut short or damaged, text that
  * lost characters to its encoding, a report with no data source, a sample
- * file that is a layout or is of another database.
+ * file that is a layout or is of another database. With `namesApart` the
+ * reason names no database read from the files, and gives them as `named`.
  */
-export function layoutFromFile(bytes: Uint8Array, name: string, samples: readonly LayoutInput[] = []): LayoutRead {
+export function layoutFromFile(bytes: Uint8Array, name: string, samples: readonly LayoutInput[] = [], options: LayoutFileOptions = {}): LayoutRead {
   const file = fileName(name);
   const large = tooLarge({ bytes, name });
   if (large) return { ok: false, reason: large };
@@ -143,6 +157,9 @@ export function layoutFromFile(bytes: Uint8Array, name: string, samples: readonl
     }
     if (found.kind === 'damaged') return { ok: false, reason: `"${own}" ${found.reason}` };
     if (!sameDatabase(found.database, schema.database)) {
+      if (options.namesApart) {
+        return { ok: false, reason: `The sample rows in "${own}" are of another database than the layout's: give sample rows of the same database as the layout.`, named: { samples: found.database, layout: schema.database } };
+      }
       return { ok: false, reason: `The sample rows in "${own}" are of the database ${found.database || 'with no name'}, and the layout is of ${schema.database || 'a database with no name'}: give sample rows of the same database as the layout.` };
     }
     schema = withSamples(schema, found.samples);

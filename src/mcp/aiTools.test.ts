@@ -131,6 +131,8 @@ type Client = Awaited<ReturnType<typeof serve>>;
 async function call(c: Client, name: string, args: Record<string, unknown>, metaArg?: Record<string, unknown>, onId?: (id: number) => void): Promise<Record<string, any>> {
   const result = (await c.call(name, args, metaArg, onId)).result as Record<string, any>;
   if (!result.isError) expect(textJson(result)).toEqual(result.structuredContent);
+  // An error never carries structured content, which must match the output schema (toolShape.ts, W7-MCP-1).
+  else expect(result.structuredContent).toBeUndefined();
   return result;
 }
 const errorText = (result: Record<string, any>) => {
@@ -307,8 +309,11 @@ describe('generate_report', () => {
     expect(out.bound).toBe(true);
     expect(out.fromFile.binding).toMatchObject({ database: 'FormaSample', query: { table: 'dbo.Customers' }, connection: 'FormaSample' });
     expect(out.notices).toContain('The report is bound to the database layout given; fromFile.binding says what it reads.');
-    // Words naming no route a host's model could take itself (the wave-5 review, W5-PB-9): never the command line's --samples.
-    expect(out.notices).toContain('"rows.txt" holds sample rows, which go to the AI only when the person turns sample rows on for this server, which this version does not offer, so they were not read.');
+    // Words naming no route a host's model could take itself (the wave-5 review, W5-PB-9): never the command line's --samples;
+    // since the CLI work's wave 7, the samples argument and the person's own switch in the server's entry (OC6).
+    expect(out.notices).toContain(
+      "\"rows.txt\" holds sample rows, which go to the AI only when they are passed as samples beside a layout passed as database, and the person has turned sample rows on in this server's entry (FORMA_DATABASE_SAMPLES=1), so they were not read.",
+    );
     expect(JSON.stringify(out.notices)).not.toMatch(/--samples|command line/);
     // The names read from the layout reach the result only under fromFile, never the summary or a plain notice.
     expect(result.content[0].text.split('\n\n')[0]).not.toMatch(/Customers|FormaSample/);

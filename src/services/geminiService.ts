@@ -60,7 +60,7 @@ import { SET_UP_AI } from "../lib/aiProvider";
 import type { AgentEdit, AgentTool } from "../lib/agentEdit";
 import { NOT_FOLLOWED } from "../lib/chatTurn";
 import { languageAsked } from "../lib/repxTranslate";
-import { EDIT_LANGUAGE, GROUP_EDIT } from "../lib/editLanguage";
+import { DATA_EDIT, EDIT_LANGUAGE, GROUP_EDIT } from "../lib/editLanguage";
 import {
   pageSizeInUnits,
   unitsPerInch,
@@ -924,7 +924,7 @@ Answer with one JSON object and nothing around it: {"reply": "...", "action": "a
  * from the JSON (lib/databaseAi.ts), holding every name to the layout.
  */
 const DATABASE_CHAT_RULES = `THE DATABASE: the user shared their SQL Server database's layout, in <database>, ending with what the report reads now. With it, binding to data, new fields from the database, a filter and a group are edits, not a rebuild:
-- data: query, what the report reads, as JSON: {"table":"dbo.Orders","joins":[{"table":"dbo.Customers","type":"LeftOuter","on":[{"from":"CustomerID","to":"CustomerID"}]}],"filter":"[Customers.Region] = ?Region","sort":[{"column":"dbo.Orders.OrderDate","descending":true}],"details":[{"table":"dbo.OrderLines","on":[{"from":"OrderID","to":"OrderID"}]}]}, or {"procedure":"dbo.usp_Name"}, or {"name":"Q","sql":"SELECT ..."}. Write the WHOLE query, starting from what the report reads now and changing what was asked. A join's "from" is the main table's column and "to" the joined one's; a filter's ?Name becomes a report parameter Forma adds. Then bind, or add and bind, the controls that print new fields.
+${DATA_EDIT}
 ${GROUP_EDIT}
 So "bind it to dbo.usp_Sales" is a data edit {"procedure":"dbo.usp_Sales"} and binds; "add the customer's phone" is a data edit joining the customers' table, then an add and a bind of [Phone]; "filter by a region parameter" is a data edit with a filter on ?Region; "group by Region" is a group edit. Name only the tables, columns and procedures <database> lists, spelled as it spells them.`;
 

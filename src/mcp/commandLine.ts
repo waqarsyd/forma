@@ -193,8 +193,9 @@
  * the run's signal (`stopOnSignals`): the AI's thread is ended at once, so
  * no request goes out after it, the report under way is not written, and
  * the command exits 130; a second ends the process at once. On Windows a
- * stop once the AI's thread has started ends the process with 0xC000013A
- * (3221226505), a console's Ctrl+C code, in place of 130, though nothing is
+ * stop once the AI's thread has started ends the process with 3221226505
+ * (0xC0000409, Windows' fail-fast abort, not its Ctrl+C code, 0xC000013A,
+ * which is 3221225786; the wave-7 review's W7R-4), in place of 130, though nothing is
  * written and the lines printed say 130 (measured in the wave-4 review, U7,
  * and again in its fix round, leaving at once after `main` or not; not yet
  * explained). What survives a
@@ -1379,6 +1380,8 @@ async function connectionFirst(run: Run, label: string): Promise<Row | null> {
     for (const u of read.unread) {
       run.err(`SQL Server could not read sample rows of ${u.object}${u.number === null ? '' : ` (its error ${u.number})`}, so its rows were left out.`);
     }
+    // A table or view the database does not have, which Forma Designer leaves out with no word (the wave-7 review's W7-MCP-4).
+    for (const name of read.notFound) run.err(`The database has no table or view named ${name}, so no rows of it were read.`);
     // The name what is read is said under: the connection's, as Forma Designer keeps it, never a file's.
     const as = `${read.connection} in Forma Designer`;
     const bytes = (text: string) => new TextEncoder().encode(text);

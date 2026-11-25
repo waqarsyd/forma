@@ -50,8 +50,16 @@
  *
  * The words where the person chooses what a report reads are the caller's
  * (`WHERE`, databaseAi.ts `DatabaseWhere`): the command line's options, and
- * for the MCP server's host, whose tools take no database argument until the
- * CLI and Forma Designer work's wave 7, a layout passed with the request.
+ * since the CLI and Forma Designer work's wave 7 (2026-11-25) the MCP
+ * server's arguments (`procedure`, `object`, `query`), with sample rows only
+ * as the person allows them in the server's entry (OC6).
+ *
+ * **Names from the files stay apart for the server** (that wave, D1-10): a
+ * refusal in the server's voice names no table, view, procedure or database
+ * the layout or the query holds (`pinnedQuery`, `readDatabase`), and carries
+ * them as the refusal's `fromFile` (caller.ts `ToolRefusal`), which
+ * toolShape.ts returns as data; the command line's words name them, as a
+ * person reads a refusal whole.
  *
  * Pure ASCII.
  */
@@ -93,14 +101,16 @@ export const SAMPLE_FILE_EXTENSIONS = ['.txt', '.json', '.xml', '.rpt'] as const
 /**
  * Where the person chooses what a report reads, in each caller's words (databaseAi.ts `DatabaseWhere`). The server's
  * words for sample rows name no route a host's model could take itself (2026-11-25, the wave-5 review, W5-PB-9): they
- * named the command line's --samples, which a host with a shell can run, and there the flag is the person's consent;
- * OC6 makes samples over MCP the person's switch in the server's entry, which this version does not offer.
+ * named the command line's --samples, which a host with a shell can run, and there the flag is the person's consent.
+ * OC6 makes samples over MCP the person's switch in the server's entry, FORMA_DATABASE_SAMPLES, which the server reads
+ * since the CLI and Forma Designer work's wave 7: the words name it as the person's to set, beside the tool's own
+ * argument, which the server refuses while the switch is off.
  */
 export const WHERE: Record<Voice, DatabaseWhere> = {
   mcp: {
     chose: 'as the user chose',
-    choose: 'by naming the table, view or procedure it should read in the request',
-    samples: 'when the person turns sample rows on for this server, which this version does not offer',
+    choose: 'by naming it with procedure, object or query',
+    samples: "when they are passed as samples beside a layout passed as database, and the person has turned sample rows on in this server's entry (FORMA_DATABASE_SAMPLES=1)",
   },
   cli: {
     chose: 'as the user chose',
@@ -150,18 +160,33 @@ export interface DatabaseRead {
 }
 
 /** The phrases of this module that a host's model and a person are told differently (caller.ts `Voice`, CLI-10). */
+const full = (o: { schema: string; name: string }) => `${o.schema}.${o.name}`;
+
+/**
+ * The phrases of this module that a host's model and a person are told differently (caller.ts `Voice`, CLI-10). Since the
+ * CLI work's wave 7 (D1-10) the server's name nothing a layout or a query holds: what a pinned query lacks is carried
+ * apart, as the refusal's fromFile (`apart`), and the person's words name it.
+ */
 const SAY = {
   mcp: {
-    asked: 'Nothing was asked of the AI.',
-    pin: 'name another in the request',
+    asked: 'Nothing was asked of the AI, and nothing written.',
+    pin: 'name another with procedure, object or query',
+    lacks: (_problems: readonly string[]) => 'it cannot be held to the database layout given (fromFile.query says why)',
+    partOf: (_problems: readonly string[]) => 'part of it (fromFile.query says which)',
+    procedure: (_p: { schema: string; name: string }) => 'the stored procedure given',
+    query: (_name: string) => 'The query given',
+    apart: true,
   },
   cli: {
     asked: 'Nothing was asked of the AI, and nothing written.',
     pin: 'give another with --procedure, --query or --object',
+    lacks: (problems: readonly string[]) => problems.join('; '),
+    partOf: (problems: readonly string[]) => problems.join('; '),
+    procedure: (p: { schema: string; name: string }) => `the stored procedure ${full(p)}`,
+    query: (name: string) => `The query ${name}`,
+    apart: false,
   },
-} as const satisfies Record<Voice, Record<string, string>>;
-
-const full = (o: { schema: string; name: string }) => `${o.schema}.${o.name}`;
+} as const satisfies Record<Voice, Record<string, unknown>>;
 
 /**
  * The query a caller pinned, held to the layout: every part of it there, or
@@ -174,15 +199,15 @@ export async function pinnedQuery(json: QueryJson, schema: SqlSchema, voice: Voi
   const [{ queryFromJson }, { findProcedure, queryName }, { resultFix }] = await Promise.all([import('../lib/databaseAi'), import('../lib/sqlQuery'), import('../lib/sqlSchema')]);
   const say = SAY[voice];
   const read = queryFromJson(json, schema);
-  if (!read.query) throw new ToolRefusal(`The query given cannot be bound: ${read.problems.join('; ') || 'it names nothing to read'}; ${say.pin}. ${say.asked}`);
-  if (read.problems.length) throw new ToolRefusal(`Part of the query given is not in the layout, so it was not bound: left out ${read.problems.join('; ')}; ${say.pin}. ${say.asked}`);
+  // The problems quote the layout's names and its database's: the server's words name none of them (D1-10), and carry them apart.
+  const apart = say.apart && read.problems.length ? { query: read.problems } : undefined;
+  if (!read.query) throw new ToolRefusal(`The query given cannot be bound: ${read.problems.length ? say.lacks(read.problems) : 'it names nothing to read'}; ${say.pin}. ${say.asked}`, apart);
+  if (read.problems.length) throw new ToolRefusal(`Part of the query given is not in the layout, so it was not bound: left out ${say.partOf(read.problems)}; ${say.pin}. ${say.asked}`, apart);
   if (read.query.kind === 'procedure') {
     const p = findProcedure(schema, read.query.procedure);
-    if (p && !p.result.length) {
-      throw new ToolRefusal(`The layout does not say what the stored procedure ${full(p)} returns, so a report cannot be bound to it: ${resultFix(p.resultError?.type ?? '')} ${say.asked}`);
-    }
+    if (p && !p.result.length) throw new ToolRefusal(`The layout does not say what ${say.procedure(p)} returns, so a report cannot be bound to it: ${resultFix(p.resultError?.type ?? '')} ${say.asked}`);
   }
-  if (read.query.kind === 'custom' && !read.query.sql) throw new ToolRefusal(`The query ${queryName(read.query)} holds no SQL. ${say.asked}`);
+  if (read.query.kind === 'custom' && !read.query.sql) throw new ToolRefusal(`${say.query(queryName(read.query))} holds no SQL. ${say.asked}`);
   return read.query;
 }
 
@@ -195,8 +220,9 @@ export async function pinnedQuery(json: QueryJson, schema: SqlSchema, voice: Voi
  */
 export async function readDatabase(job: DatabaseJob, voice: Voice): Promise<DatabaseRead> {
   const [{ layoutFromFile }, { connectionNameProblem }] = await Promise.all([import('../lib/layoutFile'), import('../lib/databaseAi')]);
-  const read = layoutFromFile(job.layout.bytes, job.layout.name, job.samples);
-  if (!read.ok) throw new ToolRefusal(`${read.reason} ${SAY[voice].asked}`);
+  // In the server's voice a database's name read from the files is carried apart, never in the words (D1-10).
+  const read = layoutFromFile(job.layout.bytes, job.layout.name, job.samples, { namesApart: voice === 'mcp' });
+  if (!read.ok) throw new ToolRefusal(`${read.reason} ${SAY[voice].asked}`, read.named ? { databases: read.named } : undefined);
   if (job.connectionName !== undefined) {
     const problem = connectionNameProblem(job.connectionName);
     if (problem) throw new ToolRefusal(`${problem} ${SAY[voice].asked}`);

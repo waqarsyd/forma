@@ -72,7 +72,8 @@
  *   (lib/layoutFile.ts `stepFromFiles`, since the CLI and Forma Designer
  *   work's wave 5, D1-1), and kept nowhere; so is one a caller hands in with
  *   the request (`make`'s `extra.database`, the step genJobs.ts builds from
- *   the command line's `--database`, the same wave's D1-2).
+ *   the command line's `--database`, the same wave's D1-2, and since that
+ *   work's wave 7 from the server's `database` or `connection`).
  *
  * Forma's folder (`formaUserFolder`) is per user and outside any repository
  * and the user's project: the probe's file, the parks' file and the gathered

@@ -249,7 +249,13 @@ const WIN_BAD = /[<>"|?*]/;
  * patterns, and since the wave-8 review (W8C-5) the files a .NET project
  * keeps its connection strings in (appsettings*.json, local.settings.json)
  * and a connections*.txt, which generate_report would otherwise send to the
- * AI as data.
+ * AI as data; and since the CLI and Forma Designer work's wave-7 review
+ * (W7-MCP-2) a connections*.tsv, the name of Forma Designer's own store
+ * (%LOCALAPPDATA%\Forma\connections.tsv, tools/RepxDesigner/Sql.cs), whose
+ * lines hold each connection's server and its encrypted sign-in: .tsv is a
+ * data file's extension, so a root covering that folder, or a copy of the
+ * store in a project, would have sent them to the AI as data, where Forma
+ * Designer's verbs never print a server or a secret.
  */
 const CREDENTIAL = [
   /^key\.txt$/i,
@@ -265,6 +271,7 @@ const CREDENTIAL = [
   /^appsettings.*\.json$/i,
   /^local\.settings\.json$/i,
   /^connections.*\.txt$/i,
+  /^connections.*\.tsv$/i,
 ];
 
 /**

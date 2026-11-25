@@ -5,7 +5,7 @@
  * as the chat draws it, and the articles a question is given. jsdom for the
  * page; this must stay line 1.
  *
- * The questions are the measurement as well as the test: twenty-two a person
+ * The questions are the measurement as well as the test: twenty-three a person
  * might ask, each with the article that answers it. Before batch AG the chat
  * was given no article for any of them.
  */
@@ -38,6 +38,8 @@ const ASKED: Array<[string, string]> = [
   ['The sign-in popup was blocked, what do I do?', 'trouble'],
   // 2026-11-24 (the MCP work's wave 5): the article on Forma's MCP server.
   ['Can I use Forma from Claude Code?', 'mcp'],
+  // 2026-11-25 (the CLI and Forma Designer work's wave 7, DOC-3): the article on its command line.
+  ['Can I run Forma in GitHub Actions?', 'cli'],
 ];
 
 let sections: DocsSection[] = [];
@@ -76,7 +78,8 @@ describe('the Docs page, as the chat reads it', () => {
       if (got[0] !== id) console.info(`docs: "${q}" wanted ${id}, given ${got.join(', ') || 'nothing'}`);
     }
     // 21 and 21 when measured; 20 first with a plural's s alone as the stemming. 22 and 22 with the
-    // MCP article's question (2026-11-24), the thresholds left where they were.
+    // MCP article's question (2026-11-24), the thresholds left where they were. 23 and 23 with the
+    // command line's (2026-11-25), its article first for it; the thresholds left again.
     expect(given).toBeGreaterThanOrEqual(20);
     expect(first).toBeGreaterThanOrEqual(19);
   });

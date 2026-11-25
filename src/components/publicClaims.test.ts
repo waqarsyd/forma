@@ -29,7 +29,10 @@ import { DESIGNER_REQUIREMENTS, DEVEXPRESS_TRIAL_URL, designerDownloadUrl } from
 import { DESIGNER_ORIGIN } from '../lib/designerBridge';
 import { SET_UP_AI } from '../lib/aiProvider';
 import { TOOL_LIST } from '../mcp/toolList';
-import { AI_ENV_NAMES } from '../mcp/aiSettings';
+import { AI_ENV_NAMES, takeAiEnv } from '../mcp/aiSettings';
+import { DATABASE_ENV_NAMES, LAYOUT_SCRIPT_URI } from '../mcp/databaseTools';
+import { CLI_COMMANDS, CLI_LAUNCHER } from '../mcp/cliCommands';
+import { MAX_BATCH_FILES } from '../lib/folderDrop';
 
 const page = (name: string) => readFileSync(`src/components/${name}.tsx`, 'utf8');
 const landing = page('LandingPage');
@@ -37,7 +40,9 @@ const features = page('FeaturesPage');
 const docs = page('DocsPage');
 const figures = readFileSync('src/components/landing/StepFigures.tsx', 'utf8');
 /** The words a visitor reads: comments taken out, so a note about a removed claim does not count as making it. */
-const visible = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
+// A block comment opens at the start, after white space, `{` or `(`: the CI recipe's `reports/*.repx`, a glob in a string,
+// is no comment, and read as one it hid the Docs page from there to the next comment's end (the CLI work's wave-7 review).
+const visible = (src: string) => src.replace(/(^|[\s{(])\/\*[\s\S]*?\*\//g, '$1').replace(/^\s*\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
 // With the FAQ and the pages SJ added (2026-11-08), which make claims too.
 const faqs = readFileSync('src/components/faqs.tsx', 'utf8');
 const info = readFileSync('src/components/infoPages.tsx', 'utf8');
@@ -549,8 +554,8 @@ describe("the Docs page and the README say what Forma's MCP server offers, as to
     for (const [name, src] of [['Docs', article('mcp')], ['README', section()]] as const) {
       if (asksAi.length) expect(src, name).not.toContain(none);
       else expect(src, name).toContain(none);
-      // A tool's name, wherever the two write one in code, is a tool toolList.ts has.
-      const named = [...src.matchAll(/\b(?:repx|forma|generate|revise)_[a-z_]+\b/g)].map((m) => m[0]);
+      // A tool's name, wherever the two write one in code, is a tool toolList.ts has (database_ since the CLI work's wave 7).
+      const named = [...src.matchAll(/\b(?:repx|forma|generate|revise|database)_[a-z_]+\b/g)].map((m) => m[0]);
       for (const tool of named) expect(TOOL_LIST.map((t) => t.name), `${name} names ${tool}`).toContain(tool);
     }
     // The FAQ's answer and /self-host say it in their own words, held the same way (R4 of the wave-4 review).
@@ -580,7 +585,9 @@ describe("the Docs page and the README say what Forma's MCP server offers, as to
       expect(def.includes('Needs an AI'), `the Docs definition of ${name}`).toBe(needsAi);
     }
     const asksAi = TOOL_LIST.some((t) => t.needsAi);
-    const reads = new Set<string>([...AI_ENV_NAMES, 'FORMA_MCP_ROOTS']);
+    // Since the CLI and Forma Designer work's wave 7: the person's database switches and Forma Designer's place, which the
+    // server's entry reads too (src/mcp/databaseTools.ts DATABASE_ENV_NAMES).
+    const reads = new Set<string>([...AI_ENV_NAMES, 'FORMA_MCP_ROOTS', ...DATABASE_ENV_NAMES]);
     // The optional three (a model pin, a locale, the mock) need not be on the Docs page; the README lists all.
     const toSetUp = AI_ENV_NAMES.filter((n) => !['FORMA_MODEL', 'FORMA_LOCALE', 'FORMA_MCP_MOCK'].includes(n));
     for (const [where, src] of [['README', readme], ['Docs', docsMcp]] as const) {
@@ -591,6 +598,25 @@ describe("the Docs page and the README say what Forma's MCP server offers, as to
     // Generation through the server is said as built, everywhere the server is described, while it is.
     for (const [where, src] of [['README', readme], ['the public pages', all]] as const) {
       if (asksAi) expect(src.replace(/\s+/g, ' '), where).not.toMatch(/through it is not built/i);
+    }
+  });
+
+  /*
+   * Since the CLI and Forma Designer work's wave 7 (2026-11-25; SEC-6, D2-11, D1-6, the owner's OC6): the server's
+   * database arguments rest on two switches of the person's own in its entry, and the layout script it serves. Both pages
+   * name them while databaseTools.ts reads them, and while the released Forma Designer is older than the one with the
+   * verbs (lib/designerRelease.ts), they say the next release of Forma Designer, never a version that is out.
+   */
+  it("names the person's two database switches and the layout script, and the next release of Forma Designer for the verbs while none has them", async () => {
+    const { DESIGNER_RELEASE, DESIGNER_VERBS_SINCE, designerIsOlder } = await import('../lib/designerRelease');
+    for (const [where, src] of [['README', section()], ['Docs', article('mcp')]] as const) {
+      for (const name of DATABASE_ENV_NAMES.filter((n) => n !== 'FORMA_DESIGNER')) expect(src, `${where} names ${name}`).toContain(name);
+      expect(src, where).toContain(LAYOUT_SCRIPT_URI);
+      for (const tool of ['repx_convert', 'database_connections']) expect(src, `${where} names ${tool}`).toContain(tool);
+      if (designerIsOlder(DESIGNER_RELEASE.version, DESIGNER_VERBS_SINCE)) {
+        expect(src.replace(/\s+/g, ' '), where).toMatch(/the next release of Forma Designer/);
+        expect(src, where).not.toMatch(new RegExp(`Forma Designer ${DESIGNER_VERBS_SINCE.replace(/\./g, '\\.')}`));
+      }
     }
   });
 
@@ -683,5 +709,225 @@ describe("the Docs page and the README say what Forma's MCP server offers, as to
       expect(listing.length, name).toBeGreaterThan(0);
       for (const sentence of listing) expect(sentence, name).toMatch(/reached a limit|a limit has paused/);
     }
+  });
+});
+
+/*
+ * Forma's command line (2026-11-25, the CLI and Forma Designer work's wave 7;
+ * findings DOC-1 and DOC-2 of its design audit). The Docs article, the
+ * README's section and the REPX skill, which the MCP server serves to a model
+ * working in another project, are where a person or a model learns the
+ * commands and the one form that runs them from any folder. No page may
+ * import src/mcp, so the commands are written out there and held here to
+ * src/mcp/cliCommands.ts both ways, as the tool list is above: a command
+ * added, renamed or made to ask the AI fails here until all three say so,
+ * and none of them may name a command the table lacks.
+ */
+describe("the Docs page, the README and the REPX skill say what Forma's command line offers, as cliCommands.ts lists it", () => {
+  const readme = readFileSync('README.md', 'utf8');
+  const skill = readFileSync('docs/skills/devexpress-repx/SKILL.md', 'utf8');
+  /** A document's section, from its heading to the next of the same level. */
+  const sectionOf = (text: string, heading: string) => {
+    const start = text.indexOf(`\n${heading}\n`);
+    expect(start, heading).toBeGreaterThan(0);
+    const end = text.indexOf('\n## ', start + heading.length);
+    return text.slice(start, end < 0 ? undefined : end);
+  };
+  const readmeCli = () => sectionOf(readme, '## Forma from the command line');
+  const skillCli = () => sectionOf(skill, "## Forma's command line");
+  const names = CLI_COMMANDS.map((c) => c.name);
+  /** The words a visitor reads, on one line: tags, JSX's spaces and markdown's backticks out. */
+  const prose = (src: string) => visible(src).replace(/\{' '\}/g, ' ').replace(/<[^>]+>/g, '').replace(/`/g, '').replace(/\s+/g, ' ');
+  /** The README's table of commands, from its heading to the next (the section has a table of variables too). */
+  const readmeCommands = () => {
+    const section = readmeCli();
+    const start = section.indexOf('\n### The commands\n');
+    expect(start).toBeGreaterThan(0);
+    return section.slice(start, section.indexOf('\n### ', start + 5));
+  };
+  /** The three, and the command each names a command with: a definition on the Docs page, a table row in the two files. */
+  const lists = () =>
+    [
+      ['Docs', article('cli'), /<Def t="([^"]+)">/g],
+      ['README', readmeCommands(), /^\| `([^`]+)` \|/gm],
+      ['SKILL.md', skillCli(), /^\| `([^`]+)` \|/gm],
+    ] as const;
+  /** One command's entry in a list: its definition, or its row. */
+  const entryOf = (src: string, name: string) => {
+    const def = src.indexOf(`<Def t="${name}">`);
+    if (def >= 0) return src.slice(def, src.indexOf('</Def>', def));
+    return src.split('\n').find((l) => l.startsWith(`| \`${name}\` |`)) ?? '';
+  };
+
+  it('lists every command, and no command the table lacks, in each', () => {
+    expect(names.length).toBeGreaterThan(5);
+    for (const [where, src, entry] of lists()) {
+      const listed = [...src.matchAll(entry)].map((m) => m[1]);
+      expect([...listed].sort(), where).toEqual([...names].sort());
+    }
+    // Every command line they write runs a command the table has.
+    for (const [where, src] of [['Docs', article('cli')], ['README', readme], ['SKILL.md', skill]] as const) {
+      for (const m of src.matchAll(/\bcli\.mjs ([a-z][\w-]*)/g)) expect(names, `${where} runs ${m[1]}`).toContain(m[1]);
+    }
+  });
+
+  it('marks the commands that ask the AI, always or for some files, as needsAi says', () => {
+    for (const [where, src] of lists()) {
+      for (const { name, needsAi } of CLI_COMMANDS) {
+        const entry = entryOf(src, name);
+        expect(entry, `${where} ${name}`).not.toBe('');
+        expect(/Needs an AI(?! for some files)/.test(entry), `${where}: ${name} needs an AI`).toBe(needsAi === true);
+        expect(entry.includes('Needs an AI for some files'), `${where}: ${name} needs an AI for some files`).toBe(needsAi === 'by route');
+      }
+    }
+  });
+
+  /*
+   * DOC-1: the documented form is the launcher with plain node, from any
+   * folder, as commandLine.test.ts spawns it. Not npx, which outside the clone
+   * fetches a tsx nobody pinned, not an npm script, whose banner goes to
+   * stdout ahead of --json's lines, and not scripts/repx.ts, which only a
+   * shell in the clone can name: the skill is read by models in other projects.
+   */
+  it('gives the one command that runs it, as commandLine.test.ts spawns it, and no npx, npm or scripts/repx.ts form', () => {
+    expect(CLI_LAUNCHER).toBe('src/mcp/cli.mjs');
+    expect(readFileSync('src/mcp/commandLine.test.ts', 'utf8')).toContain("const LAUNCHER = join(CLONE, ...CLI_LAUNCHER.split('/'));");
+    const command = `node <clone>/${CLI_LAUNCHER}`;
+    for (const [where, src] of [['Docs', article('cli')], ['README', readmeCli()], ['SKILL.md', skillCli()]] as const) expect(src, where).toContain(command);
+    const other = /npx tsx|npm run (?:cli|repx)\b|scripts\/repx\.ts (?:audit|repair|pdf)|npx\s+(?:-y\s+)?forma\b/;
+    for (const [where, src] of [['Docs', article('cli')], ['README', readme], ['SKILL.md', skill], ['CONTRIBUTING.md', readFileSync('CONTRIBUTING.md', 'utf8')]] as const) {
+      expect(src, where).not.toMatch(other);
+    }
+    // /self-host's own section on it gives the same command (the page's other sections run npx for Firebase, rightly).
+    const page = info.indexOf('export const SELF_HOST');
+    const start = info.indexOf("heading: 'From a terminal or CI'", page);
+    expect(page).toBeGreaterThan(0);
+    expect(start).toBeGreaterThan(page);
+    const selfHost = visible(info.slice(start, info.indexOf('heading:', start + 9)));
+    expect(selfHost).toContain(command);
+    expect(selfHost).not.toMatch(/\bnpx\b|\bnpm run\b/);
+  });
+
+  it('names the settings the command line reads for an AI, and no FORMA_ name it does not read', () => {
+    // What its entry takes: takeAiEnv's names in the command line's voice, and what cliEntry.ts reads by name.
+    const taken = new Set<string>();
+    takeAiEnv(new Proxy({}, { get: (_t, key) => (taken.add(String(key)), undefined) }), 'cli');
+    const entry = readFileSync('src/mcp/cliEntry.ts', 'utf8');
+    for (const m of entry.matchAll(/process\.env\.(FORMA_[A-Z_]+)/g)) if (m[1] !== 'FORMA_CLI_TEST_NOISE') taken.add(m[1]);
+    expect(taken.has('FORMA_MCP_MOCK'), 'the command line mocks with --mock, never the server variable').toBe(false);
+    const toSetUp = ['FORMA_GEMINI_KEY', 'FORMA_OPENROUTER_KEY', 'FORMA_OPENROUTER_MODEL', 'FORMA_LOCAL_MODEL', 'FORMA_LOCAL_URL', 'FORMA_PROVIDER'];
+    for (const [where, src] of [['Docs', article('cli')], ['README', readmeCli()]] as const) {
+      for (const name of toSetUp) {
+        expect(taken.has(name), name).toBe(true);
+        expect(src, `${where} names ${name}`).toContain(name);
+      }
+      for (const m of src.matchAll(/\bFORMA_[A-Z_]+\b/g)) expect(taken.has(m[0]), `${where} names ${m[0]}, which the command line does not read`).toBe(true);
+      expect(src, where).toContain('--mock');
+    }
+  });
+
+  it('gives the exit codes commandLine.ts exits with, in its order, and the limits a batch file has', () => {
+    const source = readFileSync('src/mcp/commandLine.ts', 'utf8');
+    const exit = /export const EXIT = \{([^}]+)\}/.exec(source)![1];
+    const codes = [...exit.matchAll(/:\s*(\d+)/g)].map((m) => Number(m[1]));
+    expect(codes).toEqual([0, 1, 2, 3, 4, 5, 70, 130]);
+    for (const [where, src] of [['Docs', article('cli')], ['README', readmeCli()]] as const) {
+      const text = prose(src);
+      const start = text.indexOf('Exit codes: ');
+      expect(start, where).toBeGreaterThan(0);
+      const list = text.slice(start + 'Exit codes: '.length, text.indexOf('130 ', start) + 4);
+      expect([...list.matchAll(/(?:^|; )(\d+) /g)].map((m) => Number(m[1])), where).toEqual(codes);
+    }
+    // A file's bounds in a batch, from generator.ts's GEN_LIMITS, and the most a folder may hold.
+    const limits = /GEN_LIMITS: PipelineLimits = \{ deadlineMs: (\d+) \* 60_000, heapMb: (\d+),/.exec(readFileSync('src/mcp/generator.ts', 'utf8'))!;
+    const bounds = `at most ${limits[1]} minutes and ${Number(limits[2]) / 1024} GB`;
+    for (const [where, src] of [['Docs', prose(article('cli'))], ['README', prose(readmeCli())]] as const) {
+      expect(src, where).toContain(bounds);
+      expect(src, where).toContain(`${MAX_BATCH_FILES} unless you say`);
+    }
+  });
+
+  /** Each copy of the CI recipe, as YAML: the README's fenced block, and the Docs page's template literal, its `\$` a `$`. */
+  const recipes = () => {
+    const readmeBlock = /\n```yaml\n([\s\S]*?)\n```/.exec(readmeCli());
+    const docsBlock = /\{`(on:\n[\s\S]*?)`\}/.exec(article('cli'));
+    expect(readmeBlock, 'the README has its recipe').not.toBeNull();
+    expect(docsBlock, 'the Docs page has its recipe').not.toBeNull();
+    return [
+      ['Docs', docsBlock![1].replace(/\\\$/g, '$')],
+      ['README', readmeBlock![1]],
+    ] as const;
+  };
+
+  /*
+   * The CI recipe (the CLI and Forma Designer work's wave 7, and its review's W7R-1, W7R-2 and W7R-3). The Docs page's
+   * copy takes the clone at the release the page ships in, as the mcp article's clone line does, so a version raised
+   * without it fails here too. The README is published with every push to main, before the owner tags a release, so
+   * its copy names no version, only `<tag>`, which its words explain: a version there named a tag that did not exist
+   * yet. Each YAML block is read on its own, by its structure, its keys and steps by their indentation (no YAML
+   * parser is a dependency of Forma's; the two in the tree come only through firebase-tools), never with the prose
+   * around it, which names pull_request_target to forbid it: the triggers exactly a pull request and a push, in the block form, so
+   * pull_request_target cannot come in as a key, an item or a scalar; every step that carries a secret or a FORMA_ name
+   * running on a push alone; the key from a secret into a step's env, never on a command; what a batch makes uploaded
+   * as the run's artifact, since a runner is gone when the job ends; and each audit skipped when its folder holds no
+   * report, which would otherwise fail every pull request of a repository that commits none.
+   */
+  it('reads the CI recipe by its YAML: its ref, its triggers, the key on a push alone, the batch kept and the audit guarded', () => {
+    const { version } = JSON.parse(readFileSync('package.json', 'utf8')) as { version: string };
+    for (const [where, recipe] of recipes()) {
+      const refs = [...recipe.matchAll(/^\s+ref: (\S+)$/gm)].map((m) => m[1]);
+      expect(refs, where).toEqual([where === 'Docs' ? `v${version}` : '<tag>']);
+      expect(recipe, where).not.toMatch(/pull_request_target|workflow_run/);
+      const on = /^on:(.*)\n((?: {2,}\S.*\n)*)/m.exec(recipe);
+      expect(on, where).not.toBeNull();
+      expect(on![1].trim(), `${where}: the triggers in the block form`).toBe('');
+      expect([...on![2].matchAll(/^ {2}([\w-]+):/gm)].map((m) => m[1]).sort(), where).toEqual(['pull_request', 'push']);
+      const steps = recipe.split(/\n(?= {6}- )/).slice(1);
+      expect(steps.length, where).toBeGreaterThan(4);
+      const keyed = steps.filter((s) => /\bsecrets\.|\bFORMA_[A-Z_]+/.test(s));
+      expect(keyed.length, where).toBeGreaterThan(0);
+      for (const step of keyed) {
+        expect(step, `${where}: a step with a key runs on a push alone`).toMatch(/^ {6}(?:- | {2})if: github\.event_name == 'push'$/m);
+        expect(step, where).toMatch(/^ {8}env:\n {10}FORMA_GEMINI_KEY: \$\{\{ secrets\.FORMA_GEMINI_KEY \}\}$/m);
+        expect(step, where).not.toMatch(/run: [^\n]*(?:secrets\.|FORMA_[A-Z_]*KEY)/);
+      }
+      for (const m of recipe.matchAll(/cli\.mjs batch \S+ --out (\S+)/g)) {
+        const upload = steps.find((s) => /uses: actions\/upload-artifact@v\d+/.test(s));
+        expect(upload, `${where}: the batch's reports are uploaded`).toBeDefined();
+        expect(upload!, where).toMatch(new RegExp(`^ {10}path: ${m[1]}$`, 'm'));
+        expect(upload!, `${where}: uploaded when the batch stopped partway`).toMatch(/!cancelled\(\)/);
+      }
+      for (const m of recipe.matchAll(/cli\.mjs audit (\S+)/g)) {
+        const step = steps.find((s) => s.includes(m[0]))!;
+        expect(step, `${where}: the audit of ${m[1]} is skipped when it holds no report`).toContain(`hashFiles('${m[1]}/*.repx'`);
+      }
+    }
+  });
+
+  it('says Forma Designer’s verbs come with its next release while the released one is older', async () => {
+    const { DESIGNER_RELEASE, DESIGNER_VERBS_SINCE, designerIsOlder } = await import('../lib/designerRelease');
+    if (!designerIsOlder(DESIGNER_RELEASE.version, DESIGNER_VERBS_SINCE)) return;
+    // The REPX skill too, both its sections, since the server serves it to models in other projects (W7R-6).
+    const skillMcp = sectionOf(skill, "## From Forma's MCP server");
+    for (const [where, src] of [['Docs', article('cli')], ['README', readmeCli()], ['SKILL.md', skillCli()], ['SKILL.md, the MCP server', skillMcp]] as const) {
+      expect(src.replace(/\s+/g, ' '), where).toMatch(/the next release of Forma Designer/);
+      expect(src, where).not.toMatch(new RegExp(`Forma Designer ${DESIGNER_VERBS_SINCE.replace(/\./g, '\\.')}`));
+    }
+  });
+
+  // DOC-2: the sentence that said the command line was still to come, once it was not, is refused wherever it was written.
+  it('never says the command line is still to come, now that it is built', () => {
+    expect(names).toContain('generate');
+    const stale = /command line.s `?(?:generate|revise|batch)`?(?: on that (?:same )?path)? (?:is|are) (?:still to come|next|planned)|\b(?:the|a|its) command line (?:is|are) (?:still to come|not built|planned)/i;
+    const copies = [
+      ['the public pages', all],
+      ['README.md', readme],
+      ['SKILL.md', skill],
+      ['docs/PRD.md', readFileSync('docs/PRD.md', 'utf8')],
+      ['CONTRIBUTING.md', readFileSync('CONTRIBUTING.md', 'utf8')],
+      ['SECURITY.md', readFileSync('SECURITY.md', 'utf8')],
+      ['docs/notes/mcp.md', readFileSync('docs/notes/mcp.md', 'utf8')],
+    ] as const;
+    for (const [where, src] of copies) expect(src.replace(/\s+/g, ' '), where).not.toMatch(stale);
   });
 });
