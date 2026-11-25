@@ -466,10 +466,22 @@ export const ABOUT: InfoDoc = {
                 open decision 27 (2026-11-11, the re-audit's R4-12): said with
                 its condition rather than dropped or claimed. */}
             <li>PaddleOCR's PP-OCRv5 models and Tesseract.js for OCR in your browser, on ONNX Runtime, pdf.js for PDFs, and, where the site is built with it, Transformers.js for handwriting.</li>
+            {/* What the site is built with and ships, as the notices below list it (licenceNotice.ts:
+                the bundle and the files the site serves). Carlito and Caladea (assets/metric-fonts) are
+                not named, by decision (2026-11-25, the CLI and Forma Designer work's wave 8): only the MCP
+                server and the command line, run from a clone, measure text in them; the site neither
+                serves nor embeds them, their licences travel beside them in the clone, and Caladea 1.002
+                is Apache-2.0, which "all under the SIL Open Font License" would make untrue. The same
+                holds for the server's and the command line's own packages (the MCP SDK, zod, tsx,
+                @napi-rs/canvas, onnxruntime-node), left off this list when the server came (2026-11-24). The Liberation
+                faces are named for the PDF/A files the site writes; that Node also measures with them
+                changes nothing here. The sentence under the list says "this site ships" since the
+                same wave's review (REL-R3): it said "Forma ships", which the release note's Carlito and
+                Caladea, kept in Forma's code and absent from the notices, made untrue. */}
             <li>Inter, Hanken Grotesk and JetBrains Mono for type, and the Liberation fonts inside PDF/A files, all under the SIL Open Font License.</li>
           </ul>
           <p className={P}>
-            Every open-source work Forma ships is listed with its licence in the{' '}
+            Every open-source work this site ships is listed with its licence in the{' '}
             <a href="/licenses.txt" className={A}>third-party notices</a>.
           </p>
         </>
@@ -592,7 +604,8 @@ npm run dev`}</pre>
             It checks, repairs, converts and binds reports with no AI, and makes and changes them, a folder at a time,
             with the AI set up in the environment it runs in. In CI, a step takes the key from a secret; a pull request
             from a fork, given none, can still check the reports it brings. The <a href="/docs#cli" className={A}>Docs</a> and
-            the README have its commands, its exit codes and a GitHub Actions recipe.
+            the README have its commands, its exit codes and a GitHub Actions recipe, which follows GitHub&apos;s
+            documentation and has not been run as written in a workflow.
           </p>
         </>
       ),

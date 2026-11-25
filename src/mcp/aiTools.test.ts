@@ -430,6 +430,8 @@ describe('generate_report', () => {
     expect(result.isError, JSON.stringify(result).slice(0, 600)).toBeUndefined();
     expect(result.structuredContent).toMatchObject({ ai: null, standIn: 'offline', written: { status: 'written' } });
     expect(result.structuredContent.notices.join(' ')).toContain("Forma's own draft stands in: Forma's own model's design from the description");
+    // "says why": the failure is often no answer at all (it said "says what it answered" until the CLI work's wave-8 end-to-end run).
+    expect(result.structuredContent.notices.join(' ')).toContain('The AI did not make the report (fromFile.aiError says why)');
     expect(result.structuredContent.fromFile.aiError).toContain('(a key)');
     expect(JSON.stringify(result)).not.toContain(geminiKey);
     expect(c.log.join('\n')).not.toContain(geminiKey);

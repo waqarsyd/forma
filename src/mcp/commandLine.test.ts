@@ -228,6 +228,9 @@ describe('the arguments, the help and the exit codes', () => {
       // A command that takes nothing (connections, since the CLI work's wave 6) is its name alone, no space after it.
       expect(help).toContain(`  ${c.name}${c.usage ? ` ${c.usage}` : ''}${aiMark(c)}\n`);
       for (const option of c.options) expect(help, option).toContain(`  ${option}`);
+      // Each command's own line names every option it takes, since the help says each lists its own (the CLI work's
+      // wave-8 review, W8R-6: --fail-on was in eight commands' options and none of their lines).
+      for (const option of c.options) expect(c.usage, `${c.name} ${option}`).toMatch(new RegExp(`(?<![\\w-])${option}(?![\\w-])`));
     }
     expect(CLI_COMMANDS.filter((c) => c.needsAi === true).map((c) => c.name)).toEqual(['generate', 'revise']);
     expect(CLI_COMMANDS.filter((c) => c.needsAi === 'by route').map((c) => c.name)).toEqual(['batch']);
@@ -363,7 +366,7 @@ describe('the report commands, which need no AI', () => {
     mkdirSync(join(dir, 'empty'));
     const empty = await cli(['audit', 'empty'], { cwd: dir });
     expect(empty.code).toBe(EXIT.failed);
-    expect(empty.err).toMatch(/holds no report \(\.repx or \.vsrepx\) directly in it/);
+    expect(empty.err).toMatch(/holds no report \(\.repx or \.vsrepx\) directly in it, so nothing was audited; audit reads no subfolder, so name the folder they are in, or the files\.$/);
     const outside = folder();
     put(outside, 'secret.repx', INVOICE());
     // A junction on Windows (no privilege needed), a directory link elsewhere: a checkout can carry either out of its folder (SEC-1).
@@ -692,13 +695,31 @@ describe('the commands that ask an AI', () => {
     const limited = await cli(['generate', '--description', DESCRIPTION, '--out', 'b.repx', '--json'], { cwd: dir, env: LIMITED, hooks: failing(dayLimit) });
     expect(limited.code).toBe(EXIT.limit);
     expect(limited.json()[0]).toMatchObject({ status: 'limit', exitCode: 5, limit: { kind: 'daily', provider: 'gemini' } });
-    expect(limited.err).toMatch(/Gemini reached its daily limit, which lifts in about \d+ (hours?|minutes?)\.$/);
+    // With the way on, which a single command left out until the CLI work's wave-8 end-to-end run.
+    expect(limited.err).toMatch(/Gemini reached its daily limit, which lifts in about \d+ (hours?|minutes?)\. Run the same command again once it lifts\.$/);
+    expect(limited.json()[0].message).toMatch(/ Run the same command again once it lifts\.$/);
     const drafted = await cli(['generate', '--description', DESCRIPTION, '--out', 'c.repx', '--allow-stand-in', '--json'], { cwd: dir, env: LIMITED, hooks: failing(dayLimit) });
     // Forma's draft is written, apart, and is never taken for the report asked for: status draft, exit 4 (CLI-4, U2).
     expect(drafted.code).toBe(EXIT.failed);
     expect(drafted.json()[0]).toMatchObject({ status: 'draft', exitCode: 4, standIn: 'offline', provider: null, written: { path: join(dir, 'c.draft.repx'), status: 'written' }, limit: { kind: 'daily' } });
     expect(drafted.json()[1]).toMatchObject({ type: 'summary', draft: 1, done: 0, exitCode: 4 });
+    // revise at a limit is told the way on too, not generate alone (the CLI work's wave-8 review, W8R-3).
+    put(dir, 'r.repx', INVOICE());
+    const dayChat: GenHooks = {
+      chat: async () => {
+        throw dayLimit();
+      },
+    };
+    const revised = await cli(['revise', 'r.repx', '--words', 'Make the title bold', '--json'], { cwd: dir, env: LIMITED, hooks: dayChat });
+    expect(revised.code).toBe(EXIT.limit);
+    expect(revised.json()[0]).toMatchObject({ status: 'limit', exitCode: 5, limit: { kind: 'daily' } });
+    expect(revised.json()[0].message).toMatch(/Gemini reached its daily limit, which lifts in about \d+ (hours?|minutes?)\. Run the same command again once it lifts\.$/);
+    rmSync(join(dir, 'r.repx'));
     expect(drafted.err).toContain("so Forma's own draft stands in");
+    // Why the AI made none, under a label that is true when the AI never answered (the wave-8 end-to-end run read "The AI answered:").
+    expect(drafted.err).toMatch(/^Why the AI made no report: /m);
+    expect(drafted.err).not.toContain('The AI answered');
+    expect(Object.keys(drafted.json()[0].fileText)).toContain('why the AI made no report');
     expect(readdirSync(dir).sort()).toEqual(['c.draft.repx']);
     // The keys are never printed, by their shape or, for the shapeless one, by their value.
     for (const ran of [failed, limited, drafted]) for (const key of [geminiKey, shapelessKey, limitKey]) expect(ran.out + ran.err).not.toContain(key.slice(0, 12));
@@ -912,7 +933,8 @@ describe('convert, which needs no AI', () => {
     expect(ran.code).toBe(EXIT.failed);
     const lines = ran.json();
     expect(lines.map((l) => l.status)).toEqual(['refused', 'failed', 'failed', 'refused', undefined]);
-    expect(lines[0].message).toMatch(/holds no SSRS or FastReport report \(\.rdl, \.rdlc or \.frx\) directly in it, so nothing was converted\.$/);
+    // With the way on: no subfolder is read (the CLI work's wave-8 end-to-end run).
+    expect(lines[0].message).toMatch(/holds no SSRS or FastReport report \(\.rdl, \.rdlc or \.frx\) directly in it, so nothing was converted; convert reads no subfolder, so name the folder they are in, or the files\.$/);
     expect(lines[1].message).toMatch(/^"bare\.rdl" could not be converted: .*the generate command can make a report from its text with the AI\. Nothing was written\.$/);
     expect(lines[2].message).not.toMatch(/generate/);
     expect(lines[3].message).toMatch(/is not well-formed XML/);
@@ -1117,6 +1139,12 @@ describe('batch: a folder, one file at a time', () => {
     ]);
     expect(lines.at(-2)).toMatchObject({ route: 'revise', output: join(dir, 'out', 'r3.revised.repx'), message: `"${join('in', 'r3.repx')}" was not started: the batch stopped asking the AI when it met its limit.` });
     expect(lines.at(-1)).toMatchObject({ type: 'summary', inputs: 3, done: 1, limit: 1, notStarted: 1, exitCode: 5, stoppedBy: 'daily-limit', resetsAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) });
+    // A batch row ends at the limit's words, never the single command's way on, which without --skip-existing would exit 4
+    // on every report made (the CLI work's wave-8 review, W8R-3); the batch says its own once, below.
+    const r2 = lines.find((l) => l.input === join('in', 'r2.repx'))!;
+    expect(r2.message).toMatch(/Gemini reached its daily limit, which lifts in about \d+ (hours?|minutes?)\.$/);
+    expect(r2.message).not.toMatch(/Run the same command again/);
+    expect(ran.err).not.toMatch(/Run the same command again/);
     expect(ran.err).toContain(`Gemini reached its per-minute limit, which lifts in about 41 seconds. Waiting about 42 seconds, then making "${join('in', 'r1.repx')}" once more.`);
     expect(ran.err).toMatch(/The batch stopped asking the AI at its limit; each file after this one that asks it is listed as not started, and any that need no AI are still made\. Once it lifts, in about \d+ (hours?|minutes?), run the same command with --skip-existing to carry on\./);
     // Plain, the file left is named on stderr, and the time it lifts is said in words and the clock's UTC time, never an instant (U12).
@@ -1126,6 +1154,43 @@ describe('batch: a folder, one file at a time', () => {
     expect(plain.err).toContain(`"${join('in', 'r3.repx')}" was not started: the batch stopped asking the AI when it met its limit.`);
     expect(plain.out).toMatch(/Stopped at an AI limit, which lifts in about \d+ (hours?|minutes?) \(\d\d:\d\d UTC\); the same command with --skip-existing carries on\./);
     expect(plain.out).not.toMatch(/\d{4}-\d\d-\d\dT/);
+  });
+
+  it("says the way on once at the end when the day's limit or a refused key stops the last file that asks the AI (W8R-4)", async () => {
+    const dir = folder();
+    for (const name of ['r1', 'r2']) put(dir, join('in', `${name}.repx`), INVOICE());
+    const day = classifyGeminiError(Object.assign(new Error(JSON.stringify({ error: { code: 429, message: 'Quota exceeded.', status: 'RESOURCE_EXHAUSTED', details: [{ '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: [{ quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier' }] }] } })), { status: 429 }));
+    let asked = 0;
+    const lastLimited: GenHooks = {
+      chat: async () => {
+        asked += 1;
+        if (asked === 2) throw day;
+        return { reply: 'It lists the items.', wantsReport: false, action: 'answer' } as ChatOutcome;
+      },
+    };
+    const ran = await cli(['batch', 'in', '--out', 'out', '--words', 'Make the title bold', '--json'], { cwd: dir, env: LIMITED, hooks: lastLimited, waits: [] });
+    expect(ran.code, ran.err).toBe(EXIT.limit);
+    expect(ran.json().filter((l) => l.type === 'input').map((l) => [l.input, l.status])).toEqual([
+      [join('in', 'r1.repx'), 'done'],
+      [join('in', 'r2.repx'), 'limit'],
+    ]);
+    // No file follows that asks the AI, so the mid-batch line is not said; the way on is, once, before the summary.
+    expect(ran.err).not.toContain('each file after this one');
+    expect(ran.err.match(/--skip-existing/g)).toHaveLength(1);
+    expect(ran.err).toMatch(/The batch met the AI's limit\. Once it lifts, in about \d+ (hours?|minutes?), run the same command with --skip-existing to carry on\.$/);
+    expect(ran.json().at(-1)).toMatchObject({ type: 'summary', stoppedBy: 'daily-limit', exitCode: 5 });
+    // The key refused on the only file that asks the AI: the same, in its own words.
+    put(dir, join('one', 'r.repx'), INVOICE());
+    const refused: GenHooks = {
+      chat: async () => {
+        throw new Error('API key not valid. Please pass a valid API key.');
+      },
+    };
+    const keyed = await cli(['batch', 'one', '--out', 'out-one', '--words', 'Make the title bold', '--json'], { cwd: dir, env: GEMINI, hooks: refused });
+    expect(keyed.code).toBe(EXIT.failed);
+    expect(keyed.err).not.toContain('every file after this one');
+    expect(keyed.err).toMatch(/The AI refused the key\. Set the key right, then run the same command with --skip-existing to carry on\.$/);
+    expect(keyed.json().at(-1)).toMatchObject({ type: 'summary', failed: 1, stoppedBy: 'key' });
   });
 
   it("stops a second limit on one file, and the AI refusing the key, before the next file, saying why; a Ctrl+C stops the file under way and writes nothing", async () => {

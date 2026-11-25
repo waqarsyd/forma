@@ -57,14 +57,17 @@ function saysKeyIsInvalid(message: string): boolean {
 export function isOverloadedError(error: any): boolean {
   const status = error?.status;
   const text = `${error?.message || ''}`.toLowerCase();
-  return (
-    status === 503 ||
-    status === 'UNAVAILABLE' ||
-    text.includes('503') ||
-    text.includes('unavailable') ||
-    text.includes('overloaded') ||
-    text.includes('high demand')
-  );
+  const capacityWords = text.includes('unavailable') || text.includes('overloaded') || text.includes('high demand');
+  // An answer that carries its HTTP status is judged by it (2026-11-25, the CLI
+  // and Forma Designer work's wave 8): a 4xx is never the server's capacity.
+  // Until then any "503" in the words counted, and a compatible provider's
+  // error names its address ("the local AI at http://127.0.0.1:50312/v1
+  // answered 429"), so a 429 from a server on a port holding 503 was retried
+  // twice as an overload, two more requests against a spent limit; a test's
+  // random port found it. A 5xx still reads its words, as a 500 saying the
+  // model is overloaded did.
+  if (typeof status === 'number') return status === 503 || (status >= 500 && capacityWords);
+  return status === 'UNAVAILABLE' || /\b503\b/.test(text) || capacityWords;
 }
 
 /**

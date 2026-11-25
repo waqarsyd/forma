@@ -904,15 +904,48 @@ describe("the Docs page, the README and the REPX skill say what Forma's command 
     }
   });
 
-  it('says Forma Designer’s verbs come with its next release while the released one is older', async () => {
+  it('says Forma Designer’s verbs come with its next release while the released one is older, and never once it is out', async () => {
     const { DESIGNER_RELEASE, DESIGNER_VERBS_SINCE, designerIsOlder } = await import('../lib/designerRelease');
-    if (!designerIsOlder(DESIGNER_RELEASE.version, DESIGNER_VERBS_SINCE)) return;
+    const { RELEASES } = await import('../lib/releases');
+    const texts = (r: (typeof RELEASES)[number]) => [r.title, r.summary, ...r.changes.map((c) => c.text)];
     // The REPX skill too, both its sections, since the server serves it to models in other projects (W7R-6).
     const skillMcp = sectionOf(skill, "## From Forma's MCP server");
-    for (const [where, src] of [['Docs', article('cli')], ['README', readmeCli()], ['SKILL.md', skillCli()], ['SKILL.md, the MCP server', skillMcp]] as const) {
+    const pages = [['Docs', article('cli')], ['README', readmeCli()], ['SKILL.md', skillCli()], ['SKILL.md, the MCP server', skillMcp]] as const;
+    if (!designerIsOlder(DESIGNER_RELEASE.version, DESIGNER_VERBS_SINCE)) {
+      // Packed, the owner's step (the CLI and Forma Designer work's wave-8 review, REL-R5): "the next release" is untrue on
+      // every page and in the release whose download it is, as 1.1.0 became 1.6.0's own download rather than "the next"
+      // one (0975454), so the commit that writes the record has to reword them, with nothing green until it does.
+      const carrying = RELEASES.find((r) => r.version !== undefined && `v${r.version}` === DESIGNER_RELEASE.tag);
+      for (const text of carrying ? texts(carrying) : []) expect(text, `the release ${carrying!.version}`).not.toMatch(/the next release of Forma Designer/);
+      for (const [where, src] of pages) expect(src.replace(/\s+/g, ' '), where).not.toMatch(/the next release of Forma Designer/);
+      return;
+    }
+    for (const [where, src] of pages) {
       expect(src.replace(/\s+/g, ' '), where).toMatch(/the next release of Forma Designer/);
       expect(src, where).not.toMatch(new RegExp(`Forma Designer ${DESIGNER_VERBS_SINCE.replace(/\./g, '\\.')}`));
     }
+    // The newest release note too (the CLI and Forma Designer work's wave 8, 2026-11-25): each of its changes that names
+    // Forma Designer says the next release, since 1.7.0 carries the command line's and the server's connections and no
+    // released Forma Designer answers them. Once the owner packs the one that does, the branch above holds the reverse.
+    for (const text of texts(RELEASES[0]).filter((t) => /Forma Designer/.test(t))) {
+      expect(text, 'the newest release').toMatch(/the next release of Forma Designer/);
+      expect(text, 'the newest release').not.toMatch(new RegExp(`Forma Designer ${DESIGNER_VERBS_SINCE.replace(/\./g, '\\.')}`));
+    }
+  });
+
+  // REL-R4 (the CLI and Forma Designer work's wave-8 review): the recipe has not run as written in a workflow, which the
+  // README and the note say, and so must the Docs article and the release note that name it, while that stays true.
+  it('says the CI recipe follows GitHub’s documentation and has not been run as written, wherever it is offered', async () => {
+    const untried = /follows GitHub(?:'|’|&apos;)s documentation and has not been run as written/;
+    const faq = faqs.slice(faqs.indexOf("q: 'Can I run Forma from a terminal or in CI?'"), faqs.indexOf('q: ', faqs.indexOf("q: 'Can I run Forma from a terminal or in CI?'") + 3));
+    const start = info.indexOf("heading: 'From a terminal or CI'", info.indexOf('export const SELF_HOST'));
+    const selfHost = info.slice(start, info.indexOf('heading:', start + 9));
+    for (const [where, src] of [['FAQ', faq], ['/self-host', selfHost]] as const) expect(src, where).toContain('GitHub Actions recipe');
+    for (const [where, src] of [['Docs', prose(article('cli'))], ['README', prose(readmeCli())], ['FAQ', prose(faq)], ['/self-host', prose(selfHost)]] as const) expect(src, where).toMatch(untried);
+    const { RELEASES } = await import('../lib/releases');
+    const naming = RELEASES.flatMap((r) => r.changes.filter((c) => /GitHub Actions recipe/.test(c.text)).map((c) => [r.version ?? r.id, c.text] as const));
+    expect(naming.length).toBeGreaterThan(0);
+    for (const [release, text] of naming) expect(text, release).toMatch(untried);
   });
 
   // DOC-2: the sentence that said the command line was still to come, once it was not, is refused wherever it was written.

@@ -282,6 +282,34 @@ export class DesignerRefusal extends ToolRefusal {
   }
 }
 
+/**
+ * What a refusal leaves the person to do next, which each caller says in its
+ * own words after it (commandLine.ts and databaseTools.ts, `withWayOn`):
+ *
+ * - `file`, the layout given as a file instead, for one made before Forma
+ *   Designer answered anything (not installed, older than 1.2.0, a link, a
+ *   program that would not start or did not answer as it does: no
+ *   `problem`), and for a sign-in whose own words already send the person
+ *   to its SQL Server connections (a secret this Windows account cannot read);
+ * - `again`, the same command or call once more or the file, for a deadline,
+ *   Forma Designer's own or the kill here;
+ * - `check`, the connection in Forma Designer's tray menu or the file, for
+ *   SQL Server refusing the saved sign-in, not opening the database, not
+ *   reached, or failing (`sql`, `failed`);
+ * - null for an answer that says its own next step (no connection kept under
+ *   that name) and for Forma's own mistake (`usage`).
+ *
+ * Until the CLI work's wave-8 review (W8R-5) only the first was said, so
+ * `connections` past its deadline, a sign-in SQL Server refused, and SQL
+ * Server's own words each ended a command, or a call, with nothing to do.
+ */
+export function designerNext(error: DesignerRefusal): 'file' | 'again' | 'check' | null {
+  if (error.problem === null) return 'file';
+  if (error.problem === 'deadline') return 'again';
+  if (error.problem === 'not-kept' || error.problem === 'usage') return null;
+  return /SQL Server connections/.test(error.message) ? 'file' : 'check';
+}
+
 /* ------------------------------------------------------------ the program's own version */
 
 /**

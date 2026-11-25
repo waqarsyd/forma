@@ -282,6 +282,18 @@ describe('classifyGeminiError', () => {
       expect(isOverloadedError(sdkError(400, 'bad request'))).toBe(false);
     });
 
+    // The CLI and Forma Designer work's wave 8: a test's random port turned a 429 into an overload.
+    it('judges an answer by its HTTP status when it has one, and a "503" in its words only as a number of its own', () => {
+      expect(isOverloadedError(sdkError(429, 'the local AI at http://127.0.0.1:50312/v1 answered 429: Rate limit exceeded'))).toBe(false);
+      expect(isOverloadedError(sdkError(429, 'OpenRouter answered 429: the model is temporarily unavailable for free use'))).toBe(false);
+      expect(isOverloadedError(sdkError(404, 'models/gemini-x is unavailable'))).toBe(false);
+      expect(isOverloadedError(sdkError(503, 'Service Unavailable'))).toBe(true);
+      expect(isOverloadedError(sdkError(500, 'The model is overloaded. Please try again later.'))).toBe(true);
+      expect(isOverloadedError(sdkError(500, 'Internal error'))).toBe(false);
+      expect(isOverloadedError(sdkError(undefined, 'got status: 503 Service Unavailable'))).toBe(true);
+      expect(isOverloadedError(sdkError(undefined, 'fetch failed at http://127.0.0.1:15030/v1'))).toBe(false);
+    });
+
     it('keeps the provider’s own error as the cause', () => {
       const raw = sdkError(503, 'UNAVAILABLE');
       expect((classifyGeminiError(raw) as Error & { cause?: unknown }).cause).toBe(raw);

@@ -54,7 +54,7 @@ import { detectRunaway, isRunawayOutput, RunawayOutputError } from "../lib/runaw
 import { buildDescriptionBrief, type ReportDescriptionRequest, type ClarificationQuestion } from "../lib/promptToReport";
 import { EXPRESSION_REFERENCE, checkExpression } from "../lib/expressions";
 import { noteDailyLimit, noteRequest } from "../lib/requestCount";
-import { SET_UP_AI } from "../lib/aiProvider";
+import { PROVIDER_NAMES, SET_UP_AI } from "../lib/aiProvider";
 // A type only: the edit library is App's to load on demand, and importing
 // it here put it and repxEdit in this chunk, over its budget (2026-11-05).
 import type { AgentEdit, AgentTool } from "../lib/agentEdit";
@@ -2897,7 +2897,9 @@ ${houseStyleContext}
   // src/lib/genai.ts.
   const ai = await clientFor(config, currentApiKey);
 
-  console.debug(`Initializing Gemini model with API key...`);
+  // The AI actually chosen (the CLI work's wave-8 review, W8R-7: this said "Initializing Gemini model with API key..." for
+  // Local AI and OpenRouter too, which the command line prints under --verbose).
+  console.debug(`Asking ${PROVIDER_NAMES[failureEndpoint?.kind ?? 'gemini']}.`);
   console.log(`Sending request to AI model: ${selectedModel}`);
 
   /**

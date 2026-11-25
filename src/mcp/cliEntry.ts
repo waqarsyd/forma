@@ -48,11 +48,12 @@
  *   5. The exit code is set and the process leaves when nothing is left to
  *      do, so what was written to a pipe is flushed; a timer that does not
  *      hold the process open makes sure of the exit two seconds later. On
- *      Windows a stop once the AI's thread has started ends the process
+ *      Windows a stop while the AI's thread reads the files ends the process
  *      with 3221226505 (0xC0000409, Windows' fail-fast abort, not its
  *      Ctrl+C code; the wave-7 review's W7R-4) in place of 130 (the
  *      wave-4 review's U7; leaving at once after `main` was measured in its
- *      fix round and changed nothing, so it is not done): commandLine.ts's
+ *      fix round and changed nothing, so it is not done), while a stop as
+ *      it waits on the AI exits 130 (the CLI work's wave 8): commandLine.ts's
  *      header and mcp.md say so.
  *
  * boundaries.test.ts holds this file's wiring too (`ENTRIES`, and the

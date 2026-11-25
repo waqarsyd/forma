@@ -711,6 +711,48 @@ describe('batch with a database', () => {
     expect(rows.find((r) => r.type === 'summary')).toMatchObject({ binding: { bound: 2, unbound: 0 } });
   });
 
+  /*
+   * The repair route with a database (the CLI work's wave-8 review, W8R-1): until then it bound nothing and carried no
+   * binding on its row, so `batch --repair --database ... --require-binding` exited 0 with every repaired report unbound,
+   * while the help said each report was bound. Now each report it repairs is bound with no AI.
+   */
+  it("binds each report it repairs with no AI: the query pinned, else the source it already reads, else the object holding most of its fields; --require-binding fails one left unbound (W8R-1)", async () => {
+    const dir = folder();
+    put(dir, 'formasample.txt', LAYOUT_TEXT);
+    put(dir, join('in', 'customers.repx'), report(['CompanyName', 'City']));
+    put(dir, join('in', 'orders.repx'), EMITTED_REPX);
+    put(dir, join('in', 'sprockets.repx'), report(['Sprocket', 'Cog']));
+    const ran = await cli(['batch', 'in', '--out', 'out', '--repair', '--database', 'formasample.txt', '--connection-name', 'ShopLive', '--require-binding', '--json', '--fail-on', 'never'], { cwd: dir, env: AI, hooks: NEVER });
+    expect(ran.code, ran.err).toBe(EXIT.failed);
+    const rows = ran.json();
+    const by = Object.fromEntries(rows.filter((r) => r.type === 'input').map((r) => [r.input.split(/[\\/]/).pop(), r]));
+    // A report that reads nothing: the table holding most of the fields it prints, its connection the name given.
+    expect(by['customers.repx']).toMatchObject({ route: 'repair', status: 'done', chosenBy: 'fields', binding: { bound: true, query: { table: 'dbo.Customers' }, connection: 'ShopLive' } });
+    // A report that already reads a source keeps it, held to the layout, its own connection kept and said so.
+    expect(by['orders.repx']).toMatchObject({ route: 'repair', status: 'done', chosenBy: 'own', binding: { bound: true, query: { table: 'dbo.Orders' }, connection: 'FormaSample' } });
+    expect(by['orders.repx'].binding.notes).toContain('The report already names its connection "FormaSample", which is kept; --connection-name names the connection of a report that names none.');
+    expect(readRepxDataSources(readFileSync(join(dir, 'out', 'orders.repaired.repx'), 'utf8'))).toEqual(readRepxDataSources(EMITTED_REPX));
+    // None of the layout's objects holds its fields: written as repaired, unbound, and failed under --require-binding.
+    expect(by['sprockets.repx']).toMatchObject({ route: 'repair', status: 'unbound', exitCode: 4, chosenBy: null, binding: { bound: false, reason: 'No table, view or procedure of FormaSample has most of the fields the report prints.' } });
+    expect(readRepxDataSources(readFileSync(join(dir, 'out', 'sprockets.repaired.repx'), 'utf8'))).toEqual([]);
+    expect(rows.find((r) => r.type === 'summary')).toMatchObject({ unbound: 1, binding: { bound: 2, unbound: 1 } });
+    // A query pinned binds every report it repairs, its own source's included, as it binds every report a batch converts (BT-4).
+    const pinned = await cli(['batch', 'in', '--out', 'pinned', '--repair', '--database', 'formasample.txt', '--object', 'dbo.Customers', '--json', '--fail-on', 'never'], { cwd: dir, env: AI, hooks: NEVER });
+    const pins = pinned.json().filter((r) => r.type === 'input');
+    expect(pins.map((r) => [r.input.split(/[\\/]/).pop(), r.chosenBy, r.binding.bound, r.binding.query?.table])).toEqual([
+      ['customers.repx', 'pinned', true, 'dbo.Customers'],
+      ['orders.repx', 'pinned', true, 'dbo.Customers'],
+      ['sprockets.repx', 'pinned', true, 'dbo.Customers'],
+    ]);
+    // Plain, the lines under each say what it binds and how it was chosen.
+    const plain = await cli(['batch', 'in', '--out', 'plain', '--repair', '--database', 'formasample.txt', '--fail-on', 'never'], { cwd: dir, env: AI, hooks: NEVER });
+    expect(plain.lines).toContain('  chosen as the SQL data source the report already reads, found in the layout');
+    expect(plain.lines.some((l) => l.startsWith('  bound to dbo.Customers on connection "FormaSample"'))).toBe(true);
+    // The single repair command takes no database, so nothing it repairs is said bound.
+    const single = await cli(['repair', join('in', 'customers.repx'), '--database', 'formasample.txt'], { cwd: dir });
+    expect(single.code).toBe(EXIT.usage);
+  });
+
   it('refuses a layout that cannot be read before any file is made', async () => {
     const dir = folder();
     put(dir, 'cut.txt', SCHEMA_EXPORT.slice(0, -3));

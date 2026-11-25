@@ -136,7 +136,8 @@ const SAY = {
     noRequest: 'Send the request: what to change in the report, or what to ask about it, in words.',
     gone: (file: string) => `${file} could not be read when this call's turn came: it was moved, removed or locked while the call waited. Nothing was written.`,
     grew: (file: string, bytes: number) => `${file} grew to ${bytes} bytes while this call waited, more than the ${MAX_FILE_BYTES} this tool reads. Nothing was written.`,
-    standIn: (what: string) => `The AI did not make the report (fromFile.aiError says what it answered), so Forma's own draft stands in: ${what}, without the AI's corrections.`,
+    // "says why", not "says what it answered" (the CLI work's wave-8 end-to-end run): the failure is often no answer at all.
+    standIn: (what: string) => `The AI did not make the report (fromFile.aiError says why), so Forma's own draft stands in: ${what}, without the AI's corrections.`,
   },
   cli: {
     nothing: 'Give a description of the report, files to make it from, or both.',

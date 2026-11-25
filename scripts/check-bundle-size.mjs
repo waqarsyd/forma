@@ -262,7 +262,15 @@ const BUDGETS = [
   // chunk (57,800 B at 98.5% before it, after 1.6.2 to 1.6.5): any AI of your own opening the workspace, the
   // MCP server's tools with and without an AI, its Docs article, the terms and privacy policy, four security
   // fixes and four other fixes, in a visitor's words. Copy, not code. 94.0%.
-  { prefix: 'releases-', ext: '.js', max: 66_300, note: 'the changelog and What\'s new, lazy (62,330 B at 94.0%, the 1.7.0 entry)' },
+  // Raised to 71,800 on 2026-11-25, at 67,731 B (102.2%, over): the command line and the server's databases joining
+  // the 1.7.0 entry (the CLI and Forma Designer work's wave 8, the owner's OC4), +5,401 B measured in the built chunk
+  // against the 62,330 B above, which releases.ts, the chunk's only module, kept unchanged until then: five changes
+  // (the command line, its batch, a database's layout from the server and from the command line, the fonts Node
+  // measures in), three on binding a database in the browser (a security fix and two fixes), the title, the summary
+  // and four changes rewritten, and the wave's review's words (REL-R1 to R4: what converts, where sample rows in the
+  // layout's file are read, where the fonts are kept, the CI recipe not yet run as written; 67,493 B before them).
+  // Copy, not code. 94.3%.
+  { prefix: 'releases-', ext: '.js', max: 71_800, note: 'the changelog and What\'s new, lazy (67,731 B at 94.3%, the 1.7.0 entry with the command line)' },
   { prefix: 'FeaturesPage-', ext: '.js', max: 49_000, note: 'the Features page, lazy (46,243 B at 94.4%, Vite 8)' },
   { prefix: 'DatabasePanel-', ext: '.js', max: 37_700, note: 'the Data tab\'s database, lazy (35,468 B at 94.1%)' },
   // The workspace itself (2026-11-08), lazy since the cut above, budgeted so

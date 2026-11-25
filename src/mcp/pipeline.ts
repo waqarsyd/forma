@@ -43,7 +43,7 @@
 import type { AgentEdit } from '../lib/agentEdit';
 import type { QueryJson } from '../lib/databaseAi';
 import { ToolRefusal, type Voice } from './caller';
-import { bindConverted, bindReport, bindingOf, readDatabase, type Binding, type ChosenBy, type DatabaseJob, type DatabaseRead } from './nodeDatabase';
+import { bindConverted, bindRepaired, bindReport, bindingOf, readDatabase, type Binding, type ChosenBy, type DatabaseJob, type DatabaseRead, type RepairChosenBy } from './nodeDatabase';
 import { fileLines, openReport, type LayoutKind } from './reportFile';
 
 /** A Designer file read beside a `.vsrepx`, for the names it looks up (GAP1-3). */
@@ -72,7 +72,11 @@ export interface Audited {
 export interface Jobs {
   audit: { name: string; text: string };
   outline: { name: string; text: string };
-  repair: { name: string; text: string; target: LayoutKind; designers: DesignerText[] };
+  /**
+   * With `database` (the command line's batch, since the CLI work's wave-8 review, W8R-1) the report repaired is bound
+   * to it with no AI (nodeDatabase.ts `bindRepaired`); the server's repx_repair sends none.
+   */
+  repair: { name: string; text: string; target: LayoutKind; designers: DesignerText[]; database?: DatabaseJob };
   /**
    * With `database` (the CLI work's wave 7, D1-11): a `data` edit binds to it through the chat's own hook (databaseAi.ts
    * `dataEditHook`), at the report's own version, and what the report binds is read back; without one a `data` edit is
@@ -112,7 +116,8 @@ export interface Results {
     outline: string[];
     dataSources: { name: string; connection: string; queries: string[] }[];
   };
-  repair: { xml: string; repairs: string[]; said: string[]; audit: Audited; dropped: Dropped | null };
+  /** With a database, what binding the report repaired did and how its query was chosen, and what the layout's files held that was not read; null and none without one. */
+  repair: { xml: string; repairs: string[]; said: string[]; audit: Audited; dropped: Dropped | null; bound: { binding: Binding; chosenBy: RepairChosenBy | null } | null; notices: string[] };
   /** With a database, what the report binds, read back from the report written (or, with nothing changed, the report read), and what the layout's files held that was not read; null and none without one. */
   edit: { changed: boolean; xml: string; applied: string[]; declined: string[]; unmarked: boolean; dropped: Dropped | null; binding: Binding | null; notices: string[] };
   pdf: { drawn: { bytes: Uint8Array; pages: number; problems: string[] } | null };
@@ -189,17 +194,24 @@ const WORK: { [T in JobName]: (job: Jobs[T], xml: string, voice: Voice) => Promi
     };
   },
 
-  repair: async (job, xml) => {
+  repair: async (job, xml, voice) => {
     const [{ repairRepx, versionOf }, { hasReportScripts }] = await Promise.all([import('../lib/repairChain'), import('../lib/shares')]);
+    // The layout first, so one that cannot be read is refused before the repair's work, as convert reads it (nodeDatabase.ts).
+    const db = job.database ? await readDatabase(job.database, voice) : null;
     // The developer's own code is kept, as the generation keeps a user's (GAP1-3, SE-02b).
     const repaired = repairRepx(xml, { version: versionOf(xml), keepScripts: hasReportScripts(xml), target: job.target });
     const applied = repaired.steps.filter((s) => s.applied);
+    // With a database, the report repaired is bound with no AI at its own version, as bind writes one (W8R-1).
+    const bound = db && job.database ? await bindRepaired(repaired.xml, db.schema, { connectionName: job.database.connectionName, voice, query: db.query, version: versionOf(xml) }) : null;
+    const out = bound?.xml ?? repaired.xml;
     return {
-      xml: repaired.xml,
+      xml: out,
       repairs: applied.map((s) => s.name),
       said: fileLines(applied.map((s) => `${s.name}: ${s.reason}`)),
-      audit: await audited(repaired.xml),
-      dropped: job.target === 'vsrepx' ? await droppedNames(xml, repaired.xml, job.designers) : null,
+      audit: await audited(out),
+      dropped: job.target === 'vsrepx' ? await droppedNames(xml, out, job.designers) : null,
+      bound: bound ? { binding: bound.binding, chosenBy: bound.chosenBy } : null,
+      notices: [...(db?.notices ?? [])],
     };
   },
 

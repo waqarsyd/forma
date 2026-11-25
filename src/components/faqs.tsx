@@ -97,7 +97,8 @@ export const FAQS: Array<{ q: string; a: ReactNode }> = [
         changes them, a folder at a time, one file after another. It runs on your computer or a CI runner you choose,
         and on a runner your files and key are on your CI provider&apos;s computer for the job. The{' '}
         <a href="/docs#cli" className="font-semibold text-secondary hover:underline">Docs</a> have its commands, its
-        exit codes and a GitHub Actions recipe.
+        exit codes and a GitHub Actions recipe, which follows GitHub&apos;s documentation and has not been run as
+        written in a workflow.
       </p>
     ),
   },

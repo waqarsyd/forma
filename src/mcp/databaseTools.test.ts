@@ -501,7 +501,10 @@ describe('the AI tools with a database', () => {
     const c = await serve({ settings: await switches('ShopLive'), designer: designer(exe, 'sql-fail') }, { mock: false, generator: oneAtATime(inThreadGenerator(SETUP, { ask: never })) });
     const result = await call(c, 'generate_report', { description: 'Payroll', connection: 'ShopLive', output: join(dir, 'never.repx') });
     const text = errorText(result);
-    expect(text.split('\n\n')[0]).toBe("Forma Designer could not read the layout of the connection ShopLive (SQL Server's error 207); what it answered is under fromFile.designer.");
+    // With the person's way on after it, which no SQL Server refusal carried until the CLI work's wave-8 review (W8R-5).
+    expect(text.split('\n\n')[0]).toBe(
+      "Forma Designer could not read the layout of the connection ShopLive (SQL Server's error 207); what it answered is under fromFile.designer. The person can check the connection in Forma Designer's tray menu, SQL Server connections; or send the database's layout as a file with database instead: the resource forma://sql/layout-script is the script that reads it.",
+    );
     expect(text.split('\n\n')[0]).not.toContain('vSecretPayroll');
     expect(text).toContain(FROM_FILE_NOTE);
     expect(errorFromFile(result)).toEqual({ designer: "Invalid column name '...' in the view vSecretPayroll." });

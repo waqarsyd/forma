@@ -1594,8 +1594,9 @@ npm ci`}
                 procedures, and Forma writes the data source itself, its connection by name only. Only names go to your
                 AI, unless you also give <code className="doc-code">--samples</code>, a file of sample rows, which is
                 your consent. <code className="doc-code">--procedure</code>, <code className="doc-code">--object</code>{' '}
-                or <code className="doc-code">--query</code> pins what the report reads; bind and convert with{' '}
-                <code className="doc-code">--database</code> bind with no AI; and{' '}
+                or <code className="doc-code">--query</code> pins what the report reads; bind, convert and a
+                batch&apos;s <code className="doc-code">--repair</code> with <code className="doc-code">--database</code>{' '}
+                bind with no AI; and{' '}
                 <code className="doc-code">--require-binding</code> fails a report written unbound. On Windows,{' '}
                 <code className="doc-code">--connection</code> reads a connection Forma Designer keeps in place of the
                 file; it and connections need the next release of Forma Designer.
@@ -1610,7 +1611,9 @@ npm ci`}
                 that runs on a push, never on <code className="doc-code">pull_request_target</code>, which runs a
                 fork&apos;s changes with your secrets. A runner starts empty and is gone when the job ends, so the
                 reports a push makes are kept as the run&apos;s artifact, even when the batch step failed, and the
-                next run makes every file again.
+                next run makes every file again. The recipe follows GitHub&apos;s documentation and has not been run as
+                written in a workflow; Forma&apos;s tests run its batch and audit commands on Linux from outside a copy
+                of the code, with the AI stood in.
               </p>
               <div className="mt-4 overflow-hidden rounded-[10px] border border-outline-variant">
                 <div className="flex items-center justify-between gap-3 border-b border-outline-variant bg-surface-container-low px-3.5 py-2.5">
@@ -1661,8 +1664,8 @@ jobs:
               </Note>
               <Note label="Worth knowing">
                 On Linux, Arial, Times New Roman, Courier New, Calibri and Cambria measure as they do on Windows, with
-                faces that come with Forma; another font the machine lacks is measured in a stand-in, and the result
-                says which. On Windows, Ctrl+C while the AI works can end the run with 3221226505 in place of 130;
+                faces kept in Forma&apos;s code; another font the machine lacks is measured in a stand-in, and the result
+                says which. On Windows, Ctrl+C while Forma reads the files for the AI can end the run with 3221226505 in place of 130;
                 nothing is written either way.
               </Note>
             </Article>

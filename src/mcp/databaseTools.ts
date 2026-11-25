@@ -65,7 +65,7 @@ import * as z from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
 import type { QueryJson } from '../lib/databaseAi';
 import { CallStopped, ToolRefusal } from './caller';
-import { DESIGNER_MAX_OBJECTS, DesignerRefusal, designerConnections, designerRead, type DesignerObject, type DesignerSetup, type DesignerUnread } from './designerVerbs';
+import { DESIGNER_MAX_OBJECTS, DesignerRefusal, designerConnections, designerNext, designerRead, type DesignerObject, type DesignerSetup, type DesignerUnread } from './designerVerbs';
 import type { GenEvent } from './genJobs';
 import type { LayoutBytes } from './nodeDatabase';
 import { describePath, type PathSystem } from './paths';
@@ -138,6 +138,23 @@ export async function readDatabaseSettings(given: { connections?: string; sample
 
 /** The way on when a connection cannot be read: the layout as a file. */
 const LAYOUT_INSTEAD = `Send the database's layout as a file with database instead: the resource ${LAYOUT_SCRIPT_URI} is the script that reads it.`;
+
+/**
+ * What each of Forma Designer's refusals leaves to do (designerVerbs.ts `designerNext`), in the server's words: a
+ * connection's sign-in and server are the person's to see to in Forma Designer, never the model's (the CLI work's wave-8
+ * review, W8R-5: its deadline and SQL Server's refusals ended with nothing to do; the command line says the same).
+ */
+const WAY_ON: Record<NonNullable<ReturnType<typeof designerNext>>, string> = {
+  file: LAYOUT_INSTEAD,
+  again: `Call it again, or send the database's layout as a file with database instead: the resource ${LAYOUT_SCRIPT_URI} is the script that reads it.`,
+  check: `The person can check the connection in Forma Designer's tray menu, SQL Server connections; or send the database's layout as a file with database instead: the resource ${LAYOUT_SCRIPT_URI} is the script that reads it.`,
+};
+
+/** A refusal of Forma Designer's with the way on after it, when it says none of its own (`designerNext`); anything else as it is. */
+function withWayOn(error: unknown): unknown {
+  const next = error instanceof DesignerRefusal ? designerNext(error) : null;
+  return error instanceof DesignerRefusal && next ? new DesignerRefusal(`${error.message} ${WAY_ON[next]}`, error.problem, error.number, error.fromFile) : error;
+}
 
 /** Said when sample rows are asked for while the person has not turned them on (OC6). */
 export const SAMPLES_OFF =
@@ -310,9 +327,9 @@ export async function connectionDatabase(call: Extract<DatabaseCall, { kind: 'co
   } catch (error) {
     if (error instanceof CallStopped || run.signal.aborted) throw error instanceof CallStopped ? error : new CallStopped();
     // A Forma Designer that cannot be started or has no verbs: the layout file is the way on; a refusal of its own (a sign-in,
-    // a server not reached) is the person's to fix in Forma Designer, and its words stand as they are.
-    if (error instanceof DesignerRefusal && error.problem === null) throw new ToolRefusal(`${error.message} ${LAYOUT_INSTEAD}`, error.fromFile);
-    throw error;
+    // a server not reached) is the person's to fix in Forma Designer, its words standing as they are, with that said after
+    // them, or the file; a deadline, a second call or the file (W8R-5).
+    throw withWayOn(error);
   }
   const bytes = (text: string) => new TextEncoder().encode(text);
   const as = `${read.connection} in Forma Designer`;
@@ -379,8 +396,7 @@ export function registerConnections(server: McpServer, deps: ToolDeps, entry: To
       try {
         kept = await designerConnections(designer, { voice: 'mcp', signal: tc.signal, log: (line) => deps.log(deps.redact(line)) });
       } catch (error) {
-        if (error instanceof DesignerRefusal && error.problem === null) throw new ToolRefusal(`${error.message} ${LAYOUT_INSTEAD}`, error.fromFile);
-        throw error;
+        throw withWayOn(error);
       }
       // Only the names the person listed: a connection Forma Designer keeps and the entry does not name is never said.
       const found = settings.connections.flatMap((name) => kept.filter((c) => c.name.toLowerCase() === name.toLowerCase()).slice(0, 1));

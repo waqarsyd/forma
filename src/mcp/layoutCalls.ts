@@ -58,7 +58,7 @@
 import type { AgentEdit } from '../lib/agentEdit';
 import { CallStopped, ToolRefusal, quoted, type Voice } from './caller';
 import { nodeWriteFs, resolveWritePath, type IfExists, type PathScope, type PathSystem } from './paths';
-import type { Binding, ChosenBy, DatabaseJob } from './nodeDatabase';
+import type { Binding, ChosenBy, DatabaseJob, RepairChosenBy } from './nodeDatabase';
 import type { Audited, DesignerText, Dropped, LayoutSaid, ReportRead } from './pipeline';
 import { bindingParts, databaseFilesOf, judgeDatabase, readDatabaseFiles, scopeOf, type BindingText, type DatabaseInput, type PathPolicy, type WrittenBy } from './reportCalls';
 import {
@@ -166,10 +166,14 @@ export async function outlineLayout(
   return { data: { ...readOf(report, done.report), ...done.counts }, fromFile: { outline: done.outline, dataSources: done.dataSources } };
 }
 
-/** A repair's result: the file written, the repairs made, and the audit of what was written. */
+/**
+ * A repair's result: the file written, the repairs made, and the audit of what was written; with a database given, what
+ * binding the report did (`bound`, `chosenBy`, and its words under `fromFile.binding`), which are absent without one, so
+ * the server's repx_repair, which gives none, returns what it always did.
+ */
 export interface RepairDone<W extends IfExists> {
-  data: LayoutRead & { written: WrittenBy<W>; repairs: string[] } & AuditData;
-  fromFile: { repairs: string[]; findings: string[]; designerLooksUp?: string[] };
+  data: LayoutRead & { written: WrittenBy<W>; repairs: string[]; bound?: boolean | null; chosenBy?: RepairChosenBy | null } & AuditData;
+  fromFile: { repairs: string[]; findings: string[]; designerLooksUp?: string[]; binding?: BindingText };
   words: string;
 }
 
@@ -178,27 +182,38 @@ export interface RepairDone<W extends IfExists> {
  * same order, written to a new file (`output`, else `<name>.repaired.repx`
  * beside the input). Written over the input itself only where the policy
  * replaces and nothing was taken out of its connection (the wave-4 review's
- * SEC-W4-2, as an edit: reportFile.ts `overInputRefusal`).
+ * SEC-W4-2, as an edit: reportFile.ts `overInputRefusal`). With `database`
+ * (the command line's batch, since the CLI work's wave-8 review, W8R-1) the
+ * report repaired is bound to it with no AI (nodeDatabase.ts `bindRepaired`),
+ * in the same bounded thread, and written bound or, when it cannot be, as
+ * repaired, the binding saying why.
  */
-export async function repairLayout<W extends IfExists>(raw: string, output: string | undefined, policy: PathPolicy<W>, run: LayoutRun): Promise<RepairDone<W>> {
+export async function repairLayout<W extends IfExists>(raw: string, output: string | undefined, policy: PathPolicy<W>, run: LayoutRun, database?: DatabaseGiven): Promise<RepairDone<W>> {
   const { sys, voice } = policy;
   const { scope, report } = await opened(raw, policy);
   const target = outputPath(output, report, '.repaired.repx', LAYOUT_EXTENSIONS, scope, sys);
   const kind = targetKind(target, report, voice);
   const inPlace = policy.ifExists === 'replace' && sameFile(target, report.path, sys);
   const designers = kind === 'vsrepx' ? designersFor(report, target, scope, sys) : [];
+  const files = await databaseFiles(await databaseNow(database), policy);
   // The developer's own code is kept (GAP1-3, SE-02b), in pipeline.ts.
-  const done = await run.pipeline.run({ tool: 'repair', voice, name: report.spelled, text: report.text, target: kind, designers }, run.signal);
+  const done = await run.pipeline.run({ tool: 'repair', voice, name: report.spelled, text: report.text, target: kind, designers, ...(files ? { database: files } : {}) }, run.signal);
   if (inPlace && done.report.connectionsChanged) throw overInputRefusal(report.path, done.report.loginRemoved, voice);
-  const notices = [...done.report.notices];
+  const notices = [...done.report.notices, ...done.notices];
   if (done.report.connectionsChanged && !done.report.loginRemoved) notices.push(CONNECTION_BY_NAME);
   // A repair writes even where its Designer looks up a name it lost, and says which (GAP1-3).
   if (done.dropped) notices.push(droppedNotice(done.dropped, voice));
   stillWanted(run.signal);
   const written = writeReport(target, done.xml, policy.wfs ?? nodeWriteFs, sys, policy.ifExists as IfExists) as WrittenBy<W>;
+  const parts = done.bound ? bindingParts(done.bound.binding) : null;
   return {
-    data: { ...readOf(report, done.report), notices, written, repairs: done.repairs, ...done.audit.data },
-    fromFile: { repairs: done.said, findings: done.audit.lines, ...(done.dropped ? { designerLooksUp: done.dropped.names } : {}) },
+    data: { ...readOf(report, done.report), notices, written, repairs: done.repairs, ...(parts ? { bound: parts.bound, chosenBy: done.bound?.chosenBy ?? null } : {}), ...done.audit.data },
+    fromFile: {
+      repairs: done.said,
+      findings: done.audit.lines,
+      ...(done.dropped ? { designerLooksUp: done.dropped.names } : {}),
+      ...(parts?.text ? { binding: parts.text } : {}),
+    },
     words: done.audit.words,
   };
 }

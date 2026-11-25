@@ -82,7 +82,12 @@
  * a batch once, before its first file, each file's job then reading it again
  * and building a step of its own, so no file's query carries to the next
  * (D1-9), a deliberate departure from browser Batch, which shares no
- * database. bind (D1-11) and convert --database (GAP1-5) bind with no AI;
+ * database. bind (D1-11) and convert --database (GAP1-5) bind with no AI,
+ * and so, since the wave-8 review (W8R-1), does a batch's repair route
+ * (nodeDatabase.ts `bindRepaired`: the query pinned, else the SQL data
+ * source the report already reads, else the object holding most of its
+ * fields), which bound nothing until then, its rows passing
+ * `--require-binding` unbound;
  * sql-script prints the scripts and the sqlcmd line (D1-4). Each input's
  * result says what the report binds, read back from the file written
  * (`binding` in its JSON line, lines under it otherwise, control characters
@@ -112,7 +117,10 @@
  * job starts (`connectionFirst`, D2-6), within `DESIGNER_CLI_SECONDS` for
  * each verb and killed by a stop; a Forma Designer that is not there, is
  * older than 1.2.0 or is not on Windows is refused in words with the way
- * on (a layout file), exit 4, before anything else is read. The entry
+ * on (a layout file), exit 4, before anything else is read, and since the
+ * wave-8 review (W8R-5) so is one of its own answers that names none (its
+ * deadline: run it again; SQL Server's refusal or words: check the
+ * connection in its tray menu; each, or the file: `withWayOn`). The entry
  * finds it (`designerPlace`: the per-user install, or FORMA_DESIGNER for a
  * copy built from source) and builds the environment it is started with
  * from Windows' own variables, after the keys are deleted; nothing here
@@ -129,10 +137,12 @@
  * in that same mode, and only its own files in its folder's mode (each must
  * really be in the batch's folder), so a link the working folder holds
  * under `--out` or on the way to a data file is refused as the single
- * commands refuse it (the wave-4 review's SEC-W4-1). Nothing is written
- * over a file a report is made from, `--force` or not, and a report whose
- * connection was stored with more than its name is never replaced in place
- * (SEC-W4-2, reportFile.ts `overInputRefusal`). A file system's refusal to
+ * commands refuse it (the wave-4 review's SEC-W4-1). generate writes over
+ * no file it is made from, `--force` or not, and a report whose connection
+ * was stored with more than its name is never replaced in place (SEC-W4-2,
+ * reportFile.ts `overInputRefusal`); any other report is replaced in place
+ * only when `--out` names it and `--force` is given (measured in the CLI
+ * work's wave 8: `repair r.repx --out r.repx --force` replaces r.repx). A file system's refusal to
  * write (permission, a read-only or full disk, a file in use) is a failure,
  * exit 4, naming the file, never an internal error (U3). An output is `<name>.repaired.repx`,
  * `<name>.edited.repx`, `<name>.pdf`, `<name>.converted.repx`, `<first
@@ -193,12 +203,16 @@
  * the run's signal (`stopOnSignals`): the AI's thread is ended at once, so
  * no request goes out after it, the report under way is not written, and
  * the command exits 130; a second ends the process at once. On Windows a
- * stop once the AI's thread has started ends the process with 3221226505
- * (0xC0000409, Windows' fail-fast abort, not its Ctrl+C code, 0xC000013A,
- * which is 3221225786; the wave-7 review's W7R-4), in place of 130, though nothing is
- * written and the lines printed say 130 (measured in the wave-4 review, U7,
- * and again in its fix round, leaving at once after `main` or not; not yet
- * explained). What survives a
+ * stop while the AI's thread reads the files (OCR, a PDF's pages) ends the
+ * process with 3221226505 (0xC0000409, Windows' fail-fast abort, not its
+ * Ctrl+C code, 0xC000013A, which is 3221225786; the wave-7 review's W7R-4),
+ * in place of 130, though nothing is written and the lines printed say 130
+ * (measured in the wave-4 review, U7, and again in its fix round, leaving at
+ * once after `main` or not; not yet explained). A stop while the thread
+ * waits on the AI's answer, or while a batch waits out a limit, exits 130
+ * on Windows too (measured in the CLI work's wave 8, Ctrl+Break sent to a
+ * console of the command's own: 130 at "Waiting for the AI." and during a
+ * minute's wait, 3221226505 at every moment of "Reading the files."). What survives a
  * kill is the write's own atomicity (a temporary name, then a link: at most
  * a `<name>.forma-partial-*` is left, never half a report under its name)
  * and the JSON line of every input already finished.
@@ -225,8 +239,8 @@ import { GEN_LIMITS, STAGES, workerGenerator, type Generator } from './generator
 import { CONVERTED_VERSION, NO_EDIT_MADE, auditLayout, bindLayout, convertForeign, convertLayout, copyLayout, editLayout, notConverted, outlineLayout, pdfLayout, readLayout, repairLayout, writeLayout, type LayoutRun } from './layoutCalls';
 import { formaUserFolder, keyParked } from './modelParks';
 import { DESIGNER_VERBS_SINCE } from '../lib/designerRelease';
-import { DESIGNER_INSTALL, DESIGNER_MAX_OBJECTS, RENAME_TO_USE, designerConnections, designerRead, type DesignerSetup } from './designerVerbs';
-import { CHOSEN_WORDS, type LayoutBytes } from './nodeDatabase';
+import { DESIGNER_INSTALL, DESIGNER_MAX_OBJECTS, DesignerRefusal, RENAME_TO_USE, designerConnections, designerNext, designerRead, type DesignerSetup } from './designerVerbs';
+import { CHOSEN_WORDS, REPAIR_CHOSEN_WORDS, type LayoutBytes } from './nodeDatabase';
 import { nodeSystem, parsePath, resolveFolderPath, resolveReadPath, resolveWritePath, type PathSystem, type PathVerdict, type WorkingFolder, type WriteFs, type WriteStatus } from './paths';
 import { DATA_EXTENSIONS, SOURCE_EXTENSIONS, answeredBy, judgeDatabase, judgeInput, planGenerate, planRevise, runGenerate, runRevise, type BindingText, type DatabaseInput, type PathPolicy, type RevisePlan } from './reportCalls';
 import { FOREIGN_EXTENSIONS, LAYOUT_EXTENSIONS, besideName } from './reportFile';
@@ -626,7 +640,7 @@ export function helpText(version: string): string {
     'Options of some commands (each command lists its own above):',
     '  --out <file|folder> where to write; a folder takes the usual name inside it (batch: the folder its reports go in, each subfolder kept)',
     '  --force             replace a file already at the output; without it nothing is replaced, and the command exits 4',
-    '  --fail-on errors|never  whether a report with audit errors makes the run exit 1; errors by default',
+    '  --fail-on errors|never  whether a report with audit errors makes the run exit 1; errors by default (audit, repair, edit, convert, bind, generate, revise, batch)',
     '  --description "..." the report in words (generate); sent with every picture and PDF (batch), which without one is made as Forma\'s draft the AI corrects',
     "  --data <file>       a data file whose columns are the report's fields (generate, and every picture and PDF of a batch): " + `${DATA_EXTENSIONS.join(', ')}; once for each file`,
     "  --allow-stand-in    when every AI fails, write Forma's own draft as <name>.draft.repx, and say so, exit 4 all the same (generate, batch); without it nothing is written",
@@ -638,7 +652,7 @@ export function helpText(version: string): string {
     '  --skip-existing     skip an input whose report is already under --out, so running the same command again carries on (batch)',
     '  --dry-run           print what each file would be made into, and which need the AI, reading no file and asking no AI (batch)',
     `  --max <n>           the most files a batch makes; ${MAX_BATCH_FILES} unless given, and a folder holding more is refused before anything is read`,
-    "  --database <layout> a database's layout: what sql-script's script answers, saved as a file (UTF-8 or UTF-16), an SSMS \"Generate Scripts\" file, or a .repx whose data source it reads; the AI binds the report to it, and Forma writes the SQL data source with the connection by name only (generate, revise, batch; convert and bind with no AI)",
+    "  --database <layout> a database's layout: what sql-script's script answers, saved as a file (UTF-8 or UTF-16), an SSMS \"Generate Scripts\" file, or a .repx whose data source it reads; the AI binds the report to it, and Forma writes the SQL data source with the connection by name only (generate, revise, batch; convert, bind and a batch's repairs with no AI)",
     `  --connection <name> a SQL Server connection Forma Designer keeps for you (connections lists them), in place of --database: Forma Designer ${DESIGNER_VERBS_SINCE} or later, on Windows, reads its database's layout, and the report's connection is written with this name (generate, revise, batch, convert, bind)`,
     "  --samples <file>    sample rows of the same database (sql-script --sample's answer), whose values go to the AI with the layout: giving the file is your consent; once for each file (generate, revise, batch). Without it, only names go",
     "  --sample-objects <dbo.A,dbo.B>  with --connection: Forma Designer reads a few rows of these tables or views, whose values go to the AI with the layout: naming them is your consent (generate, revise, batch). Without it, only names go",
@@ -707,8 +721,12 @@ function pick(value: object, keys: readonly string[]): Record<string, unknown> {
   return Object.fromEntries(keys.filter((k) => k in from).map((k) => [k, from[k]]));
 }
 
-/** The labels the text read from files is printed under, where the field's own name is not a person's. */
-const FROM_FILE_LABELS: Record<string, string> = { standInFonts: 'stand-in fonts', designerLooksUp: 'designer looks up', aiError: 'the AI answered' };
+/**
+ * The labels the text read from files is printed under, where the field's own name is not a person's. `aiError` is why the
+ * AI made no report, which is often not an answer of its own (a Local AI not running, a refused key, a limit): it was
+ * "the AI answered" until the CLI work's wave-8 end-to-end run read "The AI answered: Forma could not reach the local AI".
+ */
+const FROM_FILE_LABELS: Record<string, string> = { standInFonts: 'stand-in fonts', designerLooksUp: 'designer looks up', aiError: 'why the AI made no report' };
 
 /** An input's result, as it is printed. */
 interface Row {
@@ -752,6 +770,8 @@ interface Run {
   rows: Row[];
   /** Why the batch stopped before its last file: an AI's limit it does not wait out, or the AI refusing the key. */
   stopped?: { why: 'limit'; limit: AiLimit } | { why: 'key' };
+  /** Whether the way on after that stop was said on stderr (`tellStop`); else it is said once at the batch's end (`tellStopAtEnd`). */
+  stopTold?: boolean;
   /** The batch's plan and walk, for its summary; absent for every other command. */
   batch?: BatchFacts;
   /** --connection's layout and --sample-objects' rows, as Forma Designer printed them, once read (`connectionFirst`). */
@@ -906,8 +926,11 @@ async function attempt(run: Run, input: string, work: () => Promise<Omit<Row, 'i
     if (error instanceof UsageError) throw error;
     if (run.io.signal.aborted || error instanceof CallStopped) return failedRow(input, 'stopped', 'Stopped: the report under way was not written.');
     if (error instanceof AiFailure) {
+      // A single command met a limit: the way on, which the batch says in its own words (tellStop) and generate and revise
+      // left out until the CLI work's wave-8 end-to-end run.
+      const again = error.limit && run.command !== 'batch' ? ' Run the same command again once it lifts.' : '';
       // Whether the AI refused the key is read in its own failure's words alone (browser Batch's rule), which name no file (SEC-W4-3).
-      return { ...failedRow(input, error.limit ? 'limit' : 'failed', `${error.message}${error.limit ? ` ${limitWords(error.limit)}` : ''}`, { limit: error.limit }), keyRefused: !error.limit && KEY_REFUSED.test(error.message) };
+      return { ...failedRow(input, error.limit ? 'limit' : 'failed', `${error.message}${error.limit ? ` ${limitWords(error.limit)}${again}` : ''}`, { limit: error.limit }), keyRefused: !error.limit && KEY_REFUSED.test(error.message) };
     }
     if (error instanceof ToolRefusal) return failedRow(input, 'refused', error.message);
     const refused = fileSystemRefusal(error);
@@ -1047,7 +1070,8 @@ function folderInputs(run: Run, raw: string, command: keyof typeof FOLDER_OF): s
     .filter((entry) => entry.isFile() && !entry.name.startsWith('.') && isOne(entry.name))
     .map((entry) => run.sys.path.join(folder.path, entry.name))
     .sort();
-  if (!found.length) return failedRow(raw, 'refused', `${q(folder.path)} holds ${of.none} directly in it, so nothing was ${of.done}.`);
+  // With the way on (the CLI work's wave-8 end-to-end run: the refusal stopped at "nothing was audited"): no subfolder is read.
+  if (!found.length) return failedRow(raw, 'refused', `${q(folder.path)} holds ${of.none} directly in it, so nothing was ${of.done}; ${command} reads no subfolder, so name the folder they are in, or the files.`);
   return found;
 }
 
@@ -1119,19 +1143,31 @@ async function layoutCommand(run: Run, input: string): Promise<Row> {
   });
 }
 
-/** A repair: every repair Forma makes, written to `output` (else `<name>.repaired.repx` beside it), with the audit of the result. */
-async function repairWork(run: Run, input: string, output: string | undefined, policy: Run['policy']): Promise<Omit<Row, 'input'>> {
-  const done = await repairLayout(input, output, policy, run.layout());
+/**
+ * A repair: every repair Forma makes, written to `output` (else
+ * `<name>.repaired.repx` beside it), with the audit of the result. A
+ * batch's repair route hands it the batch's database (since the CLI work's
+ * wave-8 review, W8R-1: the route bound nothing, carried no binding on its
+ * row, and so passed `--require-binding` unbound), and the report is bound
+ * with no AI (nodeDatabase.ts `bindRepaired`), its row carrying `binding`
+ * and how its query was chosen, held to `--require-binding` as every other.
+ */
+async function repairWork(run: Run, input: string, output: string | undefined, policy: Run['policy'], database?: DatabaseInput): Promise<Omit<Row, 'input'>> {
+  const done = await repairLayout(input, output, policy, run.layout(), database);
   const d = done.data;
-  const fields = pick(d, [...READ_FIELDS, 'written', 'repairs', ...AUDIT_FIELDS]);
+  const fields = {
+    ...pick(d, [...READ_FIELDS, 'written', 'repairs', ...AUDIT_FIELDS]),
+    ...(database ? { binding: bindingField(d.bound, done.fromFile.binding), chosenBy: d.chosenBy ?? null } : {}),
+  };
   if (d.written.status === 'exists') return refusedWrite(d.written, fields, d.notices);
-  return {
+  const chosen = d.chosenBy ? [`  chosen as ${REPAIR_CHOSEN_WORDS[d.chosenBy]}`] : [];
+  return requiredBound(run, {
     status: writtenStatus(d.written, d.errors),
-    lines: [`${wrote(d.written)} ${d.repairs.length ? `Repaired: ${d.repairs.join(', ')}.` : 'Nothing needed repairing.'} The result has ${done.words}.`],
+    lines: [`${wrote(d.written)} ${d.repairs.length ? `Repaired: ${d.repairs.join(', ')}.` : 'Nothing needed repairing.'} The result has ${done.words}.`, ...bindingLines(done.fromFile.binding, d.bound), ...chosen],
     notes: d.notices,
     fields,
-    fromFile: done.fromFile,
-  };
+    fromFile: withoutBinding(done.fromFile),
+  });
 }
 
 /** Said of every converted report: the version it is written as, which later versions open as DevExpress opens an older layout. */
@@ -1354,6 +1390,36 @@ const designerOf = (run: Run): DesignerSetup => run.io.designer ?? { place: { ok
 /** The way on when Forma Designer cannot be used: the layout as a file. */
 const LAYOUT_INSTEAD = "Give the database's layout as a file with --database instead: sql-script prints the script that reads it.";
 
+/** What each of Forma Designer's refusals leaves the person to do (designerVerbs.ts `designerNext`), in the command line's words. */
+const WAY_ON: Record<NonNullable<ReturnType<typeof designerNext>>, string> = {
+  file: LAYOUT_INSTEAD,
+  again: "Run the command again, or give the database's layout as a file with --database instead: sql-script prints the script that reads it.",
+  check: "Check the connection in Forma Designer's tray menu, SQL Server connections, or give the database's layout as a file with --database instead: sql-script prints the script that reads it.",
+};
+
+/**
+ * Forma Designer's refusals end with the way on (designerVerbs.ts
+ * `designerNext`), as the header says and as the server's do
+ * (databaseTools.ts): a layout file after one made before it answered
+ * anything (not installed, older than 1.2.0, a link, a program that could
+ * not be started or did not answer as Forma Designer does); running it
+ * again, or the file, after a deadline; its connection in its tray menu, or
+ * the file, after SQL Server refused, was not reached or failed. An answer
+ * that says its own (no connection of that name) keeps it. Until the CLI
+ * work's wave-8 end-to-end run, `connections` and `--connection` said "Forma
+ * Designer is not installed for this Windows user" and stopped there, and
+ * until its review (W8R-5) a deadline or SQL Server's words did.
+ */
+async function withWayOn<T>(work: Promise<T>): Promise<T> {
+  try {
+    return await work;
+  } catch (error) {
+    const next = error instanceof DesignerRefusal ? designerNext(error) : null;
+    if (error instanceof DesignerRefusal && next) throw new DesignerRefusal(`${error.message} ${WAY_ON[next]}`, error.problem, error.number, error.fromFile);
+    throw error;
+  }
+}
+
 /** A table or view as a line names it. */
 const objectName = (t: SampleTarget) => `${t.schema}.${t.name}`;
 
@@ -1375,7 +1441,7 @@ async function connectionFirst(run: Run, label: string): Promise<Row | null> {
     run.err(
       `Reading the layout of the connection ${name}${objects ? `, and ${n(rows, 'row')} of each of ${objects.map(objectName).join(', ')}, whose values go to the AI with it,` : ''} through Forma Designer, within ${n(DESIGNER_CLI_SECONDS / 60, 'minute')} for each.`,
     );
-    const read = await designerRead(setup, name, { voice: 'cli', signal: run.io.signal, seconds: DESIGNER_CLI_SECONDS, log: (line) => run.options.verbose && run.err(line) }, objects ? { objects, rows } : undefined);
+    const read = await withWayOn(designerRead(setup, name, { voice: 'cli', signal: run.io.signal, seconds: DESIGNER_CLI_SECONDS, log: (line) => run.options.verbose && run.err(line) }, objects ? { objects, rows } : undefined));
     // A table SQL Server could not read is left out, the rest sent (R6-2): said by name and number, never SQL Server's words.
     for (const u of read.unread) {
       run.err(`SQL Server could not read sample rows of ${u.object}${u.number === null ? '' : ` (its error ${u.number})`}, so its rows were left out.`);
@@ -1400,8 +1466,8 @@ async function connectionFirst(run: Run, label: string): Promise<Row | null> {
 async function connectionsCommand(run: Run): Promise<Row> {
   return attempt(run, 'Forma Designer', async () => {
     const setup = designerOf(run);
-    if (!setup.place.ok) throw new ToolRefusal(setup.place.reason);
-    const list = await designerConnections(setup, { voice: 'cli', signal: run.io.signal, log: (line) => run.options.verbose && run.err(line) });
+    if (!setup.place.ok) throw new ToolRefusal(`${setup.place.reason} ${LAYOUT_INSTEAD}`);
+    const list = await withWayOn(designerConnections(setup, { voice: 'cli', signal: run.io.signal, log: (line) => run.options.verbose && run.err(line) }));
     // Each line begins with Forma's own word, never a name from the store; one --connection cannot name is said so (N6-6).
     const lines = list.length
       ? list.map((c) => `connection ${c.name}: database ${c.database}, signing in ${c.signIn === 'windows' ? 'with Windows' : 'with a saved SQL Server login'}${c.usable ? '' : '; its name begins with . or -, so --connection cannot name it'}`)
@@ -1509,7 +1575,7 @@ async function generateWork(run: Run, spec: GenerateSpec, settings: AiSettings, 
   const printed = d.printFindings.length ? `; printing it found ${n(d.printFindings.length, 'problem')}` : '';
   const notes = [...(spec.first ?? []), ...d.notices];
   if (d.limit) notes.push(`${limitWords(d.limit)}${d.standIn ? '' : ' The report written is the one before the step it kept from being asked.'}`);
-  if (made.fromFile.aiError) notes.push(`The AI answered: ${made.fromFile.aiError}`);
+  if (made.fromFile.aiError) notes.push(`Why the AI made no report: ${made.fromFile.aiError}`);
   const model = options.verbose ? modelNote(d) : null;
   const fields = {
     files: spec.shown,
@@ -1981,6 +2047,7 @@ async function batchCommand(run: Run, setGenerator: (g: Generator) => void): Pro
     if (item.needsAi && row.keyRefused && settings?.provider !== 'local') run.stopped = { why: 'key' };
     if (run.stopped && item.needsAi && aiAfter(at)) tellStop(run);
   }
+  if (!io.signal.aborted) tellStopAtEnd(run);
   return items.length;
 }
 
@@ -2063,7 +2130,8 @@ async function makeItem(run: Run, item: BatchItem, name: string, names: JudgedNa
       case 'convert':
         return convertWork(run, source, target, policy, name);
       case 'repair':
-        return repairWork(run, source, target, policy);
+        // Bound to the batch's database as every other route is (W8R-1).
+        return repairWork(run, source, target, policy, database);
       case 'convert-revise': {
         const { settings, generator } = ai();
         // Converted with no AI first, then revised: the AI changes the converter's exact report, by control name (GAP1-1, GAP1-3).
@@ -2114,9 +2182,28 @@ function tellLeftOut(run: Run, walked: Walked): void {
 function tellStop(run: Run, fromThis = false): void {
   const stop = run.stopped;
   if (!stop) return;
+  run.stopTold = true;
   const rest = `each file ${fromThis ? 'from this one on' : 'after this one'} that asks it is listed as not started, and any that need no AI are still made`;
   if (stop.why === 'key') run.err(`The AI refused the key, so every file after this one that asks it would fail the same way: the batch stopped asking it; ${rest}. Set the key right, then run the same command with --skip-existing to carry on.`);
   else run.err(`The batch stopped asking the AI at its limit; ${rest}. Once it lifts${stop.limit.waitMs === null ? '' : `, in about ${lasting(stop.limit.waitMs)}`}, run the same command with --skip-existing to carry on.`);
+}
+
+/**
+ * The way on after a stop that no line said, once, at the batch's end,
+ * before the summary: `tellStop` speaks only when a file that asks the AI
+ * follows, so a day's limit or a refused key on the last such file (or the
+ * only one) left a `--json` run with no next step anywhere, its summary
+ * object carrying only `stoppedBy` and `resetsAt`, and a batch row never
+ * takes the single command's "Run the same command again", which without
+ * `--skip-existing` would exit 4 on every report made (the CLI work's
+ * wave-8 review, W8R-4).
+ */
+function tellStopAtEnd(run: Run): void {
+  const stop = run.stopped;
+  if (!stop || run.stopTold) return;
+  run.stopTold = true;
+  if (stop.why === 'key') run.err('The AI refused the key. Set the key right, then run the same command with --skip-existing to carry on.');
+  else run.err(`The batch met the AI's limit. Once it lifts${stop.limit.waitMs === null ? '' : `, in about ${lasting(stop.limit.waitMs)}`}, run the same command with --skip-existing to carry on.`);
 }
 
 /** --dry-run: each file's route and the name it would be written under, which need the AI, and what the walk left out; nothing read, no AI asked. */

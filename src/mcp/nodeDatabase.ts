@@ -47,6 +47,10 @@
  *   column has another name is renamed in the report to that column, so the
  *   report prints what the query returns. The RDL's connection string is
  *   never read.
+ * - **A report a batch repairs bound** (`bindRepaired`, since the CLI and
+ *   Forma Designer work's wave-8 review, W8R-1): the query pinned, else the
+ *   SQL data source it already reads, held to the layout and never
+ *   rewritten, else the object holding most of the fields it prints.
  *
  * The words where the person chooses what a report reads are the caller's
  * (`WHERE`, databaseAi.ts `DatabaseWhere`): the command line's options, and
@@ -536,5 +540,63 @@ export async function bindConverted(
     return { xml, note: reason, binding: { bound: false, database: schema.database, reason: reason.charAt(0).toUpperCase() + reason.slice(1), notes }, written: { xml, query: null, note: reason, leftOut: [] }, chosenBy: null };
   }
   const bound = await bindReport(xml, schema, guess, { connectionName: options.connectionName, version: '20.1', voice: options.voice, notes });
+  return { ...bound, chosenBy: bound.binding.bound ? 'fields' : null };
+}
+
+/* ------------------------------------------------------------ a report a batch repairs (W8R-1) */
+
+/** How a repaired report's query was chosen: the query the caller pinned, the SQL data source it already reads, or the object holding its fields. */
+export type RepairChosenBy = 'pinned' | 'own' | 'fields';
+
+/** What a result says of how a repaired report's query was chosen. */
+export const REPAIR_CHOSEN_WORDS: Readonly<Record<RepairChosenBy, string>> = {
+  pinned: CHOSEN_WORDS.pinned,
+  own: 'the SQL data source the report already reads, found in the layout',
+  fields: CHOSEN_WORDS.fields,
+};
+
+/**
+ * A report the command line's batch repairs, bound with no AI to the
+ * database it was given (the CLI and Forma Designer work's wave-8 review,
+ * W8R-1: the repair route took `--database` and `--connection` and bound
+ * nothing, with no binding on its row, so `--require-binding` passed every
+ * repaired report unbound while the help said each report was bound). At the
+ * report's own version, as `bind` writes one:
+ *
+ * - a query the caller pinned binds it, as it binds every report the batch
+ *   converts (BT-4);
+ * - else a report that already reads a SQL data source keeps it, held to the
+ *   layout and said bound or not, and why: its source names what it was
+ *   written for, so a layout without it is more likely the wrong layout than
+ *   a reason to bind another object, as an SSRS DataSet is read (BT-9), and
+ *   its own query is never rewritten;
+ * - else, a report that reads none, the object holding most of the fields it
+ *   prints, as a FastReport report converted is bound.
+ */
+export async function bindRepaired(
+  xml: string,
+  schema: SqlSchema,
+  options: { connectionName?: string; voice: Voice; query?: ReportQuery | null; version: string },
+): Promise<BoundReport & { chosenBy: RepairChosenBy | null }> {
+  const { connectionName, voice, version } = options;
+  if (options.query) {
+    const bound = await bindReport(xml, schema, options.query, { connectionName, version, voice });
+    return { ...bound, chosenBy: bound.binding.bound ? 'pinned' : null };
+  }
+  const [{ readRepxDataSources }, { guessQuery }, { readBoundFields }] = await Promise.all([import('../lib/repxSqlDataSource'), import('../lib/databaseAi'), import('../lib/repxBindingPlan')]);
+  const own = readRepxDataSources(xml)[0];
+  if (own) {
+    const given = connectionName?.trim();
+    const notes = own.connectionName && given && own.connectionName !== given ? [KEPT_CONNECTION[voice](own.connectionName)] : [];
+    const binding = await bindingOf(xml, schema, null, notes);
+    const note = binding.bound ? '' : binding.reason;
+    return { xml, note, binding, written: { xml, query: null, note, leftOut: [] }, chosenBy: binding.bound ? 'own' : null };
+  }
+  const guess = guessQuery(schema, readBoundFields(xml));
+  if (!guess) {
+    const reason = `No table, view or procedure of ${schema.database || 'the database'} has most of the fields the report prints.`;
+    return { xml, note: reason, binding: { bound: false, database: schema.database, reason, notes: [] }, written: { xml, query: null, note: reason, leftOut: [] }, chosenBy: null };
+  }
+  const bound = await bindReport(xml, schema, guess, { connectionName, version, voice });
   return { ...bound, chosenBy: bound.binding.bound ? 'fields' : null };
 }

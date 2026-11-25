@@ -1,7 +1,7 @@
 # Fonts that measure Calibri and Cambria in Node
 
-In Node, Forma (its MCP server, and the fidelity benchmark, which makes reports
-with the same parts) measures text on @napi-rs/canvas: for the print check,
+In Node, Forma (its MCP server, its command line, and the fidelity benchmark,
+which make reports with the same parts) measures text on @napi-rs/canvas: for the print check,
 the fit to the page and the box reader's widths. The canvas finds a family among the fonts the machine
 has. Windows has Calibri and Cambria; a Linux host or a container usually has
 neither, and every line in them would be measured in another family's widths.

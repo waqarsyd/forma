@@ -60,6 +60,7 @@ import {
   RENAME_TO_USE,
   designerConnections,
   designerEnvFrom,
+  designerNext,
   designerPlace,
   designerRead,
   fileVersionOf,
@@ -120,6 +121,7 @@ else if (mode === 'schema-hang') hang();
 else if (mode === 'sql-fail') say({ problem: 'sign-in', error: 'SQL Server refused the saved sign-in.', number: 18456 }, 5);
 else if (mode === 'sql-245') say({ problem: 'sql', error: "Conversion failed when converting the varchar value 'Jane Doe, 12 Hidden Lane' to data type int.", number: 245 }, 5);
 else if (mode === 'failed-cut') say({ problem: 'failed', error: "InvalidOperationException: the value 'Jane Doe, 12 Hid" }, 5);
+else if (mode === 'late') say({ problem: 'deadline', error: 'SQL Server did not answer within 600 seconds.' }, 6);
 else if (mode === 'mismatch') out(ascii({ formaDesignerVerb: 1, verb, ok: true, connection: found.name, layout: 'x' }), 3);
 else if (mode === 'wrong-verb') say({ connections: [] }, 0, 'sql-list');
 else if (verb === 'sql-schema') {
@@ -713,17 +715,71 @@ describe("the command line's connections and --connection", () => {
     expect(form).toContain('unusable: add it again under a name that begins with a letter, a digit or _');
   });
 
-  it('connections says, exit 4, when Forma Designer is not on Windows, not installed or too old', async () => {
+  it('connections and --connection say, exit 4, when Forma Designer is not on Windows, not installed or too old, each with the way on: a layout file', async () => {
+    // The way on, which the CLI work's wave-8 end-to-end run found missing from every refusal here but off Windows's on --connection.
+    const WAY_ON = "Give the database's layout as a file with --database instead: sql-script prints the script that reads it.";
     const dir = folder();
     const off = await cli(['connections'], { cwd: dir, designer: { place: designerPlace({ platform: 'linux' }) as DesignerSetup['place'], env: {} } });
     expect(off.code).toBe(EXIT.failed);
-    expect(off.err).toContain('Forma Designer runs on Windows, and this computer is not running Windows.');
+    expect(off.err).toContain(`Forma Designer runs on Windows, and this computer is not running Windows. ${WAY_ON}`);
     const old = install('cli-old', fakePe([1, 1, 0, 0]));
     const tooOld = await cli(['connections'], { cwd: dir, designer: standIn(old, 'verbs') });
     expect(tooOld.code).toBe(EXIT.failed);
-    expect(tooOld.err).toContain(`Forma Designer 1.1.0 is installed, and reading a database through it needs Forma Designer ${DESIGNER_VERBS_SINCE} or later`);
+    expect(tooOld.err).toContain(`Forma Designer 1.1.0 is installed, and reading a database through it needs Forma Designer ${DESIGNER_VERBS_SINCE} or later, so it was not started. ${WAY_ON}`);
     expect(calls(old)).toEqual([]);
-    expect((await cli(['connections'], { cwd: dir })).code).toBe(EXIT.failed);
+    const notThere = join(scratch, 'cli-none', 'RepxDesigner.exe');
+    const missing = await cli(['connections'], { cwd: dir, designer: standIn(notThere, 'verbs') });
+    expect(missing.code).toBe(EXIT.failed);
+    expect(missing.err).toContain(`Forma Designer is not installed for this Windows user: there is no "${notThere}". Reading a database through it needs Forma Designer ${DESIGNER_VERBS_SINCE} or later. ${WAY_ON}`);
+    const unlooked = await cli(['connections'], { cwd: dir });
+    expect(unlooked.code).toBe(EXIT.failed);
+    expect(unlooked.err).toContain(WAY_ON);
+    // --connection, refused before the AI is asked or any file read, says the same.
+    writeFileSync(join(dir, 'r.repx'), report(['CompanyName']));
+    for (const designer of [standIn(old, 'verbs'), standIn(notThere, 'verbs')]) {
+      const bound = await cli(['bind', 'r.repx', '--connection', 'FormaSample', '--object', 'dbo.Customers'], { cwd: dir, designer });
+      expect(bound.code).toBe(EXIT.failed);
+      expect(bound.err).toContain(`or later${designer.place.ok && designer.place.exe === old ? ', so it was not started' : ''}. ${WAY_ON}`);
+    }
+    expect(calls(old)).toEqual([]);
+    // Forma Designer's own answer (no connection of that name) keeps its own way on, and no layout-file sentence.
+    const kept = install('cli-kept', fakePe([1, 2, 0, 0]));
+    const gone = await cli(['bind', 'r.repx', '--connection', 'Gone', '--object', 'dbo.Customers'], { cwd: dir, designer: standIn(kept, 'verbs') });
+    expect(gone.code).toBe(EXIT.failed);
+    expect(gone.err).toContain('Forma Designer keeps no connection named Gone for this Windows user. Add it from its tray menu, SQL Server connections.');
+    expect(gone.err).not.toContain(WAY_ON);
+    calls(kept);
+    expect(readdirSync(dir).sort()).toEqual(['r.repx']);
+  });
+
+  /*
+   * Forma Designer's own answers that name no next step end with one too (the CLI work's wave-8 review, W8R-5): its
+   * deadline, run it again; SQL Server refusing the sign-in, or its own words, check the connection in Forma Designer's
+   * tray menu; each, or a layout file. Until then each ended a command with nothing to do.
+   */
+  it("ends Forma Designer's own refusals that name no next step with one: run it again after a deadline, check the connection after SQL Server's refusal, or a layout file", async () => {
+    const AGAIN = "Run the command again, or give the database's layout as a file with --database instead: sql-script prints the script that reads it.";
+    const CHECK = "Check the connection in Forma Designer's tray menu, SQL Server connections, or give the database's layout as a file with --database instead: sql-script prints the script that reads it.";
+    const dir = folder();
+    writeFileSync(join(dir, 'r.repx'), report(['CompanyName']));
+    const exe = install('cli-own-answers', fakePe([1, 2, 0, 0]));
+    const said = async (mode: string) => {
+      const ran = await cli(['bind', 'r.repx', '--connection', 'FormaSample', '--object', 'dbo.Customers'], { cwd: dir, designer: standIn(exe, mode) });
+      expect(ran.code, mode).toBe(EXIT.failed);
+      return ran.err.split('\n').find((l) => l.startsWith('Forma Designer'))!;
+    };
+    expect(await said('late')).toBe(`Forma Designer could not read the layout of the connection FormaSample: SQL Server did not answer within 600 seconds. ${AGAIN}`);
+    expect(await said('sql-fail')).toBe(`Forma Designer could not read the layout of the connection FormaSample: SQL Server refused the saved sign-in. ${CHECK}`);
+    expect(await said('sql-245')).toBe(`Forma Designer could not read the layout of the connection FormaSample: Conversion failed when converting the varchar value '...' to data type int. ${CHECK}`);
+    expect(await said('failed-cut')).toBe(`Forma Designer could not read the layout of the connection FormaSample: InvalidOperationException: the value '...' ${CHECK}`);
+    calls(exe);
+    expect(readdirSync(dir)).toEqual(['r.repx']);
+    // Which way on each refusal leaves, the kill at the helper's own deadline among them, and none after an answer that gives its own.
+    expect(designerNext(new DesignerRefusal('Forma Designer did not list the connections it keeps within 30 seconds, so it was stopped and nothing was read.', 'deadline'))).toBe('again');
+    expect(designerNext(new DesignerRefusal('Forma Designer is not installed for this Windows user.'))).toBe('file');
+    expect(designerNext(new DesignerRefusal("The saved sign-in cannot be read by this Windows account. Add the connection again, from Forma Designer's SQL Server connections.", 'sign-in'))).toBe('file');
+    for (const problem of ['sign-in', 'database', 'unreachable', 'sql', 'failed']) expect(designerNext(new DesignerRefusal('SQL Server said no.', problem)), problem).toBe('check');
+    for (const problem of ['not-kept', 'usage']) expect(designerNext(new DesignerRefusal('Its own words.', problem)), problem).toBeNull();
   });
 
   it("bind --connection binds to the connection's layout with no AI, writing the name Forma Designer keeps, not the database's (D2-10)", async () => {

@@ -120,6 +120,17 @@ describe('a generation whose model begins repeating itself', () => {
     expect(result.layout.title).toBe('Recovered');
     expect(result.repxContent).toContain('Text="Recovered"');
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Its log names the AI asked (the CLI work's wave-8 review, W8R-7: it said Gemini and an API key for every AI).
+    expect(console.debug).toHaveBeenCalledWith('Asking Gemini.');
+  });
+
+  it('names Local AI in its log when Local AI is asked, never Gemini or a key (W8R-7)', async () => {
+    stubSequence(() => failure(400, 'Bad request.'));
+    const local: ReportConfig = { ...config, customApiKey: '', provider: 'local', localModel: 'forma-test-model', localUrl: 'http://127.0.0.1:1/v1' };
+    await analyzeReportDesign('', parts, local).catch(() => undefined);
+    const logged = vi.mocked(console.debug).mock.calls.map((c) => String(c[0]));
+    expect(logged).toContain('Asking Local AI.');
+    expect(logged.join('\n')).not.toMatch(/Gemini|API key/);
   });
 
   it('gives up readably once the retries are spent and no other model remains', async () => {

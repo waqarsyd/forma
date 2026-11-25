@@ -58,7 +58,7 @@ export const CLI_COMMANDS = [
   {
     name: 'audit',
     needsAi: false,
-    usage: '<file|folder>...',
+    usage: '<file|folder>... [--fail-on errors|never]',
     says: 'Checks a report (.repx or .vsrepx), or every report directly in a folder, as Forma checks the reports it makes, and lists what is still wrong; writes nothing.',
     options: ['--fail-on'],
   },
@@ -72,7 +72,7 @@ export const CLI_COMMANDS = [
   {
     name: 'repair',
     needsAi: false,
-    usage: '<file> [--out <file|folder>] [--force]',
+    usage: '<file> [--out <file|folder>] [--force] [--fail-on errors|never]',
     says: 'Runs every repair Forma makes on the reports it generates, in the same order, and writes <name>.repaired.repx with the audit of the result.',
     options: ['--out', '--force', '--fail-on'],
   },
@@ -86,21 +86,21 @@ export const CLI_COMMANDS = [
   {
     name: 'edit',
     needsAi: false,
-    usage: '<file> --edits <edits.json|json> [--out <file|folder>] [--force]',
+    usage: '<file> --edits <edits.json|json> [--out <file|folder>] [--force] [--fail-on errors|never]',
     says: "Makes the edits Forma's chat makes, by control name, each a splice of the file, and writes <name>.edited.repx.",
     options: ['--edits', '--out', '--force', '--fail-on'],
   },
   {
     name: 'convert',
     needsAi: false,
-    usage: '<file|folder>... [(--database <layout> | --connection <name>) [--connection-name <name>] [--require-binding]] [--out <file|folder>] [--force]',
+    usage: '<file|folder>... [(--database <layout> | --connection <name>) [--connection-name <name>] [--require-binding]] [--out <file|folder>] [--force] [--fail-on errors|never]',
     says: 'Makes an SSRS (.rdl, .rdlc) or FastReport (.frx) report, or every one directly in a folder, into a repaired .repx with no AI, as DevExpress 20.1 writes one, and writes <name>.converted.repx with the audit of the result; with --database or --connection, binds it to what its own SSRS DataSet reads when the layout has it, else to the object holding most of its fields.',
     options: ['--database', '--connection', '--connection-name', '--require-binding', '--out', '--force', '--fail-on'],
   },
   {
     name: 'bind',
     needsAi: false,
-    usage: '<file> (--database <layout> | --connection <name>) (--procedure <name> | --query <json> | --object <name>) [--connection-name <name>] [--out <file|folder>] [--force]',
+    usage: '<file> (--database <layout> | --connection <name>) (--procedure <name> | --query <json> | --object <name>) [--connection-name <name>] [--out <file|folder>] [--force] [--fail-on errors|never]',
     says: "Binds a report to a stored procedure, a table or view, or a query of a database's layout with no AI, writing its SQL data source as DevExpress 20.1 does with the connection by name only, and writes <name>.bound.repx with the audit of the result.",
     options: ['--database', '--connection', '--procedure', '--query', '--object', '--connection-name', '--out', '--force', '--fail-on'],
   },
@@ -108,7 +108,7 @@ export const CLI_COMMANDS = [
     name: 'generate',
     needsAi: true,
     usage:
-      '[<file>...] [--description "..."] [--data <file>]... [(--database <layout> | --connection <name> [--sample-objects <dbo.A,dbo.B> [--rows <n>]]) [--samples <file>]... [--procedure <name> | --query <json> | --object <name>] [--connection-name <name>] [--require-binding]] [--out <file|folder>] [--force] [--allow-stand-in] [--mock]',
+      '[<file>...] [--description "..."] [--data <file>]... [(--database <layout> | --connection <name> [--sample-objects <dbo.A,dbo.B> [--rows <n>]]) [--samples <file>]... [--procedure <name> | --query <json> | --object <name>] [--connection-name <name>] [--require-binding]] [--out <file|folder>] [--force] [--allow-stand-in] [--mock] [--fail-on errors|never]',
     says: "Makes a report as Forma's workspace makes one, from pictures, PDFs, a report or template to start from, and/or a description, and writes <first file>.generated.repx.",
     options: ['--description', '--data', '--database', '--connection', '--sample-objects', '--rows', '--samples', '--procedure', '--query', '--object', '--connection-name', '--require-binding', '--out', '--force', '--allow-stand-in', '--mock', '--fail-on'],
   },
@@ -116,7 +116,7 @@ export const CLI_COMMANDS = [
     name: 'revise',
     needsAi: true,
     usage:
-      '<file> --words "..." [--edits-only] [(--database <layout> | --connection <name> [--sample-objects <dbo.A,dbo.B> [--rows <n>]]) [--samples <file>]... [--procedure <name> | --query <json> | --object <name>] [--connection-name <name>] [--require-binding]] [--out <file|folder>] [--force] [--mock]',
+      '<file> --words "..." [--edits-only] [(--database <layout> | --connection <name> [--sample-objects <dbo.A,dbo.B> [--rows <n>]]) [--samples <file>]... [--procedure <name> | --query <json> | --object <name>] [--connection-name <name>] [--require-binding]] [--out <file|folder>] [--force] [--mock] [--fail-on errors|never]',
     says: "Changes a report as a request in words asks, as Forma's chat does, by control name where it can, and writes <name>.revised.repx; a question is answered and nothing written.",
     options: ['--words', '--edits-only', '--database', '--connection', '--sample-objects', '--rows', '--samples', '--procedure', '--query', '--object', '--connection-name', '--require-binding', '--out', '--force', '--mock', '--fail-on'],
   },
@@ -124,7 +124,7 @@ export const CLI_COMMANDS = [
     name: 'batch',
     needsAi: 'by route',
     usage:
-      '<folder> --out <folder> [--words "..."] [--description "..."] [--data <file>]... [(--database <layout> | --connection <name> [--sample-objects <dbo.A,dbo.B> [--rows <n>]]) [--samples <file>]... [--procedure <name> | --query <json> | --object <name>] [--connection-name <name>] [--require-binding]] [--repair] [--edits-only] [--skip-existing | --force] [--allow-stand-in] [--dry-run] [--max <n>] [--mock]',
+      '<folder> --out <folder> [--words "..."] [--description "..."] [--data <file>]... [(--database <layout> | --connection <name> [--sample-objects <dbo.A,dbo.B> [--rows <n>]]) [--samples <file>]... [--procedure <name> | --query <json> | --object <name>] [--connection-name <name>] [--require-binding]] [--repair] [--edits-only] [--skip-existing | --force] [--allow-stand-in] [--dry-run] [--max <n>] [--mock] [--fail-on errors|never]',
     says: 'Makes every report source in a folder and its subfolders, one file at a time, each in a thread of its own: pictures and PDFs generated, SSRS and FastReport reports converted (and revised with --words), reports revised with --words or repaired with --repair; writes each under --out, its subfolder kept, and ends with a summary; with --database or --connection, each report is bound to it on its own. Only the files whose route needs one ask the AI.',
     options: ['--out', '--words', '--description', '--data', '--database', '--connection', '--sample-objects', '--rows', '--samples', '--procedure', '--query', '--object', '--connection-name', '--require-binding', '--repair', '--edits-only', '--skip-existing', '--force', '--allow-stand-in', '--dry-run', '--max', '--mock', '--fail-on'],
   },
