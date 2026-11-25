@@ -191,6 +191,21 @@ describe('writing into a report', () => {
     expect(writeSqlDataSource(report, { ...spec, query: { kind: 'procedure', procedure: 'dbo.usp_Nothing' } }).reason).toMatch(/has no columns Forma can read/);
     expect(writeSqlDataSource('<root/>', spec).applied).toBe(false);
   });
+
+  it('refuses a table named twice, and two queries of one name, which only an alias could write (2026-11-25)', () => {
+    const table = { kind: 'table' as const, object: 'dbo.Orders', columns: [], joins: [] };
+    const toCustomers = { table: 'dbo.Customers', type: 'Inner' as const, on: [{ from: 'CustomerID', to: 'CustomerID' }] };
+    const self = writeSqlDataSource(report, { ...spec, query: { ...table, joins: [{ ...toCustomers, table: 'dbo.Orders' }] } });
+    expect(self.applied).toBe(false);
+    expect(self.xml).toBe(report);
+    // Said without a way on that only a person choosing a query could take: a report's own source refreshed is refused in these words too.
+    expect(self.reason).toBe('dbo.Orders would be in the query twice, which needs a table alias Forma does not write yet');
+    expect(writeSqlDataSource(report, { ...spec, query: { ...table, joins: [toCustomers, { ...toCustomers, on: [{ from: 'OrderID', to: 'CustomerID' }] }] } }).reason).toMatch(/^dbo\.Customers would be in the query twice/);
+    // A detail band of the master's own table: two queries named Orders, as a query's details or given apart.
+    const lines = { table: 'dbo.Orders', type: 'Inner' as const, on: [{ from: 'OrderID', to: 'OrderID' }] };
+    expect(writeSqlDataSource(report, { ...spec, query: { ...table, details: [lines] } }).reason).toBe('two of its queries would both be named Orders, which needs a table alias Forma does not write yet');
+    expect(writeSqlDataSource(report, { ...spec, query: table, details: [{ query: { ...table, object: 'sales.Orders' }, keys: [{ master: 'OrderID', detail: 'OrderID' }] }] }).reason).toBe('two of its queries would both be named Orders, which needs a table alias Forma does not write yet');
+  });
 });
 
 describe('a stored login', () => {

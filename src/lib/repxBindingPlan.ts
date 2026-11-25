@@ -104,6 +104,9 @@ interface Element {
   end: number;
 }
 
+/** "1 column", "3 columns": the reasons are read by people (2026-11-25; they said "bound 1 columns"). */
+const columnCount = (n: number): string => `${n} ${n === 1 ? 'column' : 'columns'}`;
+
 /** Read one attribute out of a raw attribute string. */
 function attr(attrs: string, name: string): string {
   const m = new RegExp(`\\s${name}\\s*=\\s*"([^"]*)"`).exec(attrs);
@@ -241,7 +244,7 @@ function analyseColumns(text: string): BindingPlanResult {
     return {
       plan: null,
       reason:
-        `the header row has ${headerCells.length} columns and the detail row has ${cells.length}, ` +
+        `the header row has ${columnCount(headerCells.length)} and the detail row has ${cells.length}, ` +
         `so which heading names which column cannot be proved`,
     };
   }
@@ -269,7 +272,7 @@ function analyseColumns(text: string): BindingPlanResult {
 
   return {
     plan: { headings, fields, cells: targets },
-    reason: `${fields.length} columns: ${fields.map((f) => f.name).join(', ')}`,
+    reason: `${columnCount(fields.length)}: ${fields.map((f) => f.name).join(', ')}`,
   };
 }
 
@@ -669,7 +672,7 @@ export function bindDetailRow(
     xml: out,
     applied: true,
     reason:
-      `bound ${applied.length} columns: ${applied.map((f) => f.name).join(', ')}` +
+      `bound ${columnCount(applied.length)}: ${applied.map((f) => f.name).join(', ')}` +
       (formatted ? `; formatted ${formatted}` : ''),
     fields: applied,
   };

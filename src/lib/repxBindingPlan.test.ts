@@ -326,7 +326,7 @@ describe('bindDetailRow with an explicit mapping', () => {
 
   it('counts only what it bound in the reason', () => {
     const { reason } = bindDetailRow(twoColumns(), [null, 'NET_TOTAL']);
-    expect(reason).toMatch(/^bound 1 columns: NET_TOTAL/);
+    expect(reason).toMatch(/^bound 1 column: NET_TOTAL/);
   });
 
   it('still declines when the plan itself could not be proved', () => {

@@ -124,6 +124,20 @@ describe('the query the AI names', () => {
     expect(queryFromJson(JSON.stringify(queryToJson(read.query!)), schema).query).toEqual(read.query);
   });
 
+  it('joins a table once, never the main table to itself, and says what it left out (2026-11-25)', () => {
+    const read = queryFromJson(
+      { table: 'dbo.Orders', joins: [{ table: 'Customers' }, { table: 'dbo.Customers', on: [['CustomerID', 'CustomerID']] }, { table: 'Orders', on: [['OrderID', 'OrderID']] }], details: [{ table: 'Orders', on: [['OrderID', 'OrderID']] }] },
+      schema,
+    );
+    expect(read.query).toMatchObject({ object: 'dbo.Orders', joins: [{ table: 'dbo.Customers' }] });
+    expect(read.query).not.toHaveProperty('details');
+    expect(read.problems).toEqual([
+      'the join to dbo.Customers: dbo.Customers would be in the query twice, which needs a table alias Forma does not write yet, so it was left out',
+      'the join to dbo.Orders: dbo.Orders would be in the query twice, which needs a table alias Forma does not write yet, so it was left out',
+      'the detail dbo.Orders: two of its queries would both be named Orders, which needs a table alias Forma does not write yet, so it was left out',
+    ]);
+  });
+
   it('drops what it cannot hold, says so, and refuses a table, procedure or SQL the layout lacks', () => {
     const read = queryFromJson({ table: 'dbo.Orders', joins: [{ table: 'dbo.Invoices' }], columns: ['OrderID', 'Nope'], filter: '[Orders.Discount] > 0' }, schema);
     expect(read.query).toMatchObject({ object: 'dbo.Orders', joins: [], columns: ['dbo.Orders.OrderID'] });

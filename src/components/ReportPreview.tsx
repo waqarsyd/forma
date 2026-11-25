@@ -1201,7 +1201,9 @@ function ControlBox({
  * report has one, a box per value for a multi-value list, and text otherwise.
  * The value goes on as text, comma separated for a list, as before.
  */
-function ParameterInput({ type, multi, choices, value, onChange, label }: { type: string; multi: boolean; choices?: string[]; value: string; onChange: (value: string) => void; label: string }) {
+function ParameterInput({ type, multi, choices: listed, value, onChange, label }: { type: string; multi: boolean; choices?: string[]; value: string; onChange: (value: string) => void; label: string }) {
+  // Each value once (2026-11-25): a lookup over sample rows can repeat one, and a repeated option is one choice, not two keys.
+  const choices = listed ? [...new Set(listed)] : listed;
   if (choices?.length && multi) {
     const chosen = new Set(value.split(',').map((v) => v.trim()).filter(Boolean));
     return (
@@ -2971,7 +2973,7 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
           /* Live rows from the database on this PC (2026-11-09, Phase 2, item 37). */
           <>
             <button type="button" className="wb-pill wb-pill--outline" onClick={() => void fillLive()} disabled={liveReading} title="The report’s own data source, filled on this PC by Forma Designer, with the values asked for above">
-              {live ? `Live: ${live.rows.length} rows · Refresh` : 'Live rows'}
+              {live ? `Live: ${live.rows.length === 1 ? '1 row' : `${live.rows.length} rows`} · Refresh` : 'Live rows'}
             </button>
             {liveReading && <button type="button" className="wb-pill wb-pill--outline" onClick={cancelLive}>Cancel</button>}
             {live && !liveReading && <button type="button" className="wb-pill wb-pill--outline" onClick={() => setLive(null)}>Clear</button>}
@@ -3057,7 +3059,7 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
               onClick={onClearTestData}
               title="Back to the one placeholder record"
             >
-              Test data: {records.length} rows · Clear
+              Test data: {records.length === 1 ? '1 row' : `${records.length} rows`} · Clear
             </button>
           ) : testDataBusy && onStopTestData ? (
             <button
@@ -3133,12 +3135,13 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
       {parameters.length > 0 && (
         <div className="rp-params">
           <span className="rp-params-label">Asked before printing</span>
-          {parameters.map((p) =>
+          {parameters.map((p, i) =>
             // With test data each parameter takes a value, as DevExpress asks
             // for one before printing; without it there is nothing to apply it to.
             // Before the first live fill too (Phase 2): a procedure's parameter with no default is typed first.
+            // Keyed with its place too: a hand-edited report can repeat a name.
             records || (ownSource && liveReachable) ? (
-              <label className="rp-param" key={p.name}>
+              <label className="rp-param" key={`${i}:${p.name}`}>
                 {p.description || p.name}
                 <small>{(p.resolvedType ?? (p.lifted ? 'typed' : p.type)).replace('System.', '')}{p.multiValue ? ' · many' : ''}</small>
                 <ParameterInput
@@ -3151,7 +3154,7 @@ function ReportPreview({ repxContent, layout, title, onEdit, records: given, dat
                 />
               </label>
             ) : (
-              <span className="rp-param" key={p.name}>
+              <span className="rp-param" key={`${i}:${p.name}`}>
                 {p.description || p.name}
                 <small>{p.lifted ? 'typed' : p.type.replace('System.', '')}{p.multiValue ? ' · many' : ''}</small>
                 {p.value && <em>{p.value}</em>}

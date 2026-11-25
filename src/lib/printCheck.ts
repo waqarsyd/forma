@@ -83,7 +83,7 @@ export function printCheck(repx: string | null | undefined, rows: readonly Recor
     add(
       'error',
       'prints-extra-pages',
-      `Printed with the ${rows.length} records the page shows, the report runs to ${report.pages.length} pages where the page has ${options.pagesShown}.`,
+      `Printed with the ${rows.length === 1 ? 'one record' : `${rows.length} records`} the page shows, the report runs to ${report.pages.length} pages where the page has ${options.pagesShown}.`,
     );
   }
 

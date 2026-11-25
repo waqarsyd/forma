@@ -204,11 +204,12 @@ function parseCsv(text: string): DataSource {
   }).filter((f) => f.name !== '');
 
   if (fields.length < headers.length) {
-    problems.push(`${headers.length - fields.length} column(s) had no usable name and were skipped.`);
+    const skipped = headers.length - fields.length;
+    problems.push(`${skipped === 1 ? '1 column' : `${skipped} columns`} had no usable name and ${skipped === 1 ? 'was' : 'were'} skipped.`);
   }
   const ragged = dataRows.filter((r) => r.length !== headers.length).length;
   if (ragged) {
-    problems.push(`${ragged} row(s) do not have ${headers.length} columns. The header row decides the fields.`);
+    problems.push(`${ragged === 1 ? '1 row does' : `${ragged} rows do`} not have ${headers.length === 1 ? '1 column' : `${headers.length} columns`}. The header row decides the fields.`);
   }
   return { kind: 'csv', fields, rowCount: dataRows.length, problems };
 }
@@ -309,10 +310,40 @@ export function parseDataSource(input: string | undefined | null): DataSource {
   const text = (input ?? '').trim();
   if (!text) return EMPTY;
 
-  if (text.startsWith('[') || text.startsWith('{')) return parseJson(text);
-  if (/\bcreate\s+table\b/i.test(text)) return parseSql(text);
-  if (/\r?\n/.test(text) && /[,\t]/.test(text.split(/\r?\n/)[0])) return parseCsv(text);
-  return parseList(text);
+  if (text.startsWith('[') || text.startsWith('{')) return onceEach(parseJson(text));
+  if (/\bcreate\s+table\b/i.test(text)) return onceEach(parseSql(text));
+  if (/\r?\n/.test(text) && /[,\t]/.test(text.split(/\r?\n/)[0])) return onceEach(parseCsv(text));
+  return onceEach(parseList(text));
+}
+
+/**
+ * Each field name once, the first kept, ignoring case as SQL Server and the
+ * data source Forma writes do (repxSqlWriter.ts `selectFields`), with a line
+ * saying which repeated (2026-11-25). A report binds a name, so two fields of
+ * one name are one field to bind: a CSV whose header repeats a column, two
+ * keys `cleanFieldName` makes one, or a join that brings a column of the same
+ * name from each table. Until then the Data tab listed both, under one React
+ * key, and offered the name twice in every mapping.
+ */
+export function onceEach(source: DataSource): DataSource {
+  const seen = new Set<string>();
+  const repeated: string[] = [];
+  const fields = source.fields.filter((f) => {
+    const key = f.name.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      return true;
+    }
+    if (!repeated.some((r) => r.toLowerCase() === key)) repeated.push(f.name);
+    return false;
+  });
+  if (!repeated.length) return source;
+  const names = repeated.map((r) => `"${r}"`).join(', ');
+  return {
+    ...source,
+    fields,
+    problems: [...source.problems, `${names} ${repeated.length === 1 ? 'appears' : 'appear'} more than once; a report binds a name once, so the first is kept.`],
+  };
 }
 
 // ------------------------------------------------------------------ mapping

@@ -98,7 +98,7 @@ import { measureOn } from '../lib/textMeasure';
 import type { ReportConfig, StreamProgress } from '../services/geminiService';
 import type { Voice } from './caller';
 import { CHOICE_FILE, fileParks, formaUserFolder, PARKS_FILE } from './modelParks';
-import { checkMeasuring, METRIC_FACES, standInFamilies, useMetricFonts, type MetricFace } from './nodeFonts';
+import { checkMeasuring, familyFinder, METRIC_FACES, standInFamilies, useMetricFonts, type MetricFace } from './nodeFonts';
 import { nodeDrawing } from './nodeIntake';
 import { nodeOcr } from './nodeOcr';
 
@@ -274,7 +274,8 @@ export async function nodeGeneration(options: NodeGenerationOptions = {}): Promi
   useMetricFonts(clone, options.metricFaces ?? METRIC_FACES);
   const canvas =options.canvas ?? (() => createCanvas(1, 1).getContext('2d') as unknown as CanvasRenderingContext2D);
   checkMeasuring(canvas);
-  measureOn(canvas);
+  // A family GDI names apart from the browser is asked for by GDI's name where this canvas finds it (2026-11-25, textMeasure.ts `nodeGdiFace`).
+  measureOn(canvas, familyFinder(canvas));
   const ask = options.ask ?? (options.mock ? mockAsk : undefined);
   const translateTexts = options.mock ? mockTranslate : undefined;
   const pinned = options.model?.trim();

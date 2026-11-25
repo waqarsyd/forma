@@ -10,11 +10,15 @@ import {
   describeQuery,
   duplicateFields,
   fieldKind,
+  joinBlocked,
+  joinsHeld,
   queryFields,
   queryName,
   queryParameters,
+  sameJoin,
   selectedNames,
   suggestJoins,
+  tableTwice,
   type ReportQuery,
 } from './sqlQuery';
 
@@ -34,6 +38,60 @@ describe('joins from foreign keys', () => {
     ]);
     expect(joins[0].label).toBe('dbo.Customers on CustomerID = CustomerID');
     expect(joins[0].join.on).toEqual([{ from: 'CustomerID', to: 'CustomerID' }]);
+  });
+});
+
+describe('a table joined once (2026-11-25)', () => {
+  // An invoice's bill-to and ship-to customer, and an employee's manager: two keys to one table, and a key back to its own.
+  const erp = readSchemaScript(`
+CREATE TABLE dbo.Customers (CustomerID int NOT NULL PRIMARY KEY, CompanyName nvarchar(80) NOT NULL);
+CREATE TABLE dbo.Invoices (InvoiceID int NOT NULL PRIMARY KEY, BillToID int NOT NULL REFERENCES dbo.Customers(CustomerID), ShipToID int NULL REFERENCES dbo.Customers(CustomerID));
+CREATE TABLE dbo.Employees (EmployeeID int NOT NULL PRIMARY KEY, ManagerID int NULL REFERENCES dbo.Employees(EmployeeID), Name nvarchar(60) NOT NULL);
+CREATE TABLE sales.Customers (CustomerID int NOT NULL PRIMARY KEY);
+`, 'Erp')!;
+  const invoices: Extract<ReportQuery, { kind: 'table' }> = { kind: 'table', object: 'dbo.Invoices', columns: [], joins: [] };
+  const [billTo, shipTo] = suggestJoins(erp, 'dbo.Invoices');
+
+  it('tells two keys to one table apart, and a join from its copy, in any case and order', () => {
+    expect([billTo.label, shipTo.label]).toEqual(['dbo.Customers on BillToID = CustomerID', 'dbo.Customers on ShipToID = CustomerID']);
+    expect(sameJoin(erp, billTo.join, shipTo.join)).toBe(false);
+    expect(sameJoin(erp, billTo.join, { ...billTo.join, table: 'DBO.customers', on: [{ from: 'billtoid', to: 'customerid' }] })).toBe(true);
+  });
+
+  it('says why a query would name a table, or two of its queries, twice', () => {
+    expect(tableTwice(erp, invoices)).toBeNull();
+    expect(tableTwice(erp, { ...invoices, joins: [billTo.join] })).toBeNull();
+    expect(tableTwice(erp, { ...invoices, joins: [billTo.join, shipTo.join] })).toBe('dbo.Customers would be in the query twice, which needs a table alias Forma does not write yet');
+    // A detail is a query named after its table without its schema: one of the master's name, or two of one name.
+    expect(tableTwice(erp, { ...invoices, details: [billTo.join, shipTo.join] })).toBe('two of its queries would both be named Customers, which needs a table alias Forma does not write yet');
+    expect(tableTwice(erp, { ...invoices, details: [{ ...billTo.join, table: 'sales.Invoices' }] })).toBe('two of its queries would both be named Invoices, which needs a table alias Forma does not write yet');
+    // In one query a schema tells two tables apart: the writer names them Customers and sales.Customers.
+    expect(tableTwice(erp, { ...invoices, joins: [billTo.join, { ...shipTo.join, table: 'sales.Customers' }] })).toBeNull();
+    expect(tableTwice(erp, { kind: 'procedure', procedure: 'dbo.usp_X' })).toBeNull();
+  });
+
+  it('blocks the second key to a table once the first is ticked, and never the one ticked', () => {
+    expect(joinBlocked(erp, invoices, billTo)).toBeNull();
+    const one = { ...invoices, joins: [billTo.join] };
+    expect(joinBlocked(erp, one, billTo)).toBeNull();
+    expect(joinBlocked(erp, one, shipTo)).toBe('dbo.Customers would be in the query twice, which needs a table alias Forma does not write yet: write it as custom SQL instead.');
+  });
+
+  it('blocks a table’s key back to itself, which only an alias could write', () => {
+    const self = suggestJoins(erp, 'dbo.Employees');
+    expect(self.map((s) => `${s.direction} ${s.join.table}`)).toEqual(['references dbo.Employees']);
+    expect(joinBlocked(erp, { kind: 'table', object: 'dbo.Employees', columns: [], joins: [] }, self[0])).toMatch(/^dbo\.Employees would be in the query twice/);
+  });
+
+  it('gives a join on columns no suggestion has to the first choice for its table, so it shows ticked and clears (the review)', () => {
+    const all = suggestJoins(erp, 'dbo.Invoices');
+    const own = { table: 'dbo.Customers', type: 'Inner' as const, on: [{ from: 'InvoiceID', to: 'CustomerID' }] };
+    const query = { ...invoices, joins: [own] };
+    expect(joinsHeld(erp, query, all, 0)).toEqual([own]);
+    expect(joinsHeld(erp, query, all, 1)).toEqual([]);
+    const both = { ...invoices, joins: [billTo.join] };
+    expect(joinsHeld(erp, both, all, 0)).toEqual([billTo.join]);
+    expect(joinsHeld(erp, both, all, 1)).toEqual([]);
   });
 });
 

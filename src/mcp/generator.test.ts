@@ -9,7 +9,7 @@
 import { Worker } from 'node:worker_threads';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GenDone, GenEvent, GenJob } from './genJobs';
-import { GEN_LIMITS, PROGRESS_TOTAL, STAGES, genTooLong, genTooMuchMemory, jobOf, oneAtATime, progressReporter, workerGenerator, type Generator, type Progress } from './generator';
+import { GEN_IDLE_MS, GEN_LIMITS, PROGRESS_TOTAL, STAGES, genTooLong, genTooMuchMemory, jobOf, oneAtATime, progressReporter, workerGenerator, type Generator, type Progress } from './generator';
 import { ToolRefusal } from './toolShape';
 
 afterEach(() => vi.useRealTimers());
@@ -208,6 +208,33 @@ describe('workerGenerator', () => {
     expect(spawned.length).toBe(1);
     await vi.waitFor(() => expect(logged).toContain('a line from the work'));
     await gen.close();
+  });
+
+  it('ends the kept thread once it has waited idleMs for a call, and starts another for the next (2026-11-25)', async () => {
+    const exits: number[] = [];
+    let starts = 0;
+    const gen = workerGenerator({
+      setup: { mock: true },
+      log: () => {},
+      // Wide enough that a busy coverage run's timers cannot end the thread before the second call (the review).
+      idleMs: 400,
+      spawn: () => {
+        starts++;
+        const w = scripted("parentPort.on('message', ({ id }) => parentPort.postMessage({ id, ok: true, value: { kind: 'revise', id } }));")();
+        w.on('exit', (code) => exits.push(code));
+        return w;
+      },
+    });
+    expect(await gen.run(JOB, new AbortController().signal, () => {})).toEqual({ kind: 'revise', id: 1 });
+    // A call inside the wait takes the kept thread, and the wait starts again after it.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(await gen.run(JOB, new AbortController().signal, () => {})).toEqual({ kind: 'revise', id: 2 });
+    expect([starts, exits.length]).toEqual([1, 0]);
+    await vi.waitFor(() => expect(exits.length).toBe(1), { timeout: 2000 });
+    expect(await gen.run(JOB, new AbortController().signal, () => {})).toEqual({ kind: 'revise', id: 3 });
+    expect(starts).toBe(2);
+    await gen.close();
+    expect(GEN_IDLE_MS).toBe(5 * 60_000);
   });
 
   it('ends the thread at once on a cancellation, answering with nothing, and starts another for the next call', async () => {

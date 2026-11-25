@@ -38,7 +38,7 @@
 import type { DatabaseStep } from './generationCore';
 import type { SqlSchema } from './sqlSchema';
 import { AI_SAMPLE_VALUES, aiText, aiValue, capped, schemaForAi, stripComments, typeLabel } from './sqlSchema';
-import { checkCustomSql, describeQuery, findObject, findProcedure, queryFields, queryName, suggestJoins, type QueryJoin, type ReportQuery } from './sqlQuery';
+import { checkCustomSql, describeQuery, findObject, findProcedure, queryFields, queryName, suggestJoins, tableTwice, type QueryJoin, type ReportQuery } from './sqlQuery';
 import { readRepxDataSources } from './repxSqlDataSource';
 import { writeSqlDataSource } from './repxSqlWriter';
 import { readBoundFields } from './repxBindingPlan';
@@ -259,8 +259,23 @@ export function queryFromJson(value: unknown, schema: SqlSchema): { query: Repor
     return { table: full(other), type: direction === 'referencedBy' ? 'Inner' : type, on: checked.map((k) => ({ from: k.from!, to: k.to! })) };
   };
 
-  const joins = list(j.joins).map((r) => readJoin(r, 'references', 'the join to')).filter((x): x is QueryJoin => !!x);
-  const details = list(j.details).map((r) => readJoin(r, 'referencedBy', 'the detail')).filter((x): x is QueryJoin => !!x);
+  /*
+   * Each join kept only while the query can still be written (2026-11-25,
+   * sqlQuery.ts `tableTwice`): a second join to one table, one to the main
+   * table itself, or a detail whose query would share another's name, is
+   * left out and said, before any writer is asked.
+   */
+  const joins: QueryJoin[] = [];
+  const details: QueryJoin[] = [];
+  const keep = (into: QueryJoin[], x: QueryJoin, what: string) => {
+    into.push(x);
+    const problem = tableTwice(schema, { kind: 'table', object: main, columns: [], joins, details });
+    if (!problem) return;
+    into.pop();
+    problems.push(`${what} ${x.table}: ${problem}, so it was left out`);
+  };
+  for (const x of list(j.joins).map((r) => readJoin(r, 'references', 'the join to'))) if (x) keep(joins, x, 'the join to');
+  for (const x of list(j.details).map((r) => readJoin(r, 'referencedBy', 'the detail'))) if (x) keep(details, x, 'the detail');
   const tables = [base, ...joins.map((x) => findObject(schema, x.table)!)];
 
   /** `Orders.Region`, `dbo.Orders.Region` or `Region`, into the table holding it and the column's own spelling. */

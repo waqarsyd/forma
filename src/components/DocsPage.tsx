@@ -1019,7 +1019,8 @@ y_top = pageHeight − (baseline + height)`}
                 <Def t="3 · What the report reads">
                   A table or view with the joins its foreign keys suggest, a stored procedure, or custom SQL: one
                   SELECT, checked against the layout, so a table or column your database does not have is refused.
-                  A table pointing back, such as an order’s lines, prints as a detail band under each record.
+                  A table pointing back, such as an order’s lines, prints as a detail band under each record. A table
+                  is joined once: a second key to the same table, or a table’s key back to itself, needs custom SQL.
                 </Def>
                 <Def t="4 · Into the report">
                   <strong className="font-semibold text-on-surface">Write into the report</strong> writes DevExpress’s

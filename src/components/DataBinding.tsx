@@ -28,7 +28,7 @@
  * decline is rendered as the content of the pane rather than as an error state.
  */
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { parseDataSource, type DataField } from '../lib/dataSource';
+import { onceEach, parseDataSource, type DataField } from '../lib/dataSource';
 import { matchColumns, renameField, scoreMatch, type ColumnMatch } from '../lib/fieldMatch';
 import { planDetailBinding, bindDetailRow, bindFooterTotals, readBoundFields, isExpressionEntry, EXPRESSION_PREFIX } from '../lib/repxBindingPlan';
 
@@ -124,7 +124,8 @@ function DataBinding({ repxContent, onApply, onPromptToExpression, onDatabase, d
   const source = useMemo(() => {
     const read = parseDataSource(pasted);
     if (read.kind !== 'none' || !databaseFields?.length) return read;
-    return { kind: 'sql' as const, fields: databaseFields, rowCount: 0, problems: [] };
+    // A join can bring one name from two tables; the data source written keeps the first (onceEach).
+    return onceEach({ kind: 'sql' as const, fields: databaseFields, rowCount: 0, problems: [] });
   }, [pasted, databaseFields]);
   const fromDatabase = !pasted.trim() && !!databaseFields?.length;
   const { plan, reason } = useMemo(() => planDetailBinding(repxContent), [repxContent]);
@@ -313,8 +314,8 @@ function DataBinding({ repxContent, onApply, onPromptToExpression, onDatabase, d
                   <p style={{ margin: '0 0 6px' }}>
                     {outside.length} field{outside.length === 1 ? '' : 's'} it prints {outside.length === 1 ? 'is' : 'are'} not in {fromDatabase ? databaseLabel || 'the database' : 'the sample'}, so {outside.length === 1 ? 'it prints' : 'they print'} blank:
                   </p>
-                  {outside.map(({ bound, fixes }) => (
-                    <div key={bound} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  {outside.map(({ bound, fixes }, i) => (
+                    <div key={`${i}:${bound}`} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                       <code>[{bound}]</code>
                       {fixes.length ? fixes.map((to) => (
                         <button
@@ -391,8 +392,8 @@ function DataBinding({ repxContent, onApply, onPromptToExpression, onDatabase, d
                   {source.rowCount > 0 && `, ${source.rowCount} row${source.rowCount === 1 ? '' : 's'}`}:
                 </p>
                 <div className="db-fields" style={{ marginTop: 8 }}>
-                  {source.fields.map((f) => (
-                    <span className="db-chip" key={f.name}>
+                  {source.fields.map((f, i) => (
+                    <span className="db-chip" key={`${i}:${f.name}`}>
                       {f.name}<small>{f.type}</small>
                     </span>
                   ))}
@@ -455,7 +456,7 @@ function DataBinding({ repxContent, onApply, onPromptToExpression, onDatabase, d
                       ) : source.fields.length ? (
                         <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
                           <span style={{ opacity: .7 }}>not matched</span>
-                          {[matches[i]?.field, ...(matches[i]?.alternatives ?? [])].filter((a): a is string => !!a && !mapping.includes(a)).map((a) => (
+                          {[...new Set([matches[i]?.field, ...(matches[i]?.alternatives ?? [])])].filter((a): a is string => !!a && !mapping.includes(a)).map((a) => (
                             <button
                               key={a}
                               type="button"

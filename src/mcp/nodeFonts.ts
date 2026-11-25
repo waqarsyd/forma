@@ -40,8 +40,10 @@
  * `standInFamilies` (GAP2-4) names the families a report asks for that this
  * machine measured in a face of another family: on Linux, Tahoma, Segoe UI
  * or Verdana; on Windows too, a name @napi-rs/canvas does not find (Arial
- * Black, Calibri Light, or Franklin Gothic, the name lib/textMeasure.ts asks
- * the browser for Franklin Gothic Demi by). It asks the canvas for the very
+ * Black, Calibri Light; and until 2026-11-25 Franklin Gothic Demi, asked for
+ * as the browser names it, Franklin Gothic, which the canvas does not find,
+ * where now it is asked for as GDI names it when the canvas finds that,
+ * `familyFinder`). It asks the canvas for the very
  * font the widths come from (`measuringFont`) twice, once with Courier New
  * behind it and once with Times New Roman, both there on any machine once
  * `useMetricFonts` has run, and measures each letter, figure and stop of a
@@ -200,24 +202,55 @@ export function standInFamilies(xml: string, make: () => CanvasRenderingContext2
   const context = make();
   if (!context) return [];
   context.fontKerning = 'none';
-  /** Each sample character's width in `css`, or null when the canvas refused the font, as it refuses a family with a quote in it. */
-  const widthsIn = (css: string, stretch: string): number[] | null => {
-    context.font = RESET;
-    const before = context.font;
-    context.font = css;
-    if (context.font === before) return null;
-    context.fontStretch = stretch as CanvasFontStretch;
-    return SAMPLE.map((c) => context.measureText(c).width);
-  };
   const named = new Map<string, string>();
   for (const face of faces) {
     const key = face.family.toLowerCase();
     if (named.has(key)) continue;
     const { css, stretch } = measuringFont(face);
-    const behindMono = widthsIn(`${css}, "Courier New"`, stretch);
-    const behindSerif = widthsIn(`${css}, "Times New Roman"`, stretch);
-    const found = behindMono !== null && behindSerif !== null && behindMono.some((width, i) => width === behindSerif[i]);
-    if (!found) named.set(key, face.family);
+    if (!foundIn(context, css, stretch)) named.set(key, face.family);
   }
   return [...named.values()];
+}
+
+/** Each sample character's width in `css`, or null when the canvas refused the font, as it refuses a family with a quote in it. */
+function sampleWidths(context: CanvasRenderingContext2D, css: string, stretch: string): number[] | null {
+  context.font = RESET;
+  const before = context.font;
+  context.font = css;
+  if (context.font === before) return null;
+  context.fontStretch = stretch as CanvasFontStretch;
+  return SAMPLE.map((c) => context.measureText(c).width);
+}
+
+/** Whether the canvas finds the face `css` names: any sample character measuring alike behind Courier New and behind Times New Roman (the header). */
+function foundIn(context: CanvasRenderingContext2D, css: string, stretch: string): boolean {
+  const behindMono = sampleWidths(context, `${css}, "Courier New"`, stretch);
+  const behindSerif = sampleWidths(context, `${css}, "Times New Roman"`, stretch);
+  return behindMono !== null && behindSerif !== null && behindMono.some((width, i) => width === behindSerif[i]);
+}
+
+/**
+ * Whether the canvas `make` gives finds a family by the name given, asked as
+ * `standInFamilies` asks (the header), each family once (2026-11-25).
+ * nodeGeneration.ts hands it to lib/textMeasure.ts with the canvas
+ * (`measureOn`), which then asks for a family GDI names apart from the
+ * browser by GDI's own name where the canvas finds that one: on Windows,
+ * Franklin Gothic Demi measured in a fallback face under the browser's name,
+ * Franklin Gothic, and exactly under its own (textMeasure.ts `nodeGdiFace`).
+ */
+export function familyFinder(make: () => CanvasRenderingContext2D | null): (family: string) => boolean {
+  const known = new Map<string, boolean>();
+  let context: CanvasRenderingContext2D | null | undefined;
+  return (family: string) => {
+    const key = family.toLowerCase();
+    const was = known.get(key);
+    if (was !== undefined) return was;
+    if (context === undefined) {
+      context = make();
+      if (context) context.fontKerning = 'none';
+    }
+    const found = !!context && !/["\\]/.test(family) && foundIn(context, `2048px "${family}"`, 'normal');
+    known.set(key, found);
+    return found;
+  };
 }

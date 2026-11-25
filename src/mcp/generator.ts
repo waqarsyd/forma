@@ -19,8 +19,10 @@
  * work's wave 2, CLI-10); a cancellation ends it at once, so no request goes
  * out after it and nothing it made is written (PROTO-4). One thread is kept idle
  * between calls, unref'd so it never holds the process open, with Forma's
- * models already read; a thread ended for any reason is replaced by the
- * next call. Its stdout and stderr are its own, read here line by line into
+ * models already read, and ended once it has waited five minutes for one
+ * (`GEN_IDLE_MS`, since 2026-11-25: a kept thread held up to 1.7 GB for as long
+ * as the host ran the server); a thread ended for any reason is replaced by
+ * the next call. Its stdout and stderr are its own, read here line by line into
  * the server's log on stderr, through the scrubber (stdoutGuard.ts). A
  * job's files are moved to the thread, not copied (the wave-8 review's
  * W8C-6).
@@ -46,7 +48,8 @@
  * limit's park is kept in Forma's folder as it happens (modelParks.ts), so a
  * new thread asks no model one before it found spent; the day's model
  * choice already was (nodeGeneration.ts). The server leaves it off: its
- * thread, kept idle, answers the next call without the start.
+ * thread, kept idle, answers the next call without the start, for five
+ * minutes (`GEN_IDLE_MS`).
  *
  * ## A queue of one (OD7, PROTO-7)
  *
@@ -117,6 +120,17 @@ function movable(job: GenJob): ArrayBuffer[] {
 /** How long one AI call may take, and how much memory its thread may use. */
 export const GEN_LIMITS: PipelineLimits = { deadlineMs: 15 * 60_000, heapMb: 2048, stackMb: 4 };
 
+/**
+ * How long the server's kept thread waits for the next call before it is
+ * ended (2026-11-25, the CLI and Forma Designer work's open decision on the
+ * idle worker). A kept thread held 450 MB with Tesseract and 1.7 GB with
+ * PaddleOCR (the header's *A thread per job*) for as long as the host kept
+ * the server running, often all day; a new one costs 0.7 to 1.6 seconds,
+ * against a report's tens of seconds at least. Five minutes covers a person
+ * asking again about the report just made.
+ */
+export const GEN_IDLE_MS = 5 * 60_000;
+
 /** The refusal when an AI call passes its deadline, in the job's words (the server's by default; CLI-10). */
 export const genTooLong = (ms: number, voice: Voice = 'mcp') =>
   `Forma stopped working on this report after ${Math.round(ms / 60_000)} minutes, the longest ${ONE_CALL[voice]} may take. The AI may be slow or out of reach; try again later, or with fewer pages. Nothing was written.`;
@@ -143,6 +157,8 @@ export interface WorkerGeneratorOptions {
    * batch, its wave 4. The server leaves it off and keeps one idle.
    */
   fresh?: boolean;
+  /** How long a kept thread waits for the next call before it is ended; `GEN_IDLE_MS` by default. A test gives a short one. */
+  idleMs?: number;
   /** Starts a worker; genWorker.mjs with the limits by default. A test starts one of its own. */
   spawn?(limits: PipelineLimits, setup: GenSetup): Worker;
 }
@@ -156,6 +172,21 @@ export function workerGenerator(options: WorkerGeneratorOptions): Generator {
     ((l: PipelineLimits, setup: GenSetup) =>
       new Worker(GEN_WORKER_FILE, { workerData: setup, resourceLimits: { maxOldGenerationSizeMb: l.heapMb, stackSizeMb: l.stackMb }, stdout: true, stderr: true }));
   let idle: Worker | null = null;
+  // The kept thread's end, once it has waited `idleMs` for a call (GEN_IDLE_MS); unref'd, so it never holds the process open.
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  const idleMs = options.idleMs ?? GEN_IDLE_MS;
+  const keepIdle = (worker: Worker) => {
+    worker.unref();
+    idle = worker;
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      idleTimer = null;
+      if (idle !== worker) return;
+      idle = null;
+      void worker.terminate();
+    }, idleMs);
+    idleTimer.unref?.();
+  };
   const busy = new Set<Worker>();
   let next = 0;
   let closed = false;
@@ -181,6 +212,10 @@ export function workerGenerator(options: WorkerGeneratorOptions): Generator {
         if (signal.aborted) return resolve(null);
         const worker = idle ?? start();
         idle = null;
+        if (idleTimer) {
+          clearTimeout(idleTimer);
+          idleTimer = null;
+        }
         busy.add(worker);
         worker.ref();
         const id = ++next;
@@ -199,10 +234,8 @@ export function workerGenerator(options: WorkerGeneratorOptions): Generator {
             worker.terminate().then(settle, settle);
             return;
           }
-          if (keep && !closed && !idle) {
-            worker.unref();
-            idle = worker;
-          } else void worker.terminate();
+          if (keep && !closed && !idle) keepIdle(worker);
+          else void worker.terminate();
           settle();
         };
         const onMessage = (reply: Reply) => {
@@ -239,6 +272,10 @@ export function workerGenerator(options: WorkerGeneratorOptions): Generator {
 
     async close() {
       closed = true;
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+      }
       const all = [...busy, ...(idle ? [idle] : [])];
       idle = null;
       busy.clear();

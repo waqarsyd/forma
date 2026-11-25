@@ -82,7 +82,18 @@ Open `http://localhost:3001/workspace` with `browser_navigate` and drive it:
 inside the project, such as `docs/media/screenshot.png`: an upload from outside
 the workspace roots is refused), `browser_evaluate` to read state,
 `browser_console_messages`, `browser_network_requests` and
-`browser_take_screenshot`. Snapshots and screenshots land in the output folder
+`browser_take_screenshot`. **If `browser_file_upload` fails with
+`DOM.setFileInputFiles: Not allowed`** (2026-11-25, for every file,
+`docs/media/screenshot.png` included, in the profile that persists between
+runs), hand the file to the page's own input instead, which runs the same
+change handler: with `browser_evaluate`, `fetch('/@fs/G:/DevFiles/forma/<path>')`
+(Vite serves a file inside the repository so on the dev server), make a
+`File` of its bytes, put it in a `DataTransfer`, set the composer's
+`input[type=file]` (the one whose `accept` lists `.sql`) to its `files`, and
+dispatch a bubbling `change` event. Put files made for a check in a folder of
+your own inside the repository and remove it at the end, and remove any
+download an export leaves (a GUID-named `.tmp` in the owner's Downloads).
+Snapshots and screenshots land in the output folder
 above **only when no `filename` is given**: a relative `filename` resolves
 against the workspace root, so `ws-1.png` lands in the repository (measured
 2026-11-12). Omit it, or pass an absolute path under

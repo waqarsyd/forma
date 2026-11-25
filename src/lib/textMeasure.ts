@@ -236,9 +236,31 @@ export function cssFont(font: FontSpec): string {
   return canvasFont(font, `${font.sizePt}pt`).css;
 }
 
-/** A canvas font for the face the browser finds (row 62): the shorthand, and the width it cannot carry. */
+/**
+ * In Node, a family GDI names apart from the browser (FACE_NAMES) that the
+ * canvas finds by GDI's own name, asked for by it; null in the browser, and
+ * for any other family (2026-11-25). @napi-rs/canvas on Windows finds most of
+ * them only as GDI names them: of FACE_NAMES' 30, measured on 2026-11-25
+ * against Chrome under row 62's names, at 2048 pixels, unkerned, 7 measured
+ * Chrome's widths under the browser's name in Node and the rest a fallback
+ * face's or another weight's (Franklin Gothic Demi in the fallback; Rockwell
+ * Extra Bold as Rockwell Bold); asked by the GDI name where the canvas finds
+ * it, and by the browser's otherwise, 27 measured Chrome's to the hundredth.
+ * The other three (Bahnschrift Light SemiCondensed, Bahnschrift SemiBold
+ * SemiConden, Bodoni MT Poster Compressed) are found under neither name, and
+ * a result says they were measured in a stand-in (nodeFonts.ts
+ * `standInFamilies`), as before.
+ */
+function nodeGdiFace(font: { family: string; bold: boolean; italic: boolean }): BrowserFace | null {
+  if (!findsFamily) return null;
+  const family = font.family.trim();
+  if (!FACE_NAMES[family.toLowerCase()] || !findsFamily(family)) return null;
+  return { family, weight: font.bold ? 700 : 400, stretch: 'normal', italic: font.italic };
+}
+
+/** A canvas font for the face the browser finds (row 62), or in Node the one `nodeGdiFace` names: the shorthand, and the width it cannot carry. */
 function canvasFont(font: { family: string; bold: boolean; italic: boolean }, size: string): { css: string; stretch: string } {
-  const face = browserFace(font);
+  const face = nodeGdiFace(font) ?? browserFace(font);
   const weight = face.weight === 400 ? '' : face.weight === 700 ? 'bold ' : `${face.weight} `;
   return { css: `${face.italic ? 'italic ' : ''}${weight}${size} "${face.family}"`, stretch: face.stretch };
 }
@@ -685,10 +707,18 @@ export function turnedLines(text: string, w: TurnedWidths, lengthPt: number, acr
  * Under jsdom, which has a document, nothing changes.
  */
 let handedIn: (() => CanvasRenderingContext2D | null) | null = null;
+/** Whether the handed-in canvas finds a family by the name given (`nodeGdiFace`); null in the browser. */
+let findsFamily: ((family: string) => boolean) | null = null;
 
-/** Measure on canvases `make` gives where there is no document (Node); null stops it. */
-export function measureOn(make: (() => CanvasRenderingContext2D | null) | null): void {
+/**
+ * Measure on canvases `make` gives where there is no document (Node); null
+ * stops it. `finds` says whether that canvas finds a family by a name, which
+ * picks the name a FACE_NAMES family is asked for by there (`nodeGdiFace`);
+ * without it the browser's names are asked for, as before 2026-11-25.
+ */
+export function measureOn(make: (() => CanvasRenderingContext2D | null) | null, finds?: (family: string) => boolean): void {
   handedIn = make;
+  findsFamily = make && finds ? finds : null;
   turnedContext = lineContext = metricsContext = undefined;
 }
 

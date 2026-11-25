@@ -6,7 +6,7 @@
  * identical lines; these cases pin the rules that made that true.
  */
 import { describe, it, expect } from 'vitest';
-import { wrapText, lineSpacingPt, linesHeightPt, cssFont, cssFace, browserFace, canvasMeasurer, gdiKerns, synthesizedBold, boldWideningPt, drawnBoldWideningPt, resolveLineMetrics, GROW_EXTRA_PT, turnedLines, oneLinePt, type TurnedWidths } from './textMeasure';
+import { wrapText, lineSpacingPt, linesHeightPt, cssFont, cssFace, browserFace, measureOn, canvasMeasurer, gdiKerns, synthesizedBold, boldWideningPt, drawnBoldWideningPt, resolveLineMetrics, GROW_EXTRA_PT, turnedLines, oneLinePt, type TurnedWidths } from './textMeasure';
 
 /** Every character one point wide, so widths are character counts. */
 const mono = (s: string) => s.length;
@@ -16,6 +16,27 @@ const mono = (s: string) => s.length;
  * wide, trailing spaces unmeasured, as DevExpress measures them; one line
  * 10pt and the spacing 12pt.
  */
+describe('in Node, a family GDI names apart from the browser, asked by GDI’s name where the canvas finds it (2026-11-25)', () => {
+  const font = (family: string, bold = false) => ({ family, sizePt: 9, bold, italic: false });
+
+  it('asks the canvas by the GDI name it finds, by the browser’s otherwise, and leaves the page’s CSS as the browser’s', () => {
+    try {
+      measureOn(() => null, (family) => family === 'Franklin Gothic Demi');
+      expect(cssFont(font('Franklin Gothic Demi'))).toBe('9pt "Franklin Gothic Demi"');
+      expect(cssFont(font(' Franklin Gothic Demi ', true))).toBe('bold 9pt "Franklin Gothic Demi"');
+      // Not found by its GDI name: the browser's, as before.
+      expect(cssFont(font('Leelawadee UI Semilight'))).toBe('350 9pt "Leelawadee UI"');
+      // A family the browser and GDI name alike is asked for as written.
+      expect(cssFont(font('Arial', true))).toBe('bold 9pt "Arial"');
+      expect(cssFace({ family: 'Franklin Gothic Demi', bold: false, italic: false }).fontFamily).toBe('"Franklin Gothic", sans-serif');
+    } finally {
+      measureOn(null);
+    }
+    // With no canvas handed in (the browser), the browser's name.
+    expect(cssFont(font('Franklin Gothic Demi'))).toBe('600 9pt "Franklin Gothic"');
+  });
+});
+
 describe('turnedLines', () => {
   const plain = (s: string) => s.replace(/\s+$/, '').length * 5;
   const flat: TurnedWidths = { kerned: plain, plain };

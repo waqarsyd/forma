@@ -20,7 +20,8 @@ import { join } from 'node:path';
 import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CLONE } from './nodeGeneration';
-import { MAX_FACES_CHECKED, METRIC_FACES, NOTHING_MEASURES, checkMeasuring, facePath, registerFace, reportFaces, standInFamilies, useMetricFonts, type MetricFace } from './nodeFonts';
+import { MAX_FACES_CHECKED, METRIC_FACES, NOTHING_MEASURES, checkMeasuring, facePath, familyFinder, registerFace, reportFaces, standInFamilies, useMetricFonts, type MetricFace } from './nodeFonts';
+import { lineWidthPt, measureOn } from '../lib/textMeasure';
 
 const canvas = () => createCanvas(1, 1).getContext('2d') as unknown as CanvasRenderingContext2D;
 const scratch = mkdtempSync(join(tmpdir(), 'forma-fonts-'));
@@ -218,5 +219,36 @@ describe("the families a report names that this machine measured in a stand-in",
     const found = standInFamilies(xml, canvas);
     expect(found).toHaveLength(MAX_FACES_CHECKED);
     expect(found[0]).toBe('Forma Missing 0');
+  });
+});
+
+describe('a family GDI names apart from the browser, found by its own name (2026-11-25)', () => {
+  beforeAll(() => useMetricFonts(CLONE));
+  const line = 'AVATAR Wave To LT Yo 0123456789 The quick brown fox';
+  const at = (family: string) => ({ family, sizePt: 20, bold: false, italic: false });
+
+  it('finds a family by a name once, in any case, and never one it lacks or cannot ask for', () => {
+    let made = 0;
+    const finds = familyFinder(() => (made++, canvas()));
+    expect([finds('Arial'), finds('ARIAL'), finds('Forma No Such Family'), finds('Fo"o')]).toEqual([true, true, false, false]);
+    expect(made).toBe(1);
+    expect(familyFinder(() => null)('Arial')).toBe(false);
+  });
+
+  // Office's Franklin Gothic Demi, where installed: in its own face by GDI's name, where the browser's name measured another.
+  it.runIf(familyFinder(canvas)('Franklin Gothic Demi'))('measures Franklin Gothic Demi in its own face once the finder is handed in', () => {
+    try {
+      measureOn(canvas);
+      const asBrowser = lineWidthPt(line, at('Franklin Gothic Demi'));
+      measureOn(canvas, familyFinder(canvas));
+      const own = lineWidthPt(line, at('Franklin Gothic Demi'));
+      const context = canvas();
+      context.fontKerning = 'none';
+      context.font = '2048px "Franklin Gothic Demi"';
+      expect(own).toBeCloseTo((context.measureText(line).width * 20) / 2048, 6);
+      expect(Math.abs(own! - asBrowser!)).toBeGreaterThan(0.5);
+    } finally {
+      measureOn(null);
+    }
   });
 });

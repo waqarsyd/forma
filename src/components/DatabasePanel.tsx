@@ -41,12 +41,17 @@ import {
   duplicateFields,
   findObject,
   fieldKind,
+  joinBlocked,
+  joinsHeld,
   queryFields,
   queryParameters,
   suggestJoins,
   type QueryJoin,
   type ReportQuery,
 } from '../lib/sqlQuery';
+
+/** "1 column", "4 columns" (2026-11-25: a procedure's one result column read "1 columns"). */
+const columnCount = (n: number): string => `${n} ${n === 1 ? 'column' : 'columns'}`;
 
 interface Props {
   database: SqlSchema | null;
@@ -211,16 +216,17 @@ function ReportSource({ repx, database, onQuery, onApplyRepx, onAdopt }: {
         {!database && own && onAdopt && <button type="button" className="dbx-btn dbx-btn--solid" onClick={() => onAdopt(own)}>Browse the layout it uses</button>}
       </div>
       <ul className="dbx-sub" style={{ margin: '8px 0', paddingLeft: 18, lineHeight: 1.6 }}>
-        {ds.queries.map((q) => (
-          <li key={q.name}><strong>{q.name}</strong>{q.name === main.query.name ? ' (the report reads it)' : ''}: {describe(q)}</li>
+        {/* Keyed with their place too (2026-11-25): these are read from the report, which can repeat a name. */}
+        {ds.queries.map((q, i) => (
+          <li key={`${i}:${q.name}`}><strong>{q.name}</strong>{q.name === main.query.name ? ' (the report reads it)' : ''}: {describe(q)}</li>
         ))}
-        {ds.relations.map((r) => (
-          <li key={r.name}>{r.master} to {r.detail}, a detail band, on {r.keys.map((k) => `${k.master} = ${k.detail}`).join(' and ')}</li>
+        {ds.relations.map((r, i) => (
+          <li key={`${i}:${r.name}`}>{r.master} to {r.detail}, a detail band, on {r.keys.map((k) => `${k.master} = ${k.detail}`).join(' and ')}</li>
         ))}
       </ul>
       {fields.length > 0 && (
         <div className="dbx-fields">
-          {fields.map((f) => <span className="dbx-field" key={f.name}>{f.name} <code>{f.type}</code></span>)}
+          {fields.map((f, i) => <span className="dbx-field" key={`${i}:${f.name}`}>{f.name} <code>{f.type}</code></span>)}
         </div>
       )}
       {parameters.length > 0 && (
@@ -519,12 +525,12 @@ function DatabasePanel({ database, recent, onNotice, query, onQuery, selection, 
       <div className="dbx-item" key={key}>
         <button type="button" aria-expanded={open === key} onClick={() => setOpen(open === key ? null : key)}>
           <span>{key}</span>
-          <span className="dbx-sub">{o.columns.length} columns</span>
+          <span className="dbx-sub">{columnCount(o.columns.length)}</span>
         </button>
         {open === key && (
           <div className="dbx-cols">
-            {o.columns.map((c) => (
-              <div className="dbx-col" key={c.name}>
+            {o.columns.map((c, i) => (
+              <div className="dbx-col" key={`${i}:${c.name}`}>
                 <span>{c.name}</span>
                 <code>{typeLabel(c) || '?'}</code>
                 {o.primaryKey.includes(c.name) && <span className="dbx-badge">key</span>}
@@ -547,13 +553,14 @@ function DatabasePanel({ database, recent, onNotice, query, onQuery, selection, 
       <div className="dbx-item" key={key}>
         <button type="button" aria-expanded={open === key} onClick={() => setOpen(open === key ? null : key)}>
           <span>{key}</span>
-          <span className="dbx-sub">{p.resultError ? 'result unknown' : `${p.result.length} columns`}</span>
+          <span className="dbx-sub">{p.resultError ? 'result unknown' : columnCount(p.result.length)}</span>
         </button>
         {open === key && (
           <div className="dbx-cols">
             {p.parameters.length > 0 && <div className="dbx-sub">Takes: {p.parameters.map((x) => `${x.name} ${typeLabel(x)}${x.defaultValue !== undefined ? ` = ${x.defaultValue}` : ''}${x.output ? ' OUTPUT' : ''}`).join(', ')}</div>}
-            {p.result.map((c) => (
-              <div className="dbx-col" key={c.name}><span>{c.name}</span><code>{typeLabel(c)}</code></div>
+            {/* A procedure's result can name a column twice (SELECT a.Name, b.Name), so its place is in the key. */}
+            {p.result.map((c, i) => (
+              <div className="dbx-col" key={`${i}:${c.name}`}><span>{c.name}</span><code>{typeLabel(c)}</code></div>
             ))}
             {p.resultError && (
               <p className="dbx-warn" style={{ margin: '4px 0' }}>
@@ -573,16 +580,12 @@ function DatabasePanel({ database, recent, onNotice, query, onQuery, selection, 
     if (query?.kind === 'table') onQuery({ ...query, ...patch });
   };
   // A table pointing back (an order's lines) is a detail band, not a join, which would repeat the order once per line.
-  const toggleJoin = (join: QueryJoin, detail: boolean) => {
+  /** Ticks a choice, or clears what it stands for (`held`, sqlQuery.ts `joinsHeld`): by its key as well as its table, so two keys to one table are two choices. */
+  const toggleJoin = (join: QueryJoin, detail: boolean, held: readonly QueryJoin[]) => {
     if (query?.kind !== 'table') return;
-    if (detail) {
-      const list = query.details ?? [];
-      const has = list.some((j) => j.table === join.table);
-      setTableQuery({ details: has ? list.filter((j) => j.table !== join.table) : [...list, join] });
-      return;
-    }
-    const has = query.joins.some((j) => j.table === join.table);
-    setTableQuery({ joins: has ? query.joins.filter((j) => j.table !== join.table) : [...query.joins, join] });
+    const list = detail ? query.details ?? [] : query.joins;
+    const next = held.length ? list.filter((j) => !held.includes(j)) : [...list, join];
+    setTableQuery(detail ? { details: next } : { joins: next });
   };
   const sortable = query?.kind === 'table' ? fields : [];
 
@@ -699,7 +702,7 @@ function DatabasePanel({ database, recent, onNotice, query, onQuery, selection, 
             {asked && <p className="dbx-sub" role="status" style={{ margin: 0 }}>{asked}</p>}
             <input className="dbx-input" aria-label="Query name" value={customName} onChange={(e) => setCustomName(e.target.value.replace(/[^\w]/g, ''))} />
             <textarea className="dbx-input" aria-label="Custom SQL" value={customSql} onChange={(e) => setCustomSql(e.target.value)} placeholder="SELECT o.OrderID, c.CompanyName FROM dbo.Orders o JOIN dbo.Customers c ON c.CustomerID = o.CustomerID WHERE c.Region = @Region" spellCheck={false} />
-            {customSql && [...custom.problems, ...unknownNames].map((p) => <p key={p} className="dbx-warn" style={{ margin: 0 }}>{p}</p>)}
+            {customSql && [...custom.problems, ...unknownNames].map((p, i) => <p key={`${i}:${p}`} className="dbx-warn" style={{ margin: 0 }}>{p}</p>)}
             {customSql && custom.ok && custom.parameters.length > 0 && <p className="dbx-sub" style={{ margin: 0 }}>Parameters: {custom.parameters.join(', ')}, each a report parameter.</p>}
             <div><button type="button" className="dbx-btn dbx-btn--solid" disabled={!custom.ok || unknownNames.length > 0} onClick={() => onQuery({ kind: 'custom', name: customName || 'Query', sql: customSql.trim() })}>Use this SQL</button></div>
           </div>
@@ -721,13 +724,20 @@ function DatabasePanel({ database, recent, onNotice, query, onQuery, selection, 
               {suggestJoins(database, query.object).length > 0 && (
                 <div className="dbx-group">
                   <h4>Join, from its foreign keys</h4>
-                  {suggestJoins(database, query.object).map((s) => (
-                    <label key={s.join.table} className="dbx-row dbx-sub" style={{ gap: 6 }}>
-                      <input type="checkbox" checked={s.direction === 'referencedBy' ? !!query.details?.some((j) => j.table === s.join.table) : query.joins.some((j) => j.table === s.join.table)} onChange={() => toggleJoin(s.join, s.direction === 'referencedBy')} />
-                      {s.label}
-                      {s.direction === 'referencedBy' && <span className="dbx-badge" title="Many rows for each of yours: printed as a detail band under each row, not joined">detail band</span>}
-                    </label>
-                  ))}
+                  {/* Each foreign key its own line (2026-11-25): two keys to one table were one React key, ticked and cleared together. */}
+                  {suggestJoins(database, query.object).map((s, i, all) => {
+                    // What this choice stands for, a join the AI or a report gave on other columns included (joinsHeld), so all of it clears.
+                    const held = joinsHeld(database, query, all, i);
+                    const blocked = held.length ? null : joinBlocked(database, query, s);
+                    return (
+                      <label key={`${i}:${s.label}`} className="dbx-row dbx-sub" style={{ gap: 6 }} title={blocked ?? undefined}>
+                        <input type="checkbox" checked={held.length > 0} disabled={!!blocked} onChange={() => toggleJoin(s.join, s.direction === 'referencedBy', held)} />
+                        {s.label}
+                        {s.direction === 'referencedBy' && <span className="dbx-badge" title="Many rows for each of yours: printed as a detail band under each row, not joined">detail band</span>}
+                        {blocked && <span className="dbx-sub">: {blocked}</span>}
+                      </label>
+                    );
+                  })}
                 </div>
               )}
               <div className="dbx-group" style={{ display: 'grid', gap: 6 }}>
@@ -736,7 +746,8 @@ function DatabasePanel({ database, recent, onNotice, query, onQuery, selection, 
                 <div className="dbx-row">
                   <select className="dbx-input" style={{ width: 'auto' }} aria-label="Sort by" value={query.sort?.[0]?.column ?? ''} onChange={(e) => setTableQuery({ sort: e.target.value ? [{ column: e.target.value, descending: query.sort?.[0]?.descending }] : undefined })}>
                     <option value="">No sort</option>
-                    {sortable.map((f) => <option key={`${f.source}.${f.name}`} value={`${f.source}.${f.name}`}>{`Sort by ${f.name}`}</option>)}
+                    {/* A name two tables share says which table's it is (2026-11-25: "Sort by CustomerID" was listed twice). */}
+                    {sortable.map((f) => <option key={`${f.source}.${f.name}`} value={`${f.source}.${f.name}`}>{`Sort by ${f.name}${duplicates.includes(f.name) ? ` (${f.source})` : ''}`}</option>)}
                   </select>
                   <label className="dbx-sub"><input type="checkbox" checked={!!query.sort?.[0]?.descending} disabled={!query.sort?.length} onChange={(e) => setTableQuery({ sort: query.sort?.length ? [{ ...query.sort[0], descending: e.target.checked }] : undefined })} /> descending</label>
                   <input className="dbx-input" style={{ width: 110 }} type="number" min={0} aria-label="Top" placeholder="Top (all)" value={query.top ?? ''} onChange={(e) => setTableQuery({ top: Number(e.target.value) > 0 ? Math.floor(Number(e.target.value)) : undefined })} />
@@ -752,8 +763,8 @@ function DatabasePanel({ database, recent, onNotice, query, onQuery, selection, 
             {fields.length === 0 && <p className="dbx-warn">This query has no columns Forma can read yet{query.kind === 'procedure' ? ': see why under the procedure above.' : '.'}</p>}
             {duplicates.length > 0 && <p className="dbx-warn">{duplicates.join(', ')} {duplicates.length === 1 ? 'comes' : 'come'} from more than one table: pick the columns, or a join may print the wrong one.</p>}
             <div className="dbx-fields">
-              {fields.map((f) => (
-                <div className="dbx-field" key={`${f.source}.${f.name}`}>
+              {fields.map((f, i) => (
+                <div className="dbx-field" key={`${i}:${f.source}.${f.name}`}>
                   <span title={f.source}>{f.name} <code>{typeLabel(f.column)}</code></span>
                   <button type="button" className="dbx-btn" disabled={!selectionLabel} title={selectionLabel ? `Bind ${selectionLabel} to [${f.name}]` : 'Select a control on the Preview first'} onClick={() => onBindField(f.name)}>Bind</button>
                 </div>

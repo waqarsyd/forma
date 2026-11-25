@@ -7,7 +7,7 @@
  * reads AND for not being claimed by the format before it in the chain.
  */
 import { describe, it, expect } from 'vitest';
-import { parseDataSource, suggestMapping, cleanFieldName, type DataField } from './dataSource';
+import { onceEach, parseDataSource, suggestMapping, cleanFieldName, type DataField } from './dataSource';
 
 describe('reading a JSON sample', () => {
   it('reads fields, types and a real sample value from an array of rows', () => {
@@ -85,7 +85,26 @@ describe('reading CSV', () => {
   it('reports a ragged row rather than inventing a column for it', () => {
     const source = parseDataSource('A,B\n1,2,3');
     expect(source.fields).toHaveLength(2);
-    expect(source.problems.join(' ')).toMatch(/do not have 2 columns/);
+    // One row is "a row", not "1 row(s)" (2026-11-25).
+    expect(source.problems.join(' ')).toMatch(/^1 row does not have 2 columns\./);
+    expect(parseDataSource('A,B\n1,2,3\n4\n5,6').problems.join(' ')).toMatch(/^2 rows do not have 2 columns\./);
+  });
+
+  it('keeps a repeated header once, the first, and says so (2026-11-25)', () => {
+    const source = parseDataSource('Name,Qty,name,Qty\nWidget,4,Gadget,5');
+    expect(source.fields.map((f) => `${f.name}=${f.sample}`)).toEqual(['Name=Widget', 'Qty=4']);
+    expect(source.problems).toEqual(['"name", "Qty" appear more than once; a report binds a name once, so the first is kept.']);
+    expect(parseDataSource('Name,Name\nA,B').problems).toEqual(['"Name" appears more than once; a report binds a name once, so the first is kept.']);
+  });
+});
+
+describe('a field name once (onceEach, 2026-11-25)', () => {
+  it('keeps a source with no repeat as it is, and drops a join’s second CustomerID', () => {
+    const plain = { kind: 'sql' as const, fields: [{ name: 'A', type: 'string' as const, sample: '' }], rowCount: 0, problems: [] };
+    expect(onceEach(plain)).toBe(plain);
+    const joined = onceEach({ ...plain, fields: ['OrderID', 'CustomerID', 'CustomerID', 'CompanyName'].map((name) => ({ name, type: 'number' as const, sample: '' })) });
+    expect(joined.fields.map((f) => f.name)).toEqual(['OrderID', 'CustomerID', 'CompanyName']);
+    expect(joined.problems).toHaveLength(1);
   });
 });
 

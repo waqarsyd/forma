@@ -149,6 +149,84 @@ export function suggestJoins(schema: SqlSchema, object: string): { join: QueryJo
   return out;
 }
 
+/** A table's name as one key: its schema-qualified name in the layout, else as given, ignoring case. */
+const tableKey = (schema: SqlSchema, table: string): string => {
+  const o = findObject(schema, table);
+  return (o ? full(o) : table).toLowerCase();
+};
+
+/** One join and another are the same: one table, on the same pairs of columns, ignoring case and order (2026-11-25). */
+export function sameJoin(schema: SqlSchema, a: QueryJoin, b: QueryJoin): boolean {
+  const pairs = (j: QueryJoin) => j.on.map((k) => `${k.from}=${k.to}`.toLowerCase()).sort().join('&');
+  return tableKey(schema, a.table) === tableKey(schema, b.table) && pairs(a) === pairs(b);
+}
+
+/** A table or query named twice in a data source needs an alias, which Forma's writer does not write. */
+const NO_ALIAS = 'which needs a table alias Forma does not write yet';
+
+/**
+ * Why a table query cannot be written as Forma writes it, naming a table or
+ * a query twice, or null (2026-11-25). A SelectQuery tells its tables apart
+ * by name, and Forma writes no alias, so a table joined to itself (an
+ * employee's manager, through a key back to its own table) or joined twice
+ * on two keys (an invoice's bill-to and ship-to customer) would be one table
+ * named twice; and a detail band is a query of its own, named after its
+ * table without its schema (`queryName`), so a detail of the master's own
+ * table, or two details of one name in two schemas, would be two queries of
+ * one name. Until then the Data tab offered both joins under one key,
+ * ticking and clearing them together, and offered a table its own key back
+ * as a join. The writer refuses such a query from every caller with these
+ * words; the Data tab and the AI's query say them before it is asked.
+ */
+export function tableTwice(schema: SqlSchema, query: ReportQuery): string | null {
+  if (query.kind !== 'table') return null;
+  const seen = new Set<string>();
+  for (const table of [query.object, ...query.joins.map((j) => j.table)]) {
+    const key = tableKey(schema, table);
+    if (seen.has(key)) return `${table} would be in the query twice, ${NO_ALIAS}`;
+    seen.add(key);
+  }
+  const named = new Set([queryName(query).toLowerCase()]);
+  for (const d of query.details ?? []) {
+    const name = queryName({ kind: 'table', object: d.table, columns: [], joins: [] });
+    if (named.has(name.toLowerCase())) return `two of its queries would both be named ${name}, ${NO_ALIAS}`;
+    named.add(name.toLowerCase());
+  }
+  return null;
+}
+
+/** The same words for two queries of one name given apart from a table query's details (the writer's `details`). */
+export const QUERY_NAMED_TWICE = (name: string): string => `two of its queries would both be named ${name}, ${NO_ALIAS}`;
+
+/**
+ * Why a suggested join cannot be ticked beside what the query already has,
+ * or null when it can (2026-11-25, `tableTwice`'s reason, and the way on).
+ * A suggestion that is ticked already can always be cleared.
+ */
+export function joinBlocked(schema: SqlSchema, query: Extract<ReportQuery, { kind: 'table' }>, suggestion: { join: QueryJoin; direction: 'references' | 'referencedBy' }): string | null {
+  const list = suggestion.direction === 'referencedBy' ? query.details ?? [] : query.joins;
+  if (list.some((j) => sameJoin(schema, j, suggestion.join))) return null;
+  const added: ReportQuery = suggestion.direction === 'referencedBy' ? { ...query, details: [...list, suggestion.join] } : { ...query, joins: [...list, suggestion.join] };
+  const problem = tableTwice(schema, added);
+  return problem ? `${problem}: write it as custom SQL instead.` : null;
+}
+
+/**
+ * The joins of `query` a suggested join stands for on the Data tab: the
+ * one on its own key, and for the first suggestion to a table also a join
+ * to that table on columns no suggestion has (one the AI or a report gave),
+ * so that every join the query holds shows ticked and can be cleared
+ * (2026-11-25, the review of the fixes before 1.7.0: such a join showed
+ * unticked and blocked, and only Clear removed it).
+ */
+export function joinsHeld(schema: SqlSchema, query: Extract<ReportQuery, { kind: 'table' }>, suggestions: readonly { join: QueryJoin; direction: 'references' | 'referencedBy' }[], index: number): QueryJoin[] {
+  const s = suggestions[index];
+  const list = s.direction === 'referencedBy' ? query.details ?? [] : query.joins;
+  const mine = (j: QueryJoin) => tableKey(schema, j.table) === tableKey(schema, s.join.table);
+  const firstForTable = suggestions.findIndex((o) => o.direction === s.direction && mine(o.join)) === index;
+  return list.filter((j) => sameJoin(schema, j, s.join) || (firstForTable && mine(j) && !suggestions.some((o) => o.direction === s.direction && sameJoin(schema, j, o.join))));
+}
+
 /** A nullable foreign key joins as a left outer join, so rows without a match still print. */
 function isNullable(schema: SqlSchema, table: string, column: string): boolean {
   return findObject(schema, table)?.columns.find((c) => c.name === column)?.nullable === true;

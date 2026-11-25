@@ -287,6 +287,22 @@ describe('matching against a database', () => {
     expect(screen.getByText('Sure: the heading holds its name, its value is in the samples')).toBeTruthy();
   });
 
+  it('takes a name a join brings from two tables once, under one React key each, and says so (2026-11-25)', () => {
+    // Orders joined to Customers: the Data tab hands CustomerID from each, and the written data source keeps the first.
+    const joined = [...fields, { name: 'CustomerID', type: 'number' as const, sample: '', samples: [] }, { name: 'CustomerID', type: 'number' as const, sample: '', samples: [] }];
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      render(<DataBinding repxContent={bindable} onApply={() => {}} databaseFields={joined} databaseLabel="dbo.Orders with dbo.Customers" />);
+      expect(screen.getByText(/^Read 3 fields from dbo\.Orders with dbo\.Customers/)).toBeTruthy();
+      expect(screen.getByText('"CustomerID" appears more than once; a report binds a name once, so the first is kept.')).toBeTruthy();
+      const first = screen.getAllByRole('combobox')[0] as HTMLSelectElement;
+      expect([...first.options].filter((o) => o.value === 'CustomerID')).toHaveLength(1);
+      expect(errors.mock.calls.filter((c) => /same key/.test(String(c[0])))).toEqual([]);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
   it('offers the likeliest field in one click for a column left unmatched', () => {
     render(<DataBinding repxContent={bindable} onApply={() => {}} databaseFields={fields} databaseLabel="dbo.Lines" />);
     const first = screen.getAllByRole('combobox')[0] as HTMLSelectElement;

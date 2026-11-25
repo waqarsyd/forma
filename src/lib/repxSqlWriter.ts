@@ -16,7 +16,7 @@
  * report that arrives carrying them.
  */
 import type { SqlSchema } from './sqlSchema';
-import { findObject, findProcedure, queryFields, queryName, type QueryField, type ReportQuery } from './sqlQuery';
+import { findObject, findProcedure, QUERY_NAMED_TWICE, queryFields, queryName, tableTwice, type QueryField, type ReportQuery } from './sqlQuery';
 import { escapeXmlAttribute } from './xmlEscape';
 import { liftParameterTypes, parameterReferences } from './repxParameters';
 import { ensureUniqueRefs } from './repxRefs';
@@ -301,6 +301,13 @@ export function writeSqlDataSource(repx: string, spec: DataSourceSpec, version =
   const connection = spec.connectionName.trim();
   // In plain words (2026-11-11, the full audit's SDW follow-up): the name, never a server, a login or a password.
   if (!connection || /[;=]/.test(connection)) return { xml: repx, applied: false, reason: 'the connection needs the name your application knows the database by, not a server, a login or a password', parameters: [] };
+  // A table or query named twice would be written as one (no alias), so it is refused, from every caller (2026-11-25, sqlQuery.ts `tableTwice`).
+  const twice = tableTwice(spec.schema, spec.query);
+  if (twice) return { xml: repx, applied: false, reason: twice, parameters: [] };
+  // DevExpress tells a source's queries apart by name, and a detail's query is named after its table: details given apart too.
+  const names = [spec.query, ...(spec.details ?? []).map((d) => d.query)].map(queryName);
+  const clash = names.find((n, i) => names.findIndex((m) => m.toLowerCase() === n.toLowerCase()) !== i);
+  if (clash) return { xml: repx, applied: false, reason: QUERY_NAMED_TWICE(clash), parameters: [] };
   const fields = queryFields(spec.schema, spec.query);
   if (!fields.length) return { xml: repx, applied: false, reason: `${queryName(spec.query)} has no columns Forma can read, so the report would have nothing to print`, parameters: [] };
 

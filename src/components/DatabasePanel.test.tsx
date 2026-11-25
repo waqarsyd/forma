@@ -122,6 +122,60 @@ describe('what the report reads', () => {
     );
   });
 
+  it('lists a name two tables share once per table, with no React key twice, and says which in the sort (2026-11-25)', () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      panel({ query: { ...orders, joins: [{ table: 'dbo.Customers', type: 'Inner', on: [{ from: 'CustomerID', to: 'CustomerID' }] }] } });
+      expect(screen.getByText('Fields (5)')).toBeTruthy();
+      expect(screen.getByRole('option', { name: 'Sort by CustomerID (dbo.Orders)' })).toBeTruthy();
+      expect(screen.getByRole('option', { name: 'Sort by CustomerID (dbo.Customers)' })).toBeTruthy();
+      expect(screen.getByRole('option', { name: 'Sort by Freight' })).toBeTruthy();
+      expect(errors.mock.calls.filter((c) => /same key/.test(String(c[0])))).toEqual([]);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  it('offers two keys to one table as two choices, blocks the second and a key back to its own table, and counts one column as one (2026-11-25)', () => {
+    const erp = readSchemaScript(`
+CREATE TABLE dbo.Customers (CustomerID int NOT NULL PRIMARY KEY, CompanyName nvarchar(80) NOT NULL);
+CREATE TABLE dbo.Invoices (InvoiceID int NOT NULL PRIMARY KEY, BillToID int NOT NULL REFERENCES dbo.Customers(CustomerID), ShipToID int NULL REFERENCES dbo.Customers(CustomerID));
+CREATE TABLE dbo.Employees (EmployeeID int NOT NULL PRIMARY KEY, ManagerID int NULL REFERENCES dbo.Employees(EmployeeID));
+CREATE PROCEDURE dbo.usp_Names AS SELECT 1;
+`, 'Erp')!;
+    erp.procedures[0] = { ...erp.procedures[0], resultError: undefined, result: [{ name: 'Name', type: 'nvarchar', length: 60 }] };
+    const invoices: ReportQuery = { kind: 'table', object: 'dbo.Invoices', columns: [], joins: [] };
+    const billTo = { table: 'dbo.Customers', type: 'Inner' as const, on: [{ from: 'BillToID', to: 'CustomerID' }] };
+    const props = panel({ database: erp, recent: ['Erp'], query: invoices });
+    expect(screen.getByText('1 column')).toBeTruthy();
+    expect(screen.getAllByText('2 columns')).toHaveLength(2);
+    fireEvent.click(screen.getByLabelText(/dbo\.Customers on BillToID = CustomerID/));
+    expect(props.onQuery).toHaveBeenLastCalledWith({ ...invoices, joins: [billTo] });
+    cleanup();
+
+    const ticked = panel({ database: erp, recent: ['Erp'], query: { ...invoices, joins: [billTo] } });
+    const bill = screen.getByLabelText(/dbo\.Customers on BillToID = CustomerID/) as HTMLInputElement;
+    const ship = screen.getByLabelText(/dbo\.Customers on ShipToID = CustomerID/) as HTMLInputElement;
+    expect([bill.checked, bill.disabled, ship.checked, ship.disabled]).toEqual([true, false, false, true]);
+    expect(screen.getByText(/dbo\.Customers would be in the query twice, which needs a table alias Forma does not write yet: write it as custom SQL instead\./)).toBeTruthy();
+    // Clearing the one ticked clears that join alone.
+    fireEvent.click(bill);
+    expect(ticked.onQuery).toHaveBeenLastCalledWith({ ...invoices, joins: [] });
+    cleanup();
+
+    // A join the AI or a report gave on columns no foreign key has shows ticked on the first choice for its table, and clears (the review).
+    const own = { table: 'dbo.Customers', type: 'Inner' as const, on: [{ from: 'InvoiceID', to: 'CustomerID' }] };
+    const given = panel({ database: erp, recent: ['Erp'], query: { ...invoices, joins: [own] } });
+    const first = screen.getByLabelText(/dbo\.Customers on BillToID = CustomerID/) as HTMLInputElement;
+    expect([first.checked, first.disabled]).toEqual([true, false]);
+    fireEvent.click(first);
+    expect(given.onQuery).toHaveBeenLastCalledWith({ ...invoices, joins: [] });
+    cleanup();
+
+    panel({ database: erp, recent: ['Erp'], query: { kind: 'table', object: 'dbo.Employees', columns: [], joins: [] } });
+    expect((screen.getByLabelText(/dbo\.Employees on ManagerID = EmployeeID/) as HTMLInputElement).disabled).toBe(true);
+  });
+
   it('binds a field to what the Preview has selected, and not before', () => {
     const none = panel({ query: orders });
     expect((screen.getAllByText('Bind')[0] as HTMLButtonElement).disabled).toBe(true);
